@@ -1,0 +1,19 @@
+# Build outputs & intermediate directories
+bin/
+obj/
+Installer/bin/
+Installer/obj/
+Installer/publish/
+Installer/stage_tmp/
+Installer/payload.zip
+
+# Runtime user saves
+saves/
+
+# OS / IDE temp files
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

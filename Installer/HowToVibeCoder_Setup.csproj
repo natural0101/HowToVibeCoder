@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>HowToVibeCoder_Setup</AssemblyName>
+    <ApplicationIcon Condition="Exists('HowToVibeCoder.ico')">HowToVibeCoder.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="payload.zip" LogicalName="HowToVibeCoder.Payload.zip" Condition="Exists('payload.zip')" />
+    <EmbeddedResource Include="HowToVibeCoder.ico" LogicalName="HowToVibeCoder.Icon.ico" Condition="Exists('HowToVibeCoder.ico')" />
+    <EmbeddedResource Include="..\assets\app_icon.png" LogicalName="HowToVibeCoder.AppIcon.png" Condition="Exists('..\assets\app_icon.png')" />
+    <EmbeddedResource Include="..\assets\menu_banner.png" LogicalName="HowToVibeCoder.MenuBanner.png" Condition="Exists('..\assets\menu_banner.png')" />
+  </ItemGroup>
+</Project>
