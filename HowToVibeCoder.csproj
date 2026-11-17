@@ -9,6 +9,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Installer\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="assets/ui/*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Raylib-cs" Version="7.0.1" />
   </ItemGroup>
 </Project>

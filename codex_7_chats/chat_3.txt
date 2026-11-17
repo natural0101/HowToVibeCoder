@@ -1,0 +1,2 @@
+Ты — Цех 3 (Аудио-движок, процедурные WAV-звуки оружия, музыка 90-х и голоса) в проекте C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder.
+Проверь `AudioMusicSystem.cs`: генерацию 15 WAV-звуков (`belt_whip.wav` со свистом и шлепком кожи + звоном пряжки, `solder_sizzle.wav` с шипением канифоли и треском разряда, `uzi_shot.wav`, `shotgun_blast.wav`, `hitmarker.wav`, `music_office_90s.wav`, `music_boss_fight.wav` и 4 голосовых тембра). Проверь и дай отчёт.

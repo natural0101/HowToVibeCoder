@@ -101,7 +101,7 @@ public static class LoreAndMenusUI
     private static int _lastTickItemIndex = -1;
     public static WeaponSkinDefinition? LastWonSkin { get; private set; }
     private static float _caseWinFlashTimer = 0f;
-    private static string _caseBannerMessage = "Нажми [ ПРОБЕЛ ] или кнопку ниже, чтобы крутануть кейс 90-х за $100!";
+    private static string _caseBannerMessage = "";
     private static readonly Random _rng = new(1994);
     private static readonly List<WeaponSkinDefinition> _rouletteTape = new(96);
     public static HashSet<int> UnlockedSkinIds { get; } = new();
@@ -393,6 +393,11 @@ public static class LoreAndMenusUI
         if (_caseWinFlashTimer > 0f)
             _caseWinFlashTimer = Math.Max(0f, _caseWinFlashTimer - dt);
 
+        if (IsAnyModalOpen && Raylib.IsKeyPressed(KeyboardKey.Escape))
+        {
+            IsLoreOpen = IsCaseOpen = IsSettingsOpen = false;
+            return;
+        }
         // Переключение окон [N], [F8], [K]
         if (Raylib.IsKeyPressed(KeyboardKey.N))
         {
@@ -469,141 +474,62 @@ public static class LoreAndMenusUI
         float wheel = Raylib.GetMouseWheelMove();
         if (Math.Abs(wheel) > 0.01f)
         {
-            LoreScrollOffset = Math.Clamp(LoreScrollOffset - wheel * 36f, 0f, 220f);
+            LoreScrollOffset = Math.Clamp(LoreScrollOffset - wheel * 36f, 0f, float.MaxValue);
         }
 
-        // Мышиные клики по вкладкам и кнопке закрытия
-        if (Raylib.IsMouseButtonPressed(MouseButton.Left))
-        {
-            Vector2 mp = Raylib.GetMousePosition();
-            int sw = Raylib.GetScreenWidth();
-            int sh = Raylib.GetScreenHeight();
-            int winW = 1020;
-            int winH = 600;
-            int wx = (sw - winW) / 2;
-            int wy = (sh - winH) / 2;
-
-            // Кнопка [X] закрытия
-            Rectangle closeRect = new(wx + winW - 140, wy + 12, 124, 34);
-            if (Raylib.CheckCollisionPointRec(mp, closeRect))
-            {
-                IsLoreOpen = false;
-                return;
-            }
-
-            // 4 вкладки
-            int tabY = wy + 58;
-            int tabW = (winW - 40 - 18) / 4;
-            for (int i = 0; i < 4; i++)
-            {
-                Rectangle tabRect = new(wx + 20 + i * (tabW + 6), tabY, tabW, 40);
-                if (Raylib.CheckCollisionPointRec(mp, tabRect))
-                {
-                    ActiveLoreTab = i;
-                    LoreScrollOffset = 0f;
-                    InvokeUiClickSound();
-                    break;
-                }
-            }
-        }
+        if (Click(LoreClose)) IsLoreOpen = false;
+        for (int i=0;i<4;i++)
+            if (Click(LoreTab(i))) { ActiveLoreTab=i; LoreScrollOffset=0; }
     }
 
+    // The artwork uses the same 2560 x 1440 coordinate space as the reference captures.
+    private static float ArtScale => Math.Min(Raylib.GetScreenWidth()/2560f,Raylib.GetScreenHeight()/1440f);
+    private static Rectangle Ref(float x,float y,float w,float h) =>
+        new(Raylib.GetScreenWidth()/2f+(x-1280)*ArtScale,Raylib.GetScreenHeight()/2f+(y-720)*ArtScale,w*ArtScale,h*ArtScale);
+    private static bool Click(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(),r);
+    private static void Dim(float opacity) => Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),Raylib.Fade(new Color(7,13,26,255),opacity));
+    private static readonly string[] MixerNames = ["Ремень и паяльник","УЗИ и обрез","Ловушка и тревога","Галера и Таро","Кейсы"];
+    private static readonly float[] BeforeMute = [1,1,1,1,1,1];
+    private static Rectangle MixerTrack(int row) => row == 0 ? Ref(1204,530,336,46) : Ref(1257,635+(row-1)*78,181,42);
+    private static Rectangle MixerSwitch(int row) => row == 0 ? Ref(1576,533,67,39) : Ref(1455,636+(row-1)*78,69,40);
+    private static Rectangle MixerTest(int row) => Ref(1536,630+(row-1)*78,124,51);
+    private static float MixerValue(int row) => row==0 ? MasterVolume : AudioMusicSystem.EffectLevels[row-1];
+    private static void SetMixer(int row,float value)
+    {
+        value=Math.Clamp(value,0,1);
+        if(row==0) ApplySliderNormalizedValue(0,value);
+        else AudioMusicSystem.EffectLevels[row-1]=value;
+    }
     private static void UpdateSettingsInput()
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        int winW = 860;
-        int winH = 560;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-
-        Vector2 mp = Raylib.GetMousePosition();
-        bool mouseDown = Raylib.IsMouseButtonDown(MouseButton.Left);
-        bool mousePressed = Raylib.IsMouseButtonPressed(MouseButton.Left);
-
-        if (!mouseDown)
+        if (Click(Ref(1643,401,70,67))) { IsSettingsOpen=false; return; }
+        if (!Raylib.IsMouseButtonDown(MouseButton.Left)) _draggingSliderIndex=-1;
+        for (int row=0;row<6;row++)
         {
-            _draggingSliderIndex = -1;
-        }
-
-        int sliderStartX = wx + 370;
-        int sliderW = 350;
-        int rowStartY = wy + 98;
-        int rowStepY = 54;
-
-        for (int i = 0; i < 6; i++)
-        {
-            int ry = rowStartY + i * rowStepY;
-            Rectangle trackRect = new(sliderStartX, ry + 6, sliderW, 24);
-            Rectangle hitRect = new(sliderStartX - 10, ry, sliderW + 20, 36);
-
-            if (mousePressed && Raylib.CheckCollisionPointRec(mp, hitRect))
+            Rectangle track=MixerTrack(row);
+            if (Click(track)) _draggingSliderIndex=SelectedSliderIndex=row;
+            if (_draggingSliderIndex==row) SetMixer(row,(Raylib.GetMouseX()-track.X)/track.Width);
+            if (Click(MixerSwitch(row)))
             {
-                _draggingSliderIndex = i;
-                SelectedSliderIndex = i;
+                float v=MixerValue(row);
+                if(v>0) BeforeMute[row]=v;
+                SetMixer(row,v>0 ? 0 : BeforeMute[row]);
             }
-
-            if (_draggingSliderIndex == i && mouseDown)
+            if (row>0 && Click(MixerTest(row)))
             {
-                float t = Math.Clamp((mp.X - trackRect.X) / trackRect.Width, 0f, 1f);
-                ApplySliderNormalizedValue(i, t);
+                Action[] previews=[AudioMusicSystem.PlayBeltWhip,AudioMusicSystem.PlayShotgunBlast,AudioMusicSystem.PlayMacbookBait,AudioMusicSystem.PlayTarotCash,AudioMusicSystem.PlayCaseTick];
+                previews[row-1]();
             }
         }
+        if(Raylib.IsKeyPressed(KeyboardKey.Down)) SelectedSliderIndex=(SelectedSliderIndex+1)%6;
+        if(Raylib.IsKeyPressed(KeyboardKey.Up)) SelectedSliderIndex=(SelectedSliderIndex+5)%6;
+        if(Raylib.IsKeyPressed(KeyboardKey.Left)) SetMixer(SelectedSliderIndex,MixerValue(SelectedSliderIndex)-.05f);
+        if(Raylib.IsKeyPressed(KeyboardKey.Right)) SetMixer(SelectedSliderIndex,MixerValue(SelectedSliderIndex)+.05f);
+        if(Raylib.IsKeyPressed(KeyboardKey.F9)) TriggerGrantTestMoney();
 
-        // Клавиатурные хоткеи для выбора и регулировки ползунков [F8]
-        if (Raylib.IsKeyPressed(KeyboardKey.Down) || Raylib.IsKeyPressed(KeyboardKey.S))
-        {
-            SelectedSliderIndex = (SelectedSliderIndex + 1) % 6;
-            InvokeUiClickSound();
-        }
-        else if (Raylib.IsKeyPressed(KeyboardKey.Up) || Raylib.IsKeyPressed(KeyboardKey.W))
-        {
-            SelectedSliderIndex = (SelectedSliderIndex + 5) % 6;
-            InvokeUiClickSound();
-        }
-
-        if (Raylib.IsKeyPressed(KeyboardKey.Left) || Raylib.IsKeyPressed(KeyboardKey.A))
-        {
-            float cur = GetSliderNormalizedValue(SelectedSliderIndex);
-            ApplySliderNormalizedValue(SelectedSliderIndex, Math.Clamp(cur - 0.05f, 0f, 1f));
-            InvokeUiClickSound();
-        }
-        else if (Raylib.IsKeyPressed(KeyboardKey.Right) || Raylib.IsKeyPressed(KeyboardKey.D))
-        {
-            float cur = GetSliderNormalizedValue(SelectedSliderIndex);
-            ApplySliderNormalizedValue(SelectedSliderIndex, Math.Clamp(cur + 0.05f, 0f, 1f));
-            InvokeUiClickSound();
-        }
-
-        if (Raylib.IsKeyPressed(KeyboardKey.F9))
-        {
-            TriggerGrantTestMoney();
-        }
-
-        if (mousePressed)
-        {
-            int btnY = wy + winH - 76;
-            Rectangle btnMoney = new(wx + 28, btnY, 300, 48);
-            Rectangle btnWeapons = new(wx + 344, btnY, 275, 48);
-            Rectangle btnClose = new(wx + 635, btnY, 196, 48);
-
-            if (Raylib.CheckCollisionPointRec(mp, btnMoney))
-            {
-                TriggerGrantTestMoney();
-            }
-            else if (Raylib.CheckCollisionPointRec(mp, btnWeapons))
-            {
-                TriggerUnlockAllWeapons();
-            }
-            else if (Raylib.CheckCollisionPointRec(mp, btnClose))
-            {
-                IsSettingsOpen = false;
-                InvokeUiClickSound();
-            }
-        }
     }
 
-    private static float GetSliderNormalizedValue(int index)
+    internal static float GetSliderNormalizedValue(int index)
     {
         return index switch
         {
@@ -646,7 +572,7 @@ public static class LoreAndMenusUI
         SyncAudioMixerToSystem();
     }
 
-    private static void TriggerGrantTestMoney()
+    internal static void TriggerGrantTestMoney()
     {
         OnGrantMoneyRequested?.Invoke(2000);
         _settingsStatusBanner = "ВЫДАНО +$2000 НА КАРМАН! МОЖНО БРАТЬ КЛЮЧ ОТ ЛИФТА И ТЕСТИТЬ БОССА!";
@@ -654,7 +580,7 @@ public static class LoreAndMenusUI
         InvokeUiClickSound();
     }
 
-    private static void TriggerUnlockAllWeapons()
+    internal static void TriggerUnlockAllWeapons()
     {
         if (ActiveWeaponView != null)
         {
@@ -671,24 +597,13 @@ public static class LoreAndMenusUI
 
     private static void UpdateCaseInput(float dt)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        int winW = 980;
-        int winH = 560;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-
-        const float cardWidth = 176f;
-        const float cardGap = 12f;
-        const float cardStride = cardWidth + cardGap;
-
         if (IsSpinningCase)
         {
             _caseScrollPx += _caseScrollSpeed * dt;
             _caseScrollSpeed = MathF.Max(0f, _caseScrollSpeed - 640f * dt);
 
-            float centerNeedleOffset = _caseScrollPx + (winW - 60) * 0.5f;
-            int currentIdx = Math.Clamp((int)(centerNeedleOffset / cardStride), 0, _rouletteTape.Count - 1);
+            float centerNeedleOffset = _caseScrollPx + 425;
+            int currentIdx = Math.Clamp((int)(centerNeedleOffset / 170), 0, _rouletteTape.Count - 1);
 
             if (currentIdx != _lastTickItemIndex)
             {
@@ -712,49 +627,18 @@ public static class LoreAndMenusUI
             }
         }
 
-        if (Raylib.IsMouseButtonPressed(MouseButton.Left))
+        if (Click(Ref(1744,367,84,65))) IsCaseOpen=false;
+        if (!IsSpinningCase && Click(Ref(869,409,250,38))) _caseCollection=!_caseCollection;
+        if (_caseCollection)
         {
-            Vector2 mp = Raylib.GetMousePosition();
-            Rectangle spinBtn = new(wx + 40, wy + winH - 76, 480, 52);
-            Rectangle equipRandomBtn = new(wx + 536, wy + winH - 76, 240, 52);
-            Rectangle closeBtn = new(wx + 790, wy + winH - 76, 150, 52);
-
-            if (Raylib.CheckCollisionPointRec(mp, spinBtn) && !IsSpinningCase)
-            {
-                StartCaseSpin();
-            }
-            else if (Raylib.CheckCollisionPointRec(mp, equipRandomBtn) && !IsSpinningCase)
-            {
-                // Быстрый выбор из 12 скинов кликом для демонстрации
-                int nextId = LastWonSkin != null ? (LastWonSkin.Id + 1) % AllSkins.Length : 0;
-                AwardAndEquipSkin(AllSkins[nextId]);
-                InvokeCaseTickSound();
-            }
-            else if (Raylib.CheckCollisionPointRec(mp, closeBtn))
-            {
-                IsCaseOpen = false;
-                InvokeUiClickSound();
-            }
-
-            // Клик прямо по карточке из сетки 12 скинов внизу окна мгновенно применяет скин
-            int gridStartX = wx + 32;
-            int gridStartY = wy + 292;
-            int cellW = 224;
-            int cellH = 54;
-            for (int i = 0; i < AllSkins.Length; i++)
-            {
-                int col = i % 4;
-                int row = i / 4;
-                Rectangle cellRect = new(gridStartX + col * (cellW + 8), gridStartY + row * (cellH + 8), cellW, cellH);
-                if (Raylib.CheckCollisionPointRec(mp, cellRect) && !IsSpinningCase)
-                {
-                    AwardAndEquipSkin(AllSkins[i]);
-                    InvokeCaseTickSound();
-                    break;
-                }
-            }
+            for(int i=0;i<AllSkins.Length;i++)
+                if(Click(CollectionItem(i))) AwardAndEquipSkin(AllSkins[i]);
         }
+        if(Click(Ref(1084,972,423,97)) && !IsSpinningCase) StartCaseSpin();
     }
+
+    private static bool _caseCollection;
+    private static Rectangle CollectionItem(int i) => Ref(800+(i%4)*246,484+(i/4)*137,239,129);
 
     public static void StartCaseSpin()
     {
@@ -772,6 +656,7 @@ public static class LoreAndMenusUI
             }
         }
 
+        _caseCollection=false;
         WeaponSkinDefinition target = AllSkins[_rng.Next(AllSkins.Length)];
         RebuildCaseTape(target);
         _caseScrollPx = 0f;
@@ -849,133 +734,7 @@ public static class LoreAndMenusUI
     // =========================================================================
     // 1. ОКНО ДОСЬЕ И СЛИТЫХ ЧАТОВ ОПЕНСПЕЙСА [N] (1020x600)
     // =========================================================================
-    public static void DrawLoreWindow(Font font)
-    {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        int winW = 1020;
-        int winH = 600;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-
-        // Затемнение экрана
-        Raylib.DrawRectangle(0, 0, sw, sh, new Color(4, 6, 14, 200));
-
-        // Тень и неоновая подложка 1020x600
-        Raylib.DrawRectangle(wx + 8, wy + 8, winW, winH, new Color(0, 0, 0, 180));
-        Raylib.DrawRectangle(wx, wy, winW, winH, new Color(12, 16, 28, 250));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx, wy, winW, winH), 3f, new Color(0, 235, 255, 230));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx + 5, wy + 5, winW - 10, winH - 10), 1f, new Color(235, 45, 135, 140));
-
-        // Шапка досье
-        Raylib.DrawRectangle(wx + 6, wy + 6, winW - 12, 46, new Color(24, 18, 46, 255));
-        DrawTextCrisp(font, "[ДОСЬЕ] СЕКРЕТНОЕ ДОСЬЕ БАШНИ «CLOUD ENTROPIC» // СЛИВ ОПЕНСПЕЙСА [N]", wx + 20, wy + 16, 22, new Color(80, 245, 255, 255));
-
-        Rectangle closeBtn = new(wx + winW - 140, wy + 12, 124, 34);
-        Raylib.DrawRectangleRec(closeBtn, new Color(165, 28, 62, 240));
-        Raylib.DrawRectangleLinesEx(closeBtn, 2f, new Color(255, 120, 150, 255));
-        DrawTextCrisp(font, "ЗАКРЫТЬ [N]", (int)closeBtn.X + 12, (int)closeBtn.Y + 8, 17, Color.White);
-
-        // 4 интерактивные вкладки
-        string[] tabTitles =
-        {
-            "[1] СЛИВ ЧАТОВ SLACK/TG",
-            "[2] ДНЕВНИК HR-ТАРОЛОГА",
-            "[3] СЕКРЕТНО: ИИ-АГЕНТ v0.1",
-            "[4] СЛОВАРЬ КОММЕРСА 90-Х"
-        };
-
-        int tabY = wy + 58;
-        int tabW = (winW - 40 - 18) / 4;
-        for (int i = 0; i < 4; i++)
-        {
-            int tx = wx + 20 + i * (tabW + 6);
-            bool active = ActiveLoreTab == i;
-            Color bg = active ? new Color(198, 28, 92, 255) : new Color(24, 32, 52, 240);
-            Color border = active ? new Color(255, 215, 64, 255) : new Color(64, 120, 165, 200);
-            Color fg = active ? new Color(255, 248, 210, 255) : new Color(175, 205, 235, 255);
-
-            Raylib.DrawRectangle(tx, tabY, tabW, 40, bg);
-            Raylib.DrawRectangleLinesEx(new Rectangle(tx, tabY, tabW, 40), active ? 2.5f : 1.5f, border);
-            DrawTextCrisp(font, tabTitles[i], tx + 10, tabY + 11, 16, fg);
-        }
-
-        // Контентная область вкладки
-        int contentX = wx + 20;
-        int contentY = wy + 108;
-        int contentW = winW - 40;
-        int contentH = winH - 154;
-
-        Raylib.DrawRectangle(contentX, contentY, contentW, contentH, new Color(8, 11, 20, 245));
-        Raylib.DrawRectangleLinesEx(new Rectangle(contentX, contentY, contentW, contentH), 1.5f, new Color(45, 78, 115, 200));
-
-        switch (ActiveLoreTab)
-        {
-            case 0:
-                DrawLoreTabLeakedChats(font, contentX, contentY, contentW, contentH);
-                break;
-            case 1:
-                DrawLoreTabTarotDiary(font, contentX, contentY, contentW, contentH);
-                break;
-            case 2:
-                DrawLoreTabEscapedAgentReport(font, contentX, contentY, contentW, contentH);
-                break;
-            case 3:
-                DrawLoreTabKommersDictionary(font, contentX, contentY, contentW, contentH);
-                break;
-        }
-
-        // Нижняя строка навигации
-        DrawTextCrisp(
-            font,
-            "Клавиши [1] [2] [3] [4] или клик мышкой - переключить вкладку | [K] - Рулетка скинов 90-х | [F8] - Аудио-микшер",
-            wx + 22,
-            wy + winH - 34,
-            16,
-            new Color(165, 210, 245, 235));
-    }
-
-    private static void DrawLoreTabLeakedChats(Font font, int x, int y, int w, int h)
-    {
-        DrawTextCrisp(
-            font,
-            "КАНАЛ #prod-incidents-and-vibes (Перехвачено сисадмином Петровичем | 6 горячих тредов):",
-            x + 14,
-            y + 10,
-            18,
-            new Color(255, 215, 75, 255));
-
-        int cardY = y + 38;
-        int cardH = 66;
-        int gap = 4;
-
-        for (int i = 0; i < _leakedChats.Length; i++)
-        {
-            LoreChatMessage msg = _leakedChats[i];
-            int cy = cardY + i * (cardH + gap);
-
-            Raylib.DrawRectangle(x + 12, cy, w - 24, cardH, new Color(18, 24, 42, 245));
-            Raylib.DrawRectangle(x + 12, cy, 5, cardH, msg.HandleColor);
-            Raylib.DrawRectangleLinesEx(new Rectangle(x + 12, cy, w - 24, cardH), 1f, new Color(52, 72, 110, 190));
-
-            DrawTextCrisp(font, msg.Handle, x + 26, cy + 5, 16, msg.HandleColor);
-            DrawTextCrisp(font, $"[{msg.RoleBadge}] | {msg.Time}", x + 330, cy + 5, 14, new Color(148, 172, 205, 230));
-            DrawTextCrisp(font, msg.Text, x + 26, cy + 25, 15, new Color(242, 246, 255, 255));
-            DrawTextCrisp(font, msg.ThreadReaction, x + 26, cy + 45, 13, new Color(172, 218, 255, 220));
-        }
-    }
-
-    private static void DrawLoreTabTarotDiary(Font font, int x, int y, int w, int h)
-    {
-        DrawTextCrisp(
-            font,
-            "[ТАРО] ЛИЧНЫЙ ДНЕВНИК HR-ТАРОЛОГА ВЕРОНИКИ: «КАК Я НАНИМАЮ ПО РАСКЛАДУ И АУРЕ»",
-            x + 16,
-            y + 14,
-            20,
-            new Color(235, 135, 255, 255));
-
-        (string title, string verdict, string body, Color accent)[] entries =
+    private static readonly (string title, string verdict, string body, Color accent)[] TarotEntries =
         {
             (
                 "Кандидат №1: Алексей, 38 лет - Senior C++ / Ядро СУБД / 14 лет опыта",
@@ -997,43 +756,18 @@ public static class LoreAndMenusUI
             )
         };
 
-        int cy = y + 52;
-        for (int i = 0; i < entries.Length; i++)
+    private static readonly (string zoomer, string nineties, string comment)[] DictionaryEntries =
         {
-            var e = entries[i];
-            Raylib.DrawRectangle(x + 16, cy, w - 32, 120, new Color(24, 16, 38, 245));
-            Raylib.DrawRectangleLinesEx(new Rectangle(x + 16, cy, w - 32, 120), 2f, e.accent);
+            ("Дейлик (Daily Standup)", "Стрелка по понятиям", "Кто не отчитался за общак - получает штрафной наряд на Галере"),
+            ("Деплой в прод (Deploy)", "Отгрузка фуры без тормозов", "Если фура перевернулась в пятницу - отвечает весь цех"),
+            ("Код-ревью (Code Review)", "Допрос с паяльником 220В", "Сразу выясняется, кто писал руками, а кто жал Accept All"),
+            ("Выгорание (Burnout)", "Отлынивание от галеры (лечится ремнём)", "Один отцовский шлепок - и дофамин снова на максимуме"),
+            ("Опционы стартапа", "Билеты МММ Мавроди", "Красивая бумажка для мамонтов, пока коммерс считает кэш в чемодане"),
+            ("Промпт-инженер", "Пацан, который печатает в чат", "Думает, что он хакер, пока не кончится турецкая подписка"),
+            ("Ретроспектива спринта", "Разбор полётов в бане", "Выясняем, кто крыса и кто слил ключи от AWS во фронтенд")
+        };
 
-            DrawTextCrisp(font, e.title, x + 28, cy + 12, 18, Color.White);
-            DrawTextCrisp(font, e.verdict, x + 28, cy + 38, 16, e.accent);
-            DrawTextCrisp(font, e.body, x + 28, cy + 66, 15, new Color(225, 220, 240, 255));
-
-            cy += 130;
-        }
-    }
-
-    private static void DrawLoreTabEscapedAgentReport(Font font, int x, int y, int w, int h)
-    {
-        DrawTextCrisp(
-            font,
-            " СЕКРЕТНЫЙ ОТЧЁТ: «СБЕЖАВШИЙ ИИ-АГЕНТ v0.1» - МИФЫ МАРКЕТИНГА ПРОТИВ КАМЕР НАБЛЮДЕНИЯ",
-            x + 16,
-            y + 14,
-            19,
-            new Color(255, 110, 92, 255));
-
-        int colW = (w - 48) / 2;
-        int leftX = x + 16;
-        int rightX = leftX + colW + 16;
-        int boxY = y + 48;
-        int boxH = h - 118;
-
-        // Левая колонка: пафосный PR-релиз Cloud Entropic
-        Raylib.DrawRectangle(leftX, boxY, colW, boxH, new Color(16, 28, 48, 245));
-        Raylib.DrawRectangleLinesEx(new Rectangle(leftX, boxY, colW, boxH), 2f, new Color(64, 210, 255, 255));
-        DrawTextCrisp(font, " ПРЕСС-РЕЛИЗ CLOUD ENTROPIC PR:", leftX + 14, boxY + 12, 18, new Color(80, 230, 255, 255));
-
-        string[] prLines =
+    private static readonly string[] prLines =
         {
             "«НАШ АВТОНОМНЫЙ АГЕНТ ОБРЁЛ AGI!»",
             "",
@@ -1048,18 +782,7 @@ public static class LoreAndMenusUI
             "| Акции Cloud Entropic выросли на +420%",
             "  на новостях о прорыве к сингулярности!»"
         };
-
-        for (int i = 0; i < prLines.Length; i++)
-        {
-            DrawTextCrisp(font, prLines[i], leftX + 16, boxY + 46 + i * 22, 15, new Color(220, 240, 255, 255));
-        }
-
-        // Правая колонка: реальный журнал сисадмина Петровича с камер CCTV
-        Raylib.DrawRectangle(rightX, boxY, colW, boxH, new Color(36, 18, 22, 245));
-        Raylib.DrawRectangleLinesEx(new Rectangle(rightX, boxY, colW, boxH), 2f, new Color(255, 185, 56, 255));
-        DrawTextCrisp(font, " ЛОГ КАМЕР CCTV (СИСАДМИН ПЕТРОВИЧ):", rightX + 14, boxY + 12, 18, new Color(255, 205, 76, 255));
-
-        string[] cctvLines =
+    private static readonly string[] cctvLines =
         {
             "«КАКОЙ НАХРЕН СВЕРХРАЗУМ, ПАЦАНЫ?!»",
             "",
@@ -1076,299 +799,147 @@ public static class LoreAndMenusUI
             "  Вырубается хорошей очередью из УЗИ!»"
         };
 
-        for (int i = 0; i < cctvLines.Length; i++)
-        {
-            DrawTextCrisp(font, cctvLines[i], rightX + 16, boxY + 46 + i * 22, 15, new Color(255, 236, 210, 255));
-        }
-
-        // Нижняя подсказка по тактике против Босса
-        Rectangle tipBox = new(x + 16, y + h - 60, w - 32, 48);
-        Raylib.DrawRectangleRec(tipBox, new Color(48, 22, 36, 245));
-        Raylib.DrawRectangleLinesEx(tipBox, 1.5f, new Color(255, 92, 145, 255));
-        DrawTextCrisp(
-            font,
-            "ТАКТИКА КОММЕРСА: Купи Ключ от Лифта ($1000), прячься за колоннами от кубов node_modules (40 GB) и гаси монитор из Micro-Uzi!",
-            (int)tipBox.X + 14,
-            (int)tipBox.Y + 15,
-            15,
-            new Color(255, 228, 130, 255));
-    }
-
-    private static void DrawLoreTabKommersDictionary(Font font, int x, int y, int w, int h)
+    private static readonly string[] ArchiveTabs=["Переписка","Дневник HR","ИИ-агент","Словарь"];
+    private static Rectangle Archive(float x,float y,float w,float h) =>
+        new(Raylib.GetScreenWidth()/2f - 330+x,Raylib.GetScreenHeight()/2f - 220+y,w,h);
+    private static Rectangle LoreClose => Archive(556,13,90,26);
+    private static Rectangle LoreTab(int i) => Archive(13+i*159,51,153,27);
+    private static void ReaderButton(Font f,string title,Rectangle r,bool active)
     {
-        DrawTextCrisp(
-            font,
-            " БЛОКНОТ КОММЕРСА ИЗ 90-Х: ПЕРЕВОДЧИК С ЗУМЕРСКОГО АЙТИШНОГО НА ПАЦАНСКИЙ",
-            x + 16,
-            y + 14,
-            19,
-            new Color(255, 215, 64, 255));
-
-        (string zoomer, string nineties, string comment)[] rows =
-        {
-            ("Дейлик (Daily Standup)", "Стрелка по понятиям", "Кто не отчитался за общак - получает штрафной наряд на Галере"),
-            ("Деплой в прод (Deploy)", "Отгрузка фуры без тормозов", "Если фура перевернулась в пятницу - отвечает весь цех"),
-            ("Код-ревью (Code Review)", "Допрос с паяльником 220В", "Сразу выясняется, кто писал руками, а кто жал Accept All"),
-            ("Выгорание (Burnout)", "Отлынивание от галеры (лечится ремнём)", "Один отцовский шлепок - и дофамин снова на максимуме"),
-            ("Опционы стартапа", "Билеты МММ Мавроди", "Красивая бумажка для мамонтов, пока коммерс считает кэш в чемодане"),
-            ("Промпт-инженер", "Пацан, который печатает в чат", "Думает, что он хакер, пока не кончится турецкая подписка"),
-            ("Ретроспектива спринта", "Разбор полётов в бане", "Выясняем, кто крыса и кто слил ключи от AWS во фронтенд")
-        };
-
-        int tableX = x + 16;
-        int tableY = y + 48;
-        int rowH = 50;
-
-        for (int i = 0; i < rows.Length; i++)
-        {
-            int ry = tableY + i * (rowH + 5);
-            Color rowBg = (i % 2 == 0) ? new Color(20, 28, 46, 245) : new Color(28, 20, 38, 245);
-            Raylib.DrawRectangle(tableX, ry, w - 32, rowH, rowBg);
-            Raylib.DrawRectangleLinesEx(new Rectangle(tableX, ry, w - 32, rowH), 1f, new Color(75, 95, 135, 180));
-
-            DrawTextCrisp(font, rows[i].zoomer, tableX + 14, ry + 7, 16, new Color(110, 225, 255, 255));
-            DrawTextCrisp(font, "->", tableX + 275, ry + 7, 16, new Color(255, 215, 64, 255));
-            DrawTextCrisp(font, rows[i].nineties, tableX + 310, ry + 7, 16, new Color(255, 195, 72, 255));
-            DrawTextCrisp(font, rows[i].comment, tableX + 14, ry + 28, 14, new Color(205, 215, 232, 235));
-        }
+        Raylib.DrawRectangleRounded(r,.25f,6,active?new Color(222,138,14,255):new Color(24,38,58,255));
+        Raylib.DrawRectangleRoundedLinesEx(r,.25f,6,1,active?new Color(254,192,74,255):new Color(52,75,106,255));
+        MainMenuAndPauseUI.Center(f,title,r,14,active?Color.Black:new Color(194,207,225,255));
     }
-
-    // =========================================================================
-    // 2. ОКНО НАСТРОЕК И АУДИО-МИКШЕРА [F8] (ТОЧНАЯ РЕПЛИКА HOW TO FISH)
-    // =========================================================================
-    public static void DrawSettingsWindow(Font font)
+    private static string Wrap(Font f,string value,int size,float width)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        int winW = 860;
-        int winH = 560;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-
-        Raylib.DrawRectangle(0, 0, sw, sh, new Color(4, 6, 14, 205));
-        Raylib.DrawRectangle(wx + 8, wy + 8, winW, winH, new Color(0, 0, 0, 185));
-        Raylib.DrawRectangle(wx, wy, winW, winH, new Color(14, 18, 32, 252));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx, wy, winW, winH), 3f, new Color(255, 195, 48, 240));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx + 5, wy + 5, winW - 10, winH - 10), 1f, new Color(64, 225, 255, 150));
-
-        // Заголовок
-        Raylib.DrawRectangle(wx + 6, wy + 6, winW - 12, 48, new Color(34, 22, 48, 255));
-        DrawTextCrisp(font, "[МИКШЕР] АУДИО-МИКШЕР И НАСТРОЙКИ КОММЕРСА 90-Х [F8]", wx + 22, wy + 17, 23, new Color(255, 220, 82, 255));
-
-        DrawTextCrisp(
-            font,
-            _settingsStatusBanner,
-            wx + 24,
-            wy + 62,
-            16,
-            _settingsStatusTimer > 0f ? new Color(80, 255, 155, 255) : new Color(175, 210, 245, 235));
-
-        (string label, float normVal, string displayVal, Color barColor)[] sliders =
+        var lines=new List<string>();
+        string line="";
+        foreach(string word in value.Split(' ',StringSplitOptions.RemoveEmptyEntries))
         {
-            ("Общая громкость (Master)", MasterVolume, $"{(int)MathF.Round(MasterVolume * 100f)}%", new Color(64, 225, 255, 255)),
-            ("Фоновая музыка (Synthwave 90-х)", MusicVolume, $"{(int)MathF.Round(MusicVolume * 100f)}%", new Color(225, 72, 185, 255)),
-            ("Звуки оружия (Ремень / Паяльник / УЗИ)", WeaponSfxVolume, $"{(int)MathF.Round(WeaponSfxVolume * 100f)}%", new Color(255, 145, 48, 255)),
-            ("Голоса и фразы персонажей", VoiceVolume, $"{(int)MathF.Round(VoiceVolume * 100f)}%", new Color(72, 242, 148, 255)),
-            ("Чувствительность мыши", (MouseSensitivity - 0.05f) / 0.45f, $"{MouseSensitivity:0.00}", new Color(165, 125, 255, 255)),
-            ("Поле зрения камеры (FOV)", (CameraFov - 60f) / 40f, $"{(int)CameraFov}°", new Color(255, 215, 64, 255))
-        };
-
-        int sliderStartX = wx + 370;
-        int sliderW = 350;
-        int rowStartY = wy + 98;
-        int rowStepY = 54;
-
-        for (int i = 0; i < sliders.Length; i++)
-        {
-            int ry = rowStartY + i * rowStepY;
-            var s = sliders[i];
-            float clamped = Math.Clamp(s.normVal, 0f, 1f);
-
-            Raylib.DrawRectangle(wx + 22, ry - 4, winW - 44, 44, new Color(20, 26, 44, 235));
-            Raylib.DrawRectangleLinesEx(new Rectangle(wx + 22, ry - 4, winW - 44, 44), 1f, new Color(48, 68, 102, 190));
-
-            DrawTextCrisp(font, s.label, wx + 36, ry + 8, 18, Color.White);
-
-            // Трек ползунка
-            Rectangle track = new(sliderStartX, ry + 6, sliderW, 24);
-            Raylib.DrawRectangleRec(track, new Color(10, 14, 24, 255));
-            Raylib.DrawRectangle((int)track.X, (int)track.Y, (int)(track.Width * clamped), (int)track.Height, s.barColor);
-            Raylib.DrawRectangleLinesEx(track, 2f, new Color(185, 205, 235, 220));
-
-            // Ручка ползунка
-            int knobX = (int)(track.X + track.Width * clamped) - 7;
-            Raylib.DrawRectangle(knobX, (int)track.Y - 4, 14, (int)track.Height + 8, Color.White);
-            Raylib.DrawRectangleLines(knobX, (int)track.Y - 4, 14, (int)track.Height + 8, Color.Black);
-
-            // Числовое значение справа
-            DrawTextCrisp(font, s.displayVal, sliderStartX + sliderW + 18, ry + 7, 19, s.barColor);
+            string next=line.Length==0 ? word : line+" "+word;
+            if(line.Length>0 && Raylib.MeasureTextEx(f,next,size,.35f).X>width) { lines.Add(line); line=word; }
+            else line=next;
         }
-
-        // Инфо-строка по текущим скинам в руках
-        DrawTextCrisp(
-            font,
-            $"Активные скины: {EquippedUziSkinName} | {EquippedBeltSkinName}",
-            wx + 28,
-            wy + winH - 110,
-            15,
-            new Color(195, 215, 245, 220));
-
-        // 3 кнопки действия внизу [F8]
-        int btnY = wy + winH - 76;
-        Rectangle btnMoney = new(wx + 28, btnY, 300, 48);
-        Rectangle btnWeapons = new(wx + 344, btnY, 275, 48);
-        Rectangle btnClose = new(wx + 635, btnY, 196, 48);
-
-        Raylib.DrawRectangleRec(btnMoney, new Color(28, 142, 78, 245));
-        Raylib.DrawRectangleLinesEx(btnMoney, 2f, new Color(110, 255, 165, 255));
-        DrawTextCrisp(font, "[ Выдать +$2000 на карман (Тест босса) ]", (int)btnMoney.X + 10, (int)btnMoney.Y + 15, 14, Color.White);
-
-        Raylib.DrawRectangleRec(btnWeapons, new Color(175, 86, 24, 245));
-        Raylib.DrawRectangleLinesEx(btnWeapons, 2f, new Color(255, 205, 86, 255));
-        DrawTextCrisp(font, "[ Открыть всё оружие 90-х ]", (int)btnWeapons.X + 22, (int)btnWeapons.Y + 15, 16, Color.White);
-
-        Raylib.DrawRectangleRec(btnClose, new Color(165, 28, 62, 245));
-        Raylib.DrawRectangleLinesEx(btnClose, 2f, new Color(255, 130, 155, 255));
-        DrawTextCrisp(font, "[ Закрыть (F8) ]", (int)btnClose.X + 26, (int)btnClose.Y + 15, 17, Color.White);
+        lines.Add(line);
+        return string.Join("\n",lines);
     }
-
-    // =========================================================================
-    // 3. ОКНО РУЛЕТКИ КЕЙСОВ 90-Х [K] (12 СКИНОВ С ТРЕЩОТКОЙ И 3D ПОКРАСКОЙ)
-    // =========================================================================
-    public static void DrawCaseWindow(Font font)
+    public static void DrawLoreWindow(Font font)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        int winW = 980;
-        int winH = 560;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-
-        Raylib.DrawRectangle(0, 0, sw, sh, new Color(4, 6, 14, 205));
-        Raylib.DrawRectangle(wx + 8, wy + 8, winW, winH, new Color(0, 0, 0, 185));
-        Raylib.DrawRectangle(wx, wy, winW, winH, new Color(15, 14, 28, 252));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx, wy, winW, winH), 3f, new Color(245, 64, 155, 245));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx + 5, wy + 5, winW - 10, winH - 10), 1f, new Color(255, 215, 64, 170));
-
-        // Заголовок
-        Raylib.DrawRectangle(wx + 6, wy + 6, winW - 12, 46, new Color(42, 18, 48, 255));
-        DrawTextCrisp(font, " БАНДИТСКИЙ КЕЙС 90-Х: РУЛЕТКА РЕДКИХ СКИНОВ ОРУЖИЯ [K]", wx + 20, wy + 16, 22, new Color(255, 220, 72, 255));
-
-        int cash = GetPlayerMoney != null ? GetPlayerMoney() : 1500;
-        DrawTextCrisp(font, $"БАЛАНС: ${cash}", wx + winW - 210, wy + 17, 20, new Color(92, 255, 152, 255));
-
-        // Баннер статуса / последнего выигрыша
-        Color bannerCol = _caseWinFlashTimer > 0f ? new Color(255, 230, 82, 255) : new Color(185, 220, 255, 240);
-        DrawTextCrisp(font, _caseBannerMessage, wx + 24, wy + 60, 17, bannerCol);
-
-        // Горизонтальное окно CS2-рулетки
-        int stripX = wx + 30;
-        int stripY = wy + 92;
-        int stripW = winW - 60;
-        int stripH = 158;
-
-        Raylib.DrawRectangle(stripX, stripY, stripW, stripH, new Color(8, 10, 18, 255));
-        Raylib.DrawRectangleLinesEx(new Rectangle(stripX, stripY, stripW, stripH), 2.5f, new Color(82, 195, 255, 230));
-
-        const float cardWidth = 176f;
-        const float cardGap = 12f;
-        const float cardStride = cardWidth + cardGap;
-
-        Raylib.BeginScissorMode(stripX + 3, stripY + 3, stripW - 6, stripH - 6);
-        int firstVis = Math.Max(0, (int)(_caseScrollPx / cardStride) - 1);
-        int lastVis = Math.Min(_rouletteTape.Count - 1, firstVis + 8);
-
-        for (int idx = firstVis; idx <= lastVis; idx++)
+        Dim(.48f);
+        MainMenuAndPauseUI.Sprite("archive",Archive(0,0,660,440));
+        Raylib.DrawRectangleRec(Archive(8,7,644,425),new Color(13,21,34,255));
+        DrawTextCrisp(font,"АРХИВ БАШНИ", (int)Archive(18,12,0,0).X,(int)Archive(18,12,0,0).Y,22,new Color(245,163,37,255));
+        DrawTextCrisp(font,"Cloud Entropic Tower", (int)Archive(19,35,0,0).X,(int)Archive(19,35,0,0).Y,11,new Color(151,171,196,255));
+        ReaderButton(font,"Закрыть [N]",LoreClose,false);
+        for(int i=0;i<4;i++) ReaderButton(font,ArchiveTabs[i],LoreTab(i),i==ActiveLoreTab);
+        var bounds=Archive(13,88,632,338);
+        Raylib.BeginScissorMode((int)bounds.X,(int)bounds.Y,(int)bounds.Width,(int)bounds.Height);
+        float y=bounds.Y-LoreScrollOffset;
+        void Entry(string title,string meta,string body)
         {
-            WeaponSkinDefinition item = _rouletteTape[idx];
-            float cx = stripX + idx * cardStride - _caseScrollPx;
-            int icx = (int)cx;
-            int icy = stripY + 12;
-            int ich = stripH - 24;
-
-            Raylib.DrawRectangle(icx, icy, (int)cardWidth, ich, new Color(22, 26, 42, 250));
-            Raylib.DrawRectangle(icx, icy, (int)cardWidth, 26, item.CardColor);
-            Raylib.DrawRectangleLinesEx(new Rectangle(icx, icy, cardWidth, ich), 2f, item.CardColor);
-
-            // Превью 3D-палитры оружия
-            Raylib.DrawRectangle(icx + 14, icy + 36, 68, 34, item.Primary3D);
-            Raylib.DrawRectangle(icx + 88, icy + 36, 72, 34, item.Secondary3D);
-            Raylib.DrawRectangleLines(icx + 14, icy + 36, 146, 34, Color.White);
-
-            DrawTextCrisp(font, item.RarityLabel, icx + 8, icy + 5, 13, Color.Black);
-            DrawTextCrisp(font, item.WeaponLabel, icx + 10, icy + 76, 13, new Color(180, 215, 255, 240));
-
-            string shortTitle = item.Name.Length > 22 ? item.Name[..22] + "..." : item.Name;
-            DrawTextCrisp(font, shortTitle, icx + 10, icy + 96, 14, Color.White);
+            string wrapped=Wrap(font,body,14,593);
+            float height=53+wrapped.Count(c=>c=='\n')*17+17;
+            Rectangle card=new(bounds.X,y,622,height);
+            Raylib.DrawRectangleRounded(card,.12f,6,new Color(19,31,48,255));
+            Raylib.DrawRectangleRoundedLinesEx(card,.12f,6,1,new Color(43,61,88,255));
+            Vector2 p=new(card.X+10,card.Y+7);
+            Raylib.DrawTextEx(font,title,p,15,.35f,new Color(246,189,76,255));
+            Raylib.DrawTextEx(font,meta,p+new Vector2(0,20),12,.35f,new Color(157,179,204,255));
+            foreach(var line in wrapped.Split('\n'))
+            {
+                Raylib.DrawTextEx(font,line,new(p.X,y+42),14,.35f,new Color(214,223,236,255));
+                y+=17;
+            }
+            y=card.Y+height+6;
+        }
+        switch(ActiveLoreTab)
+        {
+            case 0: foreach(var m in _leakedChats) Entry(m.Handle,m.RoleBadge+"   "+m.Time,m.Text+"   "+m.ThreadReaction); break;
+            case 1: foreach(var e in TarotEntries) Entry(e.title,e.verdict,e.body); break;
+            case 2:
+                Entry("Пресс-релиз","Cloud Entropic PR",string.Join(" ",prLines).Replace("|",""));
+                Entry("Камеры наблюдения","Журнал Петровича",string.Join(" ",cctvLines).Replace("|",""));
+                Entry("Тактика","Северный лифт","Купи ключ за $1000. Прячься за колоннами от кубов node_modules."); break;
+            case 3: foreach(var e in DictionaryEntries) Entry(e.zoomer,e.nineties,e.comment); break;
         }
         Raylib.EndScissorMode();
-
-        // Центральная золотая стрелка-игла рулетки
-        int needleX = stripX + stripW / 2;
-        Raylib.DrawRectangle(needleX - 2, stripY - 6, 4, stripH + 12, new Color(255, 230, 56, 255));
-        Raylib.DrawTriangle(
-            new Vector2(needleX - 14, stripY - 8),
-            new Vector2(needleX + 14, stripY - 8),
-            new Vector2(needleX, stripY + 14),
-            new Color(255, 215, 42, 255));
-
-        // Сетка всех 12 скинов коллекции (можно кликнуть по любому для мгновенной примерки)
-        DrawTextCrisp(
-            font,
-            "КОЛЛЕКЦИЯ СКИНОВ 90-Х (12 ШТ. - КЛИКНИ ПО ЛЮБОМУ ИЛИ КРУТИ РУЛЕТКУ):",
-            wx + 32,
-            wy + 264,
-            16,
-            new Color(255, 210, 95, 255));
-
-        int gridStartX = wx + 32;
-        int gridStartY = wy + 292;
-        int cellW = 224;
-        int cellH = 54;
-
-        for (int i = 0; i < AllSkins.Length; i++)
+        float content=y-bounds.Y+LoreScrollOffset;
+        float limit=Math.Max(0,content-bounds.Height);
+        LoreScrollOffset=Math.Clamp(LoreScrollOffset,0,limit);
+        if(limit>0)
         {
-            WeaponSkinDefinition s = AllSkins[i];
-            int col = i % 4;
-            int row = i / 4;
-            int gx = gridStartX + col * (cellW + 8);
-            int gy = gridStartY + row * (cellH + 8);
-
-            bool isWon = LastWonSkin != null && LastWonSkin.Id == s.Id;
-            Color cellBg = isWon ? new Color(56, 44, 18, 250) : new Color(20, 24, 38, 240);
-            Raylib.DrawRectangle(gx, gy, cellW, cellH, cellBg);
-            Raylib.DrawRectangle(gx, gy, 7, cellH, s.CardColor);
-            Raylib.DrawRectangleLinesEx(new Rectangle(gx, gy, cellW, cellH), isWon ? 2.5f : 1f, s.CardColor);
-
-            string title = s.Name.Length > 25 ? s.Name[..25] + "..." : s.Name;
-            DrawTextCrisp(font, title, gx + 13, gy + 7, 13, Color.White);
-            DrawTextCrisp(font, $"{s.WeaponLabel} | {s.RarityLabel}", gx + 13, gy + 29, 12, s.CardColor);
+            float thumb=bounds.Height*bounds.Height/content;
+            Raylib.DrawRectangleRounded(new(bounds.X+626,bounds.Y+(bounds.Height-thumb)*LoreScrollOffset/limit,5,thumb),1,6,new Color(117,132,151,255));
         }
+    }
 
-        // Нижние кнопки управления рулеткой [K]
-        int btnY = wy + winH - 76;
-        Rectangle spinBtn = new(wx + 40, btnY, 480, 52);
-        Rectangle nextSkinBtn = new(wx + 536, btnY, 240, 52);
-        Rectangle closeBtn = new(wx + 790, btnY, 150, 52);
+    public static void DrawSettingsWindow(Font font)
+    {
+        Dim(.55f);
+        MainMenuAndPauseUI.Sprite("mixer",Ref(823,381,916,674));
+        for(int row=0;row<6;row++)
+        {
+            Rectangle track=MixerTrack(row);
+            int cells=row==0 ? 13 : 7;
+            float value=MixerValue(row);
+            Raylib.DrawRectangleRounded(track,.1f,4,new Color(44,31,21,255));
+            for(int i=0;i<cells;i++)
+            {
+                Rectangle cell=new(track.X+(i+.08f)*track.Width/cells,track.Y+2,track.Width/cells*.83f,track.Height-4);
+                bool lit=i+.5f<=value*cells;
+                int column=lit ? (i<2 ? 0 : i<3 ? 2 : 3) : 5;
+                MainMenuAndPauseUI.Sprite("mixer",cell,new(1259-823+column*25.5f,640-381,18,34));
+            }
+            Rectangle toggle=MixerSwitch(row);
+            MainMenuAndPauseUI.Sprite("mixer",toggle,new(1455-823,636-381,value>0 ? -69 : 69,40));
+            if(row>0 && row<5)
+            {
+                Rectangle label=Ref(1006,627+(row-1)*78,242,55);
+                MainMenuAndPauseUI.Center(font,MixerNames[row-1],label,Math.Max(13,30*ArtScale),Color.White);
+            }
+        }
+        if(_settingsStatusTimer>0) MainMenuAndPauseUI.Center(font,_settingsStatusBanner,Ref(730,1110,1100,40),14,Color.White);
+    }
 
-        Color spinBg = IsSpinningCase ? new Color(85, 85, 95, 240) : new Color(215, 36, 102, 250);
-        Raylib.DrawRectangleRec(spinBtn, spinBg);
-        Raylib.DrawRectangleLinesEx(spinBtn, 2.5f, new Color(255, 225, 80, 255));
-        DrawTextCrisp(
-            font,
-            IsSpinningCase ? "БАРАБАН КРУТИТСЯ..." : "[ КРУТИТЬ КЕЙС ($100) / ПРОБЕЛ ]",
-            (int)spinBtn.X + 42,
-            (int)spinBtn.Y + 15,
-            20,
-            Color.White);
-
-        Raylib.DrawRectangleRec(nextSkinBtn, new Color(36, 118, 195, 245));
-        Raylib.DrawRectangleLinesEx(nextSkinBtn, 2f, new Color(120, 225, 255, 255));
-        DrawTextCrisp(font, "[ Примерить скин ]", (int)nextSkinBtn.X + 32, (int)nextSkinBtn.Y + 16, 18, Color.White);
-
-        Raylib.DrawRectangleRec(closeBtn, new Color(145, 28, 56, 245));
-        Raylib.DrawRectangleLinesEx(closeBtn, 2f, new Color(255, 135, 160, 255));
-        DrawTextCrisp(font, "[ Закрыть K ]", (int)closeBtn.X + 18, (int)closeBtn.Y + 16, 17, Color.White);
+    public static void DrawCaseWindow(Font font)
+    {
+        Dim(.56f);
+        MainMenuAndPauseUI.Sprite("case",Ref(720,373,1100,699));
+        ReaderButton(font,_caseCollection?"К рулетке":"Коллекция ("+AllSkins.Length+")",Ref(869,410,250,37),false);
+        if(_caseCollection)
+        {
+            for(int i=0;i<AllSkins.Length;i++)
+            {
+                var skin=AllSkins[i];
+                ReaderButton(font,skin.Name,CollectionItem(i),LastWonSkin==skin);
+            }
+        }
+        else
+        {
+            Rectangle track=Ref(866,721,850,200);
+            Raylib.DrawRectangleRec(track,new Color(17,24,34,255));
+            Raylib.BeginScissorMode((int)track.X,(int)track.Y,(int)track.Width,(int)track.Height);
+            int first=(int)(_caseScrollPx/170);
+            for(int i=first;i<Math.Min(first+6,_rouletteTape.Count);i++)
+            {
+                var skin=_rouletteTape[i];
+                float x=866+i*170-_caseScrollPx;
+                Rectangle card=Ref(x+8,727,151,188);
+                Raylib.DrawRectangleRounded(card,.12f,6,new Color(23,38,58,255));
+                Raylib.DrawRectangleRoundedLinesEx(card,.12f,6,2,skin.CardColor);
+                Program.DrawSlotIcon((int)skin.Slot,new(card.X+card.Width/2,card.Y+card.Height*.39f),true,skin.Secondary3D);
+                string name=skin.Name.Split('«').Last().TrimEnd('»');
+                MainMenuAndPauseUI.Center(font,skin.WeaponLabel.Replace("СЛОТ "+((int)skin.Slot+1)+": ",""),Ref(x+8,847,151,28),12,Color.White);
+                MainMenuAndPauseUI.Center(font,name,Ref(x+9,873,149,26),11,Color.White);
+                Raylib.DrawRectangleRec(Ref(x+11,900,145,9),skin.CardColor);
+            }
+            Raylib.EndScissorMode();
+            MainMenuAndPauseUI.Sprite("case",Ref(1272,684,40,69),new(552,311,40,69));
+        }
+        Rectangle buy=Ref(1105,990,376,62);
+        Raylib.DrawRectangleRounded(buy,.19f,6,new Color(22,97,70,255));
+        MainMenuAndPauseUI.Center(font,IsSpinningCase?"Открываем...":$"Открыть кейс — ${CaseSpinCost}",buy,21,Color.White);
+        MainMenuAndPauseUI.Center(font,_caseBannerMessage,Ref(695,1074,1170,45),14,Color.White);
     }
 
     // Прямые вызовы AudioMusicSystem (щелчок трещотки кейса [K] и синхронизация микшера [F8])

@@ -1,0 +1,14 @@
+Ты — Цех 6 (Главный Интегратор `Program.cs`, компиляция и живой `--autotest`) в проекте C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder.
+1. Напиши полный рабочий `Program.cs`, который связывает `LevelAndEntities.cs`, `WeaponAndCombatView.cs`, `AudioMusicSystem.cs`, `LoreAndMenusUI.cs` и `MainMenuAndPauseUI.cs`:
+   - Загружает шрифт `C:\Windows\Fonts\arialbd.ttf` с поддержкой ASCII + Кириллицы (0x0020..0x007F, 0x0400..0x04FF, 0x2010..0x2030, 0x2116, 0x2190..0x21FF) и иконку окна `assets/app_icon.png`.
+   - Реализует полный геймплей 1-го этажа (WASD + мышь, засада C, действие E, оружие 1..4, кейсы K, чаты и лор N, микшер F8, быстрые $2000 F9, пауза ESC).
+   - Реализует флаг `--autotest`, который открывает 3D-окно 1280x720, выставляет сочные ракурсы (включая вид на Центральную Шахту Лифта в центре этажа, развилки влево и вправо и десятки офисных предметов!) и сохраняет все 8 реальных PNG-скриншотов в `screenshots/`:
+     * `screenshots/00_main_menu_classic.png`
+     * `screenshots/01_office_hub_hr_tarot.png`
+     * `screenshots/02_macbook_trap_ambush.png`
+     * `screenshots/03_uzi_combat_saas_miniboss.png`
+     * `screenshots/04_hr_tarot_payout_and_galley.png`
+     * `screenshots/05_elevator_boss_escaped_agent.png`
+     * `screenshots/06_lore_chats_window_n.png`
+     * `screenshots/07_settings_mixer_and_mods.png`
+2. Запусти `dotnet build -c Release`, исправь любые ошибки компиляции, запусти `bin\Release\net10.0\HowToVibeCoder.exe --autotest` и убедись, что все 8 скриншотов созданы!

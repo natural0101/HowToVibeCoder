@@ -354,18 +354,20 @@ namespace HowToVibeCoder
             Raylib.PlaySound(sound);
         }
 
-        public static void PlayBeltWhip() => PlayWeaponSound(SfxBeltWhip);
-        public static void PlaySolderSizzle() => PlayWeaponSound(SfxSolderSizzle);
-        public static void PlayUziShot() => PlayWeaponSound(SfxUziShot);
-        public static void PlayShotgunBlast() => PlayWeaponSound(SfxShotgunBlast);
-        public static void PlayChatgunBeam() => PlayWeaponSound(SfxChatgunBeam);
-        public static void PlayHitmarker() => PlayWeaponSound(SfxHitmarker);
-        public static void PlayMacbookBait() => PlayWeaponSound(SfxMacbookBait);
-        public static void PlayAnxietyAlarm() => PlayWeaponSound(SfxAnxietyAlarm);
-        public static void PlaySubduedDrop() => PlayWeaponSound(SfxSubduedDrop);
-        public static void PlayTarotCash() => PlayWeaponSound(SfxTarotCash);
-        public static void PlayGalleyWhack() => PlayWeaponSound(SfxGalleyWhack);
-        public static void PlayBossSiren() => PlayWeaponSound(SfxBossSiren);
+        internal static readonly float[] EffectLevels = [.58f,.58f,.58f,.58f,.72f];
+
+        public static void PlayBeltWhip() => PlayWeaponSound(SfxBeltWhip, volumeScale: EffectLevels[0]);
+        public static void PlaySolderSizzle() => PlayWeaponSound(SfxSolderSizzle, volumeScale: EffectLevels[0]);
+        public static void PlayUziShot() => PlayWeaponSound(SfxUziShot, volumeScale: EffectLevels[1]);
+        public static void PlayShotgunBlast() => PlayWeaponSound(SfxShotgunBlast, volumeScale: EffectLevels[1]);
+        public static void PlayChatgunBeam() => PlayWeaponSound(SfxChatgunBeam, volumeScale: EffectLevels[1]);
+        public static void PlayHitmarker() => PlayWeaponSound(SfxHitmarker, volumeScale: EffectLevels[1]);
+        public static void PlayMacbookBait() => PlayWeaponSound(SfxMacbookBait, volumeScale: EffectLevels[2]);
+        public static void PlayAnxietyAlarm() => PlayWeaponSound(SfxAnxietyAlarm, volumeScale: EffectLevels[2]);
+        public static void PlaySubduedDrop() => PlayWeaponSound(SfxSubduedDrop, volumeScale: EffectLevels[3]);
+        public static void PlayTarotCash() => PlayWeaponSound(SfxTarotCash, volumeScale: EffectLevels[3]);
+        public static void PlayGalleyWhack() => PlayWeaponSound(SfxGalleyWhack, volumeScale: EffectLevels[3]);
+        public static void PlayBossSiren() => PlayWeaponSound(SfxBossSiren, volumeScale: EffectLevels[2]);
 
         public static void PlaySfx(string name, float pitch = 1.0f, float volumeScale = 1.0f)
         {
@@ -378,7 +380,7 @@ namespace HowToVibeCoder
 
         public static void PlayCaseTick()
         {
-            PlaySfx("case_tick.wav", 0.96f + (float)_rng.NextDouble() * 0.08f, 0.95f);
+            PlaySfx("case_tick.wav", 0.96f + (float)_rng.NextDouble() * 0.08f, 0.95f * EffectLevels[4]);
         }
 
         public static void TriggerVoiceLine(string speaker, string text, int speakerType)

@@ -1,0 +1,3 @@
+Ты — Цех 7 (Графический установщик Windows `HowToVibeCoder_Setup.exe` и публикация в GitHub) в проекте C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder.
+1. Обнови `Installer\SetupProgram.cs` так, чтобы установщик использовал новую 217 КБ AAA-иконку `Installer\HowToVibeCoder.ico` и рисовал новый баннер `assets\menu_banner.png` в верхней части окна установщика, а при создании ярлыка на Рабочем столе привязывал `HowToVibeCoder.ico` и вызывал `ie4uinit.exe -show`.
+2. Как только `bin\Release\net10.0\HowToVibeCoder.exe` будет собран, запусти `powershell -ExecutionPolicy Bypass -File Installer\BuildInstaller.ps1`, чтобы обновить `C:\Users\se-20\OneDrive\Рабочий стол\HowToVibeCoder_Setup.exe` и `HowToVibeCoder.bat`.

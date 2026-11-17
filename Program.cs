@@ -25,7 +25,10 @@ public static class Program
 
     private static int _playerCash = 450;
     private static int _playerHp = 100;
-    private static int _playerMaxHp = 100;
+    private const int XpPerLevel = 1073;
+    private static int _xp = 412;
+    private static float _energy = 100;
+    private static Font _serif;
     private static float _weaponFireCooldown = 0f;
     private static string _hudStatusBanner = "ДОБРО ПОЖАЛОВАТЬ В CLOUD ENTROPIC TOWER (ЭТАЖ 1)! Включи Макбук [E] и лови вайб-кодеров!";
     private static float _hudStatusTimer = 6.0f;
@@ -48,6 +51,9 @@ public static class Program
         Raylib.SetExitKey(KeyboardKey.Null);
 
         _uiFont = LoadCyrillicFont();
+        _serif = LoadCyrillicFont(true);
+        MainMenuAndPauseUI.LoadArt(_serif);
+        VisualEngine3D.Load(_uiFont);
 
         AudioMusicSystem.Initialize();
         _world = new SkyscraperFloor1World();
@@ -55,26 +61,21 @@ public static class Program
 
         WireUpSystems();
 
-        if (autoTest)
+        if (autoTest) RunAutomatedScreenshotSuite();
+        else
         {
-            RunAutomatedScreenshotSuite();
-            AudioMusicSystem.Shutdown();
-            if (_uiFont.Texture.Id != 0)
+            bool shouldExit = false;
+            while (!Raylib.WindowShouldClose() && !shouldExit)
             {
-                Raylib.UnloadFont(_uiFont);
+                float dt = Math.Clamp(Raylib.GetFrameTime(), 0.001f, 0.05f);
+                UpdateFrame(dt, ref shouldExit);
+                DrawFrame();
             }
-            Raylib.CloseWindow();
-            return 0;
         }
 
-        bool shouldExit = false;
-        while (!Raylib.WindowShouldClose() && !shouldExit)
-        {
-            float dt = Math.Clamp(Raylib.GetFrameTime(), 0.001f, 0.05f);
-            UpdateFrame(dt, ref shouldExit);
-            DrawFrame();
-        }
-
+        VisualEngine3D.Unload();
+        MainMenuAndPauseUI.UnloadArt();
+        Raylib.UnloadFont(_serif);
         AudioMusicSystem.Shutdown();
         if (_uiFont.Texture.Id != 0)
         {
@@ -132,7 +133,7 @@ public static class Program
 
             return new GameSaveData
             {
-                Cash = _playerCash,
+                Cash = _playerCash, Xp = _xp, Energy = _energy, Hp = _playerHp,
                 UnlockedWeapons = new[]
                 {
                     true,
@@ -158,6 +159,7 @@ public static class Program
         MainMenuAndPauseUI.ApplyLoadedGameState = data =>
         {
             _playerCash = data.Cash;
+            _xp = Math.Max(0,data.Xp); _energy = Math.Clamp(data.Energy,0,100); _playerHp = Math.Clamp(data.Hp,0,100);
             if (data.UnlockedWeapons != null && data.UnlockedWeapons.Length >= 4)
             {
                 _weapons.UnlockedSolderingIron = data.UnlockedWeapons[1];
@@ -173,15 +175,20 @@ public static class Program
 
     private static void ResetNewGameFloor()
     {
-        _world.InitializeFloorLayout();
+        _world = new SkyscraperFloor1World();
+        AudioMusicSystem.VoiceTimer = 0;
         _playerPos = new Vector3(0f, 1.72f, 12.2f);
         _playerYaw = MathF.PI;
         _playerPitch = -0.04f;
         _isCrouching = false;
         _playerCash = 450;
         _playerHp = 100;
-        _weapons.CurrentWeapon = WeaponType.Belt;
-        SetHudBanner("ШТУРМ 1-ГО ЭТАЖА НАЧАЛСЯ! Включи Макбук [E] в центре зала или осмотри будку HR-Таролога Вероники!");
+        _weapons = new WeaponAndCombatView();
+        LoreAndMenusUI.ActiveWeaponView = _weapons;
+        _xp = 412;
+        _energy = 100;
+        _weaponFireCooldown = _walkBobPhase = 0;
+        SetHudBanner("Найди макбук в центре зала");
     }
 
     private static bool TrySpendCash(int cost)
@@ -195,6 +202,7 @@ public static class Program
     private static void GrantCash(int amount, string sourceLabel)
     {
         _playerCash += amount;
+        _xp += Math.Max(0,amount / 5);
         SetHudBanner($"+${amount} ({sourceLabel}) | Баланс: ${_playerCash}");
     }
 
@@ -236,24 +244,16 @@ public static class Program
             _hudStatusTimer = MathF.Max(0f, _hudStatusTimer - dt);
         }
 
-        // Update Main Menu & Pause UI first
-        MainMenuAndPauseUI.Update(dt, ref shouldExit);
-        if (shouldExit)
-            return;
-
-        if (MainMenuAndPauseUI.IsInMainMenu)
-        {
-            _world.MacBookHologramPhase += dt * 2.5f;
-            _world.WarningBeaconPhase += dt * 5.0f;
-            return;
-        }
-
-        // Update [N] Lore, [F8] Mixer, [K] Case Roulette
-        if (!MainMenuAndPauseUI.IsPaused)
+        bool wasModal = LoreAndMenusUI.IsAnyModalOpen;
+        bool modalShortcut = Raylib.IsKeyPressed(KeyboardKey.F8) || Raylib.IsKeyPressed(KeyboardKey.K) || Raylib.IsKeyPressed(KeyboardKey.N);
+        if (wasModal || modalShortcut)
         {
             LoreAndMenusUI.Update(dt, _weapons);
+            if (LoreAndMenusUI.IsAnyModalOpen && Raylib.IsCursorHidden()) Raylib.EnableCursor();
+            return;
         }
-
+        MainMenuAndPauseUI.Update(dt, ref shouldExit);
+        if (shouldExit || MainMenuAndPauseUI.IsInMainMenu) return;
         if (MainMenuAndPauseUI.IsMenuBlockingGameplay)
         {
             if (Raylib.IsCursorHidden())
@@ -308,10 +308,12 @@ public static class Program
         if (Raylib.IsKeyDown(KeyboardKey.A)) moveDir -= rightXZ;
 
         bool isMoving = moveDir.LengthSquared() > 0.01f;
+        bool sprinting = isMoving && !_isCrouching && Raylib.IsKeyDown(KeyboardKey.LeftShift) && _energy > 1;
+        _energy = Math.Clamp(_energy + (sprinting ? -14f : 9f)*dt, 0, 100);
         if (isMoving)
         {
             moveDir = Vector3.Normalize(moveDir);
-            float moveSpeed = _isCrouching ? 4.4f : (Raylib.IsKeyDown(KeyboardKey.LeftShift) ? 8.8f : 6.6f);
+            float moveSpeed = _isCrouching ? 4.4f : (sprinting ? 8.8f : 6.6f);
             Vector3 desired = _playerPos + moveDir * moveSpeed * dt;
             _playerPos = _world.ResolvePlayerCollision(desired);
             _walkBobPhase += dt * (moveSpeed * 1.35f);
@@ -320,7 +322,7 @@ public static class Program
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
         {
-            string interactMsg = _world.HandleInteractKeyE(_playerPos, TrySpendCash, GrantCash);
+            string interactMsg = _world.Interact(BuildPlayerCamera(), TrySpendCash, GrantCash);
             SetHudBanner(interactMsg, 4.8f);
         }
 
@@ -400,13 +402,8 @@ public static class Program
 
         if (MainMenuAndPauseUI.IsInMainMenu)
         {
-            Camera3D menuCam = MainMenuAndPauseUI.GetMainMenuCamera((float)Raylib.GetTime(), new Vector3(0f, 1.5f, 3.5f), 15.5f, 4.6f);
-            Raylib.BeginMode3D(menuCam);
-            _world.DrawWorld3D(menuCam);
-            MainMenuAndPauseUI.DrawMainMenu3DShowcaseExtras((float)Raylib.GetTime());
-            Raylib.EndMode3D();
-
-            MainMenuAndPauseUI.Draw(_uiFont, ScreenWidth, ScreenHeight);
+            MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
+            LoreAndMenusUI.Draw(_uiFont);
             Raylib.EndDrawing();
             return;
         }
@@ -429,125 +426,116 @@ public static class Program
         DrawGameplayHud2D();
 
         // 5. Modal Windows ([N] Lore, [F8] Audio Mixer, [K] Case Roulette) & [ESC] Pause Overlay
-        LoreAndMenusUI.Draw(_uiFont, _playerCash);
+
         if (MainMenuAndPauseUI.IsPaused || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen || MainMenuAndPauseUI.IsSettingsPanelOpen)
         {
-            MainMenuAndPauseUI.Draw(_uiFont, ScreenWidth, ScreenHeight);
+            MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
         }
 
+        LoreAndMenusUI.Draw(_uiFont);
         Raylib.EndDrawing();
     }
 
     private static void DrawGameplayHud2D()
     {
-        int sw = ScreenWidth;
-        int sh = ScreenHeight;
-        int cx = sw / 2;
-        int cy = sh / 2;
-
-        // Crosshair
-        Color crossCol = _world.IsPlayerInAmbush ? new Color(65, 255, 145, 235) : new Color(255, 225, 85, 235);
-        Raylib.DrawCircleLines(cx, cy, 5f, crossCol);
-        Raylib.DrawLine(cx - 10, cy, cx - 3, cy, crossCol);
-        Raylib.DrawLine(cx + 3, cy, cx + 10, cy, crossCol);
-        Raylib.DrawLine(cx, cy - 10, cx, cy - 3, crossCol);
-        Raylib.DrawLine(cx, cy + 3, cx, cy + 10, crossCol);
-
-        // Top-Left Authority Status Panel (Cash, HP, Galley Income, Ambush Status)
-        Raylib.DrawRectangle(14, 12, 430, 108, new Color(12, 14, 26, 230));
-        Raylib.DrawRectangleLinesEx(new Rectangle(14, 12, 430, 108), 2f, new Color(235, 38, 92, 245));
-
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, "CLOUD ENTROPIC TOWER // ЭТАЖ 1 (76x76M)", 26, 18, 15, new Color(255, 215, 75, 255));
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, $"БАЛАНС АВТОРИТЕТА: ${_playerCash}", 26, 38, 22, new Color(75, 255, 145, 255));
-
-        int workingGalley = 0;
-        for (int i = 0; i < _world.GalleyDesks.Count; i++)
+        int sw = Raylib.GetScreenWidth(), sh = Raylib.GetScreenHeight();
+        int cx = sw/2, cy = sh/2;
+        Color white = new(250,249,245,255), dark = new(22,24,38,142);
+        string money = "$" + _playerCash;
+        int cashWidth = (int)Raylib.MeasureTextEx(_uiFont,money,22,.5f).X + 14;
+        Rectangle cash = new(32, sh-108, cashWidth, 29);
+        MainMenuAndPauseUI.Surface(cash,dark,2);
+        MainMenuAndPauseUI.Center(_uiFont,money,cash,22,white);
+        void Meter(int x, float fraction)
         {
-            if (_world.GalleyDesks[i].IsOccupied && !_world.GalleyDesks[i].IsSlackingInTwitter)
-                workingGalley++;
+            Vector2 p = new(x, sh-50);
+            Raylib.DrawCircleV(p,20,dark);
+            Raylib.DrawRing(p,18,20,0,360,64,new Color(218,221,226,128));
+            if (fraction>0) Raylib.DrawRing(p,17.5f,20,-90,-90+360*fraction,64,white);
         }
+        Meter(52,_playerHp/100f);
+        Meter(99,_energy/100f);
+        Color heart = _playerHp>30 ? white : new Color(254,152,159,255);
+        Raylib.DrawCircle(47,sh-54,6,heart);
+        Raylib.DrawCircle(57,sh-54,6,heart);
+        Raylib.DrawTriangle(new(41,sh-53),new(52,sh-39),new(63,sh-53),heart);
+        float y=sh-50;
+        void Stroke(float x1,float y1,float x2,float y2,float w) =>
+            Raylib.DrawLineEx(new(x1,y+y1),new(x2,y+y2),w,white);
+        Stroke(95,-3,93,11,2); Stroke(92,-9,92,-3,1.8f); Stroke(95,-9,95,-3,1.8f);
+        Stroke(98,-9,98,-3,1.8f); Stroke(92,-3,98,-3,2); Stroke(104,-9,102,11,2.3f); Stroke(104,-9,105,1,2);
 
-        string galleyTxt = $"ГАЛЕРА: {workingGalley}/4 СТОЛОВ (+${workingGalley * 20}/СЕК)  |  ЗДОРОВЬЕ: {_playerHp}%";
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, galleyTxt, 26, 66, 14, new Color(195, 225, 255, 245));
-
-        string ambushTxt = _world.IsPlayerInAmbush
-            ? $"РЕЖИМ ЗАСАДЫ АКТИВЕН ({_world.ActiveAmbushCoverName}) - НЕВИДИМ ДЛЯ КОДЕРОВ!"
-            : "НА ВИДУ (Спрячься за диван/фикус или нажми [C] для засады)";
-        Color ambushCol = _world.IsPlayerInAmbush ? new Color(65, 255, 145, 255) : new Color(255, 185, 75, 240);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, ambushTxt, 26, 88, 13, ambushCol);
-
-        // Top-Right Objective & Carried Coder Badge
-        Raylib.DrawRectangle(sw - 424, 12, 410, 92, new Color(12, 14, 26, 230));
-        Raylib.DrawRectangleLinesEx(new Rectangle(sw - 424, 12, 410, 92), 2f, new Color(0, 230, 255, 235));
-
-        var baitInfo = SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, $"ПРИМАНКА МАКБУКА: {baitInfo.Name}", sw - 412, 18, 15, baitInfo.NeonColor);
-
-        string carryLine = _world.CarriedCoder != null
-            ? $"НА ПЛЕЧЕ: {_world.CarriedCoder.Name} (${_world.CarriedCoder.TarotPayoutValue}) -> Жми [E] у Вероники!"
-            : (_world.HasElevatorKey
-                ? "КЛЮЧ ОТ ЛИФТА ПОЛУЧЕН! Иди к Центральному Лифту [E]!"
-                : "ЦЕЛЬ: Лови кодеров на Макбук [E], сдай Веронике и купи Ключ ($1000)");
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, carryLine, sw - 412, 42, 13, Color.White);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont, $"Сдано HR-Тарологу: {_world.TotalCodersSoldToHr} чел. | Ключ Лифта: {(_world.HasElevatorKey ? "ЕСТЬ" : "$1000")}", sw - 412, 66, 13, new Color(255, 215, 90, 240));
-
-        // Voice Subtitle Banner if someone is speaking
-        if (AudioMusicSystem.VoiceTimer > 0f && !string.IsNullOrEmpty(AudioMusicSystem.ActiveVoiceText))
+        int barX=cx-139, barY=sh-82;
+        for(int i=0;i<4;i++)
         {
-            int vw = 680;
-            int vx = (sw - vw) / 2;
-            int vy = sh - 138;
-            Raylib.DrawRectangle(vx, vy, vw, 44, new Color(16, 12, 28, 235));
-            Raylib.DrawRectangleLinesEx(new Rectangle(vx, vy, vw, 44), 2f, new Color(255, 205, 65, 245));
-            LoreAndMenusUI.DrawTextCrisp(_uiFont, $"[ГОЛОС] {AudioMusicSystem.ActiveSpeaker}: «{AudioMusicSystem.ActiveVoiceText}»", vx + 14, vy + 12, 15, new Color(255, 240, 175, 255));
+            Rectangle r=new(barX+i*70,barY,66,66);
+            bool active=Math.Min((int)_weapons.CurrentWeapon,4)==i+1;
+            Raylib.DrawRectangleRounded(r,.13f,6,new Color(19,24,38,active ? 128 : 76));
+            if(active) Raylib.DrawRectangleRoundedLinesEx(r,.13f,6,2,white);
+            LoreAndMenusUI.DrawTextCrisp(_serif,(i+1).ToString(),(int)r.X+5,barY+3,16,white);
+            bool unlocked = i switch {1=>_weapons.UnlockedSolderingIron,2=>_weapons.UnlockedMicroUzi,3=>_weapons.UnlockedSawedOff || _weapons.UnlockedChatGun,_=>true};
+            DrawSlotIcon(i,new(r.X+34,r.Y+35),unlocked);
         }
-        else if (_hudStatusTimer > 0f && !string.IsNullOrEmpty(_hudStatusBanner))
+        MainMenuAndPauseUI.Center(_serif,"[И]",new(barX+286,barY+7,32,25),19,white);
+
+        Color cyan = new(40,213,243,255);
+        Vector2 badge = new(sw-220,25);
+        Raylib.DrawPoly(badge,6,14,-90,cyan);
+        Raylib.DrawPoly(badge,6,11.5f,-90,new Color(23,41,60,255));
+        MainMenuAndPauseUI.Center(_uiFont,(1+_xp/XpPerLevel).ToString(),new(badge.X-12,13,24,24),13,white);
+        Rectangle xp = new(sw-201,18,186,14);
+        Raylib.DrawRectangleRounded(xp,.95f,8,Color.DarkBlue);
+        Raylib.DrawRectangleRounded(new(xp.X+2,xp.Y+2,182f*(_xp%XpPerLevel)/XpPerLevel,10),1,8,cyan);
+        Raylib.DrawRectangleRoundedLinesEx(xp,.95f,8,1,cyan);
+        MainMenuAndPauseUI.Center(_uiFont,$"{_xp%XpPerLevel} / 1 073 XP",xp,11,white);
+        int working = _world.GalleyDesks.Count(d=>d.IsOccupied && !d.IsSlackingInTwitter);
+        int occupied = _world.GalleyDesks.Count(d=>d.IsOccupied);
+        void Objective(int top,string label,Color edge)
         {
-            int bw = 720;
-            int bx = (sw - bw) / 2;
-            int by = sh - 134;
-            Raylib.DrawRectangle(bx, by, bw, 36, new Color(14, 18, 32, 225));
-            Raylib.DrawRectangleLinesEx(new Rectangle(bx, by, bw, 36), 1.5f, new Color(80, 235, 255, 230));
-            LoreAndMenusUI.DrawTextCrisp(_uiFont, _hudStatusBanner, bx + 14, by + 9, 14, Color.White);
+            Rectangle r=new(sw-166,top,151,16);
+            Raylib.DrawRectangleRounded(r,.45f,6,new Color(14,23,32,206));
+            Raylib.DrawRectangleRoundedLinesEx(r,.45f,6,1,edge);
+            MainMenuAndPauseUI.Center(_uiFont,label,r,12,white);
         }
-
-        // Bottom Weapon Slots Bar & Hotkeys Strip
-        int barW = 780;
-        int barH = 52;
-        int barX = (sw - barW) / 2;
-        int barY = sh - 86;
-
-        string[] slotNames =
+        Objective(37,"Этаж 1: Белая Акула",new Color(215,165,64,240));
+        Objective(57,$"Галера: {occupied}/4 (+${working*20}/с)",cyan);
+        string target=_world.FocusPrompt(BuildPlayerCamera());
+        if(target.Length>0)
         {
-            "[1] РЕМЕНЬ БАТИ",
-            "[2] ПАЯЛЬНИК 220В",
-            "[3] MICRO-UZI 9MM",
-            _weapons.UnlockedChatGun ? "[4] СЕКРЕТНЫЙ ЧАТ-ГАН" : "[4] ОБРЕЗ ДВУСТВОЛКИ"
-        };
-
-        int slotW = (barW - 24) / 4;
-        for (int i = 0; i < 4; i++)
-        {
-            int sx = barX + i * (slotW + 8);
-            bool active = ((int)_weapons.CurrentWeapon == i + 1) || (i == 3 && _weapons.CurrentWeapon == WeaponType.ChatGun);
-            Color bg = active ? new Color(175, 24, 66, 245) : new Color(18, 22, 36, 230);
-            Color border = active ? new Color(255, 220, 65, 255) : new Color(75, 95, 135, 200);
-
-            Raylib.DrawRectangle(sx, barY, slotW, barH, bg);
-            Raylib.DrawRectangleLinesEx(new Rectangle(sx, barY, slotW, barH), active ? 2.5f : 1.5f, border);
-            LoreAndMenusUI.DrawTextCrisp(_uiFont, slotNames[i], sx + 12, barY + 9, 15, active ? new Color(255, 240, 150, 255) : Color.White);
-            LoreAndMenusUI.DrawTextCrisp(_uiFont, active ? "В РУКАХ [ЛКМ]" : "ГОТОВ К БОЮ", sx + 12, barY + 30, 12, new Color(180, 215, 245, 230));
+            MainMenuAndPauseUI.Center(_serif,target,new(cx-230,cy-51,460,27),23,white);
+            MainMenuAndPauseUI.Center(_serif,"[E]",new(cx-40,cy-25,80,24),19,white);
         }
+        else if (_hudStatusTimer>0)
+            MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,new(cx-285,cy+24,570,30),18,white);
+        Raylib.DrawCircle(cx,cy,1.3f,white);
+        if (AudioMusicSystem.VoiceTimer>0)
+            MainMenuAndPauseUI.Center(_serif,AudioMusicSystem.ActiveVoiceText,new(cx-355,sh-125,710,24),16,white);
+        MainMenuAndPauseUI.Center(_serif,"Версия 1.1.3",new(sw-97,sh-23,94,19),14,white);
+    }
 
-        // Bottom Controls Hint Strip
-        Raylib.DrawRectangle(0, sh - 28, sw, 28, new Color(10, 10, 18, 245));
-        LoreAndMenusUI.DrawTextCrisp(
-            _uiFont,
-            "[WASD] Ходьба | [ЛКМ] Атака | [E] Макбук/Кодер/Вероника/Лифт | [C] Засада | [K] Кейсы 90-х | [N] Лор и Чаты | [F8] Микшер | [F9] +$2000 | [ESC] Пауза",
-            18,
-            sh - 22,
-            13,
-            new Color(225, 232, 248, 245));
+    internal static void DrawSlotIcon(int index, Vector2 center, bool unlocked, Color? accent = null)
+    {
+        Vector2 Point(float x,float y) => center + Vector2.Transform(new Vector2(x,y), Matrix3x2.CreateRotation(-.72f));
+        Color steel=accent ?? new Color(153,171,185,255), leather=accent ?? new Color(144,87,46,255), charcoal=accent ?? new Color(39,46,57,255);
+        void Line(float x,float y,float u,float v,float w,Color col) =>
+            Raylib.DrawLineEx(Point(x,y),Point(u,v),w,unlocked ? col : Raylib.Fade(col,.37f));
+        switch(index)
+        {
+            case 0:
+                Line(-21,1,17,1,8,leather); Line(-14,-1,15,-1,1.5f,new Color(211,151,82,255));
+                Color brass=new(239,196,102,255);
+                Line(11,-4,21,-4,2,brass); Line(11,5,21,5,2,brass);
+                Line(11,-4,11,5,2,brass); Line(21,-4,21,5,2,brass); break;
+            case 1:
+                Line(-23,0,-4,0,8,new Color(53,125,180,255)); Line(-5,0,11,0,4,steel);
+                Line(11,0,22,0,2,new Color(240,167,77,255)); break;
+            case 2:
+                Line(-17,-3,13,-3,11,charcoal); Line(-16,-7,11,-7,2,steel);
+                Line(9,-4,23,-4,5,steel); Line(-7,0,-12,15,7,charcoal); Line(4,0,4,9,3,steel); break;
+            default:
+                Line(-22,5,-9,2,8,leather); Line(-9,1,3,-2,8,charcoal);
+                Line(0,-4,23,-4,4,steel); Line(1,0,23,0,3,new Color(84,105,127,255)); break;
+        }
     }
 
     // =========================================================================
@@ -571,10 +559,10 @@ public static class Program
             Image img = Raylib.LoadImageFromScreen();
             string path1 = Path.Combine(projectScreenshotsDir, fileName);
             string path2 = Path.Combine(binScreenshotsDir, fileName);
-            Raylib.ExportImage(img, path1);
+            if (!Raylib.ExportImage(img, path1)) throw new IOException(path1);
             if (!string.Equals(Path.GetFullPath(path1), Path.GetFullPath(path2), StringComparison.OrdinalIgnoreCase))
             {
-                Raylib.ExportImage(img, path2);
+                if (!Raylib.ExportImage(img, path2)) throw new IOException(path2);
             }
             Raylib.UnloadImage(img);
             Console.WriteLine($"[AUTOTEST] Saved screenshot: {path1}");
@@ -600,8 +588,8 @@ public static class Program
         ResetNewGameFloor();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(1); // Father's Leather Belt
-        _playerPos = new Vector3(-4.2f, 1.72f, 11.4f);
-        LookAtTarget(new Vector3(-5.8f, 1.45f, 15.2f));
+        _playerPos = new Vector3(-6.6f, 1.72f, 11.3f);
+        LookAtTarget(new Vector3(-7.4f, 1.45f, 15.2f));
         AudioMusicSystem.TriggerVoiceLine("HR-ТАРОЛОГ ВЕРОНИКА", "Расклад Таро готов! Приноси вайб-кодеров на разбор натальной карты!", (int)SpeakerVoiceType.VeronikaTarot);
         CaptureShot("01_office_hub_hr_tarot.png");
 
@@ -610,11 +598,11 @@ public static class Program
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(2); // 90s Soldering Iron with rising rosin smoke
         _isCrouching = true;
-        _playerPos = new Vector3(-3.2f, 1.12f, 9.2f);
-        LookAtTarget(new Vector3(0.0f, 1.35f, 2.5f));
+        _playerPos = new Vector3(-1.75f, 1.12f, 8.5f);
+        LookAtTarget(new Vector3(0.0f, 1.18f, 5.2f));
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         var walkingCoder = _world.SpawnCoderForTier(SubscriptionBaitTier.CursorPro, forceSide: -1);
-        walkingCoder.Position = new Vector3(-2.1f, 0f, 5.4f);
+        walkingCoder.Position = new Vector3(-1.55f, 0f, 4.65f);
         walkingCoder.Anxiety = 38f;
         walkingCoder.SpeechBubble = "Ого, халявный Cursor Pro на Макбуке! Бегу жать Accept All!";
         walkingCoder.SpeechTimer = 5.0f;
@@ -634,7 +622,7 @@ public static class Program
         var miniBoss = _world.SpawnCoderForTier(SubscriptionBaitTier.CloudEntropicMax, forceSide: 1);
         miniBoss.Position = new Vector3(0.2f, 0f, 4.5f);
         miniBoss.Hp = 420f;
-        miniBoss.HitFlashTimer = 0.12f;
+        miniBoss.HitFlashTimer = 0;
         _world.EnemyProjectiles.Add(new EnemyProjectile3D
         {
             Position = new Vector3(-0.75f, 1.55f, 6.6f),
@@ -662,6 +650,7 @@ public static class Program
         Camera3D uziCam = BuildPlayerCamera();
         _weapons.TriggerWeaponAttack(uziCam, new Vector3(0.2f, 1.35f, 4.5f), hitEnemy: true, damageDealt: 46, isCritical: true);
         _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
+        _hudStatusTimer = 0;
         CaptureShot("03_uzi_combat_saas_miniboss.png");
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks
@@ -689,8 +678,8 @@ public static class Program
         _world.GalleyDesks[1].HoodieColor = new Color(180, 75, 255, 255);
         _world.GalleyDesks[1].IsSlackingInTwitter = true;
 
-        _playerPos = new Vector3(1.5f, 1.72f, 10.2f);
-        LookAtTarget(new Vector3(2.2f, 1.25f, 15.0f));
+        _playerPos = new Vector3(4.6f, 1.72f, 11.2f);
+        LookAtTarget(new Vector3(7.45f, 1.18f, 13.6f));
         CaptureShot("04_hr_tarot_payout_and_galley.png");
 
         // 5. 05_elevator_boss_escaped_agent.png - Open Central Armored Elevator + Escaped AI Agent v0.1 Boss throwing 40GB node_modules cubes
@@ -709,6 +698,7 @@ public static class Program
         Camera3D bossCam = BuildPlayerCamera();
         _weapons.TriggerWeaponAttack(bossCam, new Vector3(0.0f, 1.55f, -12.5f), hitEnemy: true, damageDealt: 165, isCritical: true);
         _weapons.UpdateWeapons(0.03f, bossCam, isMoving: false, holdingFire: true);
+        _hudStatusTimer = 0;
         CaptureShot("05_elevator_boss_escaped_agent.png");
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]
@@ -723,7 +713,7 @@ public static class Program
         LoreAndMenusUI.IsSettingsOpen = true;
         LoreAndMenusUI.IsCaseOpen = false;
         CaptureShot("07_settings_mixer_and_mods.png");
-        CaptureShot("07_settings_mixer_and_cases.png");
+
     }
 
     private static void LookAtTarget(Vector3 target)
@@ -735,28 +725,30 @@ public static class Program
         _playerPitch = MathF.Asin(Math.Clamp(d.Y, -0.95f, 0.95f));
     }
 
-    private static Font LoadCyrillicFont()
+    private static Font LoadCyrillicFont(bool serif = false)
     {
-        string[] candidates =
-        {
+        string[] candidates = serif ? [@"C:\Windows\Fonts\georgia.ttf", @"C:\Windows\Fonts\times.ttf"] :
+        [
             @"C:\Windows\Fonts\arialbd.ttf",
             @"C:\Windows\Fonts\segoeui.ttf",
             @"C:\Windows\Fonts\tahoma.ttf",
             @"C:\Windows\Fonts\arial.ttf"
-        };
+        ];
 
         List<int> codepoints = new(512);
         for (int c = 32; c <= 126; c++) codepoints.Add(c);
-        for (int c = 0x0400; c <= 0x04FF; c++) codepoints.Add(c);
+        for (int c = 0x0410; c <= 0x044F; c++) codepoints.Add(c);
+        codepoints.Add(0x0401);
+        codepoints.Add(0x0451);
         // Helpful punctuation & symbols used in UI
-        int[] extra = { 0x2013, 0x2014, 0x2022, 0x2026, 0x00AB, 0x00BB, 0x2190, 0x2192, 0x25C0, 0x25B6, 0x2116, 0x00B0 };
+        int[] extra = { 0x2013, 0x2014, 0x2022, 0x2026, 0x00AB, 0x00BB, 0x2190, 0x2192, 0x25C0, 0x25B6, 0x2116, 0x00B0, 0x2665 };
         codepoints.AddRange(extra);
 
         foreach (string fontPath in candidates)
         {
             if (File.Exists(fontPath))
             {
-                Font f = Raylib.LoadFontEx(fontPath, 32, codepoints.ToArray(), codepoints.Count);
+                Font f = Raylib.LoadFontEx(fontPath, serif ? 64 : 32, codepoints.ToArray(), codepoints.Count);
                 if (f.Texture.Id != 0)
                 {
                     Raylib.SetTextureFilter(f.Texture, TextureFilter.Bilinear);

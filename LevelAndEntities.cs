@@ -1692,13 +1692,7 @@ public sealed class SkyscraperFloor1World
                 float dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(c.Position.X, c.Position.Z));
                 if (dist <= 3.8f)
                 {
-                    CarriedCoder = c;
-                    ActiveCoders.RemoveAt(i);
-                    AudioMusicSystem.TriggerVoiceLine(
-                        "КОММЕРС 90-Х",
-                        $"Поднял кандидата «{c.Name}»! Неси Веронике (HR-Тарологу) за ${c.TarotPayoutValue} или сажай на Галеру!",
-                        (int)SpeakerVoiceType.Boss90s);
-                    return $"СХВАЧЕН: {c.Name}! Неси в будку HR-Таролога Вероники (слева на Юге) или на стол Галеры (справа)!";
+                    return PickUp(c);
                 }
             }
         }
@@ -1830,7 +1824,13 @@ public sealed class SkyscraperFloor1World
     // =========================================================================
     public void DrawWorld3D(Camera3D camera)
     {
+        VisualEngine3D.World(camera, this);
         DrawSkyscraperArchitecture3D();
+        VisualEngine3D.Shadow(HrTarotBoothPos, 4.8f, 3f);
+        VisualEngine3D.Shadow(CentralMacBookPos, 4f, 2.5f);
+        foreach (var desk in GalleyDesks) VisualEngine3D.Shadow(desk.DeskPosition, 3, 2.4f);
+        foreach (var coder in ActiveCoders) VisualEngine3D.Shadow(coder.Position, 1.4f, 1.1f);
+        if (ElevatorBoss.IsActive) VisualEngine3D.Shadow(ElevatorBoss.Position, 3.4f, 2.8f);
         DrawOfficeProps3D();
         DrawHrTarotBoothAndVeronika3D();
         Draw90sArsenalAndShopStand3D();
@@ -1857,8 +1857,8 @@ public sealed class SkyscraperFloor1World
         for (int i = 0; i < CashParticles.Count; i++)
         {
             var cp = CashParticles[i];
-            Raylib.DrawCube(cp.Position, 0.28f, 0.12f, 0.16f, new Color(45, 205, 85, 245));
-            Raylib.DrawCubeWires(cp.Position, 0.30f, 0.14f, 0.18f, new Color(255, 225, 70, 255));
+            VisualEngine3D.Box(cp.Position, 0.28f, 0.12f, 0.16f, new Color(45, 205, 85, 245));
+
         }
     }
 
@@ -1868,126 +1868,127 @@ public sealed class SkyscraperFloor1World
         {
             var p = OfficeProps[i];
             Vector3 pos = p.Position;
+            if (p.Kind != OfficePropKind.CeilingDuct) VisualEngine3D.Shadow(pos, p.Size.X+1, p.Size.Z+1);
             switch (p.Kind)
             {
                 case OfficePropKind.CubiclePartition:
                 {
                     // Lower fabric partition + upper frosted cyan/violet glass pane
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.55f, 0f), p.Size.X, 1.10f, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(0f, 1.32f, 0f), p.Size.X - 0.12f, 0.44f, p.Size.Z * 0.65f, p.AccentColor);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, 0.78f, 0f), p.Size.X + 0.02f, p.Size.Y, p.Size.Z + 0.02f, new Color(24, 28, 38, 255));
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.55f, 0f), p.Size.X, 1.10f, p.Size.Z, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 1.32f, 0f), p.Size.X - 0.12f, 0.44f, p.Size.Z * 0.65f, p.AccentColor);
+
                     break;
                 }
 
                 case OfficePropKind.DualMonitorDesk:
                 {
                     // Desk top + legs + 2 glowing monitors + keyboard + warm desk lamp
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.74f, 0f), p.Size.X, 0.07f, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(-p.Size.X * 0.45f, 0.37f, 0f), 0.08f, 0.74f, p.Size.Z * 0.85f, new Color(36, 40, 50, 255));
-                    Raylib.DrawCube(pos + new Vector3(p.Size.X * 0.45f, 0.37f, 0f), 0.08f, 0.74f, p.Size.Z * 0.85f, new Color(36, 40, 50, 255));
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.74f, 0f), p.Size.X, 0.07f, p.Size.Z, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(-p.Size.X * 0.45f, 0.37f, 0f), 0.08f, 0.74f, p.Size.Z * 0.85f, new Color(36, 40, 50, 255));
+                    VisualEngine3D.Box(pos + new Vector3(p.Size.X * 0.45f, 0.37f, 0f), 0.08f, 0.74f, p.Size.Z * 0.85f, new Color(36, 40, 50, 255));
 
                     // Monitor 1 & Monitor 2
-                    Raylib.DrawCube(pos + new Vector3(-0.42f, 1.04f, -0.22f), 0.68f, 0.42f, 0.05f, new Color(20, 24, 32, 255));
-                    Raylib.DrawCube(pos + new Vector3(-0.42f, 1.04f, -0.19f), 0.62f, 0.36f, 0.02f, p.AccentColor);
-                    Raylib.DrawCube(pos + new Vector3(0.32f, 1.04f, -0.22f), 0.68f, 0.42f, 0.05f, new Color(20, 24, 32, 255));
-                    Raylib.DrawCube(pos + new Vector3(0.32f, 1.04f, -0.19f), 0.62f, 0.36f, 0.02f, new Color(40, 195, 255, 255));
+                    VisualEngine3D.Box(pos + new Vector3(-0.42f, 1.04f, -0.22f), 0.68f, 0.42f, 0.05f, new Color(20, 24, 32, 255));
+                    VisualEngine3D.Box(pos + new Vector3(-0.42f, 1.04f, -0.19f), 0.62f, 0.36f, 0.02f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0.32f, 1.04f, -0.22f), 0.68f, 0.42f, 0.05f, new Color(20, 24, 32, 255));
+                    VisualEngine3D.Box(pos + new Vector3(0.32f, 1.04f, -0.19f), 0.62f, 0.36f, 0.02f, new Color(40, 195, 255, 255));
 
                     // Desk Lamp with warm bulb
-                    Raylib.DrawCylinderEx(pos + new Vector3(0.82f, 0.78f, -0.18f), pos + new Vector3(0.75f, 1.18f, -0.10f), 0.03f, 0.025f, 6, new Color(220, 180, 55, 255));
-                    Raylib.DrawSphere(pos + new Vector3(0.72f, 1.18f, -0.08f), 0.07f, new Color(255, 235, 130, 240));
+                    VisualEngine3D.Rod(pos + new Vector3(0.82f, 0.78f, -0.18f), pos + new Vector3(0.75f, 1.18f, -0.10f), 0.03f, 0.025f, 6, new Color(220, 180, 55, 255));
+                    VisualEngine3D.Orb(pos + new Vector3(0.72f, 1.18f, -0.08f), 0.07f, new Color(255, 235, 130, 240));
                     break;
                 }
 
                 case OfficePropKind.SwivelChairUpright:
                 {
-                    Raylib.DrawCylinderEx(pos, pos + new Vector3(0f, 0.44f, 0f), 0.05f, 0.04f, 6, new Color(80, 86, 98, 255));
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.46f, 0f), 0.52f, 0.08f, 0.52f, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.82f, 0.22f), 0.50f, 0.62f, 0.08f, p.PrimaryColor);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, 0.82f, 0.22f), 0.52f, 0.64f, 0.09f, p.AccentColor);
+                    VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.44f, 0f), 0.05f, 0.04f, 6, new Color(80, 86, 98, 255));
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.46f, 0f), 0.52f, 0.08f, 0.52f, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.82f, 0.22f), 0.50f, 0.62f, 0.08f, p.PrimaryColor);
+
                     break;
                 }
 
                 case OfficePropKind.SwivelChairKnocked:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.26f, 0f), 0.54f, 0.48f, 0.54f, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(0.28f, 0.22f, 0f), 0.58f, 0.12f, 0.48f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.26f, 0f), 0.54f, 0.48f, 0.54f, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(0.28f, 0.22f, 0f), 0.58f, 0.12f, 0.48f, p.AccentColor);
                     break;
                 }
 
                 case OfficePropKind.XeroxPhotocopier:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.55f, 0f), p.Size.X, 1.10f, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(0f, 1.14f, 0f), p.Size.X * 0.92f, 0.08f, p.Size.Z * 0.88f, new Color(65, 75, 92, 255));
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.55f, 0f), p.Size.X, 1.10f, p.Size.Z, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 1.14f, 0f), p.Size.X * 0.92f, 0.08f, p.Size.Z * 0.88f, new Color(65, 75, 92, 255));
                     // Glowing green scanner slit + paper stack
-                    Raylib.DrawCube(pos + new Vector3(-0.15f, 1.10f, 0f), 0.55f, 0.03f, 0.45f, p.AccentColor);
-                    Raylib.DrawCube(pos + new Vector3(0.42f, 1.18f, 0.10f), 0.32f, 0.16f, 0.42f, Color.White);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, 0.55f, 0f), p.Size.X + 0.02f, 1.12f, p.Size.Z + 0.02f, new Color(40, 46, 58, 255));
+                    VisualEngine3D.Box(pos + new Vector3(-0.15f, 1.10f, 0f), 0.55f, 0.03f, 0.45f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0.42f, 1.18f, 0.10f), 0.32f, 0.16f, 0.42f, Color.White);
+
                     break;
                 }
 
                 case OfficePropKind.FilingCabinet:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X + 0.02f, p.Size.Y + 0.02f, p.Size.Z + 0.02f, new Color(30, 34, 44, 255));
+                    VisualEngine3D.Box(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
+
                     for (int d = 0; d < 4; d++)
                     {
-                        Raylib.DrawCube(pos + new Vector3(-p.Size.X * 0.51f, 0.30f + d * 0.42f, 0f), 0.04f, 0.34f, p.Size.Z * 0.82f, p.AccentColor);
+                        VisualEngine3D.Box(pos + new Vector3(-p.Size.X * 0.51f, 0.30f + d * 0.42f, 0f), 0.04f, 0.34f, p.Size.Z * 0.82f, p.AccentColor);
                     }
                     break;
                 }
 
                 case OfficePropKind.RollingWhiteboard:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, 1.25f, 0f), p.Size.X, 1.25f, 0.08f, p.PrimaryColor);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, 1.25f, 0f), p.Size.X + 0.06f, 1.32f, 0.12f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 1.25f, 0f), p.Size.X, 1.25f, 0.08f, p.PrimaryColor);
+
                     // Architecture diagram boxes drawn on whiteboard
-                    Raylib.DrawCube(pos + new Vector3(-0.55f, 1.35f, 0.05f), 0.45f, 0.28f, 0.02f, p.AccentColor);
-                    Raylib.DrawCube(pos + new Vector3(0.45f, 1.15f, 0.05f), 0.52f, 0.32f, 0.02f, new Color(45, 205, 135, 255));
+                    VisualEngine3D.Box(pos + new Vector3(-0.55f, 1.35f, 0.05f), 0.45f, 0.28f, 0.02f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0.45f, 1.15f, 0.05f), 0.52f, 0.32f, 0.02f, new Color(45, 205, 135, 255));
                     break;
                 }
 
                 case OfficePropKind.WaterCooler:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.56f, 0f), 0.50f, 1.12f, 0.50f, p.PrimaryColor);
-                    Raylib.DrawCylinderEx(pos + new Vector3(0f, 1.12f, 0f), pos + new Vector3(0f, 1.72f, 0f), 0.22f, 0.20f, 10, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.56f, 0f), 0.50f, 1.12f, 0.50f, p.PrimaryColor);
+                    VisualEngine3D.Rod(pos + new Vector3(0f, 1.12f, 0f), pos + new Vector3(0f, 1.72f, 0f), 0.22f, 0.20f, 10, p.AccentColor);
                     break;
                 }
 
                 case OfficePropKind.VendingMachine:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(-0.12f, p.Size.Y * 0.56f, p.Size.Z * 0.49f), p.Size.X * 0.62f, p.Size.Y * 0.64f, 0.04f, p.AccentColor);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X + 0.04f, p.Size.Y + 0.04f, p.Size.Z + 0.04f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(-0.12f, p.Size.Y * 0.56f, p.Size.Z * 0.49f), p.Size.X * 0.62f, p.Size.Y * 0.64f, 0.04f, p.AccentColor);
+
                     break;
                 }
 
                 case OfficePropKind.LeatherSofa:
                 {
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.36f, 0f), p.Size.X, 0.52f, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCube(pos + new Vector3(0f, 0.78f, -p.Size.Z * 0.35f), p.Size.X, 0.62f, 0.26f, p.PrimaryColor);
-                    Raylib.DrawCubeWires(pos + new Vector3(0f, 0.48f, 0f), p.Size.X + 0.04f, 0.88f, p.Size.Z + 0.04f, p.AccentColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.36f, 0f), p.Size.X, 0.52f, p.Size.Z, p.PrimaryColor);
+                    VisualEngine3D.Box(pos + new Vector3(0f, 0.78f, -p.Size.Z * 0.35f), p.Size.X, 0.62f, 0.26f, p.PrimaryColor);
+
                     break;
                 }
 
                 case OfficePropKind.PottedFicus:
                 {
-                    Raylib.DrawCylinderEx(pos, pos + new Vector3(0f, 0.62f, 0f), 0.44f, 0.36f, 10, p.AccentColor);
-                    Raylib.DrawCylinderEx(pos + new Vector3(0f, 0.60f, 0f), pos + new Vector3(0f, 1.75f, 0f), 0.10f, 0.08f, 8, new Color(92, 62, 38, 255));
-                    Raylib.DrawSphere(pos + new Vector3(0f, 1.85f, 0f), 0.68f, p.PrimaryColor);
+                    VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.62f, 0f), 0.44f, 0.36f, 10, p.AccentColor);
+                    VisualEngine3D.Rod(pos + new Vector3(0f, 0.60f, 0f), pos + new Vector3(0f, 1.75f, 0f), 0.10f, 0.08f, 8, new Color(92, 62, 38, 255));
+                    VisualEngine3D.Orb(pos + new Vector3(0f, 1.85f, 0f), 0.68f, p.PrimaryColor);
                     break;
                 }
 
                 case OfficePropKind.TrashBin:
                 {
-                    Raylib.DrawCylinderEx(pos, pos + new Vector3(0f, 0.44f, 0f), 0.18f, 0.22f, 8, p.PrimaryColor);
-                    Raylib.DrawSphere(pos + new Vector3(0f, 0.45f, 0f), 0.12f, p.AccentColor);
+                    VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.44f, 0f), 0.18f, 0.22f, 8, p.PrimaryColor);
+                    VisualEngine3D.Orb(pos + new Vector3(0f, 0.45f, 0f), 0.12f, p.AccentColor);
                     break;
                 }
 
                 case OfficePropKind.CeilingDuct:
                 {
-                    Raylib.DrawCube(pos, p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
-                    Raylib.DrawCubeWires(pos, p.Size.X + 0.03f, p.Size.Y + 0.03f, p.Size.Z, p.AccentColor);
+                    VisualEngine3D.Box(pos, p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
+
                     break;
                 }
             }
@@ -1996,62 +1997,25 @@ public sealed class SkyscraperFloor1World
 
     private void DrawSkyscraperArchitecture3D()
     {
-        // 1. Polished Checkered Marble/Granite Skyscraper Floor Tiles (ZERO WATER!)
-        const int tilesX = 20;
-        const int tilesZ = 22;
-        float tileW = (HalfWidth * 2f) / tilesX;
-        float tileD = (HalfDepth * 2f) / tilesZ;
-
-        for (int ix = 0; ix < tilesX; ix++)
-        {
-            for (int iz = 0; iz < tilesZ; iz++)
-            {
-                float cx = -HalfWidth + (ix + 0.5f) * tileW;
-                float cz = -HalfDepth + (iz + 0.5f) * tileD;
-
-                bool isEven = ((ix + iz) % 2 == 0);
-                // South Base has warm crimson-violet carpet accent; North Boss Arena has dark steel hazard tiles
-                Color tileColor;
-                if (cz > 10.2f)
-                {
-                    tileColor = isEven ? new Color(44, 30, 56, 255) : new Color(34, 24, 44, 255);
-                }
-                else if (cz < -9.5f)
-                {
-                    tileColor = isEven ? new Color(32, 36, 46, 255) : new Color(24, 28, 36, 255);
-                }
-                else
-                {
-                    tileColor = isEven ? new Color(46, 52, 66, 255) : new Color(36, 40, 52, 255);
-                }
-
-                Raylib.DrawCube(new Vector3(cx, -0.05f, cz), tileW, 0.10f, tileD, tileColor);
-            }
-        }
-
-        // Glowing Neon Floor Zone Guide Strips (leading from South Base -> MacBook Trap -> North Elevator)
-        Raylib.DrawCube(new Vector3(0f, 0.01f, 8.5f), 0.22f, 0.02f, 11.0f, new Color(0, 235, 255, 200));
-        Raylib.DrawCube(new Vector3(0f, 0.01f, -9.5f), 0.26f, 0.02f, 18.0f, new Color(255, 55, 110, 200));
-        Raylib.DrawCube(new Vector3(-19.5f, 0.02f, 10.2f), 39.0f, 0.03f, 0.12f, new Color(190, 90, 255, 220));
-        Raylib.DrawCube(new Vector3(-19.5f, 0.02f, -9.5f), 39.0f, 0.03f, 0.12f, new Color(255, 190, 40, 220));
+        VisualEngine3D.Floor(HalfWidth*2, HalfDepth*2);
 
         // 2. Ceiling Grid & Luminous Office LED Panels
-        Raylib.DrawCube(new Vector3(0f, CeilingHeight + 0.1f, 0f), HalfWidth * 2f + 1f, 0.2f, HalfDepth * 2f + 1f, new Color(18, 20, 28, 255));
+        VisualEngine3D.Box(new Vector3(0f, CeilingHeight + 0.1f, 0f), HalfWidth * 2f + 1f, 0.2f, HalfDepth * 2f + 1f, new Color(110, 116, 135, 255), Finish.Plaster);
         for (int lx = -12; lx <= 12; lx += 8)
         {
             for (int lz = -16; lz <= 16; lz += 8)
             {
-                Raylib.DrawCube(new Vector3(lx, CeilingHeight - 0.03f, lz), 2.8f, 0.06f, 1.2f, new Color(225, 242, 255, 255));
-                Raylib.DrawCubeWires(new Vector3(lx, CeilingHeight - 0.03f, lz), 2.9f, 0.08f, 1.3f, new Color(80, 195, 255, 255));
+                VisualEngine3D.Box(new Vector3(lx, CeilingHeight - 0.03f, lz), 2.8f, 0.06f, 1.2f, new Color(225, 242, 255, 255));
+
             }
         }
 
         // 3. Perimeter Skyscraper Walls & Panoramic Night City Skyline Outside Windows
         // South Wall (behind Base)
-        Raylib.DrawCube(new Vector3(0f, CeilingHeight * 0.5f, HalfDepth), HalfWidth * 2f, CeilingHeight, 0.4f, new Color(28, 24, 38, 255));
+        VisualEngine3D.Box(new Vector3(0f, CeilingHeight * 0.5f, HalfDepth), HalfWidth * 2f, CeilingHeight, 0.4f, new Color(153, 141, 155, 255), Finish.Plaster);
         // North Wall (around Armored Elevator)
-        Raylib.DrawCube(new Vector3(-11.5f, CeilingHeight * 0.5f, -HalfDepth), 17.0f, CeilingHeight, 0.4f, new Color(26, 30, 40, 255));
-        Raylib.DrawCube(new Vector3(11.5f, CeilingHeight * 0.5f, -HalfDepth), 17.0f, CeilingHeight, 0.4f, new Color(26, 30, 40, 255));
+        VisualEngine3D.Box(new Vector3(-11.5f, CeilingHeight * 0.5f, -HalfDepth), 17.0f, CeilingHeight, 0.4f, new Color(131, 145, 155, 255), Finish.Plaster);
+        VisualEngine3D.Box(new Vector3(11.5f, CeilingHeight * 0.5f, -HalfDepth), 17.0f, CeilingHeight, 0.4f, new Color(131, 145, 155, 255), Finish.Plaster);
 
         // West & East Panoramic Glass Curtain Walls + Spawn Doors + Night Skyscraper Silhouette Outside
         DrawSideWallAndSpawnDoor3D(isWest: true);
@@ -2066,18 +2030,18 @@ public sealed class SkyscraperFloor1World
             float d = p.HalfDepth * 2f;
 
             // Concrete/marble core
-            Raylib.DrawCube(colPos, w, CeilingHeight, d, new Color(54, 60, 74, 255));
-            Raylib.DrawCubeWires(colPos, w + 0.02f, CeilingHeight, d + 0.02f, new Color(30, 34, 44, 255));
+            VisualEngine3D.Box(colPos, w, CeilingHeight, d, new Color(157, 164, 184, 255), Finish.Plaster);
+
 
             // Glowing base & upper neon bands
-            Raylib.DrawCube(p.Center + new Vector3(0f, 0.18f, 0f), w + 0.10f, 0.32f, d + 0.10f, new Color(26, 28, 36, 255));
-            Raylib.DrawCube(p.Center + new Vector3(0f, 2.65f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
-            Raylib.DrawCube(p.Center + new Vector3(0f, 4.80f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 0.18f, 0f), w + 0.10f, 0.32f, d + 0.10f, new Color(26, 28, 36, 255));
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 2.65f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.80f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
 
             // Illuminated Corporate Poster Frame on South face of Pillar
             Vector3 posterPos = p.Center + new Vector3(0f, 2.05f, p.HalfDepth + 0.04f);
-            Raylib.DrawCube(posterPos, 1.35f, 0.95f, 0.05f, new Color(18, 22, 34, 255));
-            Raylib.DrawCubeWires(posterPos, 1.38f, 0.98f, 0.06f, p.AccentColor);
+            VisualEngine3D.Box(posterPos, 1.35f, 0.95f, 0.05f, new Color(18, 22, 34, 255));
+
         }
     }
 
@@ -2087,27 +2051,27 @@ public sealed class SkyscraperFloor1World
         float sign = isWest ? 1f : -1f;
 
         // Lower & Upper wall beams
-        Raylib.DrawCube(new Vector3(x, 0.5f, 0f), 0.35f, 1.0f, HalfDepth * 2f, new Color(34, 38, 48, 255));
-        Raylib.DrawCube(new Vector3(x, CeilingHeight - 0.6f, 0f), 0.35f, 1.2f, HalfDepth * 2f, new Color(34, 38, 48, 255));
+        VisualEngine3D.Box(new Vector3(x, 0.5f, 0f), 0.35f, 1.0f, HalfDepth * 2f, new Color(34, 38, 48, 255));
+        VisualEngine3D.Box(new Vector3(x, CeilingHeight - 0.6f, 0f), 0.35f, 1.2f, HalfDepth * 2f, new Color(34, 38, 48, 255));
 
         // Vertical window mullions
         for (int z = -18; z <= 18; z += 6)
         {
-            Raylib.DrawCube(new Vector3(x, CeilingHeight * 0.5f, z), 0.38f, CeilingHeight, 0.45f, new Color(42, 48, 60, 255));
+            VisualEngine3D.Box(new Vector3(x, CeilingHeight * 0.5f, z), 0.38f, CeilingHeight, 0.45f, new Color(42, 48, 60, 255));
         }
 
         // Spawn Door Frame at Z = 1.5f
         Vector3 doorPos = new Vector3(x + sign * 0.12f, 1.55f, 1.5f);
-        Raylib.DrawCube(doorPos, 0.22f, 3.1f, 2.6f, new Color(22, 28, 40, 255));
-        Raylib.DrawCubeWires(doorPos, 0.26f, 3.15f, 2.65f, new Color(0, 240, 255, 255));
+        VisualEngine3D.Box(doorPos, 0.22f, 3.1f, 2.6f, new Color(22, 28, 40, 255));
+
 
         // Distant Cyberpunk Night Skyscraper Towers outside the windows (proving we are inside an urban tower, ZERO water!)
         for (int i = -2; i <= 2; i++)
         {
             float bx = x - sign * (14f + MathF.Abs(i) * 4f);
             float bz = i * 11f;
-            Raylib.DrawCube(new Vector3(bx, -2.0f, bz), 5.5f, 26.0f, 5.5f, new Color(14, 18, 28, 255));
-            Raylib.DrawCubeWires(new Vector3(bx, -2.0f, bz), 5.55f, 26.0f, 5.55f, new Color(45, 95, 165, 180));
+            VisualEngine3D.Box(new Vector3(bx, -2.0f, bz), 5.5f, 26.0f, 5.5f, new Color(14, 18, 28, 255));
+
         }
     }
 
@@ -2116,26 +2080,26 @@ public sealed class SkyscraperFloor1World
         Vector3 b = HrTarotBoothPos;
 
         // 1. Mystical Purple Carpet Rug & Back Velvet Screen
-        Raylib.DrawCylinderEx(b + new Vector3(0f, 0.01f, 0f), b + new Vector3(0f, 0.03f, 0f), 2.85f, 2.85f, 20, new Color(78, 24, 112, 255));
-        Raylib.DrawCylinderWiresEx(b + new Vector3(0f, 0.02f, 0f), b + new Vector3(0f, 0.04f, 0f), 2.90f, 2.90f, 20, new Color(255, 205, 55, 255));
+        VisualEngine3D.Rod(b + new Vector3(0f, 0.01f, 0f), b + new Vector3(0f, 0.03f, 0f), 2.85f, 2.85f, 20, new Color(78, 24, 112, 255));
+
 
         // Backdrops & Neon Sign Arch
-        Raylib.DrawCube(b + new Vector3(0f, 1.85f, 1.45f), 3.6f, 3.7f, 0.18f, new Color(46, 16, 72, 255));
-        Raylib.DrawCubeWires(b + new Vector3(0f, 1.85f, 1.45f), 3.65f, 3.75f, 0.22f, new Color(255, 205, 65, 255));
-        Raylib.DrawCube(b + new Vector3(0f, 3.35f, 1.35f), 3.4f, 0.55f, 0.22f, new Color(28, 10, 46, 255));
-        Raylib.DrawCubeWires(b + new Vector3(0f, 3.35f, 1.35f), 3.44f, 0.58f, 0.24f, new Color(235, 95, 255, 255));
+        VisualEngine3D.Box(b + new Vector3(0f, 1.85f, 1.45f), 3.6f, 3.7f, 0.18f, Color.White, Finish.Tarot);
+
+        VisualEngine3D.Box(b + new Vector3(0f, 3.35f, 1.35f), 3.4f, 0.55f, 0.22f, new Color(28, 10, 46, 255));
+
 
         // 2. Purple Velvet Tarot Table with Gold Fringe
         Vector3 tablePos = b + new Vector3(0f, 0.52f, 0f);
-        Raylib.DrawCube(tablePos, 2.65f, 1.04f, 1.35f, new Color(96, 28, 138, 255));
-        Raylib.DrawCube(b + new Vector3(0f, 1.03f, 0f), 2.75f, 0.08f, 1.45f, new Color(245, 195, 45, 255));
+        VisualEngine3D.Box(tablePos, 2.65f, 1.04f, 1.35f, new Color(96, 28, 138, 255));
+        VisualEngine3D.Box(b + new Vector3(0f, 1.03f, 0f), 2.75f, 0.08f, 1.45f, new Color(245, 195, 45, 255));
 
         // 3. Glowing Crystal Ball in center of table
         float pulse = 0.85f + 0.15f * MathF.Sin(_worldClock * 4.2f);
         Vector3 ballPos = b + new Vector3(0f, 1.32f, -0.05f);
-        Raylib.DrawCylinderEx(b + new Vector3(0f, 1.06f, -0.05f), b + new Vector3(0f, 1.16f, -0.05f), 0.20f, 0.15f, 12, new Color(245, 195, 50, 255));
-        Raylib.DrawSphere(ballPos, 0.22f * pulse, new Color(185, 75, 255, 220));
-        Raylib.DrawSphere(ballPos, 0.12f, new Color(255, 230, 255, 255));
+        VisualEngine3D.Rod(b + new Vector3(0f, 1.06f, -0.05f), b + new Vector3(0f, 1.16f, -0.05f), 0.20f, 0.15f, 12, new Color(245, 195, 50, 255));
+        VisualEngine3D.Orb(ballPos, 0.22f * pulse, new Color(185, 75, 255, 220));
+        VisualEngine3D.Orb(ballPos, 0.12f, new Color(255, 230, 255, 255));
 
         // 4. 4 Spread Tarot Cards on the Velvet Table (`XVI БАШНЯ`, `0 ШУТ`, `X КОЛЕСО`, `XV ДЬЯВОЛ`)
         Color[] cardCols =
@@ -2149,8 +2113,8 @@ public sealed class SkyscraperFloor1World
         {
             float cx = -0.78f + c * 0.52f;
             Vector3 cardPos = b + new Vector3(cx, 1.08f, -0.38f);
-            Raylib.DrawCube(cardPos, 0.26f, 0.02f, 0.40f, new Color(24, 16, 38, 255));
-            Raylib.DrawCubeWires(cardPos, 0.27f, 0.03f, 0.41f, cardCols[c]);
+            VisualEngine3D.Box(cardPos, 0.26f, 0.02f, 0.40f, new Color(24, 16, 38, 255));
+
         }
 
         // 5. Burning Wax Candles on both sides of the Tarot Table
@@ -2159,10 +2123,10 @@ public sealed class SkyscraperFloor1World
         {
             Vector3 cBase = b + new Vector3(candleX[i], 1.07f, 0.22f * (i % 2 == 0 ? -1 : 1));
             float h = 0.22f + (i % 2) * 0.06f;
-            Raylib.DrawCylinderEx(cBase, cBase + new Vector3(0f, h, 0f), 0.045f, 0.042f, 8, new Color(245, 238, 215, 255));
+            VisualEngine3D.Rod(cBase, cBase + new Vector3(0f, h, 0f), 0.045f, 0.042f, 8, new Color(245, 238, 215, 255));
             float flicker = 0.055f + 0.015f * MathF.Sin(_worldClock * 14f + i * 2f);
-            Raylib.DrawSphere(cBase + new Vector3(0f, h + 0.05f, 0f), flicker, new Color(255, 185, 35, 250));
-            Raylib.DrawSphere(cBase + new Vector3(0f, h + 0.05f, 0f), flicker * 0.55f, Color.White);
+            VisualEngine3D.Orb(cBase + new Vector3(0f, h + 0.05f, 0f), flicker, new Color(255, 185, 35, 250));
+            VisualEngine3D.Orb(cBase + new Vector3(0f, h + 0.05f, 0f), flicker * 0.55f, Color.White);
         }
 
         // 6. 3D Character: HR-Tarot Veronika (curvy 3D figure in purple dress, golden necklace, mystical headband)
@@ -2170,29 +2134,29 @@ public sealed class SkyscraperFloor1World
         float sway = MathF.Sin(_worldClock * 2.4f) * 0.04f;
 
         // Purple gown & curvy torso
-        Raylib.DrawCylinderEx(vPos + new Vector3(0f, 0.85f, 0f), vPos + new Vector3(0f, 1.52f, 0f), 0.36f, 0.28f, 12, new Color(138, 34, 195, 255));
-        Raylib.DrawSphere(vPos + new Vector3(-0.13f, 1.36f, -0.22f), 0.15f, new Color(158, 42, 215, 255));
-        Raylib.DrawSphere(vPos + new Vector3(0.13f, 1.36f, -0.22f), 0.15f, new Color(158, 42, 215, 255));
+        VisualEngine3D.Rod(vPos + new Vector3(0f, 0.85f, 0f), vPos + new Vector3(0f, 1.52f, 0f), 0.36f, 0.28f, 12, new Color(138, 34, 195, 255));
+        VisualEngine3D.Orb(vPos + new Vector3(-0.13f, 1.36f, -0.22f), 0.15f, new Color(158, 42, 215, 255));
+        VisualEngine3D.Orb(vPos + new Vector3(0.13f, 1.36f, -0.22f), 0.15f, new Color(158, 42, 215, 255));
 
         // Golden mystical necklace
-        Raylib.DrawCylinderEx(vPos + new Vector3(0f, 1.48f, -0.02f), vPos + new Vector3(0f, 1.53f, -0.02f), 0.22f, 0.20f, 12, new Color(255, 210, 45, 255));
+        VisualEngine3D.Rod(vPos + new Vector3(0f, 1.48f, -0.02f), vPos + new Vector3(0f, 1.53f, -0.02f), 0.22f, 0.20f, 12, new Color(255, 210, 45, 255));
 
         // Head, hair & golden tarot headband with third-eye gem
         Vector3 headPos = vPos + new Vector3(sway, 1.78f, 0f);
-        Raylib.DrawSphere(headPos, 0.21f, new Color(245, 200, 175, 255));
+        VisualEngine3D.Orb(headPos, 0.21f, new Color(245, 200, 175, 255));
         // Voluminous dark-violet hair
-        Raylib.DrawSphere(headPos + new Vector3(0f, 0.06f, 0.06f), 0.24f, new Color(36, 16, 48, 255));
+        VisualEngine3D.Orb(headPos + new Vector3(0f, 0.06f, 0.06f), 0.24f, new Color(36, 16, 48, 255));
         // Golden headband + cyan gem
-        Raylib.DrawCylinderEx(headPos + new Vector3(0f, 0.06f, 0f), headPos + new Vector3(0f, 0.11f, 0f), 0.22f, 0.22f, 12, new Color(255, 205, 45, 255));
-        Raylib.DrawSphere(headPos + new Vector3(0f, 0.08f, -0.21f), 0.045f, new Color(0, 245, 255, 255));
+        VisualEngine3D.Rod(headPos + new Vector3(0f, 0.06f, 0f), headPos + new Vector3(0f, 0.11f, 0f), 0.22f, 0.22f, 12, new Color(255, 205, 45, 255));
+        VisualEngine3D.Orb(headPos + new Vector3(0f, 0.08f, -0.21f), 0.045f, new Color(0, 245, 255, 255));
 
         // Animated hands hovering mystically over the Crystal Ball
         Vector3 leftHand = ballPos + new Vector3(-0.28f, 0.18f + MathF.Sin(_worldClock * 3.5f) * 0.06f, 0.10f);
         Vector3 rightHand = ballPos + new Vector3(0.28f, 0.18f + MathF.Cos(_worldClock * 3.5f) * 0.06f, 0.10f);
-        Raylib.DrawCylinderEx(vPos + new Vector3(-0.32f, 1.44f, 0f), leftHand, 0.065f, 0.05f, 8, new Color(138, 34, 195, 255));
-        Raylib.DrawCylinderEx(vPos + new Vector3(0.32f, 1.44f, 0f), rightHand, 0.065f, 0.05f, 8, new Color(138, 34, 195, 255));
-        Raylib.DrawSphere(leftHand, 0.06f, new Color(245, 200, 175, 255));
-        Raylib.DrawSphere(rightHand, 0.06f, new Color(245, 200, 175, 255));
+        VisualEngine3D.Rod(vPos + new Vector3(-0.32f, 1.44f, 0f), leftHand, 0.065f, 0.05f, 8, new Color(138, 34, 195, 255));
+        VisualEngine3D.Rod(vPos + new Vector3(0.32f, 1.44f, 0f), rightHand, 0.065f, 0.05f, 8, new Color(138, 34, 195, 255));
+        VisualEngine3D.Orb(leftHand, 0.06f, new Color(245, 200, 175, 255));
+        VisualEngine3D.Orb(rightHand, 0.06f, new Color(245, 200, 175, 255));
     }
 
     private void Draw90sArsenalAndShopStand3D()
@@ -2200,13 +2164,13 @@ public sealed class SkyscraperFloor1World
         Vector3 s = ArsenalShopPos;
 
         // Counter & 90s Crimson/Gold Trim
-        Raylib.DrawCube(s + new Vector3(0f, 0.55f, 0f), 4.2f, 1.10f, 1.25f, new Color(36, 26, 38, 255));
-        Raylib.DrawCube(s + new Vector3(0f, 1.12f, 0f), 4.35f, 0.08f, 1.38f, new Color(190, 32, 68, 255));
-        Raylib.DrawCubeWires(s + new Vector3(0f, 0.55f, 0f), 4.25f, 1.12f, 1.28f, new Color(255, 205, 55, 255));
+        VisualEngine3D.Box(s + new Vector3(0f, 0.55f, 0f), 4.2f, 1.10f, 1.25f, new Color(36, 26, 38, 255));
+        VisualEngine3D.Box(s + new Vector3(0f, 1.12f, 0f), 4.35f, 0.08f, 1.38f, new Color(190, 32, 68, 255));
+
 
         // Back Weapon Pegboard Rack
-        Raylib.DrawCube(s + new Vector3(0f, 2.15f, 0.65f), 4.2f, 2.2f, 0.16f, new Color(24, 28, 38, 255));
-        Raylib.DrawCubeWires(s + new Vector3(0f, 2.15f, 0.65f), 4.24f, 2.24f, 0.18f, new Color(0, 230, 255, 255));
+        VisualEngine3D.Box(s + new Vector3(0f, 2.15f, 0.65f), 4.2f, 2.2f, 0.16f, new Color(24, 28, 38, 255));
+
 
         // 4 Subscription Bait Boxes displayed on counter (`Free $0`, `Pro $20`, `Turkey $80`, `Max $200`)
         SubscriptionBaitTier[] tiers =
@@ -2225,8 +2189,8 @@ public sealed class SkyscraperFloor1World
             float lift = isSelected ? 0.12f + 0.04f * MathF.Sin(_worldClock * 5f) : 0f;
             Vector3 boxPos = s + new Vector3(bx, 1.32f + lift, -0.15f);
 
-            Raylib.DrawCube(boxPos, 0.52f, 0.34f, 0.34f, info.NeonColor);
-            Raylib.DrawCubeWires(boxPos, 0.56f, 0.38f, 0.38f, isSelected ? Color.White : Color.Black);
+            VisualEngine3D.Box(boxPos, 0.52f, 0.34f, 0.34f, info.NeonColor);
+
         }
     }
 
@@ -2238,22 +2202,22 @@ public sealed class SkyscraperFloor1World
             Vector3 p = d.DeskPosition;
 
             // Office Desk Table
-            Raylib.DrawCube(p + new Vector3(0f, 0.74f, 0f), 1.75f, 0.07f, 0.95f, new Color(68, 74, 88, 255));
-            Raylib.DrawCube(p + new Vector3(-0.78f, 0.37f, 0f), 0.08f, 0.74f, 0.85f, new Color(42, 46, 56, 255));
-            Raylib.DrawCube(p + new Vector3(0.78f, 0.37f, 0f), 0.08f, 0.74f, 0.85f, new Color(42, 46, 56, 255));
+            VisualEngine3D.Box(p + new Vector3(0f, 0.74f, 0f), 1.75f, 0.07f, 0.95f, new Color(68, 74, 88, 255));
+            VisualEngine3D.Box(p + new Vector3(-0.78f, 0.37f, 0f), 0.08f, 0.74f, 0.85f, new Color(42, 46, 56, 255));
+            VisualEngine3D.Box(p + new Vector3(0.78f, 0.37f, 0f), 0.08f, 0.74f, 0.85f, new Color(42, 46, 56, 255));
 
             // PC Tower & Monitor on Desk
-            Raylib.DrawCube(p + new Vector3(0.62f, 0.98f, -0.15f), 0.24f, 0.44f, 0.42f, new Color(28, 32, 40, 255));
+            VisualEngine3D.Box(p + new Vector3(0.62f, 0.98f, -0.15f), 0.24f, 0.44f, 0.42f, new Color(28, 32, 40, 255));
             Color screenCol = !d.IsOccupied
                 ? new Color(35, 55, 75, 255)
                 : (d.IsSlackingInTwitter ? new Color(255, 45, 65, 255) : new Color(40, 245, 130, 255));
 
-            Raylib.DrawCube(p + new Vector3(-0.08f, 1.06f, -0.22f), 0.72f, 0.44f, 0.06f, new Color(20, 24, 32, 255));
-            Raylib.DrawCube(p + new Vector3(-0.08f, 1.06f, -0.18f), 0.66f, 0.38f, 0.02f, screenCol);
+            VisualEngine3D.Box(p + new Vector3(-0.08f, 1.06f, -0.22f), 0.72f, 0.44f, 0.06f, new Color(20, 24, 32, 255));
+            VisualEngine3D.Box(p + new Vector3(-0.08f, 1.06f, -0.18f), 0.66f, 0.38f, 0.02f, screenCol, Finish.Screen);
 
             // Office Chair
-            Raylib.DrawCube(d.ChairPosition + new Vector3(0f, 0.46f, 0f), 0.52f, 0.08f, 0.52f, new Color(32, 36, 46, 255));
-            Raylib.DrawCube(d.ChairPosition + new Vector3(0f, 0.82f, 0.22f), 0.50f, 0.65f, 0.08f, new Color(32, 36, 46, 255));
+            VisualEngine3D.Box(d.ChairPosition + new Vector3(0f, 0.46f, 0f), 0.52f, 0.08f, 0.52f, new Color(32, 36, 46, 255));
+            VisualEngine3D.Box(d.ChairPosition + new Vector3(0f, 0.82f, 0.22f), 0.50f, 0.65f, 0.08f, new Color(32, 36, 46, 255));
 
             // If a captured Vibe Coder is seated at this Galley Desk, render them typing or slacking!
             if (d.IsOccupied)
@@ -2262,15 +2226,15 @@ public sealed class SkyscraperFloor1World
                 float bob = MathF.Sin(d.TypingPhase) * 0.04f;
                 Color hoodie = d.WhackFlashTimer > 0f ? Color.Gold : d.HoodieColor;
 
-                Raylib.DrawCylinderEx(cPos + new Vector3(0f, 0.52f, 0f), cPos + new Vector3(0f, 1.18f, -0.08f), 0.24f, 0.20f, 10, hoodie);
-                Raylib.DrawSphere(cPos + new Vector3(0f, 1.36f + bob, -0.10f), 0.18f, new Color(240, 200, 175, 255));
+                VisualEngine3D.Rod(cPos + new Vector3(0f, 0.52f, 0f), cPos + new Vector3(0f, 1.18f, -0.08f), 0.24f, 0.20f, 10, hoodie);
+                VisualEngine3D.Orb(cPos + new Vector3(0f, 1.36f + bob, -0.10f), 0.18f, new Color(240, 200, 175, 255));
 
                 // Overhead Red Warning Diamond if Slacking in Twitter!
                 if (d.IsSlackingInTwitter)
                 {
                     Vector3 warnPos = cPos + new Vector3(0f, 1.95f + MathF.Sin(_worldClock * 8f) * 0.08f, 0f);
-                    Raylib.DrawSphere(warnPos, 0.18f, new Color(255, 40, 55, 245));
-                    Raylib.DrawCubeWires(warnPos, 0.32f, 0.32f, 0.32f, Color.Yellow);
+                    VisualEngine3D.Orb(warnPos, 0.18f, new Color(255, 40, 55, 245));
+
                 }
             }
         }
@@ -2282,25 +2246,25 @@ public sealed class SkyscraperFloor1World
         var baitInfo = GetBaitInfo(SelectedBaitTier);
 
         // 1. Sleek Central Trap Desk
-        Raylib.DrawCube(m + new Vector3(0f, 0.42f, 0f), 2.35f, 0.84f, 1.35f, new Color(38, 44, 58, 255));
-        Raylib.DrawCube(m + new Vector3(0f, 0.85f, 0f), 2.50f, 0.07f, 1.50f, new Color(75, 85, 105, 255));
-        Raylib.DrawCubeWires(m + new Vector3(0f, 0.44f, 0f), 2.48f, 0.88f, 1.48f, baitInfo.NeonColor);
+        VisualEngine3D.Box(m + new Vector3(0f, 0.42f, 0f), 2.35f, 0.84f, 1.35f, new Color(38, 44, 58, 255));
+        VisualEngine3D.Box(m + new Vector3(0f, 0.85f, 0f), 2.50f, 0.07f, 1.50f, new Color(75, 85, 105, 255));
+
 
         // 2. Open 3D Aluminum MacBook Pro on center of desk
         Vector3 mbBase = m + new Vector3(0f, 0.90f, 0.05f);
-        Raylib.DrawCube(mbBase, 0.62f, 0.03f, 0.44f, new Color(195, 205, 220, 255));
+        VisualEngine3D.Box(mbBase, 0.62f, 0.03f, 0.44f, new Color(195, 205, 220, 255));
         Vector3 mbScreen = m + new Vector3(0f, 1.12f, 0.25f);
-        Raylib.DrawCube(mbScreen, 0.62f, 0.42f, 0.03f, new Color(180, 190, 205, 255));
+        VisualEngine3D.Box(mbScreen, 0.62f, 0.42f, 0.03f, new Color(180, 190, 205, 255));
 
         Color screenGlow = IsMacBookTrapActive ? baitInfo.NeonColor : new Color(60, 110, 150, 255);
-        Raylib.DrawCube(mbScreen + new Vector3(0f, 0f, -0.02f), 0.56f, 0.36f, 0.01f, screenGlow);
+        VisualEngine3D.Box(mbScreen + new Vector3(0f, 0f, -0.02f), 0.56f, 0.36f, 0.01f, screenGlow, Finish.Screen);
 
         // 3. Floating 3D Hologram Beacon above the MacBook Trap Desk
         float holoY = 1.85f + MathF.Sin(MacBookHologramPhase) * 0.14f;
         Vector3 holoPos = m + new Vector3(0f, holoY, 0.05f);
         if (IsMacBookTrapActive)
         {
-            Raylib.DrawCylinderEx(
+            VisualEngine3D.Rod(
                 mbBase,
                 holoPos,
                 0.08f,
@@ -2308,8 +2272,8 @@ public sealed class SkyscraperFloor1World
                 12,
                 new Color(baitInfo.NeonColor.R, baitInfo.NeonColor.G, baitInfo.NeonColor.B, (byte)85));
         }
-        Raylib.DrawCube(holoPos, 0.36f, 0.36f, 0.36f, new Color(baitInfo.NeonColor.R, baitInfo.NeonColor.G, baitInfo.NeonColor.B, (byte)(IsMacBookTrapActive ? 225 : 120)));
-        Raylib.DrawCubeWires(holoPos, 0.46f, 0.46f, 0.46f, Color.White);
+        VisualEngine3D.Box(holoPos, 0.36f, 0.36f, 0.36f, new Color(baitInfo.NeonColor.R, baitInfo.NeonColor.G, baitInfo.NeonColor.B, (byte)(IsMacBookTrapActive ? 225 : 120)));
+
 
         // 4. Ambush Cover Objects around Central Desk
         for (int i = 0; i < AmbushCovers.Count; i++)
@@ -2320,31 +2284,31 @@ public sealed class SkyscraperFloor1World
             switch (cov.VisualKind)
             {
                 case 0: // Leather Sofa from the 90s
-                    Raylib.DrawCube(p + new Vector3(0f, 0.38f, 0f), 2.3f, 0.55f, 0.95f, new Color(98, 42, 32, 255));
-                    Raylib.DrawCube(p + new Vector3(0f, 0.82f, 0.36f), 2.3f, 0.65f, 0.25f, new Color(115, 48, 36, 255));
-                    Raylib.DrawCubeWires(p + new Vector3(0f, 0.55f, 0f), 2.35f, 1.05f, 1.0f, new Color(255, 200, 65, 160));
+                    VisualEngine3D.Box(p + new Vector3(0f, 0.38f, 0f), 2.3f, 0.55f, 0.95f, new Color(98, 42, 32, 255));
+                    VisualEngine3D.Box(p + new Vector3(0f, 0.82f, 0.36f), 2.3f, 0.65f, 0.25f, new Color(115, 48, 36, 255));
+
                     break;
 
                 case 1: // Large Potted Office Ficus Tree
-                    Raylib.DrawCylinderEx(p, p + new Vector3(0f, 0.68f, 0f), 0.52f, 0.42f, 12, new Color(135, 90, 58, 255));
-                    Raylib.DrawCylinderEx(p + new Vector3(0f, 0.65f, 0f), p + new Vector3(0f, 1.85f, 0f), 0.12f, 0.09f, 8, new Color(92, 62, 38, 255));
-                    Raylib.DrawSphere(p + new Vector3(0f, 1.95f, 0f), 0.72f, new Color(36, 155, 72, 255));
-                    Raylib.DrawSphere(p + new Vector3(-0.35f, 1.65f, 0.2f), 0.48f, new Color(46, 175, 84, 255));
-                    Raylib.DrawSphere(p + new Vector3(0.35f, 1.70f, -0.2f), 0.48f, new Color(30, 138, 62, 255));
+                    VisualEngine3D.Rod(p, p + new Vector3(0f, 0.68f, 0f), 0.52f, 0.42f, 12, new Color(135, 90, 58, 255));
+                    VisualEngine3D.Rod(p + new Vector3(0f, 0.65f, 0f), p + new Vector3(0f, 1.85f, 0f), 0.12f, 0.09f, 8, new Color(92, 62, 38, 255));
+                    VisualEngine3D.Orb(p + new Vector3(0f, 1.95f, 0f), 0.72f, new Color(36, 155, 72, 255));
+                    VisualEngine3D.Orb(p + new Vector3(-0.35f, 1.65f, 0.2f), 0.48f, new Color(46, 175, 84, 255));
+                    VisualEngine3D.Orb(p + new Vector3(0.35f, 1.70f, -0.2f), 0.48f, new Color(30, 138, 62, 255));
                     break;
 
                 case 2: // Office Water Cooler with Blue Bottle
-                    Raylib.DrawCube(p + new Vector3(0f, 0.58f, 0f), 0.52f, 1.16f, 0.52f, new Color(225, 232, 240, 255));
-                    Raylib.DrawCylinderEx(p + new Vector3(0f, 1.16f, 0f), p + new Vector3(0f, 1.78f, 0f), 0.22f, 0.20f, 12, new Color(45, 165, 255, 220));
+                    VisualEngine3D.Box(p + new Vector3(0f, 0.58f, 0f), 0.52f, 1.16f, 0.52f, new Color(225, 232, 240, 255));
+                    VisualEngine3D.Rod(p + new Vector3(0f, 1.16f, 0f), p + new Vector3(0f, 1.78f, 0f), 0.22f, 0.20f, 12, new Color(45, 165, 255, 220));
                     break;
 
                 case 3: // Blinking Open-Space Server Rack
-                    Raylib.DrawCube(p + new Vector3(0f, 1.15f, 0f), 0.95f, 2.30f, 0.85f, new Color(24, 28, 38, 255));
-                    Raylib.DrawCubeWires(p + new Vector3(0f, 1.15f, 0f), 0.98f, 2.32f, 0.88f, new Color(0, 230, 255, 255));
+                    VisualEngine3D.Box(p + new Vector3(0f, 1.15f, 0f), 0.95f, 2.30f, 0.85f, Color.White, Finish.Rack);
+
                     for (int row = 0; row < 5; row++)
                     {
                         Color led = ((row + (int)(_worldClock * 4f)) % 2 == 0) ? Color.Lime : Color.SkyBlue;
-                        Raylib.DrawCube(p + new Vector3(0f, 0.45f + row * 0.36f, -0.43f), 0.72f, 0.08f, 0.04f, led);
+                        VisualEngine3D.Box(p + new Vector3(0f, 0.45f + row * 0.36f, -0.43f), 0.72f, 0.08f, 0.04f, led);
                     }
                     break;
             }
@@ -2359,24 +2323,24 @@ public sealed class SkyscraperFloor1World
         float coreD = ElevatorCoreHalfD * 2f; // 9.0m
 
         // Massive floor-to-ceiling armored steel shaft in the center of the floor (creating Left Fork & Right Fork corridors!)
-        Raylib.DrawCube(core + new Vector3(0f, CeilingHeight * 0.5f, 0f), coreW, CeilingHeight, coreD, new Color(34, 40, 52, 255));
-        Raylib.DrawCubeWires(core + new Vector3(0f, CeilingHeight * 0.5f, 0f), coreW + 0.08f, CeilingHeight, coreD + 0.08f, new Color(255, 195, 45, 255));
+        VisualEngine3D.Box(core + new Vector3(0f, CeilingHeight * 0.5f, 0f), coreW, CeilingHeight, coreD, new Color(188, 190, 200, 255), Finish.Armor);
+
 
         // Glowing neon hazard bands wrapping around the Central Elevator Core
-        Raylib.DrawCube(core + new Vector3(0f, 0.25f, 0f), coreW + 0.16f, 0.35f, coreD + 0.16f, new Color(22, 26, 34, 255));
-        Raylib.DrawCube(core + new Vector3(0f, 3.85f, 0f), coreW + 0.14f, 0.18f, coreD + 0.14f, new Color(255, 65, 95, 255));
-        Raylib.DrawCube(core + new Vector3(0f, 5.45f, 0f), coreW + 0.14f, 0.16f, coreD + 0.14f, new Color(0, 235, 255, 255));
+        VisualEngine3D.Box(core + new Vector3(0f, 0.25f, 0f), coreW + 0.16f, 0.35f, coreD + 0.16f, new Color(22, 26, 34, 255));
+        VisualEngine3D.Box(core + new Vector3(0f, 3.85f, 0f), coreW + 0.14f, 0.18f, coreD + 0.14f, new Color(144, 87, 65, 255));
+        VisualEngine3D.Box(core + new Vector3(0f, 5.45f, 0f), coreW + 0.14f, 0.16f, coreD + 0.14f, new Color(102, 136, 147, 255));
 
         // Draw Armored Sliding Doors on BOTH North face (`NorthElevatorPos`) and South face (`SouthElevatorDoorPos`)
         DrawElevatorDoorFace3D(NorthElevatorPos, faceNormalZ: -1f);
         DrawElevatorDoorFace3D(SouthElevatorDoorPos, faceNormalZ: +1f);
 
         // Call Button Pedestals on North & South sides
-        Raylib.DrawCylinderEx(ElevatorButtonPos, ElevatorButtonPos + new Vector3(0f, 1.15f, 0f), 0.18f, 0.14f, 10, new Color(55, 62, 76, 255));
-        Raylib.DrawSphere(ElevatorButtonPos + new Vector3(0f, 1.22f, 0f), 0.14f, HasElevatorKey ? Color.Lime : new Color(255, 195, 35, 255));
+        VisualEngine3D.Rod(ElevatorButtonPos, ElevatorButtonPos + new Vector3(0f, 1.15f, 0f), 0.18f, 0.14f, 10, new Color(55, 62, 76, 255));
+        VisualEngine3D.Orb(ElevatorButtonPos + new Vector3(0f, 1.22f, 0f), 0.14f, HasElevatorKey ? Color.Lime : new Color(255, 195, 35, 255));
 
-        Raylib.DrawCylinderEx(SouthElevatorButtonPos, SouthElevatorButtonPos + new Vector3(0f, 1.15f, 0f), 0.18f, 0.14f, 10, new Color(55, 62, 76, 255));
-        Raylib.DrawSphere(SouthElevatorButtonPos + new Vector3(0f, 1.22f, 0f), 0.14f, HasElevatorKey ? Color.Lime : new Color(255, 195, 35, 255));
+        VisualEngine3D.Rod(SouthElevatorButtonPos, SouthElevatorButtonPos + new Vector3(0f, 1.15f, 0f), 0.18f, 0.14f, 10, new Color(55, 62, 76, 255));
+        VisualEngine3D.Orb(SouthElevatorButtonPos + new Vector3(0f, 1.22f, 0f), 0.14f, HasElevatorKey ? Color.Lime : new Color(255, 195, 35, 255));
     }
 
     private void DrawElevatorDoorFace3D(Vector3 doorCenter, float faceNormalZ)
@@ -2385,22 +2349,23 @@ public sealed class SkyscraperFloor1World
             ? new Color(55, 245, 145, 255)
             : (ElevatorBoss.IsActive ? new Color(235, 45, 65, 255) : new Color(30, 40, 58, 255));
 
-        Raylib.DrawCube(doorCenter + new Vector3(0f, 2.0f, -faceNormalZ * 0.12f), 4.4f, 3.9f, 0.18f, interiorGlow);
+        VisualEngine3D.Box(doorCenter + new Vector3(0f, 2.0f, -faceNormalZ * 0.12f), 4.4f, 3.9f, 0.18f, interiorGlow);
 
         float slide = ElevatorDoorOpenAmount * 1.18f;
         Vector3 leftDoor = doorCenter + new Vector3(-1.08f - slide, 1.95f, faceNormalZ * 0.08f);
         Vector3 rightDoor = doorCenter + new Vector3(1.08f + slide, 1.95f, faceNormalZ * 0.08f);
 
-        Raylib.DrawCube(leftDoor, 2.10f, 3.8f, 0.18f, new Color(82, 90, 108, 255));
-        Raylib.DrawCube(rightDoor, 2.10f, 3.8f, 0.18f, new Color(82, 90, 108, 255));
-        Raylib.DrawCubeWires(leftDoor, 2.12f, 3.82f, 0.20f, Color.Black);
-        Raylib.DrawCubeWires(rightDoor, 2.12f, 3.82f, 0.20f, Color.Black);
+        VisualEngine3D.Box(leftDoor, 2.10f, 3.8f, 0.18f, new Color(194, 192, 180, 255), Finish.Armor);
+        VisualEngine3D.Box(rightDoor, 2.10f, 3.8f, 0.18f, new Color(194, 192, 180, 255), Finish.Armor);
 
+
+
+        VisualEngine3D.Box(doorCenter + new Vector3(0,4.72f,faceNormalZ*.1f),1.65f,1.4f,.12f,Color.White,Finish.Lift);
         Color beaconCol = (ElevatorBoss.IsActive && MathF.Sin(WarningBeaconPhase) > 0f)
             ? new Color(255, 35, 35, 255)
             : new Color(185, 28, 42, 255);
-        Raylib.DrawSphere(doorCenter + new Vector3(-2.4f, 4.25f, faceNormalZ * 0.25f), 0.25f, beaconCol);
-        Raylib.DrawSphere(doorCenter + new Vector3(2.4f, 4.25f, faceNormalZ * 0.25f), 0.25f, beaconCol);
+        VisualEngine3D.Orb(doorCenter + new Vector3(-2.4f, 4.25f, faceNormalZ * 0.25f), 0.25f, beaconCol);
+        VisualEngine3D.Orb(doorCenter + new Vector3(2.4f, 4.25f, faceNormalZ * 0.25f), 0.25f, beaconCol);
     }
 
     private void DrawVibeCoder3D(VibeCoderEntity c)
@@ -2420,14 +2385,14 @@ public sealed class SkyscraperFloor1World
         float crouchY = c.State == CoderAIState.Subdued ? -0.35f : 0f;
 
         // Shadow disc
-        Raylib.DrawCylinderEx(p + new Vector3(0f, 0.01f, 0f), p + new Vector3(0f, 0.02f, 0f), 0.48f * scale, 0.48f * scale, 12, new Color(0, 0, 0, 120));
+        VisualEngine3D.Rod(p + new Vector3(0f, 0.01f, 0f), p + new Vector3(0f, 0.02f, 0f), 0.48f * scale, 0.48f * scale, 12, new Color(0, 0, 0, 120));
 
         // Legs / Sneakers
-        Raylib.DrawCylinderEx(
+        VisualEngine3D.Rod(
             p + new Vector3(-0.14f * scale, 0.05f, legSwing),
             p + new Vector3(-0.14f * scale, (0.72f + crouchY) * scale, 0f),
             0.095f * scale, 0.105f * scale, 8, pants);
-        Raylib.DrawCylinderEx(
+        VisualEngine3D.Rod(
             p + new Vector3(0.14f * scale, 0.05f, -legSwing),
             p + new Vector3(0.14f * scale, (0.72f + crouchY) * scale, 0f),
             0.095f * scale, 0.105f * scale, 8, pants);
@@ -2435,36 +2400,36 @@ public sealed class SkyscraperFloor1World
         // Oversized Hoodie Torso
         Vector3 torsoBot = p + new Vector3(0f, (0.68f + crouchY) * scale, 0f);
         Vector3 torsoTop = p + new Vector3(0f, (1.42f + crouchY) * scale, 0f);
-        Raylib.DrawCylinderEx(torsoBot, torsoTop, 0.31f * scale, 0.27f * scale, 12, hoodie);
+        VisualEngine3D.Rod(torsoBot, torsoTop, 0.31f * scale, 0.27f * scale, 12, hoodie);
 
         // Head + VR/AR Glasses + Headphones
         Vector3 headCenter = p + new Vector3(0f, (1.66f + crouchY) * scale, 0f);
-        Raylib.DrawSphere(headCenter, 0.22f * scale, skin);
+        VisualEngine3D.Orb(headCenter, 0.22f * scale, skin);
 
         Vector3 forward = new Vector3(MathF.Sin(c.FacingYaw), 0f, MathF.Cos(c.FacingYaw));
         Vector3 visorPos = headCenter + forward * (0.18f * scale) + new Vector3(0f, 0.02f * scale, 0f);
-        Raylib.DrawCube(visorPos, 0.28f * scale, 0.10f * scale, 0.12f * scale, c.GlassesColor);
+        VisualEngine3D.Box(visorPos, 0.28f * scale, 0.10f * scale, 0.12f * scale, c.GlassesColor);
 
         // Mini-Boss Golden Crown ($60K MRR SaaS Guru)
         if (c.IsMiniBoss)
         {
             Vector3 crownPos = headCenter + new Vector3(0f, 0.24f * scale, 0f);
-            Raylib.DrawCylinderEx(crownPos, crownPos + new Vector3(0f, 0.18f, 0f), 0.22f, 0.26f, 8, new Color(255, 215, 35, 255));
-            Raylib.DrawCubeWires(crownPos + new Vector3(0f, 0.09f, 0f), 0.42f, 0.20f, 0.42f, Color.Red);
+            VisualEngine3D.Rod(crownPos, crownPos + new Vector3(0f, 0.18f, 0f), 0.22f, 0.26f, 8, new Color(255, 215, 35, 255));
+
         }
 
         // Arms (raised in surrender when Subdued!)
         if (c.State == CoderAIState.Subdued)
         {
-            Raylib.DrawCylinderEx(torsoTop + new Vector3(-0.28f * scale, -0.05f, 0f), headCenter + new Vector3(-0.36f * scale, 0.35f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
-            Raylib.DrawCylinderEx(torsoTop + new Vector3(0.28f * scale, -0.05f, 0f), headCenter + new Vector3(0.36f * scale, 0.35f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
-            Raylib.DrawCylinderWiresEx(p, p + new Vector3(0f, 2.1f, 0f), 0.65f * scale, 0.65f * scale, 12, new Color(65, 255, 135, 200));
+            VisualEngine3D.Rod(torsoTop + new Vector3(-0.28f * scale, -0.05f, 0f), headCenter + new Vector3(-0.36f * scale, 0.35f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
+            VisualEngine3D.Rod(torsoTop + new Vector3(0.28f * scale, -0.05f, 0f), headCenter + new Vector3(0.36f * scale, 0.35f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
+
         }
         else
         {
             Vector3 handPos = torsoTop + forward * (0.36f * scale) + new Vector3(0f, -0.16f * scale, 0f);
-            Raylib.DrawCylinderEx(torsoTop + new Vector3(-0.26f * scale, -0.05f, 0f), handPos + new Vector3(-0.12f, 0f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
-            Raylib.DrawCylinderEx(torsoTop + new Vector3(0.26f * scale, -0.05f, 0f), handPos + new Vector3(0.12f, 0f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
+            VisualEngine3D.Rod(torsoTop + new Vector3(-0.26f * scale, -0.05f, 0f), handPos + new Vector3(-0.12f, 0f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
+            VisualEngine3D.Rod(torsoTop + new Vector3(0.26f * scale, -0.05f, 0f), handPos + new Vector3(0.12f, 0f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
         }
     }
 
@@ -2481,26 +2446,26 @@ public sealed class SkyscraperFloor1World
             : new Color(55, 255, 145, 255);
 
         // 4 Wheels at bottom of server rack
-        Raylib.DrawSphere(p + new Vector3(-0.65f, 0.24f, -0.55f), 0.24f, new Color(20, 22, 26, 255));
-        Raylib.DrawSphere(p + new Vector3(0.65f, 0.24f, -0.55f), 0.24f, new Color(20, 22, 26, 255));
-        Raylib.DrawSphere(p + new Vector3(-0.65f, 0.24f, 0.55f), 0.24f, new Color(20, 22, 26, 255));
-        Raylib.DrawSphere(p + new Vector3(0.65f, 0.24f, 0.55f), 0.24f, new Color(20, 22, 26, 255));
+        VisualEngine3D.Orb(p + new Vector3(-0.65f, 0.24f, -0.55f), 0.24f, new Color(20, 22, 26, 255));
+        VisualEngine3D.Orb(p + new Vector3(0.65f, 0.24f, -0.55f), 0.24f, new Color(20, 22, 26, 255));
+        VisualEngine3D.Orb(p + new Vector3(-0.65f, 0.24f, 0.55f), 0.24f, new Color(20, 22, 26, 255));
+        VisualEngine3D.Orb(p + new Vector3(0.65f, 0.24f, 0.55f), 0.24f, new Color(20, 22, 26, 255));
 
         // Boxy Wheeled Server-Rack Body
         Vector3 bodyCenter = p + new Vector3(0f, 1.35f, 0f);
-        Raylib.DrawCube(bodyCenter, 1.55f, 1.95f, 1.25f, chassisCol);
-        Raylib.DrawCubeWires(bodyCenter, 1.58f, 1.98f, 1.28f, new Color(0, 235, 255, 255));
+        VisualEngine3D.Box(bodyCenter, 1.55f, 1.95f, 1.25f, flash ? chassisCol : Color.White, Finish.Rack);
+
 
         // Crossed Blue Duct Tape ("Синяя изолента") holding the AI Agent together
-        Raylib.DrawCube(bodyCenter + new Vector3(0f, 0.35f, 0f), 1.62f, 0.22f, 1.30f, ductTapeCol);
-        Raylib.DrawCube(bodyCenter + new Vector3(0f, -0.35f, 0f), 1.62f, 0.22f, 1.30f, ductTapeCol);
+        VisualEngine3D.Box(bodyCenter + new Vector3(0f, 0.35f, 0f), 1.62f, 0.22f, 1.30f, ductTapeCol);
+        VisualEngine3D.Box(bodyCenter + new Vector3(0f, -0.35f, 0f), 1.62f, 0.22f, 1.30f, ductTapeCol);
 
         // CRT Monitor Head on top of Server Rack
         Vector3 headCenter = p + new Vector3(0f, 2.68f, 0f);
-        Raylib.DrawCube(headCenter, 1.05f, 0.82f, 0.88f, new Color(195, 190, 175, 255));
+        VisualEngine3D.Box(headCenter, 1.05f, 0.82f, 0.88f, new Color(195, 190, 175, 255));
         Vector3 forward = new Vector3(MathF.Sin(b.FacingYaw), 0f, MathF.Cos(b.FacingYaw));
-        Raylib.DrawCube(headCenter + forward * 0.44f, 0.82f, 0.62f, 0.05f, screenGlow);
-        Raylib.DrawCubeWires(headCenter, 1.08f, 0.85f, 0.90f, Color.Black);
+        VisualEngine3D.Box(headCenter + forward * 0.44f, 0.82f, 0.62f, 0.05f, screenGlow, Finish.Screen);
+
     }
 
     private void DrawEnemyProjectiles3D()
@@ -2509,249 +2474,97 @@ public sealed class SkyscraperFloor1World
         {
             var pr = EnemyProjectiles[i];
             float s = pr.Radius * 1.45f;
-            Raylib.DrawCube(pr.Position, s, s, s, pr.PrimaryColor);
-            Raylib.DrawCubeWires(pr.Position, s + 0.05f, s + 0.05f, s + 0.05f, pr.WireColor);
+            VisualEngine3D.Box(pr.Position, s, s, s, pr.PrimaryColor);
+
         }
     }
 
     // =========================================================================
     // 2D WORLD-TO-SCREEN LABELS, HEALTH BARS, ANXIETY BARS & INTERACTION HINTS
     // =========================================================================
-    public void DrawWorldLabelsAndIndicators2D(Camera3D camera, Font font)
+    private enum FocusKind { None, MacBook, Veronika, Shop, Elevator, Desk, Coder }
+    private readonly record struct Focus(FocusKind Kind, string Label, int Index);
+    private string PickUp(VibeCoderEntity c)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        Vector3 camForward = Vector3.Normalize(camera.Target - camera.Position);
-        _drawnBillboardRects.Clear();
+        if (CarriedCoder != null) return "Сначала отведи пойманного кодера к Веронике или на галеру";
+        CarriedCoder = c;
+        ActiveCoders.Remove(c);
+        AudioMusicSystem.TriggerVoiceLine(
+            "КОММЕРС 90-Х",
+            $"Поднял кандидата «{c.Name}»! Неси Веронике (HR-Тарологу) за ${c.TarotPayoutValue} или сажай на Галеру!",
+            (int)SpeakerVoiceType.Boss90s);
+        return $"СХВАЧЕН: {c.Name}! Неси в будку HR-Таролога Вероники (слева на Юге) или на стол Галеры (справа)!";
+    }
 
-        // 1. Landmark 3D Signboards projected to 2D
-        DrawBillboardTag(camera, camForward, font, HrTarotBoothPos + new Vector3(0f, 2.75f, 0f),
-            "HR-ТАРОЛОГ ВЕРОНИКА [E]",
-            "СКУПКА КОДЕРОВ ПО НАТАЛЬНОЙ КАРТЕ ($160..$600)",
-            new Color(235, 110, 255, 255), 18f);
-
-        if (TarotVerdictTimer > 0f)
+    public string Interact(Camera3D camera, Func<int,bool> spend, Action<int,string> grant)
+    {
+        Focus focus = FindFocus(camera);
+        switch (focus.Kind)
         {
-            DrawBillboardTag(camera, camForward, font, HrTarotBoothPos + new Vector3(0f, 2.05f, -0.2f),
-                $"РАСКЛАД ТАРО: {LastTarotCardDrawn}",
-                LastTarotVerdictText,
-                new Color(255, 225, 65, 255), 18f);
-        }
-
-        var baitInfo = GetBaitInfo(SelectedBaitTier);
-        DrawBillboardTag(camera, camForward, font, ArsenalShopPos + new Vector3(0f, 2.45f, 0f),
-            "АРСЕНАЛ 90-Х И ПОДПИСКИ [E]",
-            $"Активная приманка: {baitInfo.Name} | Слоты [1..4] Оружие | [K] Кейсы",
-            new Color(255, 200, 65, 255), 18f);
-
-        if (!ElevatorBoss.IsActive)
-        {
-            DrawBillboardTag(camera, camForward, font, CentralMacBookPos + new Vector3(0f, 2.35f, 0f),
-                IsMacBookTrapActive ? $"МАКБУК-ЛОВУШКА АКТИВЕН: {baitInfo.Name}" : "МАКБУК-ЛОВУШКА [НАЖМИ E]",
-                IsMacBookTrapActive ? "Прячься за диван/фикус или жми [C]!" : $"Включить приманку «{baitInfo.Name}»",
-                baitInfo.NeonColor, 16f);
-        }
-
-        // Galley Desks status tags (show closest occupied/slacking + closest free slot without overlapping)
-        for (int i = 0; i < GalleyDesks.Count; i++)
-        {
-            var d = GalleyDesks[i];
-            Vector3 tagPos = d.DeskPosition + new Vector3(0f, 1.85f + (i % 2) * 0.42f, 0f);
-            if (!d.IsOccupied)
-            {
-                if (i == 0)
-                {
-                    DrawBillboardTag(camera, camForward, font, tagPos,
-                        "ЗОНА ГАЛЕРЫ (4 СТОЛА ПК) [E]",
-                        "Посади покорного кодера за стол -> пассивный доход +$20/сек",
-                        new Color(140, 205, 255, 220), 16f);
-                }
-            }
-            else if (d.IsSlackingInTwitter)
-            {
-                DrawBillboardTag(camera, camForward, font, tagPos,
-                    $"ЗАЛИПАЕТ В TWITTER! ({d.CoderName})",
-                    "ТРЕСНИ РЕМНЁМ [ЛКМ], ЧТОБЫ ВЕРНУЛСЯ К РАБОТЕ!",
-                    new Color(255, 55, 65, 255), 20f);
-            }
-            else
-            {
-                DrawBillboardTag(camera, camForward, font, tagPos,
-                    $"ГАЛЕРА #{i + 1}: {d.CoderName}",
-                    "ПАШЕТ НА ПРОД | ПРИНОСИТ +$20/СЕК",
-                    new Color(65, 255, 140, 255), 16f);
-            }
-        }
-
-        // Central Armored Elevator Core & Tactical Left/Right Fork Signs (hidden during active Boss/MiniBoss combat so crosshair stays 100% clean)
-        bool anyCombatCoder = false;
-        for (int i = 0; i < ActiveCoders.Count; i++)
-        {
-            if (ActiveCoders[i].State == CoderAIState.CombatHostile)
-                anyCombatCoder = true;
-        }
-
-        if (!ElevatorBoss.IsActive && !anyCombatCoder)
-        {
-            string elevTitle = IsFloor2Unlocked
-                ? "ЛИФТ НА 2-Й ЭТАЖ ОТКРЫТ! ПОБЕДА!"
-                : "ЦЕНТРАЛЬНЫЙ ЛИФТ НА 2-Й ЭТАЖ [E]";
-            string elevSub = IsFloor2Unlocked
-                ? "ИИ-Агент повержен | Секретный Чат-Ган [4] разблокирован!"
-                : "Шахта в центре этажа | Ключ-карта $1000 -> Вызов Босса Этажа";
-
-            DrawBillboardTag(camera, camForward, font, SouthElevatorDoorPos + new Vector3(0f, 3.85f, 0.4f),
-                elevTitle, elevSub, new Color(255, 195, 55, 255), 22f);
-
-            DrawBillboardTag(camera, camForward, font, new Vector3(-8.5f, 2.85f, 1.5f),
-                "< РАЗВИЛКА ВЛЕВО: ЗАПАДНЫЙ ОПЕНСПЕЙС",
-                "Кубиклы | Ксероксы | Обход вокруг Центрального Лифта",
-                new Color(0, 235, 255, 255), 22f);
-
-            DrawBillboardTag(camera, camForward, font, new Vector3(8.5f, 2.85f, 1.5f),
-                "РАЗВИЛКА ВПРАВО: ВОСТОЧНАЯ СЕРВЕРНАЯ >",
-                "Серверные | Переговорки | Обход к Северному Холлу",
-                new Color(65, 255, 155, 255), 22f);
-        }
-
-        // 2. Active Vibe Coders Overhead Bars (Шкала Спеси HP + Шкала Тревожности + Speech Bubble)
-        for (int i = 0; i < ActiveCoders.Count; i++)
-        {
-            var c = ActiveCoders[i];
-            Vector3 headTop = c.Position + new Vector3(0f, c.IsMiniBoss ? 2.55f : 2.05f, 0f);
-            if (Vector3.Dot(camForward, headTop - camera.Position) <= 0.1f) continue;
-
-            Vector2 sp = Raylib.GetWorldToScreen(headTop, camera);
-            if (sp.X < -120 || sp.X > sw + 120 || sp.Y < -120 || sp.Y > sh + 120) continue;
-
-            int bx = (int)sp.X - 85;
-            int by = (int)sp.Y - 42;
-            int bw = 170;
-
-            // Panel background
-            Raylib.DrawRectangle(bx - 6, by - 22, bw + 12, 66, new Color(10, 12, 22, 215));
-            Raylib.DrawRectangleLines(bx - 6, by - 22, bw + 12, 66, c.IsMiniBoss ? Color.Gold : c.HoodieColor);
-
-            LoreAndMenusUI.DrawTextCrisp(font, c.Name, bx, by - 19, 14, c.IsMiniBoss ? new Color(255, 225, 65, 255) : Color.White);
-
-            // HP Bar (Шкала Спеси)
-            float hpRatio = Math.Clamp(c.Hp / MathF.Max(1f, c.MaxHp), 0f, 1f);
-            Raylib.DrawRectangle(bx, by, bw, 12, new Color(40, 20, 28, 255));
-            Raylib.DrawRectangle(bx, by, (int)(bw * hpRatio), 12, c.State == CoderAIState.Subdued ? Color.Lime : new Color(235, 45, 75, 255));
-            LoreAndMenusUI.DrawTextCrisp(font, $"СПЕСЬ: {(int)c.Hp}/{(int)c.MaxHp}", bx + 6, by - 1, 12, Color.White);
-
-            // Anxiety Bar (Шкала Тревожности) or Subdued prompt
-            if (c.State == CoderAIState.Subdued)
-            {
-                Raylib.DrawRectangle(bx, by + 16, bw, 18, new Color(25, 135, 65, 255));
-                LoreAndMenusUI.DrawTextCrisp(font, "ПОКОРНЫЙ - ЖМИ [E] ВЗЯТЬ!", bx + 4, by + 18, 12, Color.Yellow);
-            }
-            else
-            {
-                float anxRatio = Math.Clamp(c.Anxiety / 100f, 0f, 1f);
-                Raylib.DrawRectangle(bx, by + 16, bw, 12, new Color(32, 32, 46, 255));
-                Raylib.DrawRectangle(bx, by + 16, (int)(bw * anxRatio), 12, new Color(255, 195, 35, 255));
-                string stateTxt = c.State == CoderAIState.SittingAtMacBook
-                    ? "УЯЗВИМ ЗА МАКБУКОМ!"
-                    : $"ТРЕВОЖНОСТЬ: {(int)c.Anxiety}%";
-                LoreAndMenusUI.DrawTextCrisp(font, stateTxt, bx + 6, by + 15, 11, Color.White);
-            }
-
-            if (c.SpeechTimer > 0f && !string.IsNullOrEmpty(c.SpeechBubble))
-            {
-                LoreAndMenusUI.DrawTextCrisp(font, $"«{c.SpeechBubble}»", bx - 20, by - 38, 13, new Color(255, 235, 120, 255));
-            }
-        }
-
-        // 3. Flying Projectile Labels (`500 INTERNAL ERROR`, `API KEY LEAKED`, `node_modules (40 GB)`)
-        for (int i = 0; i < EnemyProjectiles.Count; i++)
-        {
-            var pr = EnemyProjectiles[i];
-            if (Vector3.Dot(camForward, pr.Position - camera.Position) <= 0.1f) continue;
-            Vector2 sp = Raylib.GetWorldToScreen(pr.Position + new Vector3(0f, pr.Radius + 0.25f, 0f), camera);
-            if (sp.X < 0 || sp.X > sw || sp.Y < 0 || sp.Y > sh) continue;
-
-            int tw = (int)LoreAndMenusUI.MeasureTextWidth(font, pr.Label, 14);
-            int lx = (int)sp.X - tw / 2;
-            int ly = (int)sp.Y;
-            Raylib.DrawRectangle(lx - 5, ly - 2, tw + 10, 18, new Color(15, 12, 22, 220));
-            Raylib.DrawRectangleLines(lx - 5, ly - 2, tw + 10, 18, pr.WireColor);
-            LoreAndMenusUI.DrawTextCrisp(font, pr.Label, lx, ly, 14, pr.WireColor);
-        }
-
-        // 4. Elevator Boss Overhead Label & Top Boss Health Bar
-        if (ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
-        {
-            Vector3 bTop = ElevatorBoss.Position + new Vector3(0f, 3.4f, 0f);
-            if (Vector3.Dot(camForward, bTop - camera.Position) > 0.1f)
-            {
-                Vector2 sp = Raylib.GetWorldToScreen(bTop, camera);
-                DrawBillboardTag(camera, camForward, font, bTop,
-                    ElevatorBoss.Name,
-                    ElevatorBoss.SpeechBubble,
-                    new Color(80, 255, 165, 255));
-            }
-
-            // Big Top-Center Boss Health Bar (positioned cleanly below top-left/top-right HUD cards)
-            int barW = 540;
-            int barH = 22;
-            int barX = (sw - barW) / 2;
-            int barY = 148;
-            float ratio = Math.Clamp(ElevatorBoss.Hp / ElevatorBoss.MaxHp, 0f, 1f);
-
-            Raylib.DrawRectangle(barX - 8, barY - 28, barW + 16, barH + 38, new Color(12, 14, 24, 235));
-            Raylib.DrawRectangleLines(barX - 8, barY - 28, barW + 16, barH + 38, new Color(255, 65, 85, 255));
-            LoreAndMenusUI.DrawTextCrisp(font, $"БОСС 1-ГО ЭТАЖА: {ElevatorBoss.Name} - {(int)ElevatorBoss.Hp} / {(int)ElevatorBoss.MaxHp} ХП", barX + 8, barY - 23, 16, new Color(255, 215, 65, 255));
-            Raylib.DrawRectangle(barX, barY, barW, barH, new Color(45, 18, 24, 255));
-            Raylib.DrawRectangle(barX, barY, (int)(barW * ratio), barH, new Color(235, 42, 68, 255));
+            case FocusKind.Coder: return PickUp(ActiveCoders[focus.Index]);
+            case FocusKind.Veronika: return SellCarriedCoderToHrVeronika(grant);
+            case FocusKind.Desk:
+                var desk = GalleyDesks[focus.Index];
+                if (desk.IsOccupied) return desk.IsSlackingInTwitter ? "Кодер отвлёкся на Twitter" : "Кодер работает";
+                return SeatCarriedCoderAtGalley(focus.Index);
+            case FocusKind.MacBook:
+                ActivateMacBookTrap(SelectedBaitTier,spend,out string trap);
+                return trap;
+            case FocusKind.Elevator:
+                TrySummonElevatorBoss(spend,out string lift);
+                return lift;
+            case FocusKind.Shop:
+                SelectedBaitTier=(SubscriptionBaitTier)(((int)SelectedBaitTier+1)%4);
+                return GetBaitInfo(SelectedBaitTier).Description;
+            default: return HandleInteractKeyE(camera.Position,spend,grant);
         }
     }
 
-    private static readonly List<Rectangle> _drawnBillboardRects = new(32);
+    public string FocusPrompt(Camera3D camera) => FindFocus(camera).Label;
 
-    private static void DrawBillboardTag(Camera3D camera, Vector3 camForward, Font font, Vector3 worldPos, string title, string subtitle, Color borderCol, float maxDist = 20f)
+    private Focus FindFocus(Camera3D camera)
     {
-        Vector3 toPt = worldPos - camera.Position;
-        float dist = toPt.Length();
-        if (dist > maxDist || Vector3.Dot(camForward, toPt) <= 0.1f) return;
-
-        Vector2 sp = Raylib.GetWorldToScreen(worldPos, camera);
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        if (sp.X < 40 || sp.X > sw - 40 || sp.Y < 85 || sp.Y > sh - 110) return;
-
-        int w1 = (int)LoreAndMenusUI.MeasureTextWidth(font, title, 14);
-        int w2 = string.IsNullOrEmpty(subtitle) ? 0 : (int)LoreAndMenusUI.MeasureTextWidth(font, subtitle, 12);
-        int boxW = Math.Max(w1, w2) + 16;
-        int boxH = string.IsNullOrEmpty(subtitle) ? 24 : 40;
-        int x = Math.Clamp((int)sp.X - boxW / 2, 16, sw - boxW - 16);
-        int y = (int)sp.Y - boxH / 2;
-
-        Rectangle rect = new(x, y, boxW, boxH);
-        for (int attempt = 0; attempt < 4; attempt++)
+        Vector3 look = Vector3.Normalize(camera.Target - camera.Position);
+        Focus focus = new(FocusKind.None, "", -1);
+        float best = .93f;
+        void Consider(Vector3 anchor, float height, float reach, FocusKind kind, string name, int index = -1)
         {
-            bool overlaps = false;
-            for (int i = 0; i < _drawnBillboardRects.Count; i++)
-            {
-                if (Raylib.CheckCollisionRecs(rect, _drawnBillboardRects[i]))
-                {
-                    overlaps = true;
-                    y = (int)_drawnBillboardRects[i].Y - boxH - 6;
-                    rect.Y = y;
-                    break;
-                }
-            }
-            if (!overlaps) break;
+            Vector3 delta = anchor + Vector3.UnitY * height - camera.Position;
+            if (delta.X * delta.X + delta.Z * delta.Z > reach * reach) return;
+            float alignment = Vector3.Dot(look, Vector3.Normalize(delta));
+            if (alignment > best) { best = alignment; focus = new(kind,name,index); }
         }
-        if (y < 75) return;
-        _drawnBillboardRects.Add(rect);
+        Consider(CentralMacBookPos, 1.1f, 3.8f, FocusKind.MacBook, "Макбук-ловушка");
+        Consider(HrTarotBoothPos, 1.6f, 4.6f, FocusKind.Veronika, "HR Вероника");
+        Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Выбрать подписку");
+        Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, "Центральный лифт");
+        Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, "Центральный лифт");
+        Consider(ElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, "Вызвать лифт");
+        Consider(SouthElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, "Вызвать лифт");
+        for(int i=0;i<GalleyDesks.Count;i++)
+            Consider(GalleyDesks[i].DeskPosition,.9f,3.6f,FocusKind.Desk,"Стол галеры",i);
+        for(int i=0;i<ActiveCoders.Count;i++)
+            if(ActiveCoders[i].State==CoderAIState.Subdued)
+                Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,ActiveCoders[i].Name,i);
+        return focus;
+    }
 
-        Raylib.DrawRectangle(x, y, boxW, boxH, new Color(10, 12, 22, 215));
-        Raylib.DrawRectangleLines(x, y, boxW, boxH, borderCol);
-        LoreAndMenusUI.DrawTextCrisp(font, title, x + 8, y + 3, 14, borderCol);
-        if (!string.IsNullOrEmpty(subtitle))
+    public void DrawWorldLabelsAndIndicators2D(Camera3D camera, Font font)
+    {
+        Vector3 look = Vector3.Normalize(camera.Target - camera.Position);
+        void Label(Vector3 point, string value, int size, Color color)
         {
-            LoreAndMenusUI.DrawTextCrisp(font, subtitle, x + 8, y + 21, 12, new Color(225, 232, 245, 245));
+            if (Vector3.Dot(point-camera.Position, look) < .2f) return;
+            Vector2 p = Raylib.GetWorldToScreen(point, camera);
+            MainMenuAndPauseUI.Center(font,value,new(p.X-165,p.Y-11,330,22),size,color);
         }
+        foreach (var c in ActiveCoders)
+        {
+            if (Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.State==CoderAIState.Subdued) continue;
+            Label(c.Position + Vector3.UnitY*2.6f, $"{c.Name}   {(int)c.Hp}/{(int)c.MaxHp}", 13, Color.White);
+        }
+        foreach (var p in EnemyProjectiles) Label(p.Position+Vector3.UnitY*(p.Radius+.15f),p.Label,12,Color.White);
+        if (ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
+            Label(ElevatorBoss.Position+Vector3.UnitY*3.4f,$"{ElevatorBoss.Name}   {(int)ElevatorBoss.Hp}/{(int)ElevatorBoss.MaxHp}",16,Color.White);
     }
 }

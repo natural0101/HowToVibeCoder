@@ -13,6 +13,9 @@ public sealed class GameSaveData
     public int SlotIndex { get; set; } = 1;
     public string SlotTitle { get; set; } = "Слот 1";
     public string SavedAt { get; set; } = "";
+    public int Xp { get; set; } = 412;
+    public float Energy { get; set; } = 100;
+    public int Hp { get; set; } = 100;
     public int Cash { get; set; } = 250;
     public bool[] UnlockedWeapons { get; set; } = { true, false, false, false };
     public int CurrentWeaponSlot { get; set; } = 0;
@@ -69,24 +72,62 @@ public static class MainMenuAndPauseUI
     public static Func<GameSaveData>? CaptureCurrentGameState { get; set; }
     public static Action<GameSaveData>? ApplyLoadedGameState { get; set; }
 
-    // 5 классических кнопок Главного Меню ПК-игры
     private static readonly string[] MainMenuButtonLabels =
+        ["Создать игру", "Войти в игру", "Персонаж", "Настройки", "Настройки модов", "Создатели", "Выход"];
+    private static readonly string[] SettingsTabs = ["Игра", "Графика", "Аудио", "Язык"];
+    private static int _settingsTab = 2;
+    private static string? _infoPage;
+    private static readonly Dictionary<string, Texture2D> Art = new();
+    internal static Font Serif;
+    internal static readonly Color Edge = new(210, 220, 232, 230);
+    internal static void LoadArt(Font serif)
     {
-        "НОВАЯ ИГРА",
-        "ЗАГРУЗИТЬ ИГРУ",
-        "НАСТРОЙКИ",
-        "МОДЫ",
-        "ВЫХОД"
-    };
-
-    private static readonly string[] MainMenuButtonSubtitles =
+        Serif = serif;
+        foreach (string name in new[] { "water", "title", "menu-type", "mixer", "case", "archive" })
+        {
+            Texture2D texture = Raylib.LoadTexture(Path.Combine(AppContext.BaseDirectory, "assets", "ui", name + ".png"));
+            if (texture.Id == 0) throw new IOException("Missing UI texture: " + name);
+            Raylib.SetTextureFilter(texture, TextureFilter.Bilinear);
+            Art.Add(name, texture);
+        }
+    }
+    internal static void UnloadArt()
     {
-        "Начать свежий штурм 1-го этажа небоскрёба Cloud Entropic Tower",
-        "Загрузить сохранение из слотов 1..3 или последнего автосохранения",
-        "Громкость звука и музыки, чувствительность мыши, поле зрения (FOV) и полный экран",
-        "Управление установленными модами в папке mods/ [ВКЛ / ВЫКЛ]",
-        "Выйти из игры на Рабочий стол Windows"
-    };
+        foreach (var texture in Art.Values) Raylib.UnloadTexture(texture);
+        Art.Clear();
+    }
+    internal static void Sprite(string name, Rectangle dest, Rectangle? source = null, Color? tint = null)
+    {
+        Texture2D texture = Art[name];
+        Raylib.DrawTexturePro(texture, source ?? new Rectangle(0, 0, texture.Width, texture.Height),
+            dest, Vector2.Zero, 0, tint ?? Color.White);
+    }
+    internal static void Center(Font font, string value, Rectangle r, float size, Color color)
+    {
+        float spacing = size * .025f;
+        float width = Raylib.MeasureTextEx(font, value, size, spacing).X;
+        if (width > r.Width - 6 && width > 0) size *= (r.Width - 6) / width;
+        Vector2 dims = Raylib.MeasureTextEx(font, value, size, spacing);
+        Vector2 pos = new(r.X + (r.Width - dims.X) / 2, r.Y + (r.Height - dims.Y) / 2);
+        Raylib.DrawTextEx(font, value, pos + new Vector2(1, 1), size, spacing, new Color(13, 21, 38, 185));
+        Raylib.DrawTextEx(font, value, pos, size, spacing, color);
+    }
+    internal static void Surface(Rectangle rect, Color fill, float border = 1.5f)
+    {
+        float rounding = Math.Min(.22f, 10f / Math.Min(rect.Width,rect.Height));
+        Raylib.DrawRectangleRounded(rect, rounding, 8, fill);
+        if (border > 0) Raylib.DrawRectangleRoundedLinesEx(rect, rounding, 8, border, Edge);
+    }
+    private static Rectangle MainButton(int i) => new(38, Raylib.GetScreenHeight() - 360 + i * 47, 220, 40);
+    private static Rectangle SettingsRect(float x, float y, float w, float h) =>
+        new(Raylib.GetScreenWidth() / 2f - 343 + x, Raylib.GetScreenHeight() / 2f - 276 + y, w, h);
+    private static Rectangle SettingsTab(int i) => SettingsRect(i * 173, 32, 166, 39);
+    private static Rectangle SettingsTrack(int row) => SettingsRect(373, 136 + row * 47 + (row == 3 ? 45 : 0), 172, 20);
+    private static readonly int[][] SettingRows = [[4], [5], [0, 1, 2, 3], []];
+    private static readonly string[] SettingNames = ["Общая громкость", "Громкость музыки", "Громкость эффектов", "Громкость речи", "Чувствительность мыши", "Поле зрения"];
+    private static bool Clicked(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+    private static Rectangle ModAction(int i) => new(Raylib.GetScreenWidth()/2 - 95 + i*249, Raylib.GetScreenHeight()/2 + 213, 240, 40);
+    private static Rectangle ModMixer => new(Raylib.GetScreenWidth()/2 - 408, Raylib.GetScreenHeight()/2 + 213, 275, 40);
 
     // 7 кнопок Меню Паузы (по ESC в игре)
     private static readonly string[] PauseButtonLabels =
@@ -103,8 +144,6 @@ public static class MainMenuAndPauseUI
     private static int _selectedMainIndex = 0;
     private static int _selectedPauseIndex = 0;
     private static int _selectedSaveSlotIndex = 0; // 0=Автосохранение, 1=Слот 1, 2=Слот 2, 3=Слот 3
-    private static readonly float[] _mainHoverAnim = new float[5];
-    private static readonly float[] _pauseHoverAnim = new float[7];
     private static float _menuClock = 0f;
     private static string _statusMessage = "";
     private static float _statusTimer = 0f;
@@ -349,62 +388,6 @@ public static class MainMenuAndPauseUI
         _statusTimer = 4.0f;
     }
 
-    /// <summary>
-    /// Возвращает кинематографичную 3D-камеру, плавно облетающую 1-й этаж небоскрёба:
-    /// в кадре центральный стол-ловушка со светящимся Макбуком, будка HR-Таролога Вероники
-    /// и северный Бронированный Центральный Лифт.
-    /// </summary>
-    public static Camera3D GetMainMenuCamera(float time)
-    {
-        return GetMainMenuCamera(time, new Vector3(0f, 1.35f, -1.5f), 14.2f, 4.4f);
-    }
-
-    public static Camera3D GetMainMenuCamera(float time, Vector3 lookCenter, float orbitRadius = 14.2f, float baseHeight = 4.4f)
-    {
-        float angle = time * 0.24f + 0.65f;
-        float radiusWave = orbitRadius + MathF.Sin(time * 0.45f) * 1.6f;
-
-        float camX = MathF.Sin(angle) * radiusWave;
-        float camZ = MathF.Cos(angle) * radiusWave;
-        float camY = baseHeight + MathF.Sin(time * 0.6f) * 0.75f;
-
-        Vector3 target = new(
-            lookCenter.X + MathF.Sin(time * 0.37f) * 2.1f,
-            lookCenter.Y + MathF.Cos(time * 0.52f) * 0.35f,
-            lookCenter.Z + MathF.Cos(time * 0.29f) * 3.2f
-        );
-
-        return new Camera3D
-        {
-            Position = new Vector3(camX, camY, camZ),
-            Target = target,
-            Up = Vector3.UnitY,
-            FovY = 58f,
-            Projection = CameraProjection.Perspective
-        };
-    }
-
-    public static void DrawMainMenu3DShowcaseExtras(float time)
-    {
-        float pulse = 0.5f + 0.5f * MathF.Sin(time * 3.2f);
-        Color ringGold = new((byte)255, (byte)205, (byte)55, (byte)(110 + (int)(pulse * 90)));
-        Color ringCrimson = new((byte)220, (byte)28, (byte)85, (byte)(95 + (int)((1f - pulse) * 90)));
-
-        Raylib.DrawCircle3D(
-            new Vector3(0f, 0.08f, 0f),
-            2.6f + pulse * 0.25f,
-            new Vector3(1f, 0f, 0f),
-            90f,
-            ringGold);
-
-        Raylib.DrawCircle3D(
-            new Vector3(0f, 0.14f, 0f),
-            3.35f - pulse * 0.2f,
-            new Vector3(1f, 0f, 0f),
-            90f,
-            ringCrimson);
-    }
-
     public static void StartNewOrResumeFloor()
     {
         IsSaveLoadPanelOpen = false;
@@ -471,6 +454,8 @@ public static class MainMenuAndPauseUI
             _statusTimer = MathF.Max(0f, _statusTimer - dt);
         }
 
+        if (LoreAndMenusUI.IsAnyModalOpen) return;
+
         // Если открыта подпанель Сохранения/Загрузки, Модов или Настроек
         if (IsSaveLoadPanelOpen)
         {
@@ -495,11 +480,11 @@ public static class MainMenuAndPauseUI
 
         if (IsInMainMenu)
         {
-            // Гарантируем, что игровые окна лора/кейсов закрыты в Главном Меню
-            LoreAndMenusUI.IsLoreOpen = false;
-            LoreAndMenusUI.IsCaseOpen = false;
-            LoreAndMenusUI.IsSettingsOpen = false;
-
+            if (_infoPage != null)
+            {
+                if (Raylib.IsKeyPressed(KeyboardKey.Escape) || Clicked(SettingsRect(0, 505, 166, 38))) _infoPage = null;
+                return;
+            }
             if (Raylib.IsCursorHidden())
             {
                 Raylib.EnableCursor();
@@ -541,8 +526,6 @@ public static class MainMenuAndPauseUI
 
     private static void UpdateMainMenuInput(float dt)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
         Vector2 mp = Raylib.GetMousePosition();
         bool mouseClicked = Raylib.IsMouseButtonPressed(MouseButton.Left);
 
@@ -557,35 +540,14 @@ public static class MainMenuAndPauseUI
             PlayUiSound();
         }
 
-        if (Raylib.IsKeyPressed(KeyboardKey.One) || Raylib.IsKeyPressed(KeyboardKey.Kp1))
+        for (int i = 0; i < MainMenuButtonLabels.Length; i++)
         {
-            _selectedMainIndex = 0;
-            ExecuteMainMenuAction(0);
-            return;
-        }
-        if (Raylib.IsKeyPressed(KeyboardKey.Two) || Raylib.IsKeyPressed(KeyboardKey.Kp2))
-        {
-            _selectedMainIndex = 1;
-            ExecuteMainMenuAction(1);
-            return;
-        }
-        if (Raylib.IsKeyPressed(KeyboardKey.Three) || Raylib.IsKeyPressed(KeyboardKey.Kp3))
-        {
-            _selectedMainIndex = 2;
-            ExecuteMainMenuAction(2);
-            return;
-        }
-        if (Raylib.IsKeyPressed(KeyboardKey.Four) || Raylib.IsKeyPressed(KeyboardKey.Kp4))
-        {
-            _selectedMainIndex = 3;
-            ExecuteMainMenuAction(3);
-            return;
-        }
-        if (Raylib.IsKeyPressed(KeyboardKey.Five) || Raylib.IsKeyPressed(KeyboardKey.Kp5))
-        {
-            _selectedMainIndex = 4;
-            ExecuteMainMenuAction(4);
-            return;
+            if (Raylib.IsKeyPressed(KeyboardKey.One + i) || Raylib.IsKeyPressed(KeyboardKey.Kp1 + i))
+            {
+                _selectedMainIndex = i;
+                ExecuteMainMenuAction(i);
+                return;
+            }
         }
         if (Raylib.IsKeyPressed(KeyboardKey.Enter) || Raylib.IsKeyPressed(KeyboardKey.KpEnter))
         {
@@ -593,18 +555,11 @@ public static class MainMenuAndPauseUI
             return;
         }
 
-        GetMainMenuLayout(sw, sh, out Rectangle leftPanel, out _);
-        int btnStartX = (int)leftPanel.X + 26;
-        int btnStartY = (int)leftPanel.Y + 232;
-        int btnW = (int)leftPanel.Width - 52;
-        int btnH = 58;
-        int btnGap = 11;
-
         for (int i = 0; i < MainMenuButtonLabels.Length; i++)
         {
-            Rectangle btnRect = new(btnStartX, btnStartY + i * (btnH + btnGap), btnW, btnH);
+            Rectangle btnRect = MainButton(i);
             bool hovered = Raylib.CheckCollisionPointRec(mp, btnRect);
-            if (hovered)
+            if (hovered && (mouseClicked || Raylib.GetMouseDelta().LengthSquared() > 0))
             {
                 if (_selectedMainIndex != i)
                 {
@@ -618,8 +573,6 @@ public static class MainMenuAndPauseUI
                 }
             }
 
-            float targetAnim = (hovered || _selectedMainIndex == i) ? 1f : 0f;
-            _mainHoverAnim[i] = Lerp(_mainHoverAnim[i], targetAnim, Math.Clamp(dt * 12f, 0f, 1f));
         }
     }
 
@@ -640,20 +593,22 @@ public static class MainMenuAndPauseUI
                 IsSettingsPanelOpen = false;
                 break;
 
-            case 2: // НАСТРОЙКИ
+            case 2: _infoPage = "Персонаж"; break;
+            case 3: // НАСТРОЙКИ
                 IsSettingsPanelOpen = true;
                 IsSaveLoadPanelOpen = false;
                 IsModsPanelOpen = false;
                 break;
 
-            case 3: // МОДЫ
+            case 4: // МОДЫ
                 LoadModsConfig();
                 IsModsPanelOpen = true;
                 IsSaveLoadPanelOpen = false;
                 IsSettingsPanelOpen = false;
                 break;
 
-            case 4: // ВЫХОД
+            case 5: _infoPage = "Создатели"; break;
+            case 6: // ВЫХОД
                 ShouldExitGame = true;
                 OnExitRequested?.Invoke();
                 break;
@@ -706,7 +661,7 @@ public static class MainMenuAndPauseUI
         {
             Rectangle btnRect = new(btnStartX, btnStartY + i * (btnH + btnGap), btnW, btnH);
             bool hovered = Raylib.CheckCollisionPointRec(mp, btnRect);
-            if (hovered)
+            if (hovered && (mouseClicked || Raylib.GetMouseDelta().LengthSquared() > 0))
             {
                 if (_selectedPauseIndex != i)
                 {
@@ -720,8 +675,6 @@ public static class MainMenuAndPauseUI
                 }
             }
 
-            float targetAnim = (hovered || _selectedPauseIndex == i) ? 1f : 0f;
-            _pauseHoverAnim[i] = Lerp(_pauseHoverAnim[i], targetAnim, Math.Clamp(dt * 12f, 0f, 1f));
         }
     }
 
@@ -855,6 +808,9 @@ public static class MainMenuAndPauseUI
 
     private static void UpdateModsPanelInput()
     {
+        if (Clicked(ModAction(0))) { LoreAndMenusUI.TriggerGrantTestMoney(); return; }
+        if (Clicked(ModAction(1))) { LoreAndMenusUI.TriggerUnlockAllWeapons(); return; }
+        if (Clicked(ModMixer)) { LoreAndMenusUI.IsSettingsOpen = true; return; }
         if (Raylib.IsKeyPressed(KeyboardKey.Escape))
         {
             IsModsPanelOpen = false;
@@ -902,75 +858,27 @@ public static class MainMenuAndPauseUI
 
     private static void UpdateSettingsSubPanelInput()
     {
-        if (Raylib.IsKeyPressed(KeyboardKey.Escape))
+        if (Raylib.IsKeyPressed(KeyboardKey.Escape) || Clicked(SettingsRect(0, 550, 166, 38)))
         {
             IsSettingsPanelOpen = false;
             _draggingSettingSlider = -1;
-            PlayUiSound();
             return;
         }
-
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        int winW = 860;
-        int winH = 550;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-
-        Vector2 mp = Raylib.GetMousePosition();
-        bool mouseDown = Raylib.IsMouseButtonDown(MouseButton.Left);
-        bool mousePressed = Raylib.IsMouseButtonPressed(MouseButton.Left);
-
-        if (!mouseDown)
+        for (int i = 0; i < SettingsTabs.Length; i++)
+            if (Clicked(SettingsTab(i))) { _settingsTab = i; _draggingSettingSlider = -1; }
+        if (_settingsTab == 1 && Clicked(SettingsRect(337, 186, 279, 34)))
         {
-            _draggingSettingSlider = -1;
+            Raylib.ToggleFullscreen();
+            IsFullscreenEnabled = Raylib.IsWindowFullscreen();
         }
-
-        int sliderX = wx + 360;
-        int sliderW = 340;
-        int rowStartY = wy + 92;
-        int rowStepY = 54;
-
-        for (int i = 0; i < 6; i++)
+        if (_settingsTab == 2 && Clicked(SettingsRect(140, 478, 406, 36))) LoreAndMenusUI.IsSettingsOpen = true;
+        if (!Raylib.IsMouseButtonDown(MouseButton.Left)) _draggingSettingSlider = -1;
+        int[] rows = SettingRows[_settingsTab];
+        for (int i = 0; i < rows.Length; i++)
         {
-            int ry = rowStartY + i * rowStepY;
-            Rectangle hitRect = new(sliderX - 10, ry, sliderW + 20, 36);
-            if (mousePressed && Raylib.CheckCollisionPointRec(mp, hitRect))
-            {
-                _draggingSettingSlider = i;
-            }
-
-            if (_draggingSettingSlider == i && mouseDown)
-            {
-                float t = Math.Clamp((mp.X - sliderX) / sliderW, 0f, 1f);
-                ApplySettingValue(i, t);
-            }
-        }
-
-        if (mousePressed)
-        {
-            Rectangle closeBtn = new(wx + winW - 160, wy + 14, 140, 38);
-            if (Raylib.CheckCollisionPointRec(mp, closeBtn))
-            {
-                IsSettingsPanelOpen = false;
-                PlayUiSound();
-                return;
-            }
-
-            Rectangle fullscreenBtn = new(wx + 360, wy + 422, 240, 42);
-            if (Raylib.CheckCollisionPointRec(mp, fullscreenBtn))
-            {
-                IsFullscreenEnabled = !IsFullscreenEnabled;
-                try
-                {
-                    Raylib.ToggleFullscreen();
-                }
-                catch
-                {
-                }
-                PlayUiSound();
-                return;
-            }
+            Rectangle r = SettingsTrack(i);
+            if (Clicked(r)) _draggingSettingSlider = rows[i];
+            if (_draggingSettingSlider == rows[i]) ApplySettingValue(rows[i], (Raylib.GetMouseX() - r.X) / r.Width);
         }
     }
 
@@ -1021,6 +929,7 @@ public static class MainMenuAndPauseUI
             DrawPauseOverlay(font, screenW, screenH);
         }
 
+        if (LoreAndMenusUI.IsAnyModalOpen) return;
         if (IsSaveLoadPanelOpen)
         {
             DrawSaveLoadSubPanel(font, screenW, screenH);
@@ -1042,687 +951,137 @@ public static class MainMenuAndPauseUI
 
     public static void DrawMainMenu(Font font, int screenW, int screenH)
     {
-        Raylib.DrawRectangleGradientV(0, 0, screenW, 130, new Color(8, 6, 16, 210), new Color(8, 6, 16, 25));
-        Raylib.DrawRectangleGradientV(0, screenH - 120, screenW, 120, new Color(8, 6, 16, 25), new Color(8, 6, 16, 225));
-
-        DrawTopSecurityCameraBar(font, screenW);
-
-        GetMainMenuLayout(screenW, screenH, out Rectangle leftPanel, out Rectangle rightPanel);
-        DrawLeftMainMenuPanel(font, leftPanel);
-        DrawRightAuthorityBriefingPanel(font, rightPanel);
-        DrawBottomFooterBar(font, screenW, screenH);
-    }
-
-    private static void DrawTopSecurityCameraBar(Font font, int screenW)
-    {
-        int barH = 34;
-        Raylib.DrawRectangle(0, 0, screenW, barH, new Color(14, 10, 22, 225));
-        Raylib.DrawRectangle(0, barH - 2, screenW, 2, new Color(215, 28, 78, 220));
-
-        bool recBlink = ((int)(_menuClock * 2.4f) % 2) == 0;
-        Color dotColor = recBlink ? new Color(255, 42, 72, 255) : new Color(110, 24, 38, 255);
-        Raylib.DrawCircle(24, barH / 2, 6f, dotColor);
-
-        DrawTextCrisp(
-            font,
-            "КАМЕРА 01 // БАШНЯ CLOUD ENTROPIC - ЭТАЖ 1 (БЕЛАЯ АКУЛА)",
-            38,
-            8,
-            15,
-            new Color(255, 218, 120, 245));
-
-        string verText = "ВЕРСИЯ 1.0 RELEASE // МОДОВ АКТИВНО: " + InstalledMods.FindAll(m => m.Enabled).Count;
-        DrawTextCrisp(font, verText, screenW - 395, 8, 14, new Color(165, 225, 255, 240));
-    }
-
-    private static void DrawLeftMainMenuPanel(Font font, Rectangle panel)
-    {
-        int px = (int)panel.X;
-        int py = (int)panel.Y;
-        int pw = (int)panel.Width;
-        int ph = (int)panel.Height;
-
-        Raylib.DrawRectangle(px + 6, py + 8, pw, ph, new Color(0, 0, 0, 175));
-        Raylib.DrawRectangle(px, py, pw, ph, new Color(16, 12, 24, 236));
-        Raylib.DrawRectangleGradientV(px, py, pw, 165, new Color(112, 14, 44, 210), new Color(20, 14, 30, 10));
-
-        Raylib.DrawRectangleLinesEx(panel, 3f, new Color(235, 36, 92, 255));
-        Raylib.DrawRectangleLinesEx(new Rectangle(px + 5, py + 5, pw - 10, ph - 10), 1.5f, new Color(255, 208, 68, 190));
-
-        int crestX = px + 24;
-        int crestY = py + 20;
-        Draw90sAuthorityCrest(font, crestX, crestY);
-
-        int titleX = crestX + 94;
-        DrawTextCrisp(
-            font,
-            "CLOUD ENTROPIC TOWER // СПЕЦОПЕРАЦИЯ 1994 -> 2026",
-            titleX,
-            py + 18,
-            13,
-            new Color(255, 206, 75, 245));
-
-        DrawTextCrisp(
-            font,
-            "HOW TO VIBE CODER",
-            titleX + 2,
-            py + 38,
-            40,
-            new Color(180, 16, 68, 220));
-        DrawTextCrisp(
-            font,
-            "HOW TO VIBE CODER",
-            titleX,
-            py + 36,
-            40,
-            new Color(255, 232, 92, 255));
-
-        Raylib.DrawRectangle(titleX, py + 82, pw - 138, 28, new Color(168, 20, 62, 235));
-        Raylib.DrawRectangleLines(titleX, py + 82, pw - 138, 28, new Color(255, 215, 78, 240));
-        DrawTextCrisp(
-            font,
-            "ШТУРМ НЕБОСКРЁБА: ЭТАЖ 1 (БЕЛАЯ АКУЛА IT)",
-            titleX + 10,
-            py + 87,
-            17,
-            Color.White);
-
-        Rectangle taglineBox = new(px + 24, py + 124, pw - 48, 52);
-        Raylib.DrawRectangleRec(taglineBox, new Color(26, 20, 38, 245));
-        Raylib.DrawRectangle(px + 24, py + 124, 5, 52, new Color(255, 208, 64, 255));
-        Raylib.DrawRectangleLinesEx(taglineBox, 1.5f, new Color(95, 75, 130, 190));
-
-        DrawTextCrisp(
-            font,
-            "«Ты решал вопросы паяльником в 94-м.",
-            px + 40,
-            py + 131,
-            16,
-            new Color(255, 236, 175, 255));
-        DrawTextCrisp(
-            font,
-            "  Теперь у тебя IT-галера в 2026-м.»",
-            px + 40,
-            py + 151,
-            16,
-            new Color(120, 235, 255, 255));
-
-        DrawTextCrisp(
-            font,
-            "ГЛАВНОЕ МЕНЮ (МЫШЬ ИЛИ КЛАВИШИ 1..5 / ENTER):",
-            px + 26,
-            py + 194,
-            14,
-            new Color(210, 190, 230, 235));
-        Raylib.DrawRectangle(px + 26, py + 216, pw - 52, 2, new Color(235, 36, 92, 180));
-
-        int btnStartX = px + 26;
-        int btnStartY = py + 232;
-        int btnW = pw - 52;
-        int btnH = 58;
-        int btnGap = 11;
-
+        Sprite("water", new(0, 0, screenW, screenH));
+        float scale = Math.Min(screenW / 1280f, screenH / 720f);
+        Rectangle title = new(26, 37, 580 * scale, 310 * scale);
+        Sprite("title", new(title.X+3, title.Y+4, title.Width, title.Height), tint: new Color(15,28,45,115));
+        Sprite("title", title, tint: new Color(245,247,249,255));
         for (int i = 0; i < MainMenuButtonLabels.Length; i++)
         {
-            float hover = _mainHoverAnim[i];
-            int shiftX = (int)(hover * 8f);
-            Rectangle btnRect = new(btnStartX + shiftX, btnStartY + i * (btnH + btnGap), btnW - shiftX, btnH);
-
-            bool isPrimary = i == 0;
-            bool isSelected = _selectedMainIndex == i;
-
-            Color baseBg = isPrimary
-                ? new Color(145, 20, 56, 245)
-                : new Color(26, 22, 40, 242);
-
-            Color hoverBg = isPrimary
-                ? new Color(210, 32, 82, 255)
-                : new Color(64, 28, 62, 252);
-
-            Color bg = LerpColor(baseBg, hoverBg, hover);
-            Color border = isSelected
-                ? new Color(255, 222, 75, 255)
-                : (isPrimary ? new Color(255, 165, 95, 235) : new Color(92, 78, 128, 215));
-
-            Raylib.DrawRectangleRec(btnRect, bg);
-
-            int stripeW = isSelected ? 9 : 5;
-            Color stripeColor = isPrimary || isSelected
-                ? new Color(255, 215, 55, 255)
-                : new Color(215, 38, 92, 230);
-            Raylib.DrawRectangle((int)btnRect.X, (int)btnRect.Y, stripeW, (int)btnRect.Height, stripeColor);
-
-            int badgeW = 38;
-            int badgeH = 26;
-            int badgeX = (int)(btnRect.X + btnRect.Width - badgeW - 12);
-            int badgeY = (int)btnRect.Y + 8;
-            Raylib.DrawRectangle(badgeX, badgeY, badgeW, badgeH, new Color(12, 10, 20, 215));
-            Raylib.DrawRectangleLines(badgeX, badgeY, badgeW, badgeH, border);
-            DrawTextCrisp(font, $"{i + 1}", badgeX + 14, badgeY + 5, 15, new Color(255, 220, 88, 255));
-
-            Raylib.DrawRectangleLinesEx(btnRect, isSelected ? 2.5f : 1.5f, border);
-
-            DrawTextCrisp(
-                font,
-                MainMenuButtonLabels[i],
-                (int)btnRect.X + 20,
-                (int)btnRect.Y + 8,
-                21,
-                isSelected ? new Color(255, 248, 195, 255) : Color.White);
-
-            DrawTextCrisp(
-                font,
-                MainMenuButtonSubtitles[i],
-                (int)btnRect.X + 20,
-                (int)btnRect.Y + 35,
-                13,
-                new Color(195, 215, 240, 225));
-        }
-    }
-
-    private static void Draw90sAuthorityCrest(Font font, int x, int y)
-    {
-        int w = 80;
-        int h = 92;
-
-        Raylib.DrawRectangle(x, y, w, h, new Color(155, 16, 54, 255));
-        Raylib.DrawRectangleLinesEx(new Rectangle(x, y, w, h), 3f, new Color(255, 212, 64, 255));
-        Raylib.DrawRectangleLinesEx(new Rectangle(x + 4, y + 4, w - 8, h - 8), 1.5f, new Color(255, 238, 145, 220));
-
-        Raylib.DrawTriangle(
-            new Vector2(x + 12, y + 48),
-            new Vector2(x + 40, y + 84),
-            new Vector2(x + 40, y + 48),
-            new Color(28, 22, 36, 255));
-        Raylib.DrawTriangle(
-            new Vector2(x + 68, y + 48),
-            new Vector2(x + 40, y + 48),
-            new Vector2(x + 40, y + 84),
-            new Color(28, 22, 36, 255));
-
-        Raylib.DrawRectangle(x + 18, y + 26, 44, 12, new Color(255, 208, 52, 255));
-        Raylib.DrawTriangle(
-            new Vector2(x + 18, y + 26),
-            new Vector2(x + 30, y + 26),
-            new Vector2(x + 22, y + 12),
-            new Color(255, 225, 82, 255));
-        Raylib.DrawTriangle(
-            new Vector2(x + 32, y + 26),
-            new Vector2(x + 48, y + 26),
-            new Vector2(x + 40, y + 9),
-            new Color(255, 235, 110, 255));
-        Raylib.DrawTriangle(
-            new Vector2(x + 50, y + 26),
-            new Vector2(x + 62, y + 26),
-            new Vector2(x + 58, y + 12),
-            new Color(255, 225, 82, 255));
-
-        DrawTextCrisp(font, "1994", x + 21, y + 42, 16, new Color(255, 228, 92, 255));
-        DrawTextCrisp(font, "BOSS", x + 21, y + 64, 15, Color.White);
-    }
-
-    private static void DrawRightAuthorityBriefingPanel(Font font, Rectangle panel)
-    {
-        int px = (int)panel.X;
-        int py = (int)panel.Y;
-        int pw = (int)panel.Width;
-        int ph = (int)panel.Height;
-
-        Raylib.DrawRectangle(px + 6, py + 8, pw, ph, new Color(0, 0, 0, 175));
-        Raylib.DrawRectangle(px, py, pw, ph, new Color(14, 18, 30, 234));
-        Raylib.DrawRectangleGradientV(px, py, pw, 90, new Color(36, 82, 138, 165), new Color(14, 18, 30, 10));
-
-        Raylib.DrawRectangleLinesEx(panel, 2.5f, new Color(255, 204, 68, 245));
-        Raylib.DrawRectangleLinesEx(new Rectangle(px + 5, py + 5, pw - 10, ph - 10), 1f, new Color(75, 195, 255, 165));
-
-        Raylib.DrawRectangle(px + 18, py + 16, pw - 36, 46, new Color(138, 18, 54, 240));
-        Raylib.DrawRectangleLines(px + 18, py + 16, pw - 36, 46, new Color(255, 215, 72, 255));
-
-        DrawTextCrisp(
-            font,
-            "ПАМЯТКА АВТОРИТЕТА - КАК ДЕРЖАТЬ ЭТАЖ",
-            px + 30,
-            py + 22,
-            18,
-            new Color(255, 232, 95, 255));
-        DrawTextCrisp(
-            font,
-            "Четыре шага от засады у Макбука до штурма Босса Центрального Лифта:",
-            px + 30,
-            py + 42,
-            13,
-            new Color(235, 225, 245, 240));
-
-        int cardX = px + 20;
-        int cardY = py + 74;
-        int cardW = pw - 40;
-        int cardH = 88;
-        int cardGap = 10;
-
-        DrawBriefingStepCard(
-            font,
-            new Rectangle(cardX, cardY + 0 * (cardH + cardGap), cardW, cardH),
-            "1. ПРИМАНКА",
-            "ХАЛЯВНЫЙ МАКБУК В ЦЕНТРЕ ЗАЛА",
-            "Включи подписку на Макбуке [E] и спрячься за диван/фикус [C].",
-            "Не свети стволом раньше времени, иначе шкала тревожности спугнёт джуна!",
-            new Color(42, 215, 135, 255));
-
-        DrawBriefingStepCard(
-            font,
-            new Rectangle(cardX, cardY + 1 * (cardH + cardGap), cardW, cardH),
-            "2. ВОСПИТАНИЕ",
-            "КОГДА СЯДЕТ ЖАТЬ ACCEPT ALL",
-            "Когда вайб-кодер сядет жать Accept All, бей Ремнём [1], Паяльником [2],",
-            "Micro-Uzi [3] или Обрезом [4], пока спесь не упадёт до нуля!",
-            new Color(255, 185, 52, 255));
-
-        DrawBriefingStepCard(
-            font,
-            new Rectangle(cardX, cardY + 2 * (cardH + cardGap), cardW, cardH),
-            "3. КАПИТАЛ",
-            "БУДКА ВЕРОНИКИ ИЛИ СТОЛЫ ГАЛЕРЫ",
-            "Сдай покорного кодера HR-Тарологу Веронике за кэш (+$150..$600)",
-            "или посади за стол Галеры (+$20/сек). Если залип в Твиттере - лечи ремнём!",
-            new Color(215, 92, 255, 255));
-
-        DrawBriefingStepCard(
-            font,
-            new Rectangle(cardX, cardY + 3 * (cardH + cardGap), cardW, cardH),
-            "4. БОСС ЛИФТА",
-            "КЛЮЧ ЗА $1000 И СБЕЖАВШИЙ ИИ-АГЕНТ",
-            "Нафармь $1000 на Мини-Боссе SaaS, купи ключ и вызови Сбежавшего ИИ-Агента!",
-            "Разнеси железный шкаф v0.1, забери Секретный Чат-Ган и открой 2-й этаж!",
-            new Color(255, 68, 98, 255));
-
-        int loadY = cardY + 4 * (cardH + cardGap) + 4;
-        int loadH = ph - (loadY - py) - 16;
-        if (loadH >= 64)
-        {
-            Rectangle loadBox = new(cardX, loadY, cardW, loadH);
-            Raylib.DrawRectangleRec(loadBox, new Color(20, 24, 38, 245));
-            Raylib.DrawRectangleLinesEx(loadBox, 1.5f, new Color(255, 208, 72, 210));
-
-            DrawTextCrisp(
-                font,
-                "СТАТУС СОХРАНЕНИЙ И АКТИВНЫХ МОДОВ:",
-                cardX + 12,
-                loadY + 8,
-                14,
-                new Color(255, 215, 82, 255));
-
-            GameSaveData? lastSave = _cachedSlots[1] ?? _cachedSlots[0];
-            string saveLine = lastSave != null
-                ? $"Последнее сохранение: {lastSave.SlotTitle} (${lastSave.Cash}, Галера: {lastSave.SeatedGalleyCoders}/4, {lastSave.SavedAt})"
-                : "Сохранений пока нет - нажми [НОВАЯ ИГРА], чтобы ворваться на 1-й этаж!";
-
-            DrawTextCrisp(font, saveLine, cardX + 12, loadY + 30, 13, new Color(210, 235, 255, 245));
-            DrawTextCrisp(
-                font,
-                $"Папка сохранений: saves/   |   Папка модов: mods/ ({InstalledMods.FindAll(m => m.Enabled).Count} из {InstalledMods.Count} ВКЛ)",
-                cardX + 12,
-                loadY + 50,
-                13,
-                new Color(255, 195, 220, 245));
-        }
-    }
-
-    private static void DrawBriefingStepCard(
-        Font font,
-        Rectangle rect,
-        string stepBadge,
-        string rightTag,
-        string line1,
-        string line2,
-        Color accentColor)
-    {
-        int x = (int)rect.X;
-        int y = (int)rect.Y;
-        int w = (int)rect.Width;
-        int h = (int)rect.Height;
-
-        Raylib.DrawRectangle(x, y, w, h, new Color(22, 28, 44, 242));
-        Raylib.DrawRectangle(x, y, 7, h, accentColor);
-        Raylib.DrawRectangleLinesEx(rect, 1.5f, new Color(accentColor.R, accentColor.G, accentColor.B, (byte)195));
-
-        int badgeW = 152;
-        Raylib.DrawRectangle(x + 14, y + 8, badgeW, 24, accentColor);
-        DrawTextCrisp(font, stepBadge, x + 22, y + 12, 15, new Color(12, 14, 20, 255));
-
-        DrawTextCrisp(font, rightTag, x + 176, y + 12, 13, accentColor);
-        DrawTextCrisp(font, line1, x + 16, y + 38, 14, Color.White);
-        DrawTextCrisp(font, line2, x + 16, y + 59, 13, new Color(185, 205, 230, 235));
-    }
-
-    private static void DrawBottomFooterBar(Font font, int screenW, int screenH)
-    {
-        int barH = 34;
-        int by = screenH - barH;
-        Raylib.DrawRectangle(0, by, screenW, barH, new Color(12, 10, 20, 235));
-        Raylib.DrawRectangle(0, by, screenW, 2, new Color(255, 205, 68, 210));
-
-        string controls = "УПРАВЛЕНИЕ НА ЭТАЖЕ: [WASD] Ходьба  |  [ЛКМ] Огонь/Удар  |  [1..4] Оружие 90-х  |  [E] Взаимодействие  |  [C] Засада  |  [ESC] Меню Паузы";
-        DrawTextCrisp(font, controls, 20, by + 9, 14, new Color(235, 230, 245, 245));
-    }
-
-    public static void DrawPauseOverlay(Font font, int screenW, int screenH)
-    {
-        Raylib.DrawRectangle(0, 0, screenW, screenH, new Color(8, 6, 16, 198));
-
-        int winW = 580;
-        int winH = 560;
-        int wx = (screenW - winW) / 2;
-        int wy = (screenH - winH) / 2;
-
-        Rectangle winRect = new(wx, wy, winW, winH);
-        Raylib.DrawRectangle(wx + 8, wy + 10, winW, winH, new Color(0, 0, 0, 185));
-        Raylib.DrawRectangleRec(winRect, new Color(18, 14, 28, 248));
-        Raylib.DrawRectangle(wx, wy, winW, 74, new Color(138, 18, 54, 245));
-
-        Raylib.DrawRectangleLinesEx(winRect, 3f, new Color(235, 36, 92, 255));
-        Raylib.DrawRectangleLinesEx(new Rectangle(wx + 5, wy + 5, winW - 10, winH - 10), 1.5f, new Color(255, 210, 72, 200));
-
-        DrawTextCrisp(
-            font,
-            "ПАУЗА // МЕНЮ ИГРЫ",
-            wx + 32,
-            wy + 16,
-            26,
-            new Color(255, 232, 92, 255));
-        DrawTextCrisp(
-            font,
-            "Cloud Entropic Tower - Этаж 1 (Нажми [ESC] для возврата в игру)",
-            wx + 34,
-            wy + 46,
-            14,
-            new Color(245, 220, 235, 240));
-
-        int btnStartX = wx + 44;
-        int btnStartY = wy + 116;
-        int btnW = winW - 88;
-        int btnH = 48;
-        int btnGap = 10;
-
-        for (int i = 0; i < PauseButtonLabels.Length; i++)
-        {
-            float hover = _pauseHoverAnim[i];
-            int shiftX = (int)(hover * 6f);
-            Rectangle btnRect = new(btnStartX + shiftX, btnStartY + i * (btnH + btnGap), btnW - shiftX, btnH);
-            bool isSelected = _selectedPauseIndex == i;
-
-            Color baseBg = i == 0
-                ? new Color(142, 20, 56, 245)
-                : new Color(28, 24, 44, 242);
-            Color hoverBg = i == 0
-                ? new Color(210, 34, 82, 255)
-                : new Color(68, 30, 66, 252);
-
-            Color bg = LerpColor(baseBg, hoverBg, hover);
-            Color border = isSelected
-                ? new Color(255, 222, 75, 255)
-                : new Color(102, 86, 138, 220);
-
-            Raylib.DrawRectangleRec(btnRect, bg);
-            Raylib.DrawRectangle((int)btnRect.X, (int)btnRect.Y, isSelected ? 8 : 4, (int)btnRect.Height, border);
-            Raylib.DrawRectangleLinesEx(btnRect, isSelected ? 2.5f : 1.5f, border);
-
-            DrawTextCrisp(
-                font,
-                PauseButtonLabels[i],
-                (int)btnRect.X + 22,
-                (int)btnRect.Y + 14,
-                19,
-                isSelected ? new Color(255, 245, 185, 255) : Color.White);
-
-            DrawTextCrisp(
-                font,
-                $"[{i + 1}]",
-                (int)(btnRect.X + btnRect.Width - 46),
-                (int)btnRect.Y + 15,
-                16,
-                new Color(255, 215, 82, 240));
-        }
-    }
-
-    private static void DrawSaveLoadSubPanel(Font font, int screenW, int screenH)
-    {
-        Raylib.DrawRectangle(0, 0, screenW, screenH, new Color(6, 5, 14, 215));
-
-        int winW = 860;
-        int winH = 540;
-        int wx = (screenW - winW) / 2;
-        int wy = (screenH - winH) / 2;
-
-        Rectangle winRect = new(wx, wy, winW, winH);
-        Raylib.DrawRectangleRec(winRect, new Color(16, 14, 28, 252));
-        Raylib.DrawRectangle(wx, wy, winW, 64, new Color(138, 18, 54, 250));
-        Raylib.DrawRectangleLinesEx(winRect, 3f, new Color(255, 212, 68, 255));
-
-        string header = IsSaveMode
-            ? "СОХРАНИТЬ ИГРУ В СЛОТ (SAVES/SLOT1..3.JSON)"
-            : "ЗАГРУЗИТЬ ИГРУ (ВЫБЕРИ СЛОТ ИЛИ АВТОСОХРАНЕНИЕ)";
-        DrawTextCrisp(font, header, wx + 28, wy + 20, 22, new Color(255, 232, 92, 255));
-
-        Rectangle closeBtn = new(wx + winW - 160, wy + 14, 140, 38);
-        Raylib.DrawRectangleRec(closeBtn, new Color(82, 18, 42, 250));
-        Raylib.DrawRectangleLinesEx(closeBtn, 2f, new Color(255, 195, 95, 245));
-        DrawTextCrisp(font, "[ НАЗАД / ESC ]", (int)closeBtn.X + 12, (int)closeBtn.Y + 10, 15, Color.White);
-
-        int slotStartY = wy + 92;
-        int slotH = 86;
-        int slotGap = 12;
-
-        for (int i = 0; i < 4; i++)
-        {
-            string slotTitle = i == 0 ? "АВТОСОХРАНЕНИЕ (saves/autosave.json)" : $"СЛОТ {i} (saves/slot{i}.json)";
-            GameSaveData? slot = _cachedSlots[i];
-            bool selected = _selectedSaveSlotIndex == i;
-
-            Rectangle slotRect = new(wx + 32, slotStartY + i * (slotH + slotGap), winW - 64, slotH);
-            Raylib.DrawRectangleRec(slotRect, selected ? new Color(46, 26, 56, 250) : new Color(24, 22, 38, 245));
-            Raylib.DrawRectangleLinesEx(slotRect, selected ? 2.5f : 1.5f, selected ? new Color(255, 218, 72, 255) : new Color(95, 85, 130, 215));
-
-            DrawTextCrisp(font, slotTitle, (int)slotRect.X + 18, (int)slotRect.Y + 10, 17, new Color(255, 222, 92, 255));
-
-            if (slot != null)
+            Rectangle r = MainButton(i);
+            Surface(r, i == _selectedMainIndex ? new Color(76,111,149,193) : new Color(28,49,81,138));
+            Sprite("menu-type", new(r.X+10,r.Y+3,200,34), new(0,i*68,400,68));
+            if (i == 2)
             {
-                int weaponsCount = 0;
-                if (slot.UnlockedWeapons != null)
+                Vector2 c = new(r.X+r.Width-12, r.Y+7);
+                for (int j = 0; j < 16; j++)
                 {
-                    foreach (bool u in slot.UnlockedWeapons) if (u) weaponsCount++;
+                    Vector2 Tip(int k) => c + Vector2.Transform(new Vector2(k%2==0 ? 17 : 11,0), Matrix3x2.CreateRotation(k*MathF.PI/8));
+                    Raylib.DrawTriangle(c, Tip(j+1), Tip(j), new Color(246, 92, 13, 255));
                 }
-
-                string details1 = $"Дата: {slot.SavedAt}   |   Кэш: ${slot.Cash}   |   Оружия открыто: {weaponsCount}/4   |   Кодеров на Галере: {slot.SeatedGalleyCoders}/4";
-                string details2 = $"Прогресс: {slot.FloorProgressLabel}   |   Ключ Лифта: {(slot.HasElevatorKey ? "ЕСТЬ" : "НЕТ")}   |   Босс Этажа: {(slot.ElevatorBossDefeated ? "ПОВЕРЖЕН" : "ЖИВ")}";
-                DrawTextCrisp(font, details1, (int)slotRect.X + 18, (int)slotRect.Y + 35, 14, Color.White);
-                DrawTextCrisp(font, details2, (int)slotRect.X + 18, (int)slotRect.Y + 57, 13, new Color(165, 225, 255, 240));
+                Center(Serif, "!", new(c.X-10,c.Y-12,20,23), 23, Color.White);
             }
-            else
-            {
-                DrawTextCrisp(font, "ПУСТОЙ СЛОТ - Нет записанных данных в saves/", (int)slotRect.X + 18, (int)slotRect.Y + 42, 15, new Color(155, 155, 175, 220));
-            }
-
-            Rectangle actionBtn = new(slotRect.X + slotRect.Width - 190, slotRect.Y + 20, 170, 46);
-            Color actBg = IsSaveMode ? new Color(185, 28, 74, 250) : (slot != null ? new Color(32, 138, 92, 250) : new Color(65, 65, 80, 220));
-            Raylib.DrawRectangleRec(actionBtn, actBg);
-            Raylib.DrawRectangleLinesEx(actionBtn, 2f, new Color(255, 225, 95, 240));
-            string btnText = IsSaveMode ? "[ СОХРАНИТЬ ]" : "[ ЗАГРУЗИТЬ ]";
-            DrawTextCrisp(font, btnText, (int)actionBtn.X + 22, (int)actionBtn.Y + 14, 16, Color.White);
         }
-
-        DrawTextCrisp(
-            font,
-            $"Папка сохранений на диске: {SavesDirectory}",
-            wx + 32,
-            wy + winH - 36,
-            14,
-            new Color(200, 210, 230, 230));
+        Center(Serif,"Подключение к Steam...",new(screenW-257,6,250,33),23,Edge);
+        Center(Serif,"Версия 1.1.3",new(screenW-112,screenH-28,110,25),17,Edge);
+        Center(Serif,"Присоединиться к Discord",new(263,screenH-60,257,32),22,Edge);
+        if (_infoPage != null)
+        {
+            Raylib.DrawRectangle(0,0,screenW,screenH,new Color(5,10,24,134));
+            Surface(SettingsRect(0,88,686,400),new Color(42,71,108,250));
+            Center(Serif,_infoPage,SettingsRect(30,114,626,68),44,Color.White);
+            string body = _infoPage == "Персонаж" ? "Коммерс в малиновом пиджаке" : "How to Vibe Coder";
+            Center(Serif,body,SettingsRect(40,220,606,60),32,Edge);
+            Center(Serif,_infoPage == "Персонаж" ? LoreAndMenusUI.EquippedBeltSkinName : "Создано на raylib и .NET",SettingsRect(40,280,606,48),23,Edge);
+            NativeButton("Назад", SettingsRect(0,505,166,38));
+        }
     }
 
-    private static void DrawModsSubPanel(Font font, int screenW, int screenH)
+    private static void NativeButton(string label, Rectangle r, bool selected = false)
     {
-        Raylib.DrawRectangle(0, 0, screenW, screenH, new Color(6, 5, 14, 215));
+        Surface(r, selected ? new Color(84,125,165,250) : new Color(42,69,109,245));
+        Center(Serif,label,r,23,Color.White);
+    }
 
-        int winW = 880;
-        int winH = 540;
-        int wx = (screenW - winW) / 2;
-        int wy = (screenH - winH) / 2;
+    private static void DrawSlateWindow(string title,int width,int height)
+    {
+        int sw=Raylib.GetScreenWidth(), sh=Raylib.GetScreenHeight();
+        Raylib.DrawRectangle(0,0,sw,sh,new Color(8,15,32,152));
+        Rectangle panel=new((sw-width)/2,(sh-height)/2,width,height);
+        Surface(panel,new Color(42,66,99,250));
+        Center(Serif,title,new(panel.X+30,panel.Y+13,panel.Width-200,45),35,Color.White);
+    }
 
-        Rectangle winRect = new(wx, wy, winW, winH);
-        Raylib.DrawRectangleRec(winRect, new Color(16, 14, 28, 252));
-        Raylib.DrawRectangle(wx, wy, winW, 64, new Color(138, 18, 54, 250));
-        Raylib.DrawRectangleLinesEx(winRect, 3f, new Color(255, 212, 68, 255));
+    public static void DrawPauseOverlay(Font font,int screenW,int screenH)
+    {
+        if (IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen) return;
+        DrawSlateWindow("Пауза",580,560);
+        for(int i=0;i<PauseButtonLabels.Length;i++)
+            NativeButton(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);
+    }
 
-        DrawTextCrisp(
-            font,
-            "МЕНЕДЖЕР МОДОВ // ПОДКЛЮЧЁННЫЕ МОДУЛИ (MODS/)",
-            wx + 28,
-            wy + 20,
-            22,
-            new Color(255, 232, 92, 255));
-
-        Rectangle closeBtn = new(wx + winW - 160, wy + 14, 140, 38);
-        Raylib.DrawRectangleRec(closeBtn, new Color(82, 18, 42, 250));
-        Raylib.DrawRectangleLinesEx(closeBtn, 2f, new Color(255, 195, 95, 245));
-        DrawTextCrisp(font, "[ НАЗАД / ESC ]", (int)closeBtn.X + 12, (int)closeBtn.Y + 10, 15, Color.White);
-
-        DrawTextCrisp(
-            font,
-            "Кликни по любому моду для переключения [ВКЛ / ВЫКЛ] (конфигурация сохраняется в mods/mods_config.json):",
-            wx + 32,
-            wy + 76,
-            14,
-            new Color(210, 225, 245, 240));
-
-        int rowStartY = wy + 104;
-        int rowH = 82;
-        int rowGap = 12;
-
-        for (int i = 0; i < InstalledMods.Count; i++)
+    private static void DrawSaveLoadSubPanel(Font font,int screenW,int screenH)
+    {
+        DrawSlateWindow(IsSaveMode ? "Сохранить игру" : "Войти в игру",860,540);
+        int x=screenW/2-430, y=screenH/2-270;
+        NativeButton("Назад",new(x+700,y+14,140,38));
+        for(int i=0;i<4;i++)
         {
-            ModEntryInfo mod = InstalledMods[i];
-            Rectangle rowRect = new(wx + 32, rowStartY + i * (rowH + rowGap), winW - 64, rowH);
-
-            Color rowBg = mod.Enabled ? new Color(24, 34, 46, 248) : new Color(24, 20, 32, 240);
-            Color border = mod.Enabled ? new Color(68, 225, 145, 245) : new Color(110, 95, 130, 200);
-
-            Raylib.DrawRectangleRec(rowRect, rowBg);
-            Raylib.DrawRectangle((int)rowRect.X, (int)rowRect.Y, 7, (int)rowRect.Height, border);
-            Raylib.DrawRectangleLinesEx(rowRect, 2f, border);
-
-            DrawTextCrisp(font, $"{mod.Name}  ({mod.Version})", (int)rowRect.X + 18, (int)rowRect.Y + 10, 18, new Color(255, 230, 98, 255));
-            DrawTextCrisp(font, $"Автор: {mod.Author}", (int)rowRect.X + 18, (int)rowRect.Y + 34, 13, new Color(165, 215, 255, 235));
-            DrawTextCrisp(font, mod.Description, (int)rowRect.X + 18, (int)rowRect.Y + 54, 14, Color.White);
-
-            Rectangle toggleBtn = new(rowRect.X + rowRect.Width - 156, rowRect.Y + 18, 136, 44);
-            Color tBg = mod.Enabled ? new Color(28, 155, 88, 250) : new Color(128, 32, 52, 245);
-            Raylib.DrawRectangleRec(toggleBtn, tBg);
-            Raylib.DrawRectangleLinesEx(toggleBtn, 2f, Color.White);
-            DrawTextCrisp(
-                font,
-                mod.Enabled ? "[ ВКЛ ]" : "[ ВЫКЛ ]",
-                (int)toggleBtn.X + (mod.Enabled ? 34 : 28),
-                (int)toggleBtn.Y + 13,
-                17,
-                Color.White);
+            var data=_cachedSlots[i];
+            Rectangle row=new(x+32,y+92+i*98,796,86);
+            Surface(row,i==_selectedSaveSlotIndex ? new Color(69,102,137,251) : new Color(43,68,102,250),1);
+            string title=i==0 ? "Автосохранение" : $"Слот {i}";
+            DrawTextCrisp(Serif,title,(int)row.X+20,(int)row.Y+12,24,Color.White);
+            string detail=data==null ? "Пусто" : $"{data.SavedAt}    ${data.Cash}    Галера {data.SeatedGalleyCoders}/4";
+            DrawTextCrisp(Serif,detail,(int)row.X+20,(int)row.Y+48,17,Edge);
+            if(IsSaveMode || data!=null) NativeButton(IsSaveMode ? "Сохранить" : "Загрузить",new(row.X+606,row.Y+20,170,46));
         }
+    }
 
-        DrawTextCrisp(
-            font,
-            $"Папка модов: {ModsDirectory}",
-            wx + 32,
-            wy + winH - 36,
-            14,
-            new Color(255, 215, 95, 240));
+    private static void DrawModsSubPanel(Font font,int screenW,int screenH)
+    {
+        DrawSlateWindow("Настройки модов",880,540);
+        int x=screenW/2-440,y=screenH/2-270;
+        NativeButton("Назад",new(x+720,y+14,140,38));
+        for(int i=0;i<InstalledMods.Count;i++)
+        {
+            var mod=InstalledMods[i];
+            Rectangle row=new(x+32,y+104+i*94,816,82);
+            Surface(row,new Color(35,56,86,245),1);
+            DrawTextCrisp(Serif,mod.Name,(int)row.X+15,(int)row.Y+9,22,Color.White);
+            DrawTextCrisp(font,mod.Author+"   "+mod.Version,(int)row.X+16,(int)row.Y+37,14,Edge);
+            Center(font,mod.Description,new(row.X+10,row.Y+54,644,20),15,Edge);
+            NativeButton(mod.Enabled ? "Включён" : "Выключен",new(row.X+660,row.Y+18,136,44),mod.Enabled);
+        }
+        NativeButton("Звуковая рубка [F8]",ModMixer);
+        NativeButton("Тест: +$2000",ModAction(0));
+        NativeButton("Открыть оружие",ModAction(1));
     }
 
     private static void DrawSettingsSubPanel(Font font, int screenW, int screenH)
     {
-        Raylib.DrawRectangle(0, 0, screenW, screenH, new Color(6, 5, 14, 215));
-
-        int winW = 860;
-        int winH = 550;
-        int wx = (screenW - winW) / 2;
-        int wy = (screenH - winH) / 2;
-
-        Rectangle winRect = new(wx, wy, winW, winH);
-        Raylib.DrawRectangleRec(winRect, new Color(16, 14, 28, 252));
-        Raylib.DrawRectangle(wx, wy, winW, 64, new Color(138, 18, 54, 250));
-        Raylib.DrawRectangleLinesEx(winRect, 3f, new Color(255, 212, 68, 255));
-
-        DrawTextCrisp(
-            font,
-            "НАСТРОЙКИ И АУДИО-МИКШЕР",
-            wx + 28,
-            wy + 20,
-            23,
-            new Color(255, 232, 92, 255));
-
-        Rectangle closeBtn = new(wx + winW - 160, wy + 14, 140, 38);
-        Raylib.DrawRectangleRec(closeBtn, new Color(82, 18, 42, 250));
-        Raylib.DrawRectangleLinesEx(closeBtn, 2f, new Color(255, 195, 95, 245));
-        DrawTextCrisp(font, "[ НАЗАД / ESC ]", (int)closeBtn.X + 12, (int)closeBtn.Y + 10, 15, Color.White);
-
-        string[] labels =
+        Raylib.DrawRectangle(0,0,screenW,screenH,new Color(4,9,22,136));
+        Center(Serif,"Настройки",SettingsRect(0,-26,686,54),48,Color.White);
+        for (int i=0;i<4;i++) NativeButton(SettingsTabs[i],SettingsTab(i),i==_settingsTab);
+        Rectangle panel = SettingsRect(0,80,686,462);
+        Surface(panel,new Color(44,72,110,246));
+        Raylib.DrawRectangleGradientV((int)panel.X+3,(int)panel.Y+3,680,456,new Color(100,158,195,141),new Color(22,34,78,190));
+        Center(Serif,SettingsTabs[_settingsTab],SettingsRect(0,84,686,37),27,Color.White);
+        int[] rows = SettingRows[_settingsTab];
+        for (int i=0;i<rows.Length;i++)
         {
-            "Общая громкость (Master Volume)",
-            "Громкость музыки 90-х (Music Volume)",
-            "Громкость оружия (Weapon SFX)",
-            "Громкость голосов и реплик (Voice Volume)",
-            "Чувствительность мыши (Mouse Sensitivity)",
-            "Поле зрения камеры (3D FOV)"
-        };
-
-        float[] normVals =
-        {
-            LoreAndMenusUI.MasterVolume,
-            LoreAndMenusUI.MusicVolume,
-            LoreAndMenusUI.WeaponSfxVolume,
-            LoreAndMenusUI.VoiceVolume,
-            Math.Clamp((LoreAndMenusUI.MouseSensitivity - 0.05f) / 0.45f, 0f, 1f),
-            Math.Clamp((LoreAndMenusUI.CameraFov - 60f) / 40f, 0f, 1f)
-        };
-
-        string[] valueTexts =
-        {
-            $"{(int)(LoreAndMenusUI.MasterVolume * 100)}%",
-            $"{(int)(LoreAndMenusUI.MusicVolume * 100)}%",
-            $"{(int)(LoreAndMenusUI.WeaponSfxVolume * 100)}%",
-            $"{(int)(LoreAndMenusUI.VoiceVolume * 100)}%",
-            $"{LoreAndMenusUI.MouseSensitivity:0.00}",
-            $"{(int)LoreAndMenusUI.CameraFov}°"
-        };
-
-        int sliderX = wx + 360;
-        int sliderW = 340;
-        int rowStartY = wy + 92;
-        int rowStepY = 54;
-
-        for (int i = 0; i < 6; i++)
-        {
-            int ry = rowStartY + i * rowStepY;
-            DrawTextCrisp(font, labels[i], wx + 34, ry + 8, 16, Color.White);
-
-            Rectangle track = new(sliderX, ry + 6, sliderW, 24);
-            Raylib.DrawRectangleRec(track, new Color(28, 32, 48, 255));
-            Raylib.DrawRectangle(sliderX, ry + 6, (int)(sliderW * normVals[i]), 24, new Color(218, 36, 92, 255));
-            Raylib.DrawRectangleLinesEx(track, 2f, new Color(255, 212, 72, 230));
-
-            DrawTextCrisp(font, valueTexts[i], sliderX + sliderW + 22, ry + 8, 17, new Color(255, 228, 88, 255));
+            int id = rows[i];
+            float t = LoreAndMenusUI.GetSliderNormalizedValue(id);
+            Rectangle r = SettingsTrack(i);
+            float y = r.Y+r.Height/2;
+            DrawTextCrisp(Serif,SettingNames[id],(int)panel.X+67,(int)y-13,23,Color.White);
+            Raylib.DrawLineEx(new(r.X,y),new(r.X+r.Width,y),1.7f,Edge);
+            float x=r.X+t*r.Width;
+            Raylib.DrawRectanglePro(new(x,y,10,17),new(5,8),39,Color.White);
+            Raylib.DrawLineEx(new(x+3,y-4),new(x+9,y-11),3,Color.White);
+            float value = id == 4 ? LoreAndMenusUI.MouseSensitivity : id == 5 ? LoreAndMenusUI.CameraFov : t;
+            Rectangle val = new(r.X+r.Width+32, y-17,68,34);
+            Surface(val,new Color(35,63,99,112),0);
+            Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo("ru-RU")),val,22,Edge);
         }
-
-        // Переключатель Полноэкранного режима
-        DrawTextCrisp(font, "Режим отображения окна (Fullscreen):", wx + 34, wy + 432, 16, Color.White);
-        Rectangle fullscreenBtn = new(wx + 360, wy + 422, 240, 42);
-        Raylib.DrawRectangleRec(fullscreenBtn, IsFullscreenEnabled ? new Color(28, 148, 88, 250) : new Color(52, 44, 78, 250));
-        Raylib.DrawRectangleLinesEx(fullscreenBtn, 2f, new Color(255, 215, 82, 245));
-        DrawTextCrisp(
-            font,
-            IsFullscreenEnabled ? "[ ПОЛНЫЙ ЭКРАН: ВКЛ ]" : "[ ОКОННЫЙ РЕЖИМ ]",
-            (int)fullscreenBtn.X + 22,
-            (int)fullscreenBtn.Y + 12,
-            16,
-            Color.White);
+        if (_settingsTab==1) NativeButton(IsFullscreenEnabled ? "Полный экран: вкл" : "Полный экран: выкл",SettingsRect(337,186,279,34));
+        if (_settingsTab==2)
+        {
+            Center(Serif,"Голоса персонажей",SettingsRect(0,257,686,42),26,Color.White);
+            NativeButton("Звуковая рубка [F8]",SettingsRect(140,478,406,36));
+        }
+        if (_settingsTab==3) Center(Serif,"Русский",SettingsRect(0,165,686,54),30,Color.White);
+        NativeButton("Назад",SettingsRect(0,550,166,38));
     }
 
     private static void DrawStatusToast(Font font, int screenW, string message)
@@ -1733,38 +1092,6 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangle(x, y, w, 38, new Color(22, 96, 64, 245));
         Raylib.DrawRectangleLinesEx(new Rectangle(x, y, w, 38), 2f, new Color(255, 225, 88, 255));
         DrawTextCrisp(font, message, x + 18, y + 10, 16, Color.White);
-    }
-
-    private static void GetMainMenuLayout(int screenW, int screenH, out Rectangle leftPanel, out Rectangle rightPanel)
-    {
-        int topMargin = 46;
-        int bottomMargin = 46;
-        int availH = Math.Max(540, screenH - topMargin - bottomMargin);
-        int panelH = Math.Min(588, availH);
-        int py = topMargin + (availH - panelH) / 2;
-
-        int totalMarginX = 44;
-        int gap = 24;
-        int totalW = Math.Max(960, screenW - totalMarginX * 2);
-
-        int leftW = (int)(totalW * 0.51f);
-        int rightW = totalW - leftW - gap;
-
-        int startX = (screenW - totalW) / 2;
-        leftPanel = new Rectangle(startX, py, leftW, panelH);
-        rightPanel = new Rectangle(startX + leftW + gap, py, rightW, panelH);
-    }
-
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
-
-    private static Color LerpColor(Color a, Color b, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return new Color(
-            (byte)(a.R + (b.R - a.R) * t),
-            (byte)(a.G + (b.G - a.G) * t),
-            (byte)(a.B + (b.B - a.B) * t),
-            (byte)(a.A + (b.A - a.A) * t));
     }
 
     private static void PlayUiSound()

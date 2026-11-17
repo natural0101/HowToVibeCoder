@@ -1,80 +1,38 @@
-﻿param(
-    [string]$ProjectRoot = "C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder",
-    [string]$DesktopDir = "C:\Users\se-20\OneDrive\Рабочий стол"
+param(
+    [string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent),
+    [string]$DesktopDir = [Environment]::GetFolderPath('DesktopDirectory')
 )
+$ErrorActionPreference = 'Stop'
+$InstallerDir = Join-Path $ProjectRoot 'Installer'
+$IcoPath = Join-Path $InstallerDir 'HowToVibeCoder.ico'
+if (-not (Test-Path -LiteralPath $IcoPath)) { throw "Missing icon: $IcoPath" }
+$StageRoot = Join-Path $InstallerDir ('stage_tmp/' + [Guid]::NewGuid().ToString('N'))
+$GameOut = Join-Path $StageRoot 'game'
+$PublishOut = Join-Path $StageRoot 'setup'
+New-Item -ItemType Directory -Force $GameOut, $PublishOut | Out-Null
 
-$ErrorActionPreference = "Stop"
-$InstallerDir = Join-Path $ProjectRoot "Installer"
-$IcoPath = Join-Path $InstallerDir "HowToVibeCoder.ico"
-$PayloadZip = Join-Path $InstallerDir "payload.zip"
-
-Write-Host "[1/4] Building Icon Generator & Generating HowToVibeCoder.ico..." -ForegroundColor Cyan
-dotnet build "$InstallerDir\HowToVibeCoder_Setup.csproj" -c Release --nologo
-$SetupBinExe = Join-Path $InstallerDir "bin\Release\net10.0-windows\HowToVibeCoder_Setup.exe"
-if (-not (Test-Path $SetupBinExe)) {
-    $SetupBinExe = Get-ChildItem -Path "$InstallerDir\bin\Release" -Filter "HowToVibeCoder_Setup.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-}
-& $SetupBinExe --generate-icon $IcoPath
-
-Write-Host "[2/4] Packing Game Release Folder into payload.zip..." -ForegroundColor Cyan
-$ReleaseDir = Join-Path $ProjectRoot "bin\Release\net10.0"
-if (-not (Test-Path (Join-Path $ReleaseDir "HowToVibeCoder.exe"))) {
-    $DebugDir = Join-Path $ProjectRoot "bin\Debug\net10.0"
-    if (Test-Path (Join-Path $DebugDir "HowToVibeCoder.exe")) {
-        $ReleaseDir = $DebugDir
-    }
+Write-Host '[1/4] Publishing current game sources with .NET runtime...'
+dotnet publish (Join-Path $ProjectRoot 'HowToVibeCoder.csproj') -c Release -r win-x64 --self-contained true -p:ApplicationIcon=$IcoPath -o $GameOut --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Game publish failed.' }
+# Include all assets, including audio and artwork not covered by the game project.
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'assets') -Destination $GameOut -Recurse -Force
+Copy-Item -LiteralPath $IcoPath -Destination (Join-Path $GameOut 'HowToVibeCoder.ico') -Force
+foreach ($required in @('HowToVibeCoder.exe', 'HowToVibeCoder.dll', 'coreclr.dll', 'assets/ui/water.png', 'assets/ui/title.png')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $GameOut $required))) { throw "Missing game file: $required" }
 }
 
-if (Test-Path $PayloadZip) {
-    Remove-Item $PayloadZip -Force
-}
+Write-Host '[2/4] Packing clean game payload...'
+$PayloadZip = Join-Path $InstallerDir 'payload.zip'
+Compress-Archive -Path (Join-Path $GameOut '*') -DestinationPath $PayloadZip -CompressionLevel Optimal -Force
 
-if (Test-Path $ReleaseDir) {
-    Compress-Archive -Path "$ReleaseDir\*" -DestinationPath $PayloadZip -CompressionLevel Optimal -Force
-    Write-Host "Packed payload.zip from $ReleaseDir" -ForegroundColor Green
-} else {
-    # Create minimal staging zip so single-file build always embeds valid zip
-    $StageDir = Join-Path $InstallerDir "stage_tmp"
-    New-Item -ItemType Directory -Path $StageDir -Force | Out-Null
-    Set-Content -Path (Join-Path $StageDir "README.txt") -Value "How to Vibe Coder — Floor 1 (Cloud Entropic Tower)"
-    Compress-Archive -Path "$StageDir\*" -DestinationPath $PayloadZip -Force
-    Remove-Item $StageDir -Recurse -Force
-}
+Write-Host '[3/4] Publishing standalone installer with supplied icon...'
+dotnet publish (Join-Path $InstallerDir 'HowToVibeCoder_Setup.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $PublishOut --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Installer publish failed.' }
+$PublishedSetupExe = Join-Path $PublishOut 'HowToVibeCoder_Setup.exe'
+if (-not (Test-Path -LiteralPath $PublishedSetupExe)) { throw 'Installer executable missing.' }
 
-Write-Host "[3/4] Publishing Single-File Custom GUI Installer HowToVibeCoder_Setup.exe..." -ForegroundColor Cyan
-$PublishOut = Join-Path $InstallerDir "publish"
-dotnet publish "$InstallerDir\HowToVibeCoder_Setup.csproj" -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $PublishOut --nologo
-
-$PublishedSetupExe = Join-Path $PublishOut "HowToVibeCoder_Setup.exe"
-$DesktopSetupExe = Join-Path $DesktopDir "HowToVibeCoder_Setup.exe"
-Copy-Item $PublishedSetupExe $DesktopSetupExe -Force
-
-Write-Host "[4/4] Creating 1-Click Launcher HowToVibeCoder.bat on Desktop..." -ForegroundColor Cyan
-$DesktopBat = Join-Path $DesktopDir "HowToVibeCoder.bat"
-$BatContent = @"
-@echo off
-chcp 65001 >nul
-title How to Vibe Coder — Этаж 1 (Cloud Entropic Tower)
-if exist "C:\Games\HowToVibeCoder\HowToVibeCoder.exe" (
-    cd /d "C:\Games\HowToVibeCoder"
-    start "" "C:\Games\HowToVibeCoder\HowToVibeCoder.exe" %*
-    exit /b 0
-)
-if exist "$ProjectRoot\bin\Release\net10.0\HowToVibeCoder.exe" (
-    cd /d "$ProjectRoot\bin\Release\net10.0"
-    start "" "$ProjectRoot\bin\Release\net10.0\HowToVibeCoder.exe" %*
-    exit /b 0
-)
-if exist "$ProjectRoot\bin\Debug\net10.0\HowToVibeCoder.exe" (
-    cd /d "$ProjectRoot\bin\Debug\net10.0"
-    start "" "$ProjectRoot\bin\Debug\net10.0\HowToVibeCoder.exe" %*
-    exit /b 0
-)
-echo Запуск установщика HowToVibeCoder_Setup.exe...
-start "" "$DesktopSetupExe"
-"@
-Set-Content -Path $DesktopBat -Value $BatContent -Encoding UTF8
-
-Write-Host "DONE! Created:" -ForegroundColor Green
-Write-Host "  -> $DesktopSetupExe" -ForegroundColor Yellow
-Write-Host "  -> $DesktopBat" -ForegroundColor Yellow
+Write-Host '[4/4] Copying verified build output to Desktop...'
+New-Item -ItemType Directory -Force $DesktopDir, (Join-Path $InstallerDir 'publish') | Out-Null
+Copy-Item -LiteralPath $PublishedSetupExe -Destination (Join-Path $InstallerDir 'publish/HowToVibeCoder_Setup.exe') -Force
+Copy-Item -LiteralPath $PublishedSetupExe -Destination (Join-Path $DesktopDir 'HowToVibeCoder_Setup.exe') -Force
+Get-FileHash -LiteralPath (Join-Path $DesktopDir 'HowToVibeCoder_Setup.exe') -Algorithm SHA256
