@@ -31,15 +31,33 @@ internal static class SetupProgram
             return 0;
         }
 
-        if (args.Length >= 1 && string.Equals(args[0], "--silent", StringComparison.OrdinalIgnoreCase))
+        if (args.Length >= 1 && (string.Equals(args[0], "--silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(args[0], "--verify-install", StringComparison.OrdinalIgnoreCase)))
         {
+            bool verifyOnly = string.Equals(args[0], "--verify-install", StringComparison.OrdinalIgnoreCase);
+            if (verifyOnly && args.Length < 2) return 2;
             string targetDir = args.Length >= 2 ? args[1] : @"C:\Games\HowToVibeCoder";
             InstallerEngine.InstallAll(
                 targetDir,
-                createDesktopShortcut: true,
-                createStartMenuFolder: true,
+                createDesktopShortcut: !verifyOnly,
+                createStartMenuFolder: !verifyOnly,
                 launchAfterInstall: false,
                 progressCallback: null);
+            return 0;
+        }
+
+        if (args.Length == 2 && string.Equals(args[0], "--verify-ui", StringComparison.OrdinalIgnoreCase))
+        {
+            using var preview = new SetupMainForm();
+            preview.ShowInTaskbar = false;
+            preview.StartPosition = FormStartPosition.Manual;
+            preview.Location = new Point(-20000, -20000);
+            preview.Show();
+            Application.DoEvents();
+            using var image = new Bitmap(preview.Width, preview.Height);
+            preview.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
+            image.Save(args[1], ImageFormat.Png);
+            preview.Close();
             return 0;
         }
 
@@ -349,7 +367,9 @@ public static class InstallerEngine
 
         progressCallback?.Invoke(8, "Генерация фирменной иконки HowToVibeCoder.ico...");
         string icoPath = Path.Combine(installDir, "HowToVibeCoder.ico");
-        IconGenerator.CreateIconFile(icoPath);
+        using (Stream icon = Assembly.GetExecutingAssembly().GetManifestResourceStream("HowToVibeCoder.Icon.ico")
+            ?? throw new InvalidDataException("Installer icon resource is missing."))
+        using (FileStream output = File.Create(icoPath)) icon.CopyTo(output);
 
         // Проверяем вшитый ресурс HowToVibeCoder.Payload.zip
         Assembly asm = Assembly.GetExecutingAssembly();
@@ -367,8 +387,8 @@ public static class InstallerEngine
                 int pct = 12 + (int)((current / (float)total) * 72f);
                 string destPath = Path.GetFullPath(Path.Combine(installDir, entry.FullName));
 
-                if (!destPath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase))
-                    continue;
+                if (!destPath.StartsWith(Path.TrimEndingDirectorySeparator(installDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Invalid payload entry: " + entry.FullName);
 
                 if (string.IsNullOrEmpty(entry.Name))
                 {

@@ -683,16 +683,6 @@ public class WeaponAndCombatView
             byte alpha = (byte)(p.Tint.A * alphaRatio);
             Color c = new Color(p.Tint.R, p.Tint.G, p.Tint.B, alpha);
 
-            if (p.IsRing)
-            {
-                Raylib.DrawCylinderWiresEx(
-                    p.Position,
-                    p.Position + new Vector3(0f, 0.025f, 0f),
-                    p.Size * 1.15f,
-                    p.Size * 0.85f,
-                    10,
-                    c);
-            }
             Raylib.DrawSphere(p.Position, p.Size, c);
         }
 
@@ -795,12 +785,16 @@ public class WeaponAndCombatView
 
         float bobX = MathF.Sin(walkBobPhase * 1.0f) * 0.014f;
         float bobY = MathF.Abs(MathF.Cos(walkBobPhase * 2.0f)) * -0.012f + (isCrouching ? -0.025f : 0f);
-        float equipDropY = -EquipTransition * 0.22f;
+        float equipDropY = -EquipTransition * 0.075f;
 
-        Vector3 baseOffset = new Vector3(bobX, bobY + equipDropY, 0f);
+        Vector3 baseOffset = new Vector3(bobX, bobY + equipDropY + .033f, 0f);
 
         // Render 3D First-Person ViewModel
         Raylib.BeginMode3D(vmCam);
+        VisualEngine3D.Hands();
+        Rlgl.PushMatrix();
+        Rlgl.Scalef(-1,1,1);
+        Rlgl.DisableBackfaceCulling();
 
         switch (CurrentWeapon)
         {
@@ -821,6 +815,8 @@ public class WeaponAndCombatView
                 break;
         }
 
+        Rlgl.PopMatrix();
+        Rlgl.EnableBackfaceCulling();
         Raylib.EndMode3D();
 
         // Render 2D projected floating combat numbers (`ШЛЕПОК!`, `ПРИПАЯНО!`, `-35`, `КРИТ!`) & Hitmarker X
@@ -834,58 +830,33 @@ public class WeaponAndCombatView
         bool isRightHand,
         bool showGoldSignetRing = true)
     {
-        // 90s Crimson Jacket Sleeve ("Малиновый пиджак"), crisp white shirt cuff, watch/chain, and hand with gold signet ring ("Золотая печатка")
-        Color crimsonJacket = new Color(168, 18, 48, 255);
-        Color crimsonLapelShade = new Color(125, 12, 34, 255);
-        Color whiteCuff = new Color(242, 242, 248, 255);
-        Color skinTone = new Color(228, 178, 142, 255);
-        Color skinShade = new Color(196, 144, 110, 255);
-        Color goldColor = new Color(255, 205, 35, 255);
-        Color onyxStone = new Color(22, 22, 28, 255);
-
-        Vector3 dir = Vector3.Normalize(wristPos - shoulderPos);
-        Vector3 cuffStart = wristPos - dir * 0.065f;
-
-        // Thick crimson jacket sleeve
-        Raylib.DrawCylinderEx(shoulderPos, cuffStart, 0.072f, 0.056f, 10, crimsonJacket);
-        Raylib.DrawCylinderWiresEx(shoulderPos, cuffStart, 0.073f, 0.057f, 8, crimsonLapelShade);
-
-        // Gold sleeve buttons on crimson jacket
-        Vector3 sideNormal = Vector3.Normalize(Vector3.Cross(dir, Vector3.UnitY)) * (isRightHand ? 1f : -1f);
-        Raylib.DrawSphere(cuffStart - dir * 0.03f + sideNormal * 0.052f, 0.009f, goldColor);
-        Raylib.DrawSphere(cuffStart - dir * 0.06f + sideNormal * 0.054f, 0.009f, goldColor);
-
-        // White dress shirt cuff sticking out
-        Raylib.DrawCylinderEx(cuffStart, wristPos, 0.050f, 0.046f, 10, whiteCuff);
-
-        // Heavy gold watch / bracelet on wrist
-        Vector3 watchStart = wristPos - dir * 0.018f;
-        Raylib.DrawCylinderEx(watchStart, wristPos + dir * 0.006f, 0.048f, 0.048f, 10, goldColor);
-
-        // Muscular low-poly fist/hand
-        Vector3 palmCenter = wristPos + handForward * 0.048f;
-        Raylib.DrawSphere(palmCenter, 0.046f, skinTone);
-        Raylib.DrawCylinderEx(wristPos, palmCenter + handForward * 0.025f, 0.043f, 0.038f, 8, skinTone);
-
-        // 4 Knuckles / curled fingers
-        Vector3 rightAxis = Vector3.Normalize(Vector3.Cross(handForward, Vector3.UnitY));
-        if (rightAxis.LengthSquared() < 0.001f) rightAxis = Vector3.UnitX;
-
-        for (int f = 0; f < 4; f++)
+        Vector3 forward = Vector3.Normalize(handForward);
+        Vector3 across = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
+        float side = isRightHand ? -1 : 1;
+        Color glove = new(137, 54, 190, 255);
+        Color finger = new(155, 66, 204, 255);
+        Vector3 cuff = Vector3.Lerp(shoulderPos, wristPos, .85f);
+        VisualEngine3D.Rod(shoulderPos,cuff,.088f,.061f,8,new Color(120,27,77,255));
+        VisualEngine3D.Rod(cuff,wristPos,.063f,.058f,8,new Color(94,36,135,255));
+        Vector3 palm = wristPos + forward*.047f;
+        VisualEngine3D.Oval(palm,new(.067f,.055f,.084f),glove);
+        for (int i=0;i<4;i++)
         {
-            float fOffset = (f - 1.5f) * 0.019f;
-            Vector3 knucklePos = palmCenter + handForward * 0.036f + rightAxis * fOffset + new Vector3(0f, 0.012f, 0f);
-            Raylib.DrawSphere(knucklePos, 0.014f, (f % 2 == 0) ? skinTone : skinShade);
-
-            // Prominent 90s Gold Signet Ring ("Золотая печатка с чёрным агатом") on ring finger!
-            if (showGoldSignetRing && f == 2)
-            {
-                Vector3 ringPos = knucklePos + handForward * 0.008f + new Vector3(0f, 0.008f, 0f);
-                Raylib.DrawCylinderEx(ringPos - rightAxis * 0.008f, ringPos + rightAxis * 0.008f, 0.015f, 0.015f, 8, goldColor);
-                Raylib.DrawCube(ringPos + new Vector3(0f, 0.009f, 0.004f), 0.016f, 0.008f, 0.016f, goldColor);
-                Raylib.DrawCube(ringPos + new Vector3(0f, 0.012f, 0.005f), 0.011f, 0.005f, 0.011f, onyxStone);
-            }
+            Vector3 root = palm + across*((i-1.5f)*.028f) + forward*.036f;
+            float length = .061f - .009f*MathF.Abs(i-1);
+            Vector3 joint = root + forward*length + across*((i-1.5f)*.008f) + Vector3.UnitY*(isRightHand ? .006f : .031f);
+            Vector3 tip = joint + forward*(isRightHand ? .006f : .027f) - Vector3.UnitY*(isRightHand ? .036f : .018f);
+            VisualEngine3D.Rod(root,joint,.020f,.016f,7,finger);
+            VisualEngine3D.Orb(joint,.016f,finger);
+            VisualEngine3D.Rod(joint,tip,.016f,.011f,7,glove);
+            if (showGoldSignetRing && i==2 && isRightHand)
+                VisualEngine3D.Oval(joint+Vector3.UnitY*.012f,new(.014f,.006f,.012f),new Color(218,170,82,255));
         }
+        Vector3 thumbRoot = palm + across*side*.042f;
+        Vector3 thumbJoint = thumbRoot + across*side*.041f + Vector3.UnitY*.032f;
+        VisualEngine3D.Rod(thumbRoot,thumbJoint,.029f,.021f,7,glove);
+        VisualEngine3D.Orb(thumbJoint,.021f,glove);
+        VisualEngine3D.Rod(thumbJoint,thumbJoint+forward*.045f+Vector3.UnitY*.012f,.021f,.014f,7,finger);
     }
 
     // =========================================================================
@@ -977,12 +948,12 @@ public class WeaponAndCombatView
             Vector3 curLoop = curTop - new Vector3(0.012f, loopGap, 0.008f);
 
             // Draw thick leather belt strap segment
-            Raylib.DrawCylinderEx(prevTop, curTop, 0.018f, 0.017f, 6, leatherDark);
-            Raylib.DrawCylinderEx(prevLoop, curLoop, 0.015f, 0.014f, 6, leatherEdge);
+            VisualEngine3D.Rod(prevTop, curTop, 0.018f, 0.017f, 6, leatherDark);
+            VisualEngine3D.Rod(prevLoop, curLoop, 0.015f, 0.014f, 6, leatherEdge);
 
             // Brass/gold studs & belt holes along the strap
             Vector3 midSeg = (prevTop + curTop) * 0.5f;
-            Raylib.DrawSphere(midSeg + new Vector3(0f, 0.012f, 0f), 0.0065f, brassStud);
+            VisualEngine3D.Orb(midSeg + new Vector3(0f, 0.012f, 0f), 0.0065f, brassStud);
 
             prevTop = curTop;
             prevLoop = curLoop;
@@ -990,11 +961,11 @@ public class WeaponAndCombatView
 
         // Gleaming Heavy Golden Buckle ("Массивная золотая пряжка с гравировкой") at the swinging tip!
         Vector3 buckleCenter = prevTop + new Vector3(0f, -0.005f, 0.025f);
-        Raylib.DrawCube(buckleCenter, 0.068f, 0.052f, 0.018f, goldBuckle);
-        Raylib.DrawCubeWires(buckleCenter, 0.070f, 0.054f, 0.020f, new Color(255, 245, 160, 255));
+        VisualEngine3D.Box(buckleCenter, 0.068f, 0.052f, 0.018f, goldBuckle);
+
         // Inner buckle frame hole & golden prong ("язычок пряжки")
-        Raylib.DrawCube(buckleCenter, 0.036f, 0.026f, 0.020f, new Color(35, 22, 14, 255));
-        Raylib.DrawCylinderEx(
+        VisualEngine3D.Box(buckleCenter, 0.036f, 0.026f, 0.020f, new Color(35, 22, 14, 255));
+        VisualEngine3D.Rod(
             buckleCenter - new Vector3(0.022f, 0f, 0f),
             buckleCenter + new Vector3(0.025f, 0.005f, 0.012f),
             0.005f, 0.003f, 6, Color.White);
@@ -1006,8 +977,8 @@ public class WeaponAndCombatView
             Vector3 vStart = new Vector3(0.32f * lashSide, 0.22f, 0.72f);
             Vector3 vMid = buckleCenter;
             Vector3 vEnd = new Vector3(-0.36f * lashSide, -0.18f, 0.78f);
-            Raylib.DrawCylinderEx(vStart, vMid, 0.014f * p, 0.024f * p, 6, new Color(255, 65, 45, (int)slashAlpha));
-            Raylib.DrawCylinderEx(vMid, vEnd, 0.024f * p, 0.010f * p, 6, new Color(255, 215, 55, (int)slashAlpha));
+            VisualEngine3D.Rod(vStart, vMid, 0.014f * p, 0.024f * p, 6, new Color(255, 65, 45, (int)slashAlpha));
+            VisualEngine3D.Rod(vMid, vEnd, 0.024f * p, 0.010f * p, 6, new Color(255, 215, 55, (int)slashAlpha));
         }
     }
 
@@ -1048,29 +1019,29 @@ public class WeaponAndCombatView
         Vector3 handleFront = handleBase + ironDir * 0.22f;
 
         // 1. Wooden/Bakelite Handle
-        Raylib.DrawCylinderEx(handleBase, handleFront, 0.029f, 0.024f, 10, woodHandle);
-        Raylib.DrawSphere(handleBase, 0.029f, woodHandle);
-        Raylib.DrawCylinderEx(handleFront - ironDir * 0.02f, handleFront + ironDir * 0.015f, 0.028f, 0.022f, 10, bakeliteCollar);
+        VisualEngine3D.Rod(handleBase, handleFront, 0.029f, 0.024f, 10, woodHandle);
+        VisualEngine3D.Orb(handleBase, 0.029f, woodHandle);
+        VisualEngine3D.Rod(handleFront - ironDir * 0.02f, handleFront + ironDir * 0.015f, 0.028f, 0.022f, 10, bakeliteCollar);
 
         // 2. Iconic Blue Electrical Tape ("Синяя изолента") wrapped in 3 overlapping bands around the handle grip
         Vector3 tapeStart = handleBase + ironDir * 0.055f;
         Vector3 tapeEnd = handleBase + ironDir * 0.155f;
-        Raylib.DrawCylinderEx(tapeStart, tapeEnd, 0.031f, 0.029f, 10, blueTape);
-        Raylib.DrawCylinderWiresEx(tapeStart + ironDir * 0.02f, tapeEnd - ironDir * 0.02f, 0.0315f, 0.0295f, 8, blueTapeHighlight);
+        VisualEngine3D.Rod(tapeStart, tapeEnd, 0.031f, 0.029f, 10, blueTape);
+
 
         // Black power cord dangling from the back of the handle toward the left hand
         Vector3 cordMid = (handleBase + leftWrist) * 0.5f + new Vector3(0f, -0.07f, 0f);
-        Raylib.DrawCylinderEx(handleBase, cordMid, 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
-        Raylib.DrawCylinderEx(cordMid, leftWrist + new Vector3(0.03f, 0.02f, 0f), 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
+        VisualEngine3D.Rod(handleBase, cordMid, 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
+        VisualEngine3D.Rod(cordMid, leftWrist + new Vector3(0.03f, 0.02f, 0f), 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
 
         // 3. Long Heated Steel Heating Element Rod (with ventilation slots)
         Vector3 rodStart = handleFront + ironDir * 0.01f;
         Vector3 rodEnd = rodStart + ironDir * 0.24f;
-        Raylib.DrawCylinderEx(rodStart, rodEnd, 0.015f, 0.014f, 10, steelTube);
+        VisualEngine3D.Rod(rodStart, rodEnd, 0.015f, 0.014f, 10, steelTube);
         for (int ring = 1; ring <= 4; ring++)
         {
             Vector3 rPos = Vector3.Lerp(rodStart, rodEnd, ring * 0.2f);
-            Raylib.DrawCylinderEx(rPos - ironDir * 0.005f, rPos + ironDir * 0.005f, 0.0165f, 0.0165f, 8, steelDark);
+            VisualEngine3D.Rod(rPos - ironDir * 0.005f, rPos + ironDir * 0.005f, 0.0165f, 0.0165f, 8, steelDark);
         }
 
         // 4. Glowing Red-Hot Bent Wedge Copper Tip ("Раскалённое медное жало")
@@ -1082,12 +1053,12 @@ public class WeaponAndCombatView
         Color hotCopperBase = new Color((byte)230, (byte)(85 + glow * 70), (byte)(25 + glow * 30), (byte)255);
         Color hotOrangeTip = new Color((byte)255, (byte)(155 + glow * 90), (byte)(40 + glow * 160), (byte)255);
 
-        Raylib.DrawCylinderEx(tipBase, tipMid, 0.012f, 0.010f, 8, hotCopperBase);
-        Raylib.DrawCylinderEx(tipMid, tipPoint, 0.010f, 0.003f, 8, hotOrangeTip);
+        VisualEngine3D.Rod(tipBase, tipMid, 0.012f, 0.010f, 8, hotCopperBase);
+        VisualEngine3D.Rod(tipMid, tipPoint, 0.010f, 0.003f, 8, hotOrangeTip);
 
         // Glowing thermal aura around the red-hot copper tip
-        Raylib.DrawSphere(tipPoint, 0.018f + p * 0.014f, new Color(255, 220, 110, (int)(155 * glow)));
-        Raylib.DrawSphere(tipMid, 0.026f + p * 0.018f, new Color(255, 110, 25, (int)(95 * glow)));
+        VisualEngine3D.Orb(tipPoint, 0.018f + p * 0.014f, new Color(255, 220, 110, (int)(155 * glow)));
+        VisualEngine3D.Orb(tipMid, 0.026f + p * 0.018f, new Color(255, 110, 25, (int)(95 * glow)));
 
         // ViewModel rising smoke wisps directly off the tip so the player ALWAYS sees rosin smoke rising from the iron!
         for (int w = 0; w < 4; w++)
@@ -1099,7 +1070,7 @@ public class WeaponAndCombatView
                 MathF.Cos(_animClock * 3.5f + w) * 0.012f * cycle);
             byte wispAlpha = (byte)((1f - cycle) * 145f);
             float wispRadius = 0.008f + cycle * 0.024f;
-            Raylib.DrawSphere(wispPos, wispRadius, new Color(215, 225, 238, (int)wispAlpha));
+            VisualEngine3D.Orb(wispPos, wispRadius, new Color(215, 225, 238, (int)wispAlpha));
         }
 
         // When attacking (SolderThrustPhase > 0), render vivid electric arcs & solder sparks erupting off the tip
@@ -1149,24 +1120,24 @@ public class WeaponAndCombatView
         Vector3 receiverCenter = gripPos + new Vector3(0f, 0.055f, 0.04f);
 
         // 1. Boxy Stamped-Steel Receiver + Cooling Ribs
-        Raylib.DrawCube(receiverCenter, 0.048f, 0.056f, 0.24f, receiverCol);
-        Raylib.DrawCubeWires(receiverCenter, 0.050f, 0.058f, 0.242f, receiverEdge);
+        VisualEngine3D.Box(receiverCenter, 0.048f, 0.056f, 0.24f, receiverCol);
+
 
         // 2. Extended 32-round Magazine sticking out below grip
         Vector3 magTop = gripPos + new Vector3(0f, 0.02f, 0.01f);
         Vector3 magBottom = gripPos + new Vector3(0f, -0.155f, -0.015f);
-        Raylib.DrawCylinderEx(magBottom, magTop, 0.018f, 0.019f, 6, magCol);
+        VisualEngine3D.Rod(magBottom, magTop, 0.018f, 0.019f, 6, magCol);
 
         // 3. Reciprocating Top Cocking Knob ("Затвор сверху") & Side Ejection Port
         float boltZ = receiverCenter.Z + 0.03f - UziBoltOffset * 0.065f;
         Vector3 knobPos = new Vector3(receiverCenter.X, receiverCenter.Y + 0.036f, boltZ);
-        Raylib.DrawCylinderEx(knobPos - new Vector3(0f, 0.012f, 0f), knobPos + new Vector3(0f, 0.012f, 0f), 0.014f, 0.011f, 8, boltCol);
-        Raylib.DrawCube(new Vector3(receiverCenter.X + 0.025f, receiverCenter.Y + 0.008f, boltZ), 0.004f, 0.022f, 0.048f, boltCol);
+        VisualEngine3D.Rod(knobPos - new Vector3(0f, 0.012f, 0f), knobPos + new Vector3(0f, 0.012f, 0f), 0.014f, 0.011f, 8, boltCol);
+        VisualEngine3D.Box(new Vector3(receiverCenter.X + 0.025f, receiverCenter.Y + 0.008f, boltZ), 0.004f, 0.022f, 0.048f, boltCol);
 
         // 4. Folded Wire Stock along the side/top & Iron Sight Ears
-        Raylib.DrawCube(receiverCenter + new Vector3(0f, 0.034f, -0.095f), 0.038f, 0.018f, 0.022f, receiverEdge);
-        Raylib.DrawCube(receiverCenter + new Vector3(0f, 0.034f, 0.095f), 0.034f, 0.018f, 0.018f, receiverEdge);
-        Raylib.DrawCylinderEx(
+        VisualEngine3D.Box(receiverCenter + new Vector3(0f, 0.034f, -0.095f), 0.038f, 0.018f, 0.022f, receiverEdge);
+        VisualEngine3D.Box(receiverCenter + new Vector3(0f, 0.034f, 0.095f), 0.034f, 0.018f, 0.018f, receiverEdge);
+        VisualEngine3D.Rod(
             receiverCenter + new Vector3(0.028f, -0.01f, -0.11f),
             receiverCenter + new Vector3(0.028f, -0.01f, 0.08f),
             0.005f, 0.005f, 6, gripCol);
@@ -1174,8 +1145,8 @@ public class WeaponAndCombatView
         // 5. Ribbed Barrel Nut & Threaded Barrel Tip
         Vector3 barrelStart = receiverCenter + new Vector3(0f, 0.005f, 0.12f);
         Vector3 barrelTip = barrelStart + aimDir * 0.11f;
-        Raylib.DrawCylinderEx(barrelStart, barrelStart + aimDir * 0.045f, 0.019f, 0.018f, 8, receiverEdge);
-        Raylib.DrawCylinderEx(barrelStart, barrelTip, 0.011f, 0.011f, 8, gripCol);
+        VisualEngine3D.Rod(barrelStart, barrelStart + aimDir * 0.045f, 0.019f, 0.018f, 8, receiverEdge);
+        VisualEngine3D.Rod(barrelStart, barrelTip, 0.011f, 0.011f, 8, gripCol);
 
         // 6. Star-shaped 3D Muzzle Flash when firing
         if (kick > 0.15f)
@@ -1184,10 +1155,10 @@ public class WeaponAndCombatView
             Color flashCore = new Color(255, 250, 190, (int)(255 * kick));
             float spikeLen = 0.095f * kick;
 
-            Raylib.DrawSphere(barrelTip + aimDir * 0.02f, 0.032f * kick, flashCore);
-            Raylib.DrawCylinderEx(barrelTip, barrelTip + aimDir * (0.14f * kick), 0.024f * kick, 0.002f, 6, flashOuter);
-            Raylib.DrawCylinderEx(barrelTip - new Vector3(spikeLen, 0f, 0f), barrelTip + new Vector3(spikeLen, 0f, 0f), 0.012f * kick, 0.012f * kick, 5, flashOuter);
-            Raylib.DrawCylinderEx(barrelTip - new Vector3(0f, spikeLen, 0f), barrelTip + new Vector3(0f, spikeLen, 0f), 0.012f * kick, 0.012f * kick, 5, flashOuter);
+            VisualEngine3D.Orb(barrelTip + aimDir * 0.02f, 0.032f * kick, flashCore);
+            VisualEngine3D.Rod(barrelTip, barrelTip + aimDir * (0.14f * kick), 0.024f * kick, 0.002f, 6, flashOuter);
+            VisualEngine3D.Rod(barrelTip - new Vector3(spikeLen, 0f, 0f), barrelTip + new Vector3(spikeLen, 0f, 0f), 0.012f * kick, 0.012f * kick, 5, flashOuter);
+            VisualEngine3D.Rod(barrelTip - new Vector3(0f, spikeLen, 0f), barrelTip + new Vector3(0f, spikeLen, 0f), 0.012f * kick, 0.012f * kick, 5, flashOuter);
         }
     }
 
@@ -1240,8 +1211,8 @@ public class WeaponAndCombatView
         Vector3 receiverHinge = stockStart + gunDir * 0.16f + new Vector3(0f, 0.03f, 0f);
 
         // 1. Sawed-off Walnut Stock & Receiver Block
-        Raylib.DrawCylinderEx(stockStart, receiverHinge, 0.030f, 0.026f, 8, stockWood);
-        Raylib.DrawCube(receiverHinge, 0.054f, 0.046f, 0.075f, receiverMetal);
+        VisualEngine3D.Rod(stockStart, receiverHinge, 0.030f, 0.026f, 8, stockWood);
+        VisualEngine3D.Box(receiverHinge, 0.054f, 0.046f, 0.075f, receiverMetal);
 
         // 2. Break-action Hinge: Twin Barrels tilt downward during reload phase!
         Vector3 barrelDir = Vector3.Normalize(gunDir + new Vector3(0f, -breakBarrelTilt * 0.55f, 0f));
@@ -1249,39 +1220,39 @@ public class WeaponAndCombatView
         Vector3 sideOffset = new Vector3(0.017f, 0f, 0f);
 
         // Wooden forend under barrels
-        Raylib.DrawCylinderEx(
+        VisualEngine3D.Rod(
             receiverHinge + barrelDir * 0.04f - new Vector3(0f, 0.016f, 0f),
             receiverHinge + barrelDir * 0.20f - new Vector3(0f, 0.016f, 0f),
             0.025f, 0.022f, 8, stockWood);
 
         // Twin side-by-side barrels
-        Raylib.DrawCylinderEx(receiverHinge - sideOffset, barrelEnd - sideOffset, 0.016f, 0.015f, 10, barrelSteel);
-        Raylib.DrawCylinderEx(receiverHinge + sideOffset, barrelEnd + sideOffset, 0.016f, 0.015f, 10, barrelSteel);
+        VisualEngine3D.Rod(receiverHinge - sideOffset, barrelEnd - sideOffset, 0.016f, 0.015f, 10, barrelSteel);
+        VisualEngine3D.Rod(receiverHinge + sideOffset, barrelEnd + sideOffset, 0.016f, 0.015f, 10, barrelSteel);
 
         // When barrels are tilted open in break-action, show glowing red/gold shell rims inside the breech!
         if (breakBarrelTilt > 0.12f)
         {
             Color rimCol = isChatGun ? new Color(80, 255, 190, 255) : new Color(255, 210, 50, 255);
-            Raylib.DrawSphere(receiverHinge - sideOffset + new Vector3(0f, 0.012f, 0.01f), 0.013f, rimCol);
-            Raylib.DrawSphere(receiverHinge + sideOffset + new Vector3(0f, 0.012f, 0.01f), 0.013f, rimCol);
+            VisualEngine3D.Orb(receiverHinge - sideOffset + new Vector3(0f, 0.012f, 0.01f), 0.013f, rimCol);
+            VisualEngine3D.Orb(receiverHinge + sideOffset + new Vector3(0f, 0.012f, 0.01f), 0.013f, rimCol);
         }
 
         // Secret Chat-Gun Cyber-Prompt Screen & Neon Rails when UnlockedChatGun is active
         if (isChatGun)
         {
             Vector3 screenPos = receiverHinge + new Vector3(0f, 0.042f, 0.02f);
-            Raylib.DrawCube(screenPos, 0.068f, 0.032f, 0.012f, new Color(16, 28, 36, 255));
-            Raylib.DrawCubeWires(screenPos, 0.070f, 0.034f, 0.014f, new Color(80, 255, 190, 255));
-            Raylib.DrawSphere(barrelEnd, 0.022f, new Color(90, 255, 200, 140));
+            VisualEngine3D.Box(screenPos, 0.068f, 0.032f, 0.012f, new Color(16, 28, 36, 255));
+
+            VisualEngine3D.Orb(barrelEnd, 0.022f, new Color(90, 255, 200, 140));
         }
 
         // Twin Muzzle Blast Fireballs on initial shot
         if (kickUp > 0.35f)
         {
             Color blastCol = isChatGun ? new Color(90, 255, 195, 240) : new Color(255, 175, 40, 240);
-            Raylib.DrawSphere(barrelEnd - sideOffset + barrelDir * 0.03f, 0.048f * kickUp, blastCol);
-            Raylib.DrawSphere(barrelEnd + sideOffset + barrelDir * 0.03f, 0.048f * kickUp, blastCol);
-            Raylib.DrawSphere(barrelEnd + barrelDir * 0.05f, 0.035f * kickUp, Color.White);
+            VisualEngine3D.Orb(barrelEnd - sideOffset + barrelDir * 0.03f, 0.048f * kickUp, blastCol);
+            VisualEngine3D.Orb(barrelEnd + sideOffset + barrelDir * 0.03f, 0.048f * kickUp, blastCol);
+            VisualEngine3D.Orb(barrelEnd + barrelDir * 0.05f, 0.035f * kickUp, Color.White);
         }
     }
 
@@ -1347,8 +1318,6 @@ public class WeaponAndCombatView
             int bx = cx - tw / 2;
             int by = cy + 54;
 
-            Raylib.DrawRectangle(bx - 12, by - 5, tw + 24, fontSize + 10, new Color(15, 12, 20, (int)(185 * ratio)));
-            Raylib.DrawRectangleLines(bx - 12, by - 5, tw + 24, fontSize + 10, new Color(LastCombatBannerColor.R, LastCombatBannerColor.G, LastCombatBannerColor.B, a));
             LoreAndMenusUI.DrawTextCrisp(uiFont, LastCombatBannerText, bx, by, fontSize, new Color(LastCombatBannerColor.R, LastCombatBannerColor.G, LastCombatBannerColor.B, a));
         }
     }

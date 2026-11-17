@@ -603,7 +603,7 @@ public static class LoreAndMenusUI
         }
     }
 
-    private static float GetSliderNormalizedValue(int index)
+    internal static float GetSliderNormalizedValue(int index)
     {
         return index switch
         {
