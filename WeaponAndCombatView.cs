@@ -866,13 +866,13 @@ public class WeaponAndCombatView
 
     private static void DrawCasing(Vector3 basePos,Vector3 axis,bool hull)
     {
-        float r=hull ? .0085f : .0045f;
-        Vector3 cap=basePos+axis*(hull ? .012f : .004f);
-        var brass=new Color(154,119,66,255);
-        VisualEngine3D.Rod(basePos,cap,r*1.08f,r*1.08f,8,brass);
-        Vector3 lip=cap+axis*(hull ? .038f : .014f);
-        VisualEngine3D.Rod(cap,lip,r,r,10,hull ? new(125,42,32,255) : brass);
-        VisualEngine3D.Rod(lip,lip+axis*.0005f,r*.80f,r*.80f,10,new(49,40,32,255));
+        float r=hull ? .0076f : .0042f;
+        Vector3 cap=basePos+axis*(hull ? .010f : .0035f);
+        var brass=new Color(172,134,68,255);
+        VisualEngine3D.Rod(basePos,cap,r*1.07f,r*1.07f,10,brass,Finish.Bronze);
+        Vector3 lip=cap+axis*(hull ? .034f : .0115f);
+        VisualEngine3D.Rod(cap,lip,r,r,10,hull ? new(132,28,24,255) : brass,hull ? Finish.Paint : Finish.Bronze);
+        VisualEngine3D.Rod(lip,lip+axis*.0005f,r*.78f,r*.78f,10,new(49,40,32,255));
     }
 
     private Matrix4x4 GunToView => Matrix4x4.CreateRotationZ(ViewRoll)*Matrix4x4.CreateScale(-1,1,1);
@@ -1128,22 +1128,25 @@ public class WeaponAndCombatView
         var (assembly,pose,gripTop,_)=GunAssembly(baseOffset);
         float reload=ReloadProgress;
         float breakBarrelTilt=Ease(reload/.26f)*Ease((1-reload)/.20f);
-        VisualEngine3D.ArmAssembly(false, assembly+new Vector3(0,-.065f,-.095f)*breakBarrelTilt, "fps_hands_shotgun", pose);
+        float barrelAngle=.68f*breakBarrelTilt;
+        VisualEngine3D.ArmAssembly(false, assembly+new Vector3(0,-.055f,-.038f)*breakBarrelTilt, "fps_hands_shotgun", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_shotgun", pose);
         Color shotgunTint = isChatGun ? new Color(150,255,215,255)
             : (SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White);
-        VisualEngine3D.PoseReloadPart(false,.68f*breakBarrelTilt);
+        VisualEngine3D.PoseReloadPart(false,barrelAngle);
         VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, 180, 1, shotgunTint, assemblyTransform: pose);
 
         VisualEngine3D.PoseReloadPart(false,0);
-        Vector3 barrelDir=Vector3.TransformNormal(Vector3.UnitZ,pose);
+        Vector3 chamberLocalDir=new(0f,-MathF.Sin(barrelAngle),MathF.Cos(barrelAngle));
+        Vector3 barrelDir=Vector3.TransformNormal(chamberLocalDir,pose);
 
         if (reload>.35f && reload<.81f)
         {
             for(int i=0;i<2-_shells;i++)
             {
                 float insert=Ease((reload-.39f-.08f*i)/.20f);
-                Vector3 plug=gripTop+new Vector3(i==0 ? -.018f : .018f,.047f+(1-insert)*.065f,.093f-(1-insert)*.12f);
+                Vector3 breechEntry=gripTop+new Vector3(i==0 ? -.0175f : .0175f,.022f,.098f);
+                Vector3 plug=breechEntry-chamberLocalDir*((1-insert)*.044f+.010f);
                 DrawCasing(Vector3.Transform(plug,pose),barrelDir,hull: true);
             }
         }
