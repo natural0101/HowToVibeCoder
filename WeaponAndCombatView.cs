@@ -1110,43 +1110,14 @@ public class WeaponAndCombatView
         Vector3 aimDir = Vector3.Normalize(new Vector3(-0.16f, 0.10f + kick * 0.05f, 0.98f));
         DrawRussianBusinessmanArm(rightShoulder, rightWrist, aimDir, isRightHand: true, showGoldSignetRing: true);
 
-        Color receiverCol = SkinTintPrimary.A > 0 ? SkinTintPrimary : new Color(52, 56, 64, 255);
-        Color receiverEdge = new Color(88, 94, 106, 255);
-        Color gripCol = new Color(30, 32, 36, 255);
-        Color magCol = new Color(42, 46, 52, 255);
-        Color boltCol = SkinTintPrimary.A > 0 ? SkinTintAccent : new Color(185, 190, 200, 255);
-
-        Vector3 gripPos = rightWrist + aimDir * 0.05f + new Vector3(0f, 0.02f, 0f);
-        Vector3 receiverCenter = gripPos + new Vector3(0f, 0.055f, 0.04f);
-
-        // 1. Boxy Stamped-Steel Receiver + Cooling Ribs
-        VisualEngine3D.Box(receiverCenter, 0.048f, 0.056f, 0.24f, receiverCol);
-
-
-        // 2. Extended 32-round Magazine sticking out below grip
-        Vector3 magTop = gripPos + new Vector3(0f, 0.02f, 0.01f);
-        Vector3 magBottom = gripPos + new Vector3(0f, -0.155f, -0.015f);
-        VisualEngine3D.Rod(magBottom, magTop, 0.018f, 0.019f, 6, magCol);
-
-        // 3. Reciprocating Top Cocking Knob ("Затвор сверху") & Side Ejection Port
-        float boltZ = receiverCenter.Z + 0.03f - UziBoltOffset * 0.065f;
-        Vector3 knobPos = new Vector3(receiverCenter.X, receiverCenter.Y + 0.036f, boltZ);
-        VisualEngine3D.Rod(knobPos - new Vector3(0f, 0.012f, 0f), knobPos + new Vector3(0f, 0.012f, 0f), 0.014f, 0.011f, 8, boltCol);
-        VisualEngine3D.Box(new Vector3(receiverCenter.X + 0.025f, receiverCenter.Y + 0.008f, boltZ), 0.004f, 0.022f, 0.048f, boltCol);
-
-        // 4. Folded Wire Stock along the side/top & Iron Sight Ears
-        VisualEngine3D.Box(receiverCenter + new Vector3(0f, 0.034f, -0.095f), 0.038f, 0.018f, 0.022f, receiverEdge);
-        VisualEngine3D.Box(receiverCenter + new Vector3(0f, 0.034f, 0.095f), 0.034f, 0.018f, 0.018f, receiverEdge);
-        VisualEngine3D.Rod(
-            receiverCenter + new Vector3(0.028f, -0.01f, -0.11f),
-            receiverCenter + new Vector3(0.028f, -0.01f, 0.08f),
-            0.005f, 0.005f, 6, gripCol);
-
-        // 5. Ribbed Barrel Nut & Threaded Barrel Tip
-        Vector3 barrelStart = receiverCenter + new Vector3(0f, 0.005f, 0.12f);
-        Vector3 barrelTip = barrelStart + aimDir * 0.11f;
-        VisualEngine3D.Rod(barrelStart, barrelStart + aimDir * 0.045f, 0.019f, 0.018f, 8, receiverEdge);
-        VisualEngine3D.Rod(barrelStart, barrelTip, 0.011f, 0.011f, 8, gripCol);
+        Vector3 receiverCenter=rightWrist+aimDir*.09f+Vector3.UnitY*.075f;
+        float yaw=MathF.Atan2(aimDir.X,aimDir.Z)*180/MathF.PI+180;
+        float elevation=MathF.Asin(aimDir.Y);
+        VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,yaw,.62f,
+            SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White,elevation);
+        Vector3 bolt=receiverCenter+Vector3.UnitY*.048f+aimDir*(.028f-UziBoltOffset*.055f);
+        VisualEngine3D.Box(bolt,.026f,.019f,.028f,SkinTintAccent.A>0 ? SkinTintAccent : Color.LightGray);
+        Vector3 barrelTip=receiverCenter+aimDir*(.39f*.62f)+Vector3.UnitY*.006f;
 
         // 6. Star-shaped 3D Muzzle Flash when firing
         if (kick > 0.15f)

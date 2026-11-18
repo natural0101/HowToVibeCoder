@@ -53,7 +53,7 @@ public static class LoreAndMenusUI
 
     // Настройки и ползунки [F8]
     public static float MasterVolume { get; set; } = 0.85f;
-    public static float MusicVolume { get; set; } = 0.70f;
+    public static float MusicVolume { get => AudioMusicSystem.MusicVolume; set => AudioMusicSystem.MusicVolume = value; }
     public static float WeaponSfxVolume { get; set; } = 0.90f;
     public static float VoiceVolume { get; set; } = 0.95f;
     public static float MouseSensitivity { get; set; } = 0.18f; // 0.05 .. 0.50
@@ -489,22 +489,24 @@ public static class LoreAndMenusUI
     private static bool Click(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(),r);
     private static void Dim(float opacity) => Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),Raylib.Fade(new Color(7,13,26,255),opacity));
     private static readonly string[] MixerNames = ["Ремень и паяльник","УЗИ и обрез","Ловушка и тревога","Галера и Таро","Кейсы"];
-    private static readonly float[] BeforeMute = [1,1,1,1,1,1];
+    private const int MusicRow = 6;
+    private static readonly float[] BeforeMute = [1,1,1,1,1,1,1];
     private static Rectangle MixerTrack(int row) => row == 0 ? Ref(1204,530,336,46) : Ref(1257,635+(row-1)*78,181,42);
     private static Rectangle MixerSwitch(int row) => row == 0 ? Ref(1576,533,67,39) : Ref(1455,636+(row-1)*78,69,40);
     private static Rectangle MixerTest(int row) => Ref(1536,630+(row-1)*78,124,51);
-    private static float MixerValue(int row) => row==0 ? MasterVolume : AudioMusicSystem.EffectLevels[row-1];
+    private static float MixerValue(int row) => row==0 ? MasterVolume : row == MusicRow ? MusicVolume : AudioMusicSystem.EffectLevels[row-1];
     private static void SetMixer(int row,float value)
     {
         value=Math.Clamp(value,0,1);
         if(row==0) ApplySliderNormalizedValue(0,value);
+        else if (row == MusicRow) MusicVolume = value;
         else AudioMusicSystem.EffectLevels[row-1]=value;
     }
     private static void UpdateSettingsInput()
     {
         if (Click(Ref(1643,401,70,67))) { IsSettingsOpen=false; return; }
         if (!Raylib.IsMouseButtonDown(MouseButton.Left)) _draggingSliderIndex=-1;
-        for (int row=0;row<6;row++)
+        for (int row=0;row<=MusicRow;row++)
         {
             Rectangle track=MixerTrack(row);
             if (Click(track)) _draggingSliderIndex=SelectedSliderIndex=row;
@@ -517,12 +519,12 @@ public static class LoreAndMenusUI
             }
             if (row>0 && Click(MixerTest(row)))
             {
-                Action[] previews=[AudioMusicSystem.PlayBeltWhip,AudioMusicSystem.PlayShotgunBlast,AudioMusicSystem.PlayMacbookBait,AudioMusicSystem.PlayTarotCash,AudioMusicSystem.PlayCaseTick];
+                Action[] previews=[AudioMusicSystem.PlayBeltWhip,AudioMusicSystem.PlayShotgunBlast,AudioMusicSystem.PlayMacbookBait,AudioMusicSystem.PlayTarotCash,AudioMusicSystem.PlayCaseTick,AudioMusicSystem.PreviewMusic];
                 previews[row-1]();
             }
         }
-        if(Raylib.IsKeyPressed(KeyboardKey.Down)) SelectedSliderIndex=(SelectedSliderIndex+1)%6;
-        if(Raylib.IsKeyPressed(KeyboardKey.Up)) SelectedSliderIndex=(SelectedSliderIndex+5)%6;
+        if(Raylib.IsKeyPressed(KeyboardKey.Down)) SelectedSliderIndex=(SelectedSliderIndex+1)%(MusicRow+1);
+        if(Raylib.IsKeyPressed(KeyboardKey.Up)) SelectedSliderIndex=(SelectedSliderIndex+MusicRow)%(MusicRow+1);
         if(Raylib.IsKeyPressed(KeyboardKey.Left)) SetMixer(SelectedSliderIndex,MixerValue(SelectedSliderIndex)-.05f);
         if(Raylib.IsKeyPressed(KeyboardKey.Right)) SetMixer(SelectedSliderIndex,MixerValue(SelectedSliderIndex)+.05f);
         if(Raylib.IsKeyPressed(KeyboardKey.F9)) TriggerGrantTestMoney();
@@ -550,8 +552,6 @@ public static class LoreAndMenusUI
         {
             case 0:
                 MasterVolume = t;
-                if (Raylib.IsAudioDeviceReady())
-                    Raylib.SetMasterVolume(MasterVolume);
                 break;
             case 1:
                 MusicVolume = t;
@@ -640,11 +640,13 @@ public static class LoreAndMenusUI
     private static bool _caseCollection;
     private static Rectangle CollectionItem(int i) => Ref(800+(i%4)*246,484+(i/4)*137,239,129);
 
+    internal static Func<bool>? RequestCasePayment;
     public static void StartCaseSpin()
     {
         if (IsSpinningCase)
             return;
 
+        if(RequestCasePayment?.Invoke()==true) return;
         if (TrySpendPlayerMoney != null)
         {
             bool paid = TrySpendPlayerMoney(CaseSpinCost);
@@ -656,6 +658,11 @@ public static class LoreAndMenusUI
             }
         }
 
+        StartPaidCaseSpin();
+    }
+
+    internal static void StartPaidCaseSpin()
+    {
         _caseCollection=false;
         WeaponSkinDefinition target = AllSkins[_rng.Next(AllSkins.Length)];
         RebuildCaseTape(target);
@@ -876,8 +883,13 @@ public static class LoreAndMenusUI
     public static void DrawSettingsWindow(Font font)
     {
         Dim(.55f);
-        MainMenuAndPauseUI.Sprite("mixer",Ref(823,381,916,674));
-        for(int row=0;row<6;row++)
+        MainMenuAndPauseUI.Sprite("mixer",Ref(823,381,916,629),new(0,0,916,629));
+        // Extend the existing console with its own wooden test strip and lower frame.
+        MainMenuAndPauseUI.Sprite("mixer",Ref(823,1010,916,78),new(0,235,916,78));
+        MainMenuAndPauseUI.Sprite("mixer",Ref(908,1010,335,78),new(174,235,239,78));
+        MainMenuAndPauseUI.Center(font,"Фоновая музыка и Босс",Ref(910,1016,334,63),29*ArtScale,Color.White);
+        MainMenuAndPauseUI.Sprite("mixer",Ref(823,1088,916,45),new(0,629,916,45));
+        for(int row=0;row<=MusicRow;row++)
         {
             Rectangle track=MixerTrack(row);
             int cells=row==0 ? 13 : 7;
@@ -898,7 +910,7 @@ public static class LoreAndMenusUI
                 MainMenuAndPauseUI.Center(font,MixerNames[row-1],label,Math.Max(13,30*ArtScale),Color.White);
             }
         }
-        if(_settingsStatusTimer>0) MainMenuAndPauseUI.Center(font,_settingsStatusBanner,Ref(730,1110,1100,40),14,Color.White);
+        if(_settingsStatusTimer>0) MainMenuAndPauseUI.Center(font,_settingsStatusBanner,Ref(730,1140,1100,40),14,Color.White);
     }
 
     public static void DrawCaseWindow(Font font)
@@ -973,10 +985,6 @@ public static class LoreAndMenusUI
             AudioMusicSystem.MusicVolume = MusicVolume;
             AudioMusicSystem.WeaponVolume = WeaponSfxVolume;
             AudioMusicSystem.VoiceVolume = VoiceVolume;
-            if (Raylib.IsAudioDeviceReady())
-            {
-                Raylib.SetMasterVolume(MasterVolume);
-            }
         }
         catch
         {

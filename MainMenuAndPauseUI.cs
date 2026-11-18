@@ -75,6 +75,20 @@ public static class MainMenuAndPauseUI
     private static readonly string[] MainMenuButtonLabels =
         ["Создать игру", "Войти в игру", "Персонаж", "Настройки", "Настройки модов", "Создатели", "Выход"];
     private static readonly string[] SettingsTabs = ["Игра", "Графика", "Аудио", "Язык"];
+    internal static readonly CoopNetworkSystem Coop = new();
+    internal static Action? SummonPartner;
+    private static int coopFocus;
+    private static string address = "127.0.0.1:27094";
+    private static bool addressEdited, selectAddress;
+    internal static bool JoinPanel => IsInMainMenu && IsSaveLoadPanelOpen && !IsSaveMode;
+    internal static void OpenJoinPanel()
+    {
+        RefreshSaveSlotsCache();
+        IsSaveMode=false; IsSaveLoadPanelOpen=true;
+        IsModsPanelOpen=IsSettingsPanelOpen=false;
+        coopFocus=0; addressEdited=false; selectAddress=true;
+        Coop.Discover();
+    }
     private static int _settingsTab = 2;
     private static string? _infoPage;
     private static readonly Dictionary<string, Texture2D> Art = new();
@@ -303,12 +317,11 @@ public static class MainMenuAndPauseUI
 
             _cachedSlots[slotIndex] = data;
 
+            ApplyLoadedGameState?.Invoke(data);
             if (data.EquippedSkinId >= 0 && data.EquippedSkinId < LoreAndMenusUI.AllSkins.Length)
             {
                 LoreAndMenusUI.AwardAndEquipSkin(LoreAndMenusUI.AllSkins[data.EquippedSkinId]);
             }
-
-            ApplyLoadedGameState?.Invoke(data);
 
             IsSaveLoadPanelOpen = false;
             IsModsPanelOpen = false;
@@ -381,6 +394,8 @@ public static class MainMenuAndPauseUI
         {
         }
     }
+
+    internal static void Notify(string message) => ShowStatusBanner(message);
 
     private static void ShowStatusBanner(string message)
     {
@@ -586,11 +601,7 @@ public static class MainMenuAndPauseUI
                 break;
 
             case 1: // ЗАГРУЗИТЬ ИГРУ
-                RefreshSaveSlotsCache();
-                IsSaveMode = false;
-                IsSaveLoadPanelOpen = true;
-                IsModsPanelOpen = false;
-                IsSettingsPanelOpen = false;
+                OpenJoinPanel();
                 break;
 
             case 2: _infoPage = "Персонаж"; break;
@@ -730,8 +741,83 @@ public static class MainMenuAndPauseUI
         }
     }
 
+    private static Rectangle CoopRow(int row)
+    {
+        float x=Raylib.GetScreenWidth()/2-388, y=Raylib.GetScreenHeight()/2-270;
+        return row switch {
+            0 => new(x,y+100,776,42), 1 => new(x,y+156,776,44), 2 => new(x,y+210,776,44),
+            _ => new(x,y+324+(row-3)*56,776,48)
+        };
+    }
+
+    private static void UpdateJoinPanel()
+    {
+        Rectangle back=new(Raylib.GetScreenWidth()/2+290,Raylib.GetScreenHeight()/2-256,118,38);
+        if(Clicked(back) || Raylib.IsKeyPressed(KeyboardKey.Escape))
+        {
+            Coop.Dispose(); IsSaveLoadPanelOpen=false; return;
+        }
+        if(!addressEdited && Coop.DiscoveredAddress!=null) address=Coop.DiscoveredAddress;
+        bool activate=Raylib.IsKeyPressed(KeyboardKey.Enter) || Raylib.IsKeyPressed(KeyboardKey.KpEnter);
+        if(Raylib.IsKeyPressed(KeyboardKey.Tab) || Raylib.IsKeyPressed(KeyboardKey.Down)) coopFocus=(coopFocus+1)%6;
+        if(Raylib.IsKeyPressed(KeyboardKey.Up)) coopFocus=(coopFocus+5)%6;
+        for(int i=0;i<6;i++)
+            if(Clicked(CoopRow(i))) { coopFocus=i; selectAddress=i==0; activate=i!=0; }
+        if(coopFocus==0)
+        {
+            bool ctrl=Raylib.IsKeyDown(KeyboardKey.LeftControl)||Raylib.IsKeyDown(KeyboardKey.RightControl);
+            if(ctrl && Raylib.IsKeyPressed(KeyboardKey.A)) selectAddress=true;
+            if(ctrl && Raylib.IsKeyPressed(KeyboardKey.V))
+            {
+                address=new string((Raylib.GetClipboardText_()??"").Trim().Where(c=>char.IsAsciiDigit(c)||c=='.'||c==':').Take(32).ToArray());
+                selectAddress=false; addressEdited=true;
+            }
+            if(Raylib.IsKeyPressed(KeyboardKey.Backspace) || Raylib.IsKeyPressedRepeat(KeyboardKey.Backspace))
+            {
+                address=selectAddress || address.Length==0 ? "" : address[..^1];
+                selectAddress=false; addressEdited=true;
+            }
+            for(int key=Raylib.GetCharPressed();key!=0;key=Raylib.GetCharPressed())
+                if(key is >=48 and <=57 or 46 or 58)
+                {
+                    if(selectAddress) address="";
+                    if(address.Length<32) address+=(char)key;
+                    selectAddress=false; addressEdited=true;
+                }
+        }
+        if(!activate) return;
+        switch(coopFocus)
+        {
+            case 0: case 1: Coop.Join(address.Trim()); break;
+            case 2: StartNewOrResumeFloor(); SummonPartner?.Invoke(); break;
+            default: LoadGameState(coopFocus-2); break;
+        }
+    }
+
+    private static void DrawJoinPanel(Font font)
+    {
+        int x=Raylib.GetScreenWidth()/2-388,y=Raylib.GetScreenHeight()/2-270;
+        DrawSlateWindow("КООПЕРАТИВ (ВОЙТИ К ДРУГУ) / ЗАГРУЗКА",860,540);
+        NativeButton("Назад",new(x+678,y+14,118,38));
+        DrawTextCrisp(font,"Адрес друга (IPv4:порт)",x,y+70,18,Edge);
+        var field=CoopRow(0);
+        Surface(field,coopFocus==0 ? new Color(34,53,77,255) : new Color(26,41,63,255));
+        DrawTextCrisp(font,address+(coopFocus==0 && (_menuClock%1)<.55f ? "|" : ""),x+15,(int)field.Y+8,23,Color.White);
+        NativeButton("ПОДКЛЮЧИТЬСЯ К ИГРЕ ДРУГА",CoopRow(1),coopFocus==1);
+        NativeButton("ВЫЗВАТЬ БРАТАНА В КООП (НАПАРНИК)",CoopRow(2),coopFocus==2);
+        DrawTextCrisp(font,Coop.Status,x,y+263,16,Edge);
+        DrawTextCrisp(Serif,"Загрузка сохранения",x,y+292,22,Color.White);
+        for(int i=1;i<=3;i++)
+        {
+            var slot=_cachedSlots[i];
+            string detail=slot==null ? "Пусто" : $"{slot.SavedAt}     ${slot.Cash}";
+            NativeButton($"Слот {i}     {detail}",CoopRow(i+2),coopFocus==i+2);
+        }
+    }
+
     private static void UpdateSaveLoadPanelInput()
     {
+        if(JoinPanel) { UpdateJoinPanel(); return; }
         if (Raylib.IsKeyPressed(KeyboardKey.Escape))
         {
             IsSaveLoadPanelOpen = false;
@@ -890,7 +976,6 @@ public static class MainMenuAndPauseUI
             case 0:
                 LoreAndMenusUI.MasterVolume = t;
                 AudioMusicSystem.MasterVolume = t;
-                if (Raylib.IsAudioDeviceReady()) Raylib.SetMasterVolume(t);
                 break;
             case 1:
                 LoreAndMenusUI.MusicVolume = t;
@@ -972,7 +1057,7 @@ public static class MainMenuAndPauseUI
                 Center(Serif, "!", new(c.X-10,c.Y-12,20,23), 23, Color.White);
             }
         }
-        Center(Serif,"Подключение к Steam...",new(screenW-257,6,250,33),23,Edge);
+        Center(Serif,"Кооператив по IP",new(screenW-257,6,250,33),23,Edge);
         Center(Serif,"Версия 1.1.3",new(screenW-112,screenH-28,110,25),17,Edge);
         Center(Serif,"Присоединиться к Discord",new(263,screenH-60,257,32),22,Edge);
         if (_infoPage != null)
@@ -999,19 +1084,23 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangle(0,0,sw,sh,new Color(8,15,32,152));
         Rectangle panel=new((sw-width)/2,(sh-height)/2,width,height);
         Surface(panel,new Color(42,66,99,250));
-        Center(Serif,title,new(panel.X+30,panel.Y+13,panel.Width-200,45),35,Color.White);
+        Center(Serif,title,new(panel.X+30,panel.Y+13,panel.Width-176,45),title.Length>35 ? 25 : 35,Color.White);
     }
 
     public static void DrawPauseOverlay(Font font,int screenW,int screenH)
     {
         if (IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen) return;
         DrawSlateWindow("Пауза",580,560);
+        if(Coop.Host || Coop.Guest)
+            Center(font,Coop.Host ? "Адрес для друга: "+Coop.HostAddress : Coop.Status,
+                new(screenW/2-265,screenH/2-216,530,34),17,Edge);
         for(int i=0;i<PauseButtonLabels.Length;i++)
             NativeButton(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);
     }
 
     private static void DrawSaveLoadSubPanel(Font font,int screenW,int screenH)
     {
+        if(JoinPanel) { DrawJoinPanel(font); return; }
         DrawSlateWindow(IsSaveMode ? "Сохранить игру" : "Войти в игру",860,540);
         int x=screenW/2-430, y=screenH/2-270;
         NativeButton("Назад",new(x+700,y+14,140,38));

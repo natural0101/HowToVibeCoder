@@ -7,7 +7,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-public static class Program
+public static partial class Program
 {
     private const int ScreenWidth = 1280;
     private const int ScreenHeight = 720;
@@ -35,14 +35,16 @@ public static class Program
 
     public static int Main(string[] args)
     {
-        bool autoTest = false;
-        foreach (string a in args)
+        bool HasFlag(string name) => args.Contains(name, StringComparer.OrdinalIgnoreCase);
+        bool autoTest = HasFlag("--autotest") || HasFlag("-autotest");
+        bool coopSmoke = HasFlag("--coop-smoke");
+        bool silent = args.Any(arg => arg.StartsWith('-') &&
+            (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
+             arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
+        if (HasFlag("--regenerate-music"))
         {
-            if (string.Equals(a, "--autotest", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(a, "-autotest", StringComparison.OrdinalIgnoreCase))
-            {
-                autoTest = true;
-            }
+            AudioMusicSystem.EnsureMusicFiles(Path.Combine(Environment.CurrentDirectory, "assets", "sounds"), force: true);
+            return 0;
         }
 
         Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
@@ -55,13 +57,22 @@ public static class Program
         MainMenuAndPauseUI.LoadArt(_serif);
         VisualEngine3D.Load(_uiFont);
 
-        AudioMusicSystem.Initialize();
+        AudioMusicSystem.Initialize(silent);
         _world = new SkyscraperFloor1World();
         _weapons = new WeaponAndCombatView();
 
         WireUpSystems();
+        ConfigureCoop();
+        int join=Array.IndexOf(args,"--join");
+        if(join>=0)
+        {
+            MainMenuAndPauseUI.OpenJoinPanel();
+            Net.Join(join+1<args.Length ? args[join+1] : "127.0.0.1");
+        }
+        else if(args.Contains("--host")) MainMenuAndPauseUI.StartNewOrResumeFloor();
 
-        if (autoTest) RunAutomatedScreenshotSuite();
+        if(coopSmoke) RunCoopSmoke(join>=0);
+        else if (autoTest) RunAutomatedScreenshotSuite();
         else
         {
             bool shouldExit = false;
@@ -73,6 +84,7 @@ public static class Program
             }
         }
 
+        Net.Dispose();
         VisualEngine3D.Unload();
         MainMenuAndPauseUI.UnloadArt();
         Raylib.UnloadFont(_serif);
@@ -92,6 +104,7 @@ public static class Program
         LoreAndMenusUI.TrySpendPlayerMoney = TrySpendCash;
         LoreAndMenusUI.OnGrantMoneyRequested = amount =>
         {
+            if(Net.Guest) { Net.Send(new("bonus")); return; }
             _playerCash += amount;
             SetHudBanner($"ТЕСТ-БОНУС АВТОРИТЕТА: +${amount} НА КАРМАН! Баланс: ${_playerCash}");
         };
@@ -103,9 +116,14 @@ public static class Program
             _weapons.UnlockedChatGun = true;
             SetHudBanner("ОТКРЫТ ВЕСЬ АРСЕНАЛ 90-Х: РЕМЕНЬ [1], ПАЯЛЬНИК [2], MICRO-UZI [3], ОБРЕЗ/ЧАТ-ГАН [4]!");
         };
-        LoreAndMenusUI.OnResetFloorRequested = ResetNewGameFloor;
+        LoreAndMenusUI.OnResetFloorRequested = () => { if(!Net.Guest) ResetNewGameFloor(); };
+        LoreAndMenusUI.RequestCasePayment = () => {
+            if(!Net.Guest) return false;
+            if(!pendingCase) { pendingCase=true; Net.Send(new("case")); }
+            return true;
+        };
 
-        MainMenuAndPauseUI.OnStartNewGameRequested = ResetNewGameFloor;
+        MainMenuAndPauseUI.OnStartNewGameRequested = () => { ResetNewGameFloor(); StartHosting(); };
         MainMenuAndPauseUI.OnStartGameRequested = () =>
         {
             Raylib.DisableCursor();
@@ -116,6 +134,7 @@ public static class Program
         };
         MainMenuAndPauseUI.OnReturnToMainMenuRequested = () =>
         {
+            Net.Dispose();
             Raylib.EnableCursor();
         };
         MainMenuAndPauseUI.OnExitRequested = () =>
@@ -158,6 +177,8 @@ public static class Program
 
         MainMenuAndPauseUI.ApplyLoadedGameState = data =>
         {
+            ResetNewGameFloor();
+            StartHosting();
             _playerCash = data.Cash;
             _xp = Math.Max(0,data.Xp); _energy = Math.Clamp(data.Energy,0,100); _playerHp = Math.Clamp(data.Hp,0,100);
             if (data.UnlockedWeapons != null && data.UnlockedWeapons.Length >= 4)
@@ -175,6 +196,7 @@ public static class Program
 
     private static void ResetNewGameFloor()
     {
+        bot=awaitingSpawn=pendingCase=false; guestCarried=null; guestHp=100;
         _world = new SkyscraperFloor1World();
         AudioMusicSystem.VoiceTimer = 0;
         _playerPos = new Vector3(0f, 1.72f, 12.2f);
@@ -235,9 +257,10 @@ public static class Program
 
     private static void UpdateFrame(float dt, ref bool shouldExit)
     {
+        Net.Pump(LocalPose,CaptureFloor);
         bool bossFightMusic = _world.ElevatorBoss.IsActive ||
                               _world.ActiveCoders.Exists(c => c.IsMiniBoss && c.State != CoderAIState.Subdued);
-        AudioMusicSystem.UpdateMusic(bossFightMusic, dt);
+        AudioMusicSystem.UpdateMusic(bossFightMusic, dt, MainMenuAndPauseUI.IsInMainMenu);
 
         if (_hudStatusTimer > 0f)
         {
@@ -246,8 +269,9 @@ public static class Program
 
         bool wasModal = LoreAndMenusUI.IsAnyModalOpen;
         bool modalShortcut = Raylib.IsKeyPressed(KeyboardKey.F8) || Raylib.IsKeyPressed(KeyboardKey.K) || Raylib.IsKeyPressed(KeyboardKey.N);
-        if (wasModal || modalShortcut)
+        if (!MainMenuAndPauseUI.JoinPanel && (wasModal || modalShortcut))
         {
+            if(Net.Ready && !MainMenuAndPauseUI.IsInMainMenu) TickFloor(dt);
             LoreAndMenusUI.Update(dt, _weapons);
             if (LoreAndMenusUI.IsAnyModalOpen && Raylib.IsCursorHidden()) Raylib.EnableCursor();
             return;
@@ -256,6 +280,7 @@ public static class Program
         if (shouldExit || MainMenuAndPauseUI.IsInMainMenu) return;
         if (MainMenuAndPauseUI.IsMenuBlockingGameplay)
         {
+            if(Net.Ready) TickFloor(dt);
             if (Raylib.IsCursorHidden())
             {
                 Raylib.EnableCursor();
@@ -271,7 +296,8 @@ public static class Program
         // Quick money hotkey [F9]
         if (Raylib.IsKeyPressed(KeyboardKey.F9))
         {
-            GrantCash(2000, "Чит-бонус Авторитета [F9]");
+            if(Net.Guest) Net.Send(new("bonus"));
+            else GrantCash(2000, "Чит-бонус Авторитета [F9]");
             AudioMusicSystem.PlayTarotCash();
         }
 
@@ -322,8 +348,8 @@ public static class Program
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
         {
-            string interactMsg = _world.Interact(BuildPlayerCamera(), TrySpendCash, GrantCash);
-            SetHudBanner(interactMsg, 4.8f);
+            if(Net.Guest) Net.Send(new("interact",LocalPose));
+            else SetHudBanner(_world.Interact(BuildPlayerCamera(), TrySpendCash, GrantCash),4.8f);
         }
 
         // Weapon firing (LMB)
@@ -350,27 +376,12 @@ public static class Program
             };
 
             PlayCurrentWeaponAudio(_weapons.CurrentWeapon);
-            if (_world.ProcessPlayerAttack(cam, _weapons, GrantCash, out string combatMsg) && !string.IsNullOrEmpty(combatMsg))
-            {
-                SetHudBanner(combatMsg, 3.5f);
-            }
+            Fire(cam);
         }
 
         _weapons.UpdateWeapons(dt, cam, isMoving, holdingFire);
 
-        _world.UpdateWorld(
-            dt,
-            _playerPos,
-            _isCrouching,
-            onPassiveIncomeOrPayout: (amt, src) =>
-            {
-                _playerCash += amt;
-            },
-            onPlayerHitByProjectile: (dmg, label) =>
-            {
-                _playerHp = Math.Max(15, _playerHp - dmg);
-                SetHudBanner($"ПРИЛЕТЕЛ БЛОК «{label}» (-{dmg} ХП)! Прячься за колонну или гаси в ответ!", 2.5f);
-            });
+        TickFloor(dt);
     }
 
     private static void PlayCurrentWeaponAudio(WeaponType wt)
@@ -413,6 +424,7 @@ public static class Program
         // 1. 3D Skyscraper World + Entities + Combat Particles
         Raylib.BeginMode3D(playerCam);
         _world.DrawWorld3D(playerCam);
+        _world.Partner?.Effects.DrawWeaponWorldEffects3D(playerCam);
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
 
@@ -625,7 +637,7 @@ public static class Program
         miniBoss.HitFlashTimer = 0;
         _world.EnemyProjectiles.Add(new EnemyProjectile3D
         {
-            Position = new Vector3(-0.75f, 1.55f, 6.6f),
+            Position = new Vector3(-2.7f, 2.6f, 5.15f),
             Velocity = new Vector3(0f, 0f, 4f),
             Radius = 0.44f,
             Life = 3.5f,
@@ -637,7 +649,7 @@ public static class Program
         });
         _world.EnemyProjectiles.Add(new EnemyProjectile3D
         {
-            Position = new Vector3(0.95f, 1.35f, 6.2f),
+            Position = new Vector3(1.65f, 1.5f, 5.4f),
             Velocity = new Vector3(0f, 0f, 4f),
             Radius = 0.44f,
             Life = 3.5f,
@@ -651,6 +663,7 @@ public static class Program
         _weapons.TriggerWeaponAttack(uziCam, new Vector3(0.2f, 1.35f, 4.5f), hitEnemy: true, damageDealt: 46, isCritical: true);
         _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
+        StagePartner(new(-1.85f,0,6.2f),miniBoss.Position+Vector3.UnitY*1.3f);
         CaptureShot("03_uzi_combat_saas_miniboss.png");
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks
@@ -678,8 +691,8 @@ public static class Program
         _world.GalleyDesks[1].HoodieColor = new Color(180, 75, 255, 255);
         _world.GalleyDesks[1].IsSlackingInTwitter = true;
 
-        _playerPos = new Vector3(4.6f, 1.72f, 11.2f);
-        LookAtTarget(new Vector3(7.45f, 1.18f, 13.6f));
+        _playerPos = new Vector3(3.4f, 1.72f, 15.7f);
+        LookAtTarget(new Vector3(8.2f, 1.10f, 13.6f));
         CaptureShot("04_hr_tarot_payout_and_galley.png");
 
         // 5. 05_elevator_boss_escaped_agent.png - Open Central Armored Elevator + Escaped AI Agent v0.1 Boss throwing 40GB node_modules cubes
@@ -688,17 +701,19 @@ public static class Program
         _weapons.SelectSlot(4); // Sawed-Off Shotgun / Chat-Gun
         _world.HasElevatorKey = true;
         _world.TrySummonElevatorBoss(_ => true, out _);
-        _world.ElevatorBoss.Position = new Vector3(0.0f, 0f, -12.5f);
+        _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-6.0f);
+        _world.ElevatorDoorOpenAmount=.86f;
         _world.ElevatorBoss.Hp = 1480f;
         _world.ElevatorBoss.FacingYaw = 3.14159f; // Facing North toward player in North Boss Arena
-        _world.SpawnNodeModulesCube(new Vector3(-0.8f, 1.8f, -13.8f), new Vector3(0f, 1.5f, -18.5f));
-        _world.SpawnNodeModulesCube(new Vector3(0.9f, 1.6f, -14.4f), new Vector3(0f, 1.5f, -18.5f));
-        _playerPos = new Vector3(0.0f, 1.72f, -18.2f);
-        LookAtTarget(new Vector3(0.0f, 1.55f, -11.5f));
+        _world.SpawnNodeModulesCube(new Vector3(3.35f, 1.15f, -8.1f), new Vector3(0f, 1.5f, -18.5f));
+        _world.SpawnNodeModulesCube(new Vector3(-3.2f, 2.55f, -9.1f), new Vector3(0f, 1.5f, -18.5f));
+        _playerPos = new Vector3(-3.1f, 1.72f, -13.5f);
+        LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.3f,1.6f,0));
         Camera3D bossCam = BuildPlayerCamera();
-        _weapons.TriggerWeaponAttack(bossCam, new Vector3(0.0f, 1.55f, -12.5f), hitEnemy: true, damageDealt: 165, isCritical: true);
+        _weapons.TriggerWeaponAttack(bossCam, _world.ElevatorBoss.Position+Vector3.UnitY*1.55f, hitEnemy: true, damageDealt: 165, isCritical: true);
         _weapons.UpdateWeapons(0.03f, bossCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
+        StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
         CaptureShot("05_elevator_boss_escaped_agent.png");
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]

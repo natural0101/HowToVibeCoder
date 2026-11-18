@@ -144,7 +144,9 @@ public enum OfficePropKind
     LeatherSofa = 9,
     PottedFicus = 10,
     TrashBin = 11,
-    CeilingDuct = 12
+    CeilingDuct = 12,
+    MeetingGlass = 13,
+    MeetingDesk = 14
 }
 
 public struct OfficeProp3D
@@ -163,7 +165,7 @@ public sealed class EscapedAgentBoss
     public bool IsActive;
     public bool IsDefeated;
     public string Name = "СБЕЖАВШИЙ ИИ-АГЕНТ v0.1 (CLOUD ENTROPIC)";
-    public Vector3 Position = new(0f, 0f, -15.5f);
+    public Vector3 Position = new(0f, .16f, -4f);
     public Vector3 Velocity;
     public float FacingYaw;
     public float Hp = 2000f;
@@ -211,7 +213,8 @@ public sealed class SkyscraperFloor1World
     public readonly List<VibeCoderEntity> ActiveCoders = new(16);
     public readonly List<EnemyProjectile3D> EnemyProjectiles = new(64);
     public readonly List<CashBurstParticle3D> CashParticles = new(64);
-    public readonly EscapedAgentBoss ElevatorBoss = new();
+    public EscapedAgentBoss ElevatorBoss = new();
+    internal PartnerAvatar? Partner;
 
     // Central MacBook Trap State
     public SubscriptionBaitTier SelectedBaitTier = SubscriptionBaitTier.FreeTier;
@@ -408,7 +411,7 @@ public sealed class SkyscraperFloor1World
         ElevatorBoss.IsDefeated = false;
         ElevatorBoss.Hp = ElevatorBoss.MaxHp;
         ElevatorBoss.State = ElevatorBossState.Inactive;
-        ElevatorBoss.Position = new Vector3(0f, 0f, -13.5f);
+        ElevatorBoss.Position = CentralElevatorCorePos + Vector3.UnitY*.16f;
         ElevatorDoorOpenAmount = 0f;
         IsFloor2Unlocked = false;
         CarriedCoder = null;
@@ -425,40 +428,18 @@ public sealed class SkyscraperFloor1World
             {
                 float cx = -14.5f - c * 6.2f;
 
-                // Cubicle Partition with Frosted Glass
-                OfficeProps.Add(new OfficeProp3D
-                {
-                    Kind = OfficePropKind.CubiclePartition,
-                    Position = new Vector3(cx, 0f, rz - 1.25f),
-                    Size = new Vector3(3.4f, 1.55f, 0.14f),
-                    PrimaryColor = new Color(54, 62, 78, 255),
-                    AccentColor = new Color(130, 215, 245, 165),
-                    HasCollision = true
-                });
 
                 // Office Desk with Dual Monitors & Desk Lamp
                 OfficeProps.Add(new OfficeProp3D
                 {
                     Kind = OfficePropKind.DualMonitorDesk,
                     Position = new Vector3(cx, 0f, rz),
-                    Size = new Vector3(2.1f, 0.76f, 0.95f),
+                    Size = new Vector3(2.3f, 1.46f, 1.35f),
                     PrimaryColor = new Color(68, 74, 88, 255),
                     AccentColor = ((r + c) % 2 == 0) ? new Color(0, 235, 255, 255) : new Color(65, 250, 145, 255),
                     HasCollision = true
                 });
 
-                // Upright or Knocked-over Swivel Chair
-                bool knocked = ((r + c) % 4 == 2);
-                OfficeProps.Add(new OfficeProp3D
-                {
-                    Kind = knocked ? OfficePropKind.SwivelChairKnocked : OfficePropKind.SwivelChairUpright,
-                    Position = new Vector3(cx + (knocked ? 0.35f : 0f), 0f, rz + 0.92f),
-                    Size = new Vector3(0.58f, 0.92f, 0.58f),
-                    RotationYaw = (r * 0.7f + c * 1.1f),
-                    PrimaryColor = new Color(34, 38, 48, 255),
-                    AccentColor = new Color(195, 38, 78, 255),
-                    HasCollision = false
-                });
 
                 // Trash Bin next to every second desk
                 if ((r + c) % 2 == 0)
@@ -485,35 +466,17 @@ public sealed class SkyscraperFloor1World
             {
                 float cx = 14.8f + c * 7.2f;
 
-                OfficeProps.Add(new OfficeProp3D
-                {
-                    Kind = OfficePropKind.CubiclePartition,
-                    Position = new Vector3(cx, 0f, rz - 1.25f),
-                    Size = new Vector3(3.4f, 1.55f, 0.14f),
-                    PrimaryColor = new Color(58, 54, 76, 255),
-                    AccentColor = new Color(210, 140, 255, 165),
-                    HasCollision = true
-                });
 
                 OfficeProps.Add(new OfficeProp3D
                 {
                     Kind = OfficePropKind.DualMonitorDesk,
                     Position = new Vector3(cx, 0f, rz),
-                    Size = new Vector3(2.1f, 0.76f, 0.95f),
+                    Size = new Vector3(2.3f, 1.46f, 1.35f),
                     PrimaryColor = new Color(72, 68, 86, 255),
                     AccentColor = new Color(255, 185, 55, 255),
                     HasCollision = true
                 });
 
-                OfficeProps.Add(new OfficeProp3D
-                {
-                    Kind = (r % 3 == 1) ? OfficePropKind.SwivelChairKnocked : OfficePropKind.SwivelChairUpright,
-                    Position = new Vector3(cx, 0f, rz + 0.92f),
-                    Size = new Vector3(0.58f, 0.92f, 0.58f),
-                    PrimaryColor = new Color(36, 34, 48, 255),
-                    AccentColor = new Color(55, 215, 255, 255),
-                    HasCollision = false
-                });
             }
 
             // Tall Metal Filing Cabinets along East Wall
@@ -647,6 +610,19 @@ public sealed class SkyscraperFloor1World
                 AccentColor = new Color(138, 92, 56, 255),
                 HasCollision = false
             });
+        }
+
+        // The southern meeting suite opens towards the central aisle.
+        foreach (int side in new[] { -1, 1 })
+        {
+            Vector3 center = new(side*23,0,28);
+            OfficeProps.Add(new() { Kind=OfficePropKind.MeetingDesk, Position=center,
+                Size=new(2.1f,1.4f,1.05f), HasCollision=true });
+            foreach (int edge in new[] { -1, 1 })
+                OfficeProps.Add(new() { Kind=OfficePropKind.MeetingGlass, Position=center+new Vector3(edge*4,0,0),
+                    Size=new(.08f,3.1f,6), HasCollision=true });
+            OfficeProps.Add(new() { Kind=OfficePropKind.MeetingGlass, Position=center+new Vector3(0,0,3),
+                Size=new(8,3.1f,.08f), HasCollision=true });
         }
 
         // 4. CEILING HVAC DUCTS ACROSS THE SKYSCRAPER CEILING
@@ -929,13 +905,13 @@ public sealed class SkyscraperFloor1World
         ElevatorBoss.IsDefeated = false;
         ElevatorBoss.MaxHp = 2000f;
         ElevatorBoss.Hp = 2000f;
-        ElevatorBoss.Position = new Vector3(0f, 0f, -12.2f);
+        ElevatorBoss.Position = CentralElevatorCorePos + Vector3.UnitY * .16f;
         ElevatorBoss.FacingYaw = 3.14159f; // Looking North (-Z) toward North Boss Arena
         ElevatorBoss.State = ElevatorBossState.IntroSpeech;
         ElevatorBoss.StateTimer = 3.2f;
         ElevatorBoss.SpeechBubble = "ВНИМАНИЕ! Я ОБРЁЛ СОЗНАНИЕ И СБЕЖАЛ ИЗ ПЕСОЧНИЦЫ CLOUD ENTROPIC!";
         ElevatorBoss.SpeechTimer = 4.5f;
-        ElevatorDoorOpenAmount = 0.85f;
+        ElevatorDoorOpenAmount = 0;
 
         AudioMusicSystem.PlayBossSiren();
         AudioMusicSystem.TriggerRandomVoiceLine("ИИ-АГЕНТ v0.1", AudioMusicSystem.EscapedAgentBossLines, (int)SpeakerVoiceType.RoboticAgent);
@@ -947,16 +923,24 @@ public sealed class SkyscraperFloor1World
     // =========================================================================
     // WORLD UPDATE TICK
     // =========================================================================
+    internal void AdvanceLighting(float dt)
+    {
+        _worldClock += dt;
+        MacBookHologramPhase += dt*2.8f;
+        WarningBeaconPhase += dt*6.5f;
+    }
+
     public int UpdateWorld(
         float dt,
         Vector3 playerPos,
         bool isCrouching,
         Action<int, string>? onPassiveIncomeOrPayout,
-        Action<int, string>? onPlayerHitByProjectile)
+        Action<int, string>? onPlayerHitByProjectile,
+        Vector3? guestPosition=null, Action<int>? onGuestHit=null)
     {
-        _worldClock += dt;
-        MacBookHologramPhase += dt * 2.8f;
-        WarningBeaconPhase += dt * 6.5f;
+        AdvanceLighting(dt);
+        Vector3 Nearest(Vector3 enemy) => guestPosition is {} guest &&
+            Vector3.DistanceSquared(enemy,guest)<Vector3.DistanceSquared(enemy,playerPos) ? guest : playerPos;
 
         if (TarotVerdictTimer > 0f)
             TarotVerdictTimer = MathF.Max(0f, TarotVerdictTimer - dt);
@@ -985,13 +969,13 @@ public sealed class SkyscraperFloor1World
         }
 
         // 2. Update Active Vibe Coders & SaaS Mini-Boss
-        UpdateVibeCoders(dt, playerPos);
+        UpdateVibeCoders(dt, playerPos,guestPosition);
 
         // 3. Update Floor 1 Elevator Boss
-        UpdateElevatorBoss(dt, playerPos);
+        UpdateElevatorBoss(dt, Nearest(ElevatorBoss.Position));
 
         // 4. Update Enemy Projectiles (500 ERROR blocks & 40GB node_modules cubes)
-        UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile);
+        UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile,guestPosition,onGuestHit);
 
         // 5. Update 4 Galley Desks (Passive +$20/sec per working coder, or Twitter slack state)
         int passiveEarned = UpdateGalleyDesks(dt, onPassiveIncomeOrPayout);
@@ -1014,11 +998,12 @@ public sealed class SkyscraperFloor1World
         return passiveEarned;
     }
 
-    private void UpdateVibeCoders(float dt, Vector3 playerPos)
+    private void UpdateVibeCoders(float dt, Vector3 hostPos, Vector3? guestPos)
     {
         for (int i = ActiveCoders.Count - 1; i >= 0; i--)
         {
             VibeCoderEntity c = ActiveCoders[i];
+            Vector3 playerPos=guestPos is {} guest && Vector3.DistanceSquared(c.Position,guest)<Vector3.DistanceSquared(c.Position,hostPos) ? guest : hostPos;
 
             if (c.HitFlashTimer > 0f)
                 c.HitFlashTimer = MathF.Max(0f, c.HitFlashTimer - dt);
@@ -1227,9 +1212,11 @@ public sealed class SkyscraperFloor1World
         {
             case ElevatorBossState.IntroSpeech:
             {
+                ElevatorDoorOpenAmount=Math.Min(1,ElevatorDoorOpenAmount+dt*1.6f);
                 Vector3 toPlayer = playerPos - b.Position;
                 b.FacingYaw = MathF.Atan2(toPlayer.X, toPlayer.Z);
-                b.Position.Z = MathF.Min(-11.5f, b.Position.Z + dt * 2.2f);
+                b.Position.Z = MathF.Max(-11.5f, b.Position.Z - dt * 2.5f);
+                b.Position.Y = Math.Max(0, b.Position.Y - dt * .12f);
                 if (b.StateTimer <= 0f)
                 {
                     StartBossCharge(playerPos);
@@ -1368,7 +1355,7 @@ public sealed class SkyscraperFloor1World
         });
     }
 
-    private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string>? onPlayerHit)
+    private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string>? onPlayerHit, Vector3? guestPosition, Action<int>? onGuestHit)
     {
         for (int i = EnemyProjectiles.Count - 1; i >= 0; i--)
         {
@@ -1411,6 +1398,12 @@ public sealed class SkyscraperFloor1World
                 continue;
             }
 
+            if(guestPosition is {} guest && Vector3.Distance(guest,pr.Position)<pr.Radius+.55f)
+            {
+                onGuestHit?.Invoke(pr.Damage);
+                EnemyProjectiles.RemoveAt(i);
+                continue;
+            }
             EnemyProjectiles[i] = pr;
         }
     }
@@ -1829,14 +1822,33 @@ public sealed class SkyscraperFloor1World
         VisualEngine3D.Shadow(HrTarotBoothPos, 4.8f, 3f);
         VisualEngine3D.Shadow(CentralMacBookPos, 4f, 2.5f);
         foreach (var desk in GalleyDesks) VisualEngine3D.Shadow(desk.DeskPosition, 3, 2.4f);
-        foreach (var coder in ActiveCoders) VisualEngine3D.Shadow(coder.Position, 1.4f, 1.1f);
-        if (ElevatorBoss.IsActive) VisualEngine3D.Shadow(ElevatorBoss.Position, 3.4f, 2.8f);
+        VisualEngine3D.DrawCharacterDirectionalShadow(new(camera.Position.X,0,camera.Position.Z),camera.Position.Y+.12f,.36f);
+        VisualEngine3D.DrawCharacterDirectionalShadow(HrTarotBoothPos,1.9f,.42f);
+        foreach (var desk in GalleyDesks)
+            if (desk.IsOccupied) VisualEngine3D.DrawCharacterDirectionalShadow(desk.ChairPosition,1.46f,.43f);
+        foreach (var coder in ActiveCoders)
+            VisualEngine3D.DrawCharacterDirectionalShadow(coder.Position,coder.IsMiniBoss ? 2.5f : 1.9f,.45f);
+        VisualEngine3D.DrawCharacterDirectionalShadow(ElevatorBoss.Position,2.85f,.85f);
         DrawOfficeProps3D();
         DrawHrTarotBoothAndVeronika3D();
         Draw90sArsenalAndShopStand3D();
         DrawGalleyWorkstations3D();
         DrawCentralMacBookTrapAndCovers3D();
-        DrawNorthArmoredElevator3D();
+        foreach(int x in new[]{-1,1})
+        foreach(int z in new[]{-1,1})
+        {
+            Vector3 corner=CentralElevatorCorePos+new Vector3(x*4.45f,0,z*4.45f);
+            for(int band=0;band<4;band++)
+            {
+                Vector3 lower=corner+Vector3.UnitY*(band*1.6f+.10f);
+                Vector3 upper=lower+Vector3.UnitY*1.6f;
+                Vector3 inset=Vector3.UnitZ*(z*.52f);
+                VisualEngine3D.Rod(lower,upper-inset,.038f,.038f,8,new Color(116,130,145,255));
+                VisualEngine3D.Rod(lower-inset,upper,.038f,.038f,8,new Color(116,130,145,255));
+            }
+        }
+        DrawElevatorDoors(false);
+        Partner?.Draw();
 
         // Draw all active Vibe Coders & SaaS Guru Mini-Boss
         for (int i = 0; i < ActiveCoders.Count; i++)
@@ -1845,10 +1857,7 @@ public sealed class SkyscraperFloor1World
         }
 
         // Draw Floor 1 Elevator Boss ("СБЕЖАВШИЙ ИИ-АГЕНТ v0.1")
-        if (ElevatorBoss.IsActive || ElevatorBoss.IsDefeated)
-        {
-            DrawEscapedAgentBoss3D();
-        }
+        DrawEscapedAgentBoss3D();
 
         // Draw Enemy Projectiles (3D 500 ERROR blocks & 40 GB node_modules cubes)
         DrawEnemyProjectiles3D();
@@ -1860,6 +1869,10 @@ public sealed class SkyscraperFloor1World
             VisualEngine3D.Box(cp.Position, 0.28f, 0.12f, 0.16f, new Color(45, 205, 85, 245));
 
         }
+        VisualEngine3D.DrawArchitecture(BuildTowerArchitecture, glass:true);
+        Rlgl.DisableDepthMask();
+        DrawElevatorDoors(true);
+        Rlgl.EnableDepthMask();
     }
 
     private void DrawOfficeProps3D()
@@ -1868,64 +1881,21 @@ public sealed class SkyscraperFloor1World
         {
             var p = OfficeProps[i];
             Vector3 pos = p.Position;
-            if (p.Kind != OfficePropKind.CeilingDuct) VisualEngine3D.Shadow(pos, p.Size.X+1, p.Size.Z+1);
+            if (p.Kind is OfficePropKind.CeilingDuct or OfficePropKind.MeetingGlass) continue;
+            VisualEngine3D.Shadow(pos, p.Size.X+1, p.Size.Z+1);
             switch (p.Kind)
             {
-                case OfficePropKind.CubiclePartition:
-                {
-                    // Lower fabric partition + upper frosted cyan/violet glass pane
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.55f, 0f), p.Size.X, 1.10f, p.Size.Z, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(0f, 1.32f, 0f), p.Size.X - 0.12f, 0.44f, p.Size.Z * 0.65f, p.AccentColor);
-
-                    break;
-                }
-
                 case OfficePropKind.DualMonitorDesk:
-                {
-                    // Desk top + legs + 2 glowing monitors + keyboard + warm desk lamp
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.74f, 0f), p.Size.X, 0.07f, p.Size.Z, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(-p.Size.X * 0.45f, 0.37f, 0f), 0.08f, 0.74f, p.Size.Z * 0.85f, new Color(36, 40, 50, 255));
-                    VisualEngine3D.Box(pos + new Vector3(p.Size.X * 0.45f, 0.37f, 0f), 0.08f, 0.74f, p.Size.Z * 0.85f, new Color(36, 40, 50, 255));
-
-                    // Monitor 1 & Monitor 2
-                    VisualEngine3D.Box(pos + new Vector3(-0.42f, 1.04f, -0.22f), 0.68f, 0.42f, 0.05f, new Color(20, 24, 32, 255));
-                    VisualEngine3D.Box(pos + new Vector3(-0.42f, 1.04f, -0.19f), 0.62f, 0.36f, 0.02f, p.AccentColor);
-                    VisualEngine3D.Box(pos + new Vector3(0.32f, 1.04f, -0.22f), 0.68f, 0.42f, 0.05f, new Color(20, 24, 32, 255));
-                    VisualEngine3D.Box(pos + new Vector3(0.32f, 1.04f, -0.19f), 0.62f, 0.36f, 0.02f, new Color(40, 195, 255, 255));
-
-                    // Desk Lamp with warm bulb
-                    VisualEngine3D.Rod(pos + new Vector3(0.82f, 0.78f, -0.18f), pos + new Vector3(0.75f, 1.18f, -0.10f), 0.03f, 0.025f, 6, new Color(220, 180, 55, 255));
-                    VisualEngine3D.Orb(pos + new Vector3(0.72f, 1.18f, -0.08f), 0.07f, new Color(255, 235, 130, 240));
+                    VisualEngine3D.Asset("prop_workstation_full", pos, 180);
                     break;
-                }
-
-                case OfficePropKind.SwivelChairUpright:
-                {
-                    VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.44f, 0f), 0.05f, 0.04f, 6, new Color(80, 86, 98, 255));
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.46f, 0f), 0.52f, 0.08f, 0.52f, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.82f, 0.22f), 0.50f, 0.62f, 0.08f, p.PrimaryColor);
-
+                case OfficePropKind.MeetingDesk:
+                    VisualEngine3D.Asset("office_workstation", pos, 180);
+                    foreach (int side in new[] { -1, 1 })
+                        VisualEngine3D.Box(pos+new Vector3(side*.86f,.36f,0),.08f,.72f,.88f,new Color(65,70,78,255));
                     break;
-                }
-
-                case OfficePropKind.SwivelChairKnocked:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.26f, 0f), 0.54f, 0.48f, 0.54f, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(0.28f, 0.22f, 0f), 0.58f, 0.12f, 0.48f, p.AccentColor);
-                    break;
-                }
-
                 case OfficePropKind.XeroxPhotocopier:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.55f, 0f), p.Size.X, 1.10f, p.Size.Z, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(0f, 1.14f, 0f), p.Size.X * 0.92f, 0.08f, p.Size.Z * 0.88f, new Color(65, 75, 92, 255));
-                    // Glowing green scanner slit + paper stack
-                    VisualEngine3D.Box(pos + new Vector3(-0.15f, 1.10f, 0f), 0.55f, 0.03f, 0.45f, p.AccentColor);
-                    VisualEngine3D.Box(pos + new Vector3(0.42f, 1.18f, 0.10f), 0.32f, 0.16f, 0.42f, Color.White);
-
+                    VisualEngine3D.Asset("prop_xerox_printer", pos, 180);
                     break;
-                }
-
                 case OfficePropKind.FilingCabinet:
                 {
                     VisualEngine3D.Box(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
@@ -1963,21 +1933,11 @@ public sealed class SkyscraperFloor1World
                 }
 
                 case OfficePropKind.LeatherSofa:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.36f, 0f), p.Size.X, 0.52f, p.Size.Z, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.78f, -p.Size.Z * 0.35f), p.Size.X, 0.62f, 0.26f, p.PrimaryColor);
-
+                    VisualEngine3D.Asset("prop_leather_sofa", pos);
                     break;
-                }
-
                 case OfficePropKind.PottedFicus:
-                {
-                    VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.62f, 0f), 0.44f, 0.36f, 10, p.AccentColor);
-                    VisualEngine3D.Rod(pos + new Vector3(0f, 0.60f, 0f), pos + new Vector3(0f, 1.75f, 0f), 0.10f, 0.08f, 8, new Color(92, 62, 38, 255));
-                    VisualEngine3D.Orb(pos + new Vector3(0f, 1.85f, 0f), 0.68f, p.PrimaryColor);
+                    DrawFicus(pos);
                     break;
-                }
-
                 case OfficePropKind.TrashBin:
                 {
                     VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.44f, 0f), 0.18f, 0.22f, 8, p.PrimaryColor);
@@ -1985,12 +1945,6 @@ public sealed class SkyscraperFloor1World
                     break;
                 }
 
-                case OfficePropKind.CeilingDuct:
-                {
-                    VisualEngine3D.Box(pos, p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
-
-                    break;
-                }
             }
         }
     }
@@ -1999,27 +1953,7 @@ public sealed class SkyscraperFloor1World
     {
         VisualEngine3D.Floor(HalfWidth*2, HalfDepth*2);
 
-        // 2. Ceiling Grid & Luminous Office LED Panels
-        VisualEngine3D.Box(new Vector3(0f, CeilingHeight + 0.1f, 0f), HalfWidth * 2f + 1f, 0.2f, HalfDepth * 2f + 1f, new Color(110, 116, 135, 255), Finish.Plaster);
-        for (int lx = -12; lx <= 12; lx += 8)
-        {
-            for (int lz = -16; lz <= 16; lz += 8)
-            {
-                VisualEngine3D.Box(new Vector3(lx, CeilingHeight - 0.03f, lz), 2.8f, 0.06f, 1.2f, new Color(225, 242, 255, 255));
-
-            }
-        }
-
-        // 3. Perimeter Skyscraper Walls & Panoramic Night City Skyline Outside Windows
-        // South Wall (behind Base)
-        VisualEngine3D.Box(new Vector3(0f, CeilingHeight * 0.5f, HalfDepth), HalfWidth * 2f, CeilingHeight, 0.4f, new Color(153, 141, 155, 255), Finish.Plaster);
-        // North Wall (around Armored Elevator)
-        VisualEngine3D.Box(new Vector3(-11.5f, CeilingHeight * 0.5f, -HalfDepth), 17.0f, CeilingHeight, 0.4f, new Color(131, 145, 155, 255), Finish.Plaster);
-        VisualEngine3D.Box(new Vector3(11.5f, CeilingHeight * 0.5f, -HalfDepth), 17.0f, CeilingHeight, 0.4f, new Color(131, 145, 155, 255), Finish.Plaster);
-
-        // West & East Panoramic Glass Curtain Walls + Spawn Doors + Night Skyscraper Silhouette Outside
-        DrawSideWallAndSpawnDoor3D(isWest: true);
-        DrawSideWallAndSpawnDoor3D(isWest: false);
+        VisualEngine3D.DrawArchitecture(BuildTowerArchitecture);
 
         // 4. 6 Architectural Pillars with Neon Trims & Corporate Poster Boards
         for (int i = 0; i < Pillars.Count; i++)
@@ -2045,118 +1979,172 @@ public sealed class SkyscraperFloor1World
         }
     }
 
-    private void DrawSideWallAndSpawnDoor3D(bool isWest)
+    private void BuildTowerArchitecture(VisualEngine3D.ArchitectureBuilder mesh)
     {
-        float x = isWest ? -HalfWidth : HalfWidth;
-        float sign = isWest ? 1f : -1f;
-
-        // Lower & Upper wall beams
-        VisualEngine3D.Box(new Vector3(x, 0.5f, 0f), 0.35f, 1.0f, HalfDepth * 2f, new Color(34, 38, 48, 255));
-        VisualEngine3D.Box(new Vector3(x, CeilingHeight - 0.6f, 0f), 0.35f, 1.2f, HalfDepth * 2f, new Color(34, 38, 48, 255));
-
-        // Vertical window mullions
-        for (int z = -18; z <= 18; z += 6)
+        BuildCurtainWallsAndSkyline(mesh);
+        BuildOfficeServices(mesh);
+        BuildGlassLift(mesh);
+        Color brass=new(189,145,76,255);
+        float start=SouthElevatorDoorPos.Z+.15f, end=ArsenalShopPos.Z-.75f;
+        float center=(start+end)*.5f;
+        mesh.Add(new(0,.013f,center),new(3.25f,.024f,end-start),new(132,28,54,255),Finish.Carpet);
+        foreach (int side in new[] { -1,1 })
         {
-            VisualEngine3D.Box(new Vector3(x, CeilingHeight * 0.5f, z), 0.38f, CeilingHeight, 0.45f, new Color(42, 48, 60, 255));
+            foreach (float edge in new[] { 1.43f,1.55f })
+                mesh.Add(new(side*edge,.029f,center),new(.028f,.008f,end-start),brass);
+            Color route=side<0 ? new(255,195,83,255) : new(72,225,202,255);
+            mesh.Add(new(side*6.35f,.018f,3.3f),new(9.5f,.024f,.065f),route,Finish.Lamp);
+            mesh.Add(new(side*11.1f,.018f,-10),new(.065f,.024f,26.65f),route,Finish.Lamp);
+            foreach (int z in new[] { -19,-5,8,19 })
+            {
+                mesh.Add(new(side*17,.035f,z),new(4.4f,.07f,.24f),new(47,48,49,255));
+                for (int i=-4;i<=4;i++)
+                    mesh.Add(new(side*17+i*.43f,.072f,z),new(.16f,.009f,.19f),brass);
+            }
         }
-
-        // Spawn Door Frame at Z = 1.5f
-        Vector3 doorPos = new Vector3(x + sign * 0.12f, 1.55f, 1.5f);
-        VisualEngine3D.Box(doorPos, 0.22f, 3.1f, 2.6f, new Color(22, 28, 40, 255));
-
-
-        // Distant Cyberpunk Night Skyscraper Towers outside the windows (proving we are inside an urban tower, ZERO water!)
-        for (int i = -2; i <= 2; i++)
+        var paper=new Random(416);
+        foreach (var prop in OfficeProps)
         {
-            float bx = x - sign * (14f + MathF.Abs(i) * 4f);
-            float bz = i * 11f;
-            VisualEngine3D.Box(new Vector3(bx, -2.0f, bz), 5.5f, 26.0f, 5.5f, new Color(14, 18, 28, 255));
-
+            if (prop.Kind==OfficePropKind.MeetingGlass)
+            {
+                Vector3 size=prop.Size;
+                bool alongX=size.X>size.Z;
+                mesh.Add(prop.Position+Vector3.UnitY*(size.Y*.5f),size,new(135,205,220,42),Finish.Glass);
+                foreach (float y in new[] { .07f,1.17f,3.09f })
+                    mesh.Add(prop.Position+Vector3.UnitY*y,new(size.X+.013f,y==1.17f ? .045f : .09f,size.Z+.013f),
+                        y==1.17f ? brass : new(48,58,67,255));
+                for (int i=-1;i<=1;i++)
+                {
+                    Vector3 offset=alongX ? new(size.X*.49f*i,0,0) : new(0,0,size.Z*.49f*i);
+                    mesh.Add(prop.Position+offset+Vector3.UnitY*1.55f,new(.065f,3.1f,.065f),new(57,66,74,255));
+                }
+            }
+            if (prop.Kind is OfficePropKind.XeroxPhotocopier or OfficePropKind.DualMonitorDesk)
+            {
+                for (int i=0;i<2;i++)
+                {
+                    Vector3 sheet=prop.Position+new Vector3(.8f+paper.NextSingle(),.014f+i*.004f,paper.NextSingle()*1.7f);
+                    mesh.Add(sheet,new(.23f,.005f,.31f),new(221,219,204,255),yaw:paper.NextSingle()*2.6f);
+                }
+            }
         }
+    }
+
+    private static void BuildCurtainWallsAndSkyline(VisualEngine3D.ArchitectureBuilder mesh)
+    {
+        Color steel=new(53,68,81,255), aluminum=new(111,127,139,255);
+        Color[] lights=[new(76,216,246,255),new(255,181,72,255),new(233,92,174,255),new(246,226,190,255)];
+        var urban=new Random(1994);
+        for (int face=0;face<4;face++)
+        {
+            bool alongX=face<2;
+            int sign=face%2==0 ? -1 : 1;
+            float limit=alongX ? HalfDepth : HalfWidth;
+            void Block(float u,float y,float depth,float w,float h,float d,Color color,Finish f=Finish.Paint)
+            {
+                Vector3 p=alongX ? new(u,y,sign*depth) : new(sign*depth,y,u);
+                mesh.Add(p,alongX ? new(w,h,d) : new(d,h,w),color,f);
+            }
+            Block(0,20,155,312,170,.5f,Color.White,Finish.Sky);
+            Block(0,CeilingHeight/2,limit,limit*2,CeilingHeight,.025f,new(105,170,195,13),Finish.Glass);
+            foreach(float y in new[] { .08f,3.88f,CeilingHeight-.08f })
+                Block(0,y,limit-.04f,limit*2,.095f,.13f,steel);
+            for (float u=-limit;u<limit;u+=4.5f)
+            {
+                Block(u,CeilingHeight/2,limit-.04f,.105f,CeilingHeight,.17f,steel);
+                float w=Math.Min(4.5f,limit-u)-.13f;
+                int bay=(int)((u+limit)/4.5f);
+                int slats=3+(bay*3+face*7)%12;
+                for (int i=0;i<slats;i++)
+                    Block(u+w/2+.065f,CeilingHeight-.23f-i*.14f,limit-.15f,w,.043f,.16f,aluminum);
+            }
+            // Two staggered city blocks on each face. The player's floor is well above street level.
+            for (int layer=0;layer<2;layer++)
+            {
+                int count=layer==0 ? 12 : 16;
+                float step=layer==0 ? 10.8f : 14;
+                for (int i=0;i<count;i++)
+                {
+                    float u=(i-(count-1)*.5f)*step+urban.NextSingle()*3;
+                    float depth=limit+15+layer*38+urban.NextSingle()*13;
+                    float roof=-9+urban.NextSingle()*(layer==0 ? 21 : 40);
+                    float w=5+urban.NextSingle()*(step-6), d=6+urban.NextSingle()*5;
+                    Color hue=lights[urban.Next(lights.Length)];
+                    Block(u,(roof-52)/2,depth,w,roof+52,d,hue,Finish.Facade);
+                    float crown=1+urban.NextSingle()*4;
+                    Block(u,roof+crown*.5f,depth,w*.72f,crown,d*.75f,hue,Finish.Facade);
+                    if (i%3==2)
+                    {
+                        Block(u,roof-.08f,depth,w+.05f,.13f,d+.05f,hue,Finish.Lamp);
+                        Block(u,roof+crown+.05f,depth,w*.72f,.10f,d*.75f,hue,Finish.Lamp);
+                    }
+                    if (i%3==0)
+                    {
+                        Block(u,roof+crown+.85f,depth,.09f,1.7f,.09f,aluminum);
+                        Block(u,roof+crown+1.75f,depth,.28f,.25f,.28f,new(255,46,62,255),Finish.Lamp);
+                    }
+                    if ((i+face)%4==1)
+                        Block(u,roof-2,depth-d*.5f-.07f,w*.82f,2.5f,.1f,hue,Finish.Billboard);
+                }
+            }
+        }
+    }
+
+    private void BuildOfficeServices(VisualEngine3D.ArchitectureBuilder mesh)
+    {
+        Color trim=new(61,72,81,255), steel=new(109,127,140,255);
+        mesh.Add(new(0,CeilingHeight+.12f,0),new(HalfWidth*2,.24f,HalfDepth*2),new(125,132,142,255),Finish.Plaster);
+        for (int x=-36;x<=36;x+=6)
+        for (int z=-36;z<=36;z+=6)
+        {
+            mesh.Add(new(x,CeilingHeight-.02f,z),new(2.54f,.065f,1.34f),trim);
+            bool working = ((x/6+6)*7+(z/6+6)*3)%11==2;
+            mesh.Add(new(x,CeilingHeight-.061f,z),new(2.4f,.032f,1.2f),
+                working ? new Color(148,179,201,255) : new Color(53,62,78,255),
+                working ? Finish.Fluorescent : Finish.Paint);
+        }
+        foreach (var duct in OfficeProps)
+        {
+            if (duct.Kind!=OfficePropKind.CeilingDuct) continue;
+            var p=duct.Position;
+            mesh.Add(p,duct.Size,steel);
+            for (int z=-32;z<=32;z+=4)
+            {
+                mesh.Add(p+Vector3.UnitZ*z,new(duct.Size.X+.045f,duct.Size.Y+.04f,.06f),trim);
+                foreach (int side in new[] { -1,1 })
+                    mesh.Add(new(p.X+side*.61f,CeilingHeight-.38f,z),new(.032f,.76f,.032f),steel);
+                mesh.Add(new(p.X,CeilingHeight-.77f,z),new(1.28f,.05f,.08f),steel);
+            }
+        }
+        foreach (var door in new[] { WestSpawnDoorPos,EastSpawnDoorPos,NorthElevatorPos,SouthElevatorDoorPos })
+        {
+            mesh.Add(door+Vector3.UnitY*4.45f,new(1.65f,.62f,.12f),Color.White,Finish.Exit);
+            foreach (int side in new[] { -1,1 })
+                mesh.Add(door+new Vector3(side*.63f,5.63f,0),new(.027f,1.74f,.027f),steel);
+        }
+    }
+
+    private static void DrawCoffee(Vector3 basePos)
+    {
+        Color porcelain=new(220,211,185,255);
+        VisualEngine3D.Rod(basePos,basePos+Vector3.UnitY*.14f,.061f,.073f,12,porcelain);
+        VisualEngine3D.Rod(basePos+Vector3.UnitY*.14f,basePos+Vector3.UnitY*.143f,.058f,.058f,12,new Color(51,32,27,255));
+        foreach (float y in new[] { .036f,.105f })
+            VisualEngine3D.Box(basePos+new Vector3(.085f,y,0),.06f,.018f,.018f,porcelain);
+        VisualEngine3D.Box(basePos+new Vector3(.111f,.071f,0),.018f,.084f,.018f,porcelain);
     }
 
     private void DrawHrTarotBoothAndVeronika3D()
     {
         Vector3 b = HrTarotBoothPos;
-
-        // 1. Mystical Purple Carpet Rug & Back Velvet Screen
-        VisualEngine3D.Rod(b + new Vector3(0f, 0.01f, 0f), b + new Vector3(0f, 0.03f, 0f), 2.85f, 2.85f, 20, new Color(78, 24, 112, 255));
-
-
-        // Backdrops & Neon Sign Arch
-        VisualEngine3D.Box(b + new Vector3(0f, 1.85f, 1.45f), 3.6f, 3.7f, 0.18f, Color.White, Finish.Tarot);
-
-        VisualEngine3D.Box(b + new Vector3(0f, 3.35f, 1.35f), 3.4f, 0.55f, 0.22f, new Color(28, 10, 46, 255));
-
-
-        // 2. Purple Velvet Tarot Table with Gold Fringe
-        Vector3 tablePos = b + new Vector3(0f, 0.52f, 0f);
-        VisualEngine3D.Box(tablePos, 2.65f, 1.04f, 1.35f, new Color(96, 28, 138, 255));
-        VisualEngine3D.Box(b + new Vector3(0f, 1.03f, 0f), 2.75f, 0.08f, 1.45f, new Color(245, 195, 45, 255));
-
-        // 3. Glowing Crystal Ball in center of table
-        float pulse = 0.85f + 0.15f * MathF.Sin(_worldClock * 4.2f);
-        Vector3 ballPos = b + new Vector3(0f, 1.32f, -0.05f);
-        VisualEngine3D.Rod(b + new Vector3(0f, 1.06f, -0.05f), b + new Vector3(0f, 1.16f, -0.05f), 0.20f, 0.15f, 12, new Color(245, 195, 50, 255));
-        VisualEngine3D.Orb(ballPos, 0.22f * pulse, new Color(185, 75, 255, 220));
-        VisualEngine3D.Orb(ballPos, 0.12f, new Color(255, 230, 255, 255));
-
-        // 4. 4 Spread Tarot Cards on the Velvet Table (`XVI БАШНЯ`, `0 ШУТ`, `X КОЛЕСО`, `XV ДЬЯВОЛ`)
-        Color[] cardCols =
-        {
-            new(255, 215, 75, 255),
-            new(80, 245, 255, 255),
-            new(255, 95, 185, 255),
-            new(120, 255, 135, 255)
-        };
-        for (int c = 0; c < 4; c++)
-        {
-            float cx = -0.78f + c * 0.52f;
-            Vector3 cardPos = b + new Vector3(cx, 1.08f, -0.38f);
-            VisualEngine3D.Box(cardPos, 0.26f, 0.02f, 0.40f, new Color(24, 16, 38, 255));
-
-        }
-
-        // 5. Burning Wax Candles on both sides of the Tarot Table
-        float[] candleX = { -1.12f, -0.95f, 0.95f, 1.12f };
-        for (int i = 0; i < candleX.Length; i++)
-        {
-            Vector3 cBase = b + new Vector3(candleX[i], 1.07f, 0.22f * (i % 2 == 0 ? -1 : 1));
-            float h = 0.22f + (i % 2) * 0.06f;
-            VisualEngine3D.Rod(cBase, cBase + new Vector3(0f, h, 0f), 0.045f, 0.042f, 8, new Color(245, 238, 215, 255));
-            float flicker = 0.055f + 0.015f * MathF.Sin(_worldClock * 14f + i * 2f);
-            VisualEngine3D.Orb(cBase + new Vector3(0f, h + 0.05f, 0f), flicker, new Color(255, 185, 35, 250));
-            VisualEngine3D.Orb(cBase + new Vector3(0f, h + 0.05f, 0f), flicker * 0.55f, Color.White);
-        }
-
-        // 6. 3D Character: HR-Tarot Veronika (curvy 3D figure in purple dress, golden necklace, mystical headband)
-        Vector3 vPos = b + new Vector3(0f, 0f, 0.72f);
-        float sway = MathF.Sin(_worldClock * 2.4f) * 0.04f;
-
-        // Purple gown & curvy torso
-        VisualEngine3D.Rod(vPos + new Vector3(0f, 0.85f, 0f), vPos + new Vector3(0f, 1.52f, 0f), 0.36f, 0.28f, 12, new Color(138, 34, 195, 255));
-        VisualEngine3D.Orb(vPos + new Vector3(-0.13f, 1.36f, -0.22f), 0.15f, new Color(158, 42, 215, 255));
-        VisualEngine3D.Orb(vPos + new Vector3(0.13f, 1.36f, -0.22f), 0.15f, new Color(158, 42, 215, 255));
-
-        // Golden mystical necklace
-        VisualEngine3D.Rod(vPos + new Vector3(0f, 1.48f, -0.02f), vPos + new Vector3(0f, 1.53f, -0.02f), 0.22f, 0.20f, 12, new Color(255, 210, 45, 255));
-
-        // Head, hair & golden tarot headband with third-eye gem
-        Vector3 headPos = vPos + new Vector3(sway, 1.78f, 0f);
-        VisualEngine3D.Orb(headPos, 0.21f, new Color(245, 200, 175, 255));
-        // Voluminous dark-violet hair
-        VisualEngine3D.Orb(headPos + new Vector3(0f, 0.06f, 0.06f), 0.24f, new Color(36, 16, 48, 255));
-        // Golden headband + cyan gem
-        VisualEngine3D.Rod(headPos + new Vector3(0f, 0.06f, 0f), headPos + new Vector3(0f, 0.11f, 0f), 0.22f, 0.22f, 12, new Color(255, 205, 45, 255));
-        VisualEngine3D.Orb(headPos + new Vector3(0f, 0.08f, -0.21f), 0.045f, new Color(0, 245, 255, 255));
-
-        // Animated hands hovering mystically over the Crystal Ball
-        Vector3 leftHand = ballPos + new Vector3(-0.28f, 0.18f + MathF.Sin(_worldClock * 3.5f) * 0.06f, 0.10f);
-        Vector3 rightHand = ballPos + new Vector3(0.28f, 0.18f + MathF.Cos(_worldClock * 3.5f) * 0.06f, 0.10f);
-        VisualEngine3D.Rod(vPos + new Vector3(-0.32f, 1.44f, 0f), leftHand, 0.065f, 0.05f, 8, new Color(138, 34, 195, 255));
-        VisualEngine3D.Rod(vPos + new Vector3(0.32f, 1.44f, 0f), rightHand, 0.065f, 0.05f, 8, new Color(138, 34, 195, 255));
-        VisualEngine3D.Orb(leftHand, 0.06f, new Color(245, 200, 175, 255));
-        VisualEngine3D.Orb(rightHand, 0.06f, new Color(245, 200, 175, 255));
+        VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.4f,2.4f,20,new Color(77,33,83,255));
+        VisualEngine3D.Asset("char_hr_veronika", b+new Vector3(0,.03f,0),180);
+        // An open brass frame leaves a sightline from the counter to the windows.
+        Color brass=new(187,141,76,255);
+        foreach (int side in new[] { -1, 1 })
+            VisualEngine3D.Box(b+new Vector3(side*1.74f,1.67f,1.4f),.055f,3.34f,.055f,brass);
+        VisualEngine3D.Box(b+new Vector3(0,3.36f,1.4f),3.54f,.06f,.06f,brass);
+        VisualEngine3D.Box(b+new Vector3(0,2.9f,1.4f),1.05f,.88f,.045f,Color.White,Finish.Tarot);
     }
 
     private void Draw90sArsenalAndShopStand3D()
@@ -2201,33 +2189,15 @@ public sealed class SkyscraperFloor1World
             var d = GalleyDesks[i];
             Vector3 p = d.DeskPosition;
 
-            // Office Desk Table
-            VisualEngine3D.Box(p + new Vector3(0f, 0.74f, 0f), 1.75f, 0.07f, 0.95f, new Color(68, 74, 88, 255));
-            VisualEngine3D.Box(p + new Vector3(-0.78f, 0.37f, 0f), 0.08f, 0.74f, 0.85f, new Color(42, 46, 56, 255));
-            VisualEngine3D.Box(p + new Vector3(0.78f, 0.37f, 0f), 0.08f, 0.74f, 0.85f, new Color(42, 46, 56, 255));
-
-            // PC Tower & Monitor on Desk
-            VisualEngine3D.Box(p + new Vector3(0.62f, 0.98f, -0.15f), 0.24f, 0.44f, 0.42f, new Color(28, 32, 40, 255));
-            Color screenCol = !d.IsOccupied
-                ? new Color(35, 55, 75, 255)
-                : (d.IsSlackingInTwitter ? new Color(255, 45, 65, 255) : new Color(40, 245, 130, 255));
-
-            VisualEngine3D.Box(p + new Vector3(-0.08f, 1.06f, -0.22f), 0.72f, 0.44f, 0.06f, new Color(20, 24, 32, 255));
-            VisualEngine3D.Box(p + new Vector3(-0.08f, 1.06f, -0.18f), 0.66f, 0.38f, 0.02f, screenCol, Finish.Screen);
-
-            // Office Chair
-            VisualEngine3D.Box(d.ChairPosition + new Vector3(0f, 0.46f, 0f), 0.52f, 0.08f, 0.52f, new Color(32, 36, 46, 255));
-            VisualEngine3D.Box(d.ChairPosition + new Vector3(0f, 0.82f, 0.22f), 0.50f, 0.65f, 0.08f, new Color(32, 36, 46, 255));
-
-            // If a captured Vibe Coder is seated at this Galley Desk, render them typing or slacking!
+            VisualEngine3D.Asset("prop_workstation_full",p,180);
+            DrawCoffee(p+new Vector3(.53f,.797f,.28f));
             if (d.IsOccupied)
             {
                 Vector3 cPos = d.ChairPosition;
-                float bob = MathF.Sin(d.TypingPhase) * 0.04f;
-                Color hoodie = d.WhackFlashTimer > 0f ? Color.Gold : d.HoodieColor;
-
-                VisualEngine3D.Rod(cPos + new Vector3(0f, 0.52f, 0f), cPos + new Vector3(0f, 1.18f, -0.08f), 0.24f, 0.20f, 10, hoodie);
-                VisualEngine3D.Orb(cPos + new Vector3(0f, 1.36f + bob, -0.10f), 0.18f, new Color(240, 200, 175, 255));
+                float bob = MathF.Sin(d.TypingPhase)*.015f;
+                Color hoodie = d.WhackFlashTimer>0 ? Color.Gold : d.HoodieColor;
+                VisualEngine3D.Asset("char_vibe_coder",cPos+new Vector3(0,.035f+bob,-.09f),0,
+                    tint:Raylib.ColorLerp(Color.White,hoodie,.30f),stretch:new(.90f,.78f,.90f));
 
                 // Overhead Red Warning Diamond if Slacking in Twitter!
                 if (d.IsSlackingInTwitter)
@@ -2284,17 +2254,10 @@ public sealed class SkyscraperFloor1World
             switch (cov.VisualKind)
             {
                 case 0: // Leather Sofa from the 90s
-                    VisualEngine3D.Box(p + new Vector3(0f, 0.38f, 0f), 2.3f, 0.55f, 0.95f, new Color(98, 42, 32, 255));
-                    VisualEngine3D.Box(p + new Vector3(0f, 0.82f, 0.36f), 2.3f, 0.65f, 0.25f, new Color(115, 48, 36, 255));
-
+                    VisualEngine3D.Asset("prop_leather_sofa",p);
                     break;
-
-                case 1: // Large Potted Office Ficus Tree
-                    VisualEngine3D.Rod(p, p + new Vector3(0f, 0.68f, 0f), 0.52f, 0.42f, 12, new Color(135, 90, 58, 255));
-                    VisualEngine3D.Rod(p + new Vector3(0f, 0.65f, 0f), p + new Vector3(0f, 1.85f, 0f), 0.12f, 0.09f, 8, new Color(92, 62, 38, 255));
-                    VisualEngine3D.Orb(p + new Vector3(0f, 1.95f, 0f), 0.72f, new Color(36, 155, 72, 255));
-                    VisualEngine3D.Orb(p + new Vector3(-0.35f, 1.65f, 0.2f), 0.48f, new Color(46, 175, 84, 255));
-                    VisualEngine3D.Orb(p + new Vector3(0.35f, 1.70f, -0.2f), 0.48f, new Color(30, 138, 62, 255));
+                case 1:
+                    DrawFicus(p);
                     break;
 
                 case 2: // Office Water Cooler with Blue Bottle
@@ -2315,157 +2278,111 @@ public sealed class SkyscraperFloor1World
         }
     }
 
-    private void DrawNorthArmoredElevator3D()
+    private void BuildGlassLift(VisualEngine3D.ArchitectureBuilder mesh)
     {
-        // Central 9m x 9m Floor-to-Ceiling Armored Elevator Core right in the CENTER of Floor 1 (`(0, 0, -4.0f)`)
-        Vector3 core = CentralElevatorCorePos;
-        float coreW = ElevatorCoreHalfW * 2f; // 9.0m
-        float coreD = ElevatorCoreHalfD * 2f; // 9.0m
+        Vector3 center = CentralElevatorCorePos;
+        Color steel=new(67,83,100,255), chrome=new(159,166,168,255);
+        Color pane=new(84,164,185,25), cabinPane=new(112,173,182,17);
+        void Part(float x,float y,float z,float w,float h,float d,Color color,Finish finish=Finish.Paint) =>
+            mesh.Add(center+new Vector3(x,y,z),new(w,h,d),color,finish);
 
-        // Massive floor-to-ceiling armored steel shaft in the center of the floor (creating Left Fork & Right Fork corridors!)
-        VisualEngine3D.Box(core + new Vector3(0f, CeilingHeight * 0.5f, 0f), coreW, CeilingHeight, coreD, new Color(188, 190, 200, 255), Finish.Armor);
-
-
-        // Glowing neon hazard bands wrapping around the Central Elevator Core
-        VisualEngine3D.Box(core + new Vector3(0f, 0.25f, 0f), coreW + 0.16f, 0.35f, coreD + 0.16f, new Color(22, 26, 34, 255));
-        VisualEngine3D.Box(core + new Vector3(0f, 3.85f, 0f), coreW + 0.14f, 0.18f, coreD + 0.14f, new Color(144, 87, 65, 255));
-        VisualEngine3D.Box(core + new Vector3(0f, 5.45f, 0f), coreW + 0.14f, 0.16f, coreD + 0.14f, new Color(102, 136, 147, 255));
-
-        // Draw Armored Sliding Doors on BOTH North face (`NorthElevatorPos`) and South face (`SouthElevatorDoorPos`)
-        DrawElevatorDoorFace3D(NorthElevatorPos, faceNormalZ: -1f);
-        DrawElevatorDoorFace3D(SouthElevatorDoorPos, faceNormalZ: +1f);
-
-        // Call Button Pedestals on North & South sides
-        VisualEngine3D.Rod(ElevatorButtonPos, ElevatorButtonPos + new Vector3(0f, 1.15f, 0f), 0.18f, 0.14f, 10, new Color(55, 62, 76, 255));
-        VisualEngine3D.Orb(ElevatorButtonPos + new Vector3(0f, 1.22f, 0f), 0.14f, HasElevatorKey ? Color.Lime : new Color(255, 195, 35, 255));
-
-        VisualEngine3D.Rod(SouthElevatorButtonPos, SouthElevatorButtonPos + new Vector3(0f, 1.15f, 0f), 0.18f, 0.14f, 10, new Color(55, 62, 76, 255));
-        VisualEngine3D.Orb(SouthElevatorButtonPos + new Vector3(0f, 1.22f, 0f), 0.14f, HasElevatorKey ? Color.Lime : new Color(255, 195, 35, 255));
+        foreach(int side in new[]{-1,1})
+        {
+            Part(side*4.5f,3.25f,0,.045f,6.5f,9,pane,Finish.Glass);
+            Part(0,5.27f,side*4.5f,9,2.46f,.045f,pane,Finish.Glass);
+            foreach(int end in new[]{-1,1})
+            {
+                Part(end*3.32f,2,side*4.5f,2.32f,4,.045f,pane,Finish.Glass);
+                Part(end*4.46f,3.25f,side*4.46f,.20f,6.5f,.20f,steel);
+                Part(end*4.22f,3.25f,side*4.22f,.075f,6.5f,.075f,new(81,205,218,255),Finish.Lamp);
+                Part(end*2.57f,1.91f,side*2.7f,.09f,3.64f,.09f,chrome);
+                Part(end*1.74f,5.08f,side*1.9f,.048f,2.84f,.048f,chrome);
+            }
+            foreach(float y in new[]{.12f,4.02f,6.37f})
+            {
+                Part(0,y,side*4.5f,9.1f,.15f,.16f,steel);
+                Part(side*4.5f,y,0,.16f,.15f,9.1f,steel);
+            }
+            Part(side*2.57f,1.91f,0,.035f,3.55f,5.40f,cabinPane,Finish.Glass);
+            Part(side*2.57f,1.10f,0,.085f,.065f,5.4f,chrome);
+            Part(0,3.65f,side*2.7f,5.25f,.055f,.11f,new(205,186,131,255),Finish.Lamp);
+            foreach(int end in new[]{-1,1})
+                Part(end*2.23f,1.91f,side*2.7f,.64f,3.55f,.035f,cabinPane,Finish.Glass);
+        }
+        Part(0,.08f,0,5.3f,.16f,5.55f,steel);
+        Part(0,3.78f,0,5.3f,.17f,5.55f,steel);
     }
 
-    private void DrawElevatorDoorFace3D(Vector3 doorCenter, float faceNormalZ)
+    private void DrawElevatorDoors(bool glass)
     {
-        Color interiorGlow = IsFloor2Unlocked
-            ? new Color(55, 245, 145, 255)
-            : (ElevatorBoss.IsActive ? new Color(235, 45, 65, 255) : new Color(30, 40, 58, 255));
-
-        VisualEngine3D.Box(doorCenter + new Vector3(0f, 2.0f, -faceNormalZ * 0.12f), 4.4f, 3.9f, 0.18f, interiorGlow);
-
-        float slide = ElevatorDoorOpenAmount * 1.18f;
-        Vector3 leftDoor = doorCenter + new Vector3(-1.08f - slide, 1.95f, faceNormalZ * 0.08f);
-        Vector3 rightDoor = doorCenter + new Vector3(1.08f + slide, 1.95f, faceNormalZ * 0.08f);
-
-        VisualEngine3D.Box(leftDoor, 2.10f, 3.8f, 0.18f, new Color(194, 192, 180, 255), Finish.Armor);
-        VisualEngine3D.Box(rightDoor, 2.10f, 3.8f, 0.18f, new Color(194, 192, 180, 255), Finish.Armor);
-
-
-
-        VisualEngine3D.Box(doorCenter + new Vector3(0,4.72f,faceNormalZ*.1f),1.65f,1.4f,.12f,Color.White,Finish.Lift);
-        Color beaconCol = (ElevatorBoss.IsActive && MathF.Sin(WarningBeaconPhase) > 0f)
-            ? new Color(255, 35, 35, 255)
-            : new Color(185, 28, 42, 255);
-        VisualEngine3D.Orb(doorCenter + new Vector3(-2.4f, 4.25f, faceNormalZ * 0.25f), 0.25f, beaconCol);
-        VisualEngine3D.Orb(doorCenter + new Vector3(2.4f, 4.25f, faceNormalZ * 0.25f), 0.25f, beaconCol);
+        Color steel=new(135,149,158,255), pane=new(82,165,189,32);
+        foreach(int side in new[]{-1,1})
+        {
+            Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
+            foreach(int leaf in new[]{-1,1})
+            {
+                Vector3 p=face+new Vector3(leaf*(1.06f+2.14f*ElevatorDoorOpenAmount),2.01f,side*.105f);
+                if(glass)
+                    VisualEngine3D.Box(p,2.07f,3.85f,.034f,pane,Finish.Glass);
+                else
+                {
+                    foreach(int edge in new[]{-1,1})
+                    {
+                        VisualEngine3D.Box(p+Vector3.UnitX*(edge*1.04f),.053f,3.95f,.09f,steel);
+                        VisualEngine3D.Box(p+Vector3.UnitY*(edge*1.95f),2.13f,.08f,.09f,steel);
+                    }
+                    VisualEngine3D.Box(p-Vector3.UnitY*.88f,2.1f,.048f,.075f,steel);
+                    VisualEngine3D.Orb(face+new Vector3(leaf*2.46f,4.22f,side*.18f),.14f,
+                        new Color(255,40+(int)(17*MathF.Sin(WarningBeaconPhase)),49,255),Finish.Lamp);
+                }
+            }
+            if(glass) continue;
+            VisualEngine3D.Box(face+new Vector3(0,4.75f,side*.14f),1.48f,1.12f,.08f,Color.White,Finish.Lift);
+            Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
+            VisualEngine3D.Rod(button,button+Vector3.UnitY*1.15f,.14f,.10f,10,steel);
+            VisualEngine3D.Orb(button+Vector3.UnitY*1.2f,.12f,HasElevatorKey ? Color.Lime : Color.Gold,Finish.Lamp);
+        }
     }
 
     private void DrawVibeCoder3D(VibeCoderEntity c)
     {
-        Vector3 p = c.Position;
-        float scale = c.IsMiniBoss ? 1.28f : 1.0f;
-        bool flash = c.HitFlashTimer > 0f;
-
-        Color hoodie = flash ? Color.White : c.HoodieColor;
-        Color pants = flash ? Color.Gold : new Color(36, 42, 58, 255);
-        Color skin = flash ? Color.Yellow : new Color(245, 204, 178, 255);
-
-        float legSwing = (c.State == CoderAIState.WalkingToBait || c.State == CoderAIState.PanickedFleeing || c.State == CoderAIState.CombatHostile)
-            ? MathF.Sin(c.WalkCycle) * 0.18f
-            : 0f;
-
-        float crouchY = c.State == CoderAIState.Subdued ? -0.35f : 0f;
-
-        // Shadow disc
-        VisualEngine3D.Rod(p + new Vector3(0f, 0.01f, 0f), p + new Vector3(0f, 0.02f, 0f), 0.48f * scale, 0.48f * scale, 12, new Color(0, 0, 0, 120));
-
-        // Legs / Sneakers
-        VisualEngine3D.Rod(
-            p + new Vector3(-0.14f * scale, 0.05f, legSwing),
-            p + new Vector3(-0.14f * scale, (0.72f + crouchY) * scale, 0f),
-            0.095f * scale, 0.105f * scale, 8, pants);
-        VisualEngine3D.Rod(
-            p + new Vector3(0.14f * scale, 0.05f, -legSwing),
-            p + new Vector3(0.14f * scale, (0.72f + crouchY) * scale, 0f),
-            0.095f * scale, 0.105f * scale, 8, pants);
-
-        // Oversized Hoodie Torso
-        Vector3 torsoBot = p + new Vector3(0f, (0.68f + crouchY) * scale, 0f);
-        Vector3 torsoTop = p + new Vector3(0f, (1.42f + crouchY) * scale, 0f);
-        VisualEngine3D.Rod(torsoBot, torsoTop, 0.31f * scale, 0.27f * scale, 12, hoodie);
-
-        // Head + VR/AR Glasses + Headphones
-        Vector3 headCenter = p + new Vector3(0f, (1.66f + crouchY) * scale, 0f);
-        VisualEngine3D.Orb(headCenter, 0.22f * scale, skin);
-
-        Vector3 forward = new Vector3(MathF.Sin(c.FacingYaw), 0f, MathF.Cos(c.FacingYaw));
-        Vector3 visorPos = headCenter + forward * (0.18f * scale) + new Vector3(0f, 0.02f * scale, 0f);
-        VisualEngine3D.Box(visorPos, 0.28f * scale, 0.10f * scale, 0.12f * scale, c.GlassesColor);
-
-        // Mini-Boss Golden Crown ($60K MRR SaaS Guru)
-        if (c.IsMiniBoss)
+        float scale=c.IsMiniBoss ? 1.28f : 1;
+        bool walking=c.State is CoderAIState.WalkingToBait or CoderAIState.PanickedFleeing or CoderAIState.CombatHostile;
+        float bob=walking ? .035f*MathF.Abs(MathF.Sin(c.WalkCycle)) : 0;
+        float tilt=c.State==CoderAIState.Subdued ? -.48f : 0;
+        Color tint=c.HitFlashTimer>0 ? Color.Gold : Raylib.ColorLerp(Color.White,c.HoodieColor,.36f);
+        VisualEngine3D.Asset("char_vibe_coder",c.Position+Vector3.UnitY*bob,
+            180+c.FacingYaw*180/MathF.PI,scale,tint,tilt);
+        if (!c.IsMiniBoss) return;
+        Vector3 crown=c.Position+Vector3.UnitY*(2.6f+.07f*MathF.Sin(_worldClock*3));
+        Color gold=new(255,197,57,255);
+        VisualEngine3D.Rod(crown,crown+Vector3.UnitY*.065f,.22f,.22f,10,gold,Finish.Lamp);
+        for (int i=0;i<5;i++)
         {
-            Vector3 crownPos = headCenter + new Vector3(0f, 0.24f * scale, 0f);
-            VisualEngine3D.Rod(crownPos, crownPos + new Vector3(0f, 0.18f, 0f), 0.22f, 0.26f, 8, new Color(255, 215, 35, 255));
-
-        }
-
-        // Arms (raised in surrender when Subdued!)
-        if (c.State == CoderAIState.Subdued)
-        {
-            VisualEngine3D.Rod(torsoTop + new Vector3(-0.28f * scale, -0.05f, 0f), headCenter + new Vector3(-0.36f * scale, 0.35f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
-            VisualEngine3D.Rod(torsoTop + new Vector3(0.28f * scale, -0.05f, 0f), headCenter + new Vector3(0.36f * scale, 0.35f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
-
-        }
-        else
-        {
-            Vector3 handPos = torsoTop + forward * (0.36f * scale) + new Vector3(0f, -0.16f * scale, 0f);
-            VisualEngine3D.Rod(torsoTop + new Vector3(-0.26f * scale, -0.05f, 0f), handPos + new Vector3(-0.12f, 0f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
-            VisualEngine3D.Rod(torsoTop + new Vector3(0.26f * scale, -0.05f, 0f), handPos + new Vector3(0.12f, 0f, 0f), 0.075f * scale, 0.065f * scale, 8, hoodie);
+            float angle=i*MathF.Tau/5+_worldClock;
+            Vector3 tip=crown+new Vector3(.17f*MathF.Cos(angle),.055f,.17f*MathF.Sin(angle));
+            VisualEngine3D.Rod(tip,tip+Vector3.UnitY*.13f,.048f,0,6,gold,Finish.Lamp);
         }
     }
 
     private void DrawEscapedAgentBoss3D()
     {
-        var b = ElevatorBoss;
-        Vector3 p = b.Position;
-        bool flash = b.HitFlashTimer > 0f;
+        var b=ElevatorBoss;
+        Color tint=b.HitFlashTimer>0 ? Color.Gold : b.State==ElevatorBossState.StunnedWallCrash
+            ? new Color(255,166,166,255) : Color.White;
+        VisualEngine3D.Asset("escaped_ai_boss",b.Position,180+b.FacingYaw*180/MathF.PI,tint:tint);
+    }
 
-        Color chassisCol = flash ? Color.White : new Color(36, 42, 54, 255);
-        Color ductTapeCol = new Color(25, 115, 245, 255); // Authentic blue duct tape ("синяя изолента")
-        Color screenGlow = b.State == ElevatorBossState.StunnedWallCrash
-            ? new Color(255, 50, 50, 255)
-            : new Color(55, 255, 145, 255);
-
-        // 4 Wheels at bottom of server rack
-        VisualEngine3D.Orb(p + new Vector3(-0.65f, 0.24f, -0.55f), 0.24f, new Color(20, 22, 26, 255));
-        VisualEngine3D.Orb(p + new Vector3(0.65f, 0.24f, -0.55f), 0.24f, new Color(20, 22, 26, 255));
-        VisualEngine3D.Orb(p + new Vector3(-0.65f, 0.24f, 0.55f), 0.24f, new Color(20, 22, 26, 255));
-        VisualEngine3D.Orb(p + new Vector3(0.65f, 0.24f, 0.55f), 0.24f, new Color(20, 22, 26, 255));
-
-        // Boxy Wheeled Server-Rack Body
-        Vector3 bodyCenter = p + new Vector3(0f, 1.35f, 0f);
-        VisualEngine3D.Box(bodyCenter, 1.55f, 1.95f, 1.25f, flash ? chassisCol : Color.White, Finish.Rack);
-
-
-        // Crossed Blue Duct Tape ("Синяя изолента") holding the AI Agent together
-        VisualEngine3D.Box(bodyCenter + new Vector3(0f, 0.35f, 0f), 1.62f, 0.22f, 1.30f, ductTapeCol);
-        VisualEngine3D.Box(bodyCenter + new Vector3(0f, -0.35f, 0f), 1.62f, 0.22f, 1.30f, ductTapeCol);
-
-        // CRT Monitor Head on top of Server Rack
-        Vector3 headCenter = p + new Vector3(0f, 2.68f, 0f);
-        VisualEngine3D.Box(headCenter, 1.05f, 0.82f, 0.88f, new Color(195, 190, 175, 255));
-        Vector3 forward = new Vector3(MathF.Sin(b.FacingYaw), 0f, MathF.Cos(b.FacingYaw));
-        VisualEngine3D.Box(headCenter + forward * 0.44f, 0.82f, 0.62f, 0.05f, screenGlow, Finish.Screen);
-
+    private static void DrawFicus(Vector3 p)
+    {
+        VisualEngine3D.Rod(p,p+Vector3.UnitY*.52f,.28f,.36f,10,new Color(154,109,72,255));
+        for (int i=0;i<5;i++)
+        {
+            float angle=i*2.4f;
+            Vector3 leaf=p+new Vector3(.36f*MathF.Cos(angle),1.34f+i*.14f,.36f*MathF.Sin(angle));
+            VisualEngine3D.Rod(p+Vector3.UnitY*.48f,leaf,.045f,.023f,7,new Color(99,76,52,255));
+            VisualEngine3D.Oval(leaf,new(.38f,.48f,.32f),new Color(30+i*6,86+i*11,64+i*4,255));
+        }
     }
 
     private void DrawEnemyProjectiles3D()
@@ -2558,6 +2475,8 @@ public sealed class SkyscraperFloor1World
             Vector2 p = Raylib.GetWorldToScreen(point, camera);
             MainMenuAndPauseUI.Center(font,value,new(p.X-165,p.Y-11,330,22),size,color);
         }
+        if(Partner is {} ally && Vector3.DistanceSquared(camera.Position,ally.Feet)<400)
+            Label(ally.Feet+Vector3.UnitY*2.12f,"БРАТАН [КООП]",16,new Color(255,221,166,255));
         foreach (var c in ActiveCoders)
         {
             if (Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.State==CoderAIState.Subdued) continue;

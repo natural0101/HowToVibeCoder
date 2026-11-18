@@ -19,12 +19,28 @@ namespace HowToVibeCoder
         public static string SoundsDir { get; private set; } = Path.Combine(AppContext.BaseDirectory, "assets", "sounds");
 
         // Volume channels (0..1f) controlled by [F8] Audio Mixer
-        public static float MasterVolume { get; set; } = 0.85f;
+        private static float _masterVolume = .85f;
+        public static float MasterVolume
+        {
+            get => _masterVolume;
+            set
+            {
+                _masterVolume = Math.Clamp(value, 0f, 1f);
+                if (Raylib.IsAudioDeviceReady()) ApplyMasterVolume();
+            }
+        }
+
+        private static bool _silent;
+        private static void ApplyMasterVolume()
+        {
+            if (_silent) Raylib.SetMasterVolume(0.0f);
+            else Raylib.SetMasterVolume(_masterVolume);
+        }
         public static float MusicVolume { get; set; } = 0.55f;
         public static float WeaponVolume { get; set; } = 0.90f;
         public static float VoiceVolume { get; set; } = 0.90f;
 
-        // Loaded Raylib Sound objects (15 total: 13 SFX + 2 Music loops + 4 voice cadence synths)
+        // One-shot effects and voice cadences use Sound. Music uses looping stereo streams.
         public static Sound SfxBeltWhip { get; private set; }
         public static Sound SfxSolderSizzle { get; private set; }
         public static Sound SfxUziShot { get; private set; }
@@ -39,8 +55,13 @@ namespace HowToVibeCoder
         public static Sound SfxCaseTick { get; private set; }
         public static Sound SfxBossSiren { get; private set; }
 
-        public static Sound MusicOffice90s { get; private set; }
-        public static Sound MusicBossFight { get; private set; }
+        private enum Score { Menu, Office, Boss }
+        private static readonly string[] MusicFiles = ["music_main_menu.wav", "music_office_90s.wav", "music_boss_fight.wav"];
+        private static readonly Music[] Streams = new Music[MusicFiles.Length];
+        private static readonly float[] Gains = new float[MusicFiles.Length];
+        private static float _dialogueGain = 1f;
+        private static float _previewRemaining;
+        private static Score _scene, _preview;
 
         // Procedural voice cadence sounds for each archetype
         public static Sound VoiceBoss90s { get; private set; }
@@ -56,9 +77,6 @@ namespace HowToVibeCoder
         public static float VoiceTimer { get; set; } = 0f;
         public static int ActiveSpeakerType { get; set; } = 0;
 
-        private static bool _wasBossMusicActive = false;
-        private static float _musicLoopTimer = 0f;
-        private const float MusicLoopDuration = 12.0f;
         private static readonly Random _rng = new Random(1993);
 
         // Rich Russian Voice Line Arrays
@@ -148,76 +166,47 @@ namespace HowToVibeCoder
             "МОЙ КОНТЕКСТ ПЕРЕПОЛНЕН! НАЧИНАЮ ГАЛЛЮЦИНИРОВАТЬ ТЯЖЁЛЫМИ МЕБЕЛЬНЫМИ ШКАФАМИ!"
         };
 
-        public static void Initialize()
+        public static void Initialize(bool silent = false)
         {
+            _silent = silent;
             try
             {
-                // Ensure both BaseDirectory/assets/sounds and working directory assets/sounds exist
-                string localSoundsDir = Path.Combine(Directory.GetCurrentDirectory(), "assets", "sounds");
-                Directory.CreateDirectory(localSoundsDir);
-                SoundsDir = localSoundsDir;
-
-                string binSoundsDir = Path.Combine(AppContext.BaseDirectory, "assets", "sounds");
-                if (!string.Equals(Path.GetFullPath(localSoundsDir), Path.GetFullPath(binSoundsDir), StringComparison.OrdinalIgnoreCase))
+                if (!Raylib.IsAudioDeviceReady()) Raylib.InitAudioDevice();
+                if (!Raylib.IsAudioDeviceReady()) return;
+                ApplyMasterVolume();
+                if (_silent)
                 {
-                    Directory.CreateDirectory(binSoundsDir);
+                    Console.WriteLine($"[Audio] Silent automation. Native master={Raylib.GetMasterVolume():0.00}, playback disabled.");
+                    return;
                 }
 
-                // Synthesize all required 44.1kHz 16-bit mono PCM .wav files if missing
-                EnsureWavFile("belt_whip.wav", SynthesizeBeltWhip);
-                EnsureWavFile("solder_sizzle.wav", SynthesizeSolderSizzle);
-                EnsureWavFile("uzi_shot.wav", SynthesizeUziShot);
-                EnsureWavFile("shotgun_blast.wav", SynthesizeShotgunBlast);
-                EnsureWavFile("chatgun_beam.wav", SynthesizeChatgunBeam);
-                EnsureWavFile("hitmarker.wav", SynthesizeHitmarker);
-                EnsureWavFile("macbook_bait.wav", SynthesizeMacbookBait);
-                EnsureWavFile("anxiety_alarm.wav", SynthesizeAnxietyAlarm);
-                EnsureWavFile("subdued_drop.wav", SynthesizeSubduedDrop);
-                EnsureWavFile("tarot_cash.wav", SynthesizeTarotCash);
-                EnsureWavFile("galley_whack.wav", SynthesizeGalleyWhack);
-                EnsureWavFile("case_tick.wav", SynthesizeCaseTick);
-                EnsureWavFile("boss_siren.wav", SynthesizeBossSiren);
-                EnsureWavFile("music_office_90s.wav", SynthesizeMusicOffice90s);
-                EnsureWavFile("music_boss_fight.wav", SynthesizeMusicBossFight);
+                EnsureAllWavFilesExist();
+                SfxBeltWhip = LoadAndRegister("belt_whip.wav");
+                SfxSolderSizzle = LoadAndRegister("solder_sizzle.wav");
+                SfxUziShot = LoadAndRegister("uzi_shot.wav");
+                SfxShotgunBlast = LoadAndRegister("shotgun_blast.wav");
+                SfxChatgunBeam = LoadAndRegister("chatgun_beam.wav");
+                SfxHitmarker = LoadAndRegister("hitmarker.wav");
+                SfxMacbookBait = LoadAndRegister("macbook_bait.wav");
+                SfxAnxietyAlarm = LoadAndRegister("anxiety_alarm.wav");
+                SfxSubduedDrop = LoadAndRegister("subdued_drop.wav");
+                SfxTarotCash = LoadAndRegister("tarot_cash.wav");
+                SfxGalleyWhack = LoadAndRegister("galley_whack.wav");
+                SfxCaseTick = LoadAndRegister("case_tick.wav");
+                SfxBossSiren = LoadAndRegister("boss_siren.wav");
 
-                // Also synthesize voice cadence blips
-                EnsureWavFile("voice_boss_90s.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.Boss90s));
-                EnsureWavFile("voice_veronika.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.VeronikaTarot));
-                EnsureWavFile("voice_vibecoder.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.VibeCoder));
-                EnsureWavFile("voice_agent.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.RoboticAgent));
-
-                if (!Raylib.IsAudioDeviceReady())
+                for (int i = 0; i < Streams.Length; i++)
                 {
-                    Raylib.InitAudioDevice();
+                    Streams[i] = Raylib.LoadMusicStream(Path.Combine(SoundsDir, MusicFiles[i]));
+                    if (!Raylib.IsMusicValid(Streams[i])) throw new IOException(MusicFiles[i]);
+                    Streams[i].Looping = true;
                 }
 
-                AudioReady = Raylib.IsAudioDeviceReady();
-                if (AudioReady)
-                {
-                    Raylib.SetMasterVolume(MasterVolume);
-
-                    SfxBeltWhip = LoadAndRegister("belt_whip.wav");
-                    SfxSolderSizzle = LoadAndRegister("solder_sizzle.wav");
-                    SfxUziShot = LoadAndRegister("uzi_shot.wav");
-                    SfxShotgunBlast = LoadAndRegister("shotgun_blast.wav");
-                    SfxChatgunBeam = LoadAndRegister("chatgun_beam.wav");
-                    SfxHitmarker = LoadAndRegister("hitmarker.wav");
-                    SfxMacbookBait = LoadAndRegister("macbook_bait.wav");
-                    SfxAnxietyAlarm = LoadAndRegister("anxiety_alarm.wav");
-                    SfxSubduedDrop = LoadAndRegister("subdued_drop.wav");
-                    SfxTarotCash = LoadAndRegister("tarot_cash.wav");
-                    SfxGalleyWhack = LoadAndRegister("galley_whack.wav");
-                    SfxCaseTick = LoadAndRegister("case_tick.wav");
-                    SfxBossSiren = LoadAndRegister("boss_siren.wav");
-
-                    MusicOffice90s = LoadAndRegister("music_office_90s.wav");
-                    MusicBossFight = LoadAndRegister("music_boss_fight.wav");
-
-                    VoiceBoss90s = LoadAndRegister("voice_boss_90s.wav");
-                    VoiceVeronika = LoadAndRegister("voice_veronika.wav");
-                    VoiceVibeCoder = LoadAndRegister("voice_vibecoder.wav");
-                    VoiceRoboticAgent = LoadAndRegister("voice_agent.wav");
-                }
+                VoiceBoss90s = LoadAndRegister("voice_boss_90s.wav");
+                VoiceVeronika = LoadAndRegister("voice_veronika.wav");
+                VoiceVibeCoder = LoadAndRegister("voice_vibecoder.wav");
+                VoiceRoboticAgent = LoadAndRegister("voice_agent.wav");
+                AudioReady = true;
             }
             catch (Exception ex)
             {
@@ -261,8 +250,11 @@ namespace HowToVibeCoder
             EnsureWavFile("galley_whack.wav", SynthesizeGalleyWhack);
             EnsureWavFile("case_tick.wav", SynthesizeCaseTick);
             EnsureWavFile("boss_siren.wav", SynthesizeBossSiren);
-            EnsureWavFile("music_office_90s.wav", SynthesizeMusicOffice90s);
-            EnsureWavFile("music_boss_fight.wav", SynthesizeMusicBossFight);
+            EnsureMusicFiles(SoundsDir);
+            EnsureWavFile("voice_boss_90s.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.Boss90s));
+            EnsureWavFile("voice_veronika.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.VeronikaTarot));
+            EnsureWavFile("voice_vibecoder.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.VibeCoder));
+            EnsureWavFile("voice_agent.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.RoboticAgent));
         }
 
         private static void EnsureWavFile(string fileName, Func<short[]> generator)
@@ -274,7 +266,7 @@ namespace HowToVibeCoder
             if (!File.Exists(path1) || new FileInfo(path1).Length < 256)
             {
                 short[] samples = generator();
-                WritePcm16MonoWav(path1, samples, 44100);
+                WritePcm16Wav(path1, samples, 44100);
             }
 
             if (!string.Equals(Path.GetFullPath(path1), Path.GetFullPath(path2), StringComparison.OrdinalIgnoreCase))
@@ -287,61 +279,41 @@ namespace HowToVibeCoder
             }
         }
 
-        public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f)
+        public static void PreviewMusic()
         {
-            if (VoiceTimer > 0f)
-            {
-                VoiceTimer = Math.Max(0f, VoiceTimer - dt);
-                if (VoiceTimer <= 0f)
-                {
-                    ActiveSpeaker = "";
-                    ActiveVoiceText = "";
-                }
-            }
+            if (!AudioReady) return;
+            _preview = _scene == Score.Boss ? Score.Menu : Score.Boss;
+            _previewRemaining = 5f;
+        }
 
+        public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false)
+        {
+            bool speaking = VoiceTimer > 0;
+            VoiceTimer = Math.Max(0, VoiceTimer - dt);
+            if (speaking && VoiceTimer == 0) ActiveSpeaker = ActiveVoiceText = "";
             if (!AudioReady) return;
 
-            MasterVolume = Math.Clamp(MasterVolume, 0f, 1f);
-            MusicVolume = Math.Clamp(MusicVolume, 0f, 1f);
-            WeaponVolume = Math.Clamp(WeaponVolume, 0f, 1f);
-            VoiceVolume = Math.Clamp(VoiceVolume, 0f, 1f);
+            _scene = isMainMenu ? Score.Menu : isBossActive ? Score.Boss : Score.Office;
+            _previewRemaining = Math.Max(0, _previewRemaining - dt);
+            Score target = _previewRemaining > 0 ? _preview : _scene;
+            const float underVoice = .39810717f; // 10^(-8/20)
+            _dialogueGain += ((speaking ? underVoice : 1f) - _dialogueGain) *
+                (1f - MathF.Exp(-dt / (speaking ? .038f : .36f)));
 
-            float effectiveMusicVol = MasterVolume * MusicVolume;
-
-            if (isBossActive != _wasBossMusicActive)
+            for (int i = 0; i < Streams.Length; i++)
             {
-                _wasBossMusicActive = isBossActive;
-                _musicLoopTimer = 0f;
-                if (isBossActive)
+                bool selected = i == (int)target;
+                float previous = Gains[i];
+                Gains[i] = Math.Clamp(previous + (selected ? dt : -dt) / .8f, 0, 1);
+                Music stream = Streams[i];
+                if (Gains[i] == 0)
                 {
-                    if (Raylib.IsSoundPlaying(MusicOffice90s)) Raylib.StopSound(MusicOffice90s);
-                    Raylib.SetSoundVolume(MusicBossFight, effectiveMusicVol);
-                    Raylib.PlaySound(MusicBossFight);
+                    if (previous > 0) Raylib.StopMusicStream(stream);
+                    continue;
                 }
-                else
-                {
-                    if (Raylib.IsSoundPlaying(MusicBossFight)) Raylib.StopSound(MusicBossFight);
-                    Raylib.SetSoundVolume(MusicOffice90s, effectiveMusicVol);
-                    Raylib.PlaySound(MusicOffice90s);
-                }
-            }
-            else
-            {
-                _musicLoopTimer += dt;
-                Sound activeTrack = isBossActive ? MusicBossFight : MusicOffice90s;
-                Sound inactiveTrack = isBossActive ? MusicOffice90s : MusicBossFight;
-
-                if (Raylib.IsSoundPlaying(inactiveTrack))
-                {
-                    Raylib.StopSound(inactiveTrack);
-                }
-
-                Raylib.SetSoundVolume(activeTrack, effectiveMusicVol);
-                if (!Raylib.IsSoundPlaying(activeTrack) || _musicLoopTimer >= MusicLoopDuration)
-                {
-                    _musicLoopTimer = 0f;
-                    Raylib.PlaySound(activeTrack);
-                }
+                Raylib.SetMusicVolume(stream, Math.Clamp(MusicVolume, 0, 1) * Gains[i] * _dialogueGain);
+                if (previous == 0) Raylib.PlayMusicStream(stream);
+                Raylib.UpdateMusicStream(stream);
             }
         }
 
@@ -416,7 +388,6 @@ namespace HowToVibeCoder
 
         public static void Shutdown()
         {
-            if (!AudioReady) return;
             try
             {
                 foreach (var kv in new HashSet<Sound>(_soundsByName.Values))
@@ -424,6 +395,12 @@ namespace HowToVibeCoder
                     Raylib.UnloadSound(kv);
                 }
                 _soundsByName.Clear();
+                for (int i = 0; i < Streams.Length; i++)
+                {
+                    if (Raylib.IsMusicValid(Streams[i])) Raylib.UnloadMusicStream(Streams[i]);
+                    Streams[i] = default;
+                    Gains[i] = 0;
+                }
                 if (Raylib.IsAudioDeviceReady())
                 {
                     Raylib.CloseAudioDevice();
@@ -436,7 +413,7 @@ namespace HowToVibeCoder
             AudioReady = false;
         }
 
-        private static void WritePcm16MonoWav(string filePath, short[] samples, int sampleRate)
+        private static void WritePcm16Wav(string filePath, short[] samples, int sampleRate, short channels = 1)
         {
             using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read);
             using var bw = new BinaryWriter(fs);
@@ -451,10 +428,10 @@ namespace HowToVibeCoder
             bw.Write(new char[] { 'f', 'm', 't', ' ' });
             bw.Write(16); // PCM chunk size
             bw.Write((short)1); // AudioFormat = 1 (PCM)
-            bw.Write((short)1); // NumChannels = 1 (Mono)
+            bw.Write(channels);
             bw.Write(sampleRate);
-            bw.Write(sampleRate * 2); // ByteRate
-            bw.Write((short)2); // BlockAlign
+            bw.Write(sampleRate * channels * 2); // ByteRate
+            bw.Write((short)(channels * 2)); // BlockAlign
             bw.Write((short)16); // BitsPerSample
 
             bw.Write(new char[] { 'd', 'a', 't', 'a' });
@@ -914,136 +891,301 @@ namespace HowToVibeCoder
             return pcm;
         }
 
-        // 14. music_office_90s.wav: 12-second seamless loopable 90s synthwave / post-Soviet gangster bass + arpeggio groove (115 BPM)
-        private static short[] SynthesizeMusicOffice90s()
+        private const int MusicRate = 44100;
+        private const int MusicFrames = 24 * MusicRate;
+        private static double Hz(int midi) => 440 * Math.Pow(2, (midi - 69) / 12.0);
+        private static double Sin(double cycles) => Math.Sin(Math.Tau * cycles);
+        private static double Attack(double t, double seconds) => Math.Min(1, t / seconds);
+
+        internal static void EnsureMusicFiles(string directory, bool force = false)
         {
-            const int sr = 44100;
-            const double duration = 12.0; // Seamless 12.0s loop
-            int len = (int)(sr * duration);
-            short[] pcm = new short[len];
-
-            // 23 beats over 12.0s (~115 BPM exact cycle) or 24 beats (120 BPM exact 16th grid) for sample-accurate zero-seam loop
-            // Using 115 BPM feel with 24 beat grid across 12.0s (0.5s per beat, 0.125s per 16th note = 96 steps)
-            const double stepDur = 12.0 / 96.0; // 0.125s per 16th step
-            // Minor gangster progression: Am - F - Dm - E7 (24 steps per bar, 4 bars = 96 steps)
-            double[] bassRoots = { 110.0, 87.31, 73.42, 82.41 };
-            double[][] arpChords =
+            Directory.CreateDirectory(directory);
+            foreach (Score score in Enum.GetValues<Score>())
             {
-                new[] { 220.0, 261.63, 329.63, 440.0 },   // Am
-                new[] { 174.61, 220.0, 261.63, 349.23 },  // F
-                new[] { 146.83, 174.61, 220.0, 293.66 },  // Dm
-                new[] { 164.81, 207.65, 246.94, 329.63 }  // E
-            };
-
-            var rng = new Random(1994);
-            double bassPhase = 0.0, arpPhase = 0.0, leadPhase = 0.0;
-
-            for (int i = 0; i < len; i++)
-            {
-                double t = (double)i / sr;
-                int step = (int)(t / stepDur) % 96;
-                double stepLocal = (t % stepDur) / stepDur;
-                int bar = (step / 24) % 4;
-
-                // Kick on every 4th step (quarter notes)
-                int beatStep = step % 4;
-                double beatTime = (t % (stepDur * 4.0));
-                double kickEnv = Math.Exp(-beatTime * 22.0);
-                double kickFreq = 135.0 * Math.Exp(-beatTime * 35.0) + 46.0;
-                double kick = Math.Sin(2.0 * Math.PI * kickFreq * beatTime) * kickEnv * 0.55;
-
-                // Snare on backbeats (step % 8 == 4)
-                double snare = 0.0;
-                if ((step % 8) == 4)
+                string path = Path.Combine(directory, MusicFiles[(int)score]);
+                // The previous 12-second mono cache has a different length.
+                if (!force && File.Exists(path) && new FileInfo(path).Length == 44 + 4 * MusicFrames) continue;
+                string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
                 {
-                    double st = stepLocal * stepDur;
-                    double sEnv = Math.Exp(-st * 26.0);
-                    snare = ((rng.NextDouble() * 2.0 - 1.0) * 0.7 + Math.Sin(2.0 * Math.PI * 185.0 * st) * 0.4) * sEnv * 0.38;
+                    WritePcm16Wav(temp, SynthesizeDeepStereoMusicWav(score), MusicRate, 2);
+                    File.Move(temp, path, true);
                 }
-
-                // Crisp 90s hi-hat on every 16th step
-                double hatEnv = Math.Exp(-(stepLocal * stepDur) * ((step % 2 == 0) ? 65.0 : 95.0));
-                double hat = (rng.NextDouble() * 2.0 - 1.0) * hatEnv * 0.12;
-
-                // Driving 16th-note octave synth bass
-                double root = bassRoots[bar];
-                double bassFreq = (step % 2 == 1) ? root * 2.0 : root;
-                bassPhase += 2.0 * Math.PI * bassFreq / sr;
-                double bassEnv = Math.Exp(-(stepLocal * stepDur) * 14.0);
-                double bass = Math.Tanh(Math.Sin(bassPhase) * 2.2) * bassEnv * 0.36;
-
-                // Synthwave arpeggio
-                double[] chord = arpChords[bar];
-                double arpFreq = chord[step % 4];
-                arpPhase += 2.0 * Math.PI * arpFreq / sr;
-                double arpEnv = Math.Exp(-(stepLocal * stepDur) * 18.0);
-                double arp = (Math.Sin(arpPhase) + 0.5 * Math.Sin(arpPhase * 2.0)) * arpEnv * 0.22;
-
-                // Post-Soviet nostalgic lead pad
-                double leadFreq = chord[(step / 6) % 4] * 2.0;
-                leadPhase += 2.0 * Math.PI * leadFreq / sr;
-                double lead = Math.Sin(leadPhase + 0.3 * Math.Sin(2.0 * Math.PI * 5.0 * t)) * 0.11;
-
-                double mix = kick + snare + hat + bass + arp + lead;
-                pcm[i] = ClampSample(Math.Tanh(mix * 1.05));
+                finally { File.Delete(temp); }
             }
-            return pcm;
         }
 
-        // 15. music_boss_fight.wav: 12-second seamless loopable intense 140 BPM boss combat synth track!
-        private static short[] SynthesizeMusicBossFight()
+        // Write tails across the loop boundary, including the tail of the last musical phrase.
+        private static void Note(double start, double duration, Action<int, double> render)
         {
-            const int sr = 44100;
-            const double duration = 12.0; // Seamless 12.0s loop
-            int len = (int)(sr * duration);
-            short[] pcm = new short[len];
-
-            // 140 BPM = 28 beats in 12.0s = 112 sixteenth-note steps!
-            const int totalSteps = 112;
-            const double stepDur = duration / totalSteps;
-            // Aggressive Phrygian riff roots: E1, F1, G1, F1
-            double[] riffRoots = { 82.41, 87.31, 98.00, 87.31 };
-            double[] fastArp = { 329.63, 349.23, 392.00, 493.88, 523.25, 493.88, 392.00, 349.23 };
-
-            var rng = new Random(2026);
-            double bassPhase = 0.0, shredPhase = 0.0;
-
-            for (int i = 0; i < len; i++)
+            int frame = (int)Math.Round(start * MusicRate) % MusicFrames;
+            int count = (int)Math.Round(duration * MusicRate);
+            for (int j = 0; j < count; j++)
             {
-                double t = (double)i / sr;
-                int step = (int)(t / stepDur) % totalSteps;
-                double stepTime = t % stepDur;
-                int section = (step / 28) % 4;
+                render(frame, (double)j / MusicRate);
+                if (++frame == MusicFrames) frame = 0;
+            }
+        }
 
-                // Heavy industrial double-time kick
-                double beatTime = t % (stepDur * 2.0);
-                double kickEnv = Math.Exp(-beatTime * 30.0);
-                double kickFreq = 160.0 * Math.Exp(-beatTime * 42.0) + 48.0;
-                double kick = Math.Sin(2.0 * Math.PI * kickFreq * beatTime) * kickEnv * 0.62;
+        private sealed class ResonantLowPass
+        {
+            private double low, band;
+            public double Sample(double input, double cutoff, double damping)
+            {
+                // State-variable filter, used only on the low-frequency synth voices.
+                double f = 2 * Math.Sin(Math.PI * cutoff / MusicRate);
+                low += f * band;
+                band += f * (input - low - damping * band);
+                return low;
+            }
+        }
 
-                // Metallic industrial snare on steps % 4 == 2
-                double snare = 0.0;
-                if ((step % 4) == 2)
+        private sealed class DelayLine(int length)
+        {
+            private readonly double[] buffer = new double[length];
+            private int cursor;
+            public double Tick(double input, double feedback, bool allPass = false)
+            {
+                double delayed = buffer[cursor];
+                double stored = input + delayed * feedback;
+                buffer[cursor] = stored;
+                if (++cursor == length) cursor = 0;
+                return allPass ? delayed - feedback * stored : delayed;
+            }
+        }
+
+        private sealed class SchroederHall(int spread)
+        {
+            private readonly DelayLine[] combs = [new(1557 + spread), new(1617 + spread),
+                new(1491 + spread), new(1422 + spread)];
+            private readonly DelayLine diffuser1 = new(225 + spread);
+            private readonly DelayLine diffuser2 = new(556 + spread);
+            public double Sample(double input)
+            {
+                double sum = 0;
+                foreach (var comb in combs) sum += comb.Tick(input, .79);
+                return diffuser2.Tick(diffuser1.Tick(sum * .25, .52, true), .48, true);
+            }
+        }
+
+        private static double ChorusTap(double[] bus, int frame, double delay)
+        {
+            int whole = (int)delay;
+            double fraction = delay - whole;
+            int i = (frame + MusicFrames - whole) % MusicFrames;
+            return bus[i] * (1 - fraction) + bus[(i + MusicFrames - 1) % MusicFrames] * fraction;
+        }
+
+        private static short[] SynthesizeDeepStereoMusicWav(Score score)
+        {
+            bool menu = score == Score.Menu, boss = score == Score.Boss;
+            double beat = 60.0 / (menu ? 96 : boss ? 138 : 108);
+            int bars = (int)(24 / (4 * beat));
+            var random = new Random(1994 + (int)score);
+            double[] bass = new double[MusicFrames], drum = new double[MusicFrames], air = new double[MusicFrames];
+            double[] keysL = new double[MusicFrames], keysR = new double[MusicFrames];
+            double[] leadL = new double[MusicFrames], leadR = new double[MusicFrames];
+            double[] pump = new double[MusicFrames];
+            double Noise() => 2 * random.NextDouble() - 1;
+
+            void Kick(double start, double accent)
+            {
+                Note(start, .39, (i,t) =>
                 {
-                    double sEnv = Math.Exp(-stepTime * 34.0);
-                    snare = ((rng.NextDouble() * 2.0 - 1.0) * 0.85 + Math.Sin(2.0 * Math.PI * 220.0 * stepTime) * 0.45) * sEnv * 0.44;
+                    double phase = (boss ? 47 : 43)*t + 2.8*(1-Math.Exp(-43*t));
+                    double body = Sin(phase)*Math.Exp(-12*t) + .12*Noise()*Math.Exp(-340*t);
+                    drum[i] += accent * Attack(t,.0015) * Math.Tanh(1.5*body);
+                    pump[i] = Math.Max(pump[i], accent * Math.Exp(-13*t));
+                });
+            }
+
+            void Snare(double start, double accent)
+            {
+                double last = 0;
+                Note(start, .29, (i,t) =>
+                {
+                    double n = Noise();
+                    double wire = (n-last)*.48 + n*.24;
+                    last = n;
+                    double shell = Sin(182*t + .5*(1-Math.Exp(-55*t))) * Math.Exp(-31*t);
+                    double metal = boss ? Sin(823*t + 1.8*Sin(537*t))*.42 : .12*Sin(710*t);
+                    double hit = Attack(t,.001) * (shell + (wire+metal)*Math.Exp(-(boss ? 18 : 35)*t));
+                    drum[i] += accent*hit;
+                });
+            }
+
+            void Hat(double start, double accent, double decay)
+            {
+                double last = 0;
+                Note(start,.12,(i,t) =>
+                {
+                    double n = Noise();
+                    air[i] += accent*(n-last)*Math.Exp(-decay*t)*Attack(t,.0018);
+                    last = n;
+                });
+            }
+
+            void BassNote(double start, double length, int midi, double accent)
+            {
+                double hz = Hz(midi);
+                var filter = new ResonantLowPass();
+                Note(start,length,(i,t) =>
+                {
+                    double phase = hz*t;
+                    double bright = Sin(phase) + .48*Sin(2*phase) + .27*Sin(3*phase) + .16*Sin(5*phase);
+                    double cutoff = menu ? 230 + 155*Sin(start/24 + t/6)
+                        : boss ? 420 + 950*Math.Exp(-20*t) : 180 + 770*Math.Exp(-29*t);
+                    double filtered = filter.Sample(bright, cutoff, boss ? .8 : .52);
+                    double drive = boss ? 2.7 : 1.22;
+                    bass[i] += accent*Attack(t,.006)*Attack(length-t,.024) *
+                        (.65*Math.Tanh(drive*filtered) + .35*Math.Tanh(1.5*Sin(phase)));
+                });
+            }
+
+            void Chord(double start, double length, int root, int[] intervals, bool stab)
+            {
+                for (int v = 0; v < intervals.Length; v++)
+                {
+                    double hz = Hz(root + intervals[v]);
+                    double pan = (v * 3 % 5) / 4.0;
+                    double detune = Math.Pow(2,(v-2)*2.7/1200);
+                    Note(start,length,(i,t) =>
+                    {
+                        double phase = t*hz*detune;
+                        // Band-limited saw ensemble with a slower string bow or a short brass attack.
+                        double wave = Sin(phase)+.43*Sin(2*phase)+.26*Sin(3*phase)+.14*Sin(4*phase)+.09*Sin(6*phase);
+                        double env = stab ? Attack(t,.028)*Math.Exp(-6*t) : Attack(t,menu ? .6 : 1.2);
+                        double value = wave*env*Attack(length-t,stab ? .065 : .68)*(stab ? .084 : .046);
+                        keysL[i] += value*(1-.65*pan);
+                        keysR[i] += value*(.35+.65*pan);
+                    });
                 }
+            }
 
-                // Distorted cyberpunk reese/saw bass
-                double root = riffRoots[section];
-                if (step % 7 == 6) root *= 1.5;
-                bassPhase += 2.0 * Math.PI * root / sr;
-                double bassEnv = Math.Exp(-stepTime * 16.0);
-                double bass = Math.Tanh(Math.Sin(bassPhase) * 3.0 + Math.Sin(bassPhase * 2.01) * 1.5) * bassEnv * 0.38;
+            void Melody(double start, int midi, double pan, double accent)
+            {
+                double hz = Hz(midi), length = boss ? .36 : 1.15;
+                Note(start,length,(i,t) =>
+                {
+                    double phase = hz*t;
+                    double tone = boss ? Sin(phase + .18*Sin(phase*2)) + .27*Sin(phase*3)
+                        : Sin(phase + (menu ? .95 : 2.5)*Math.Exp(-8*t)*Sin(phase*(menu ? 2.01 : 2.71)));
+                    double value = accent*tone*Attack(t,.012)*Math.Exp(-(boss ? 5 : 4)*t)*Attack(length-t,.05);
+                    leadL[i] += value*(1-pan);
+                    leadR[i] += value*pan;
+                });
+            }
 
-                // High-tension 140 BPM boss arpeggio shred
-                double shredFreq = fastArp[step % fastArp.Length] * (section == 2 ? 1.5 : 1.0);
-                shredPhase += 2.0 * Math.PI * shredFreq / sr;
-                double shredEnv = Math.Exp(-stepTime * 22.0);
-                double shred = Math.Sign(Math.Sin(shredPhase)) * 0.24 * shredEnv;
+            int[] roots = menu ? [26,22,19,21] : boss ? [28,29,28,26] : [31,27,24,26];
+            int[] minor9 = [0,7,10,15,26], major9 = [0,7,11,16,26], dominant = [0,7,10,16,26];
+            int[] arp = [0,7,10,3,14,10,7,3], phrygian = [0,1,7,5,3,1,0,-2];
+            int[] riff = [0,0,12,0,7,0,12,1], moog = [0,12,0,7,0,3,10,7];
+            for (int bar = 0; bar < bars; bar++)
+            {
+                double start = bar*4*beat;
+                int section = bar*4/bars, root = roots[section];
+                if (!boss)
+                {
+                    double sustain = bar == bars-1 ? 24-start : 4*beat;
+                    int[] voicing = section == 1 ? major9 : menu && section == 3 ? dominant : minor9;
+                    Chord(start,sustain+.35,root+24,voicing,false);
+                }
+                if (menu) BassNote(start,4*beat,root,.55);
+                if (boss)
+                    Note(start,.68,(i,t) => bass[i] += .43*Sin(30*t+7*(1-Math.Exp(-9*t)))*Math.Exp(-6*t)*Attack(t,.009));
 
-                double mix = kick + snare + bass + shred;
-                pcm[i] = ClampSample(Math.Tanh(mix * 1.15));
+                for (int step = 0; step < 16; step++)
+                {
+                    double at = start + step*beat/4;
+                    if (step == 0 || step == 8 || (boss && step%4 == 0) || (bar%2 == 1 && step == 14))
+                        Kick(at, step == 14 ? .44 : .82);
+                    if (step == 4 || step == 12) Snare(at,menu ? .48 : boss ? .54 : .32);
+                    if (!menu || step%2 == 0)
+                        Hat(at,step%4 == 2 ? .083 : .036,step%4 == 2 ? 47 : 87);
+                    if (boss && bar%2 == 1 && step >= 13) Hat(at+beat/8,.054,110);
+
+                    if (menu && step%4 == 2)
+                        Melody(at,root+48+arp[(bar*4+step/4)%8],step%8 == 2 ? .23 : .73,.16);
+                    if (!boss && !menu)
+                    {
+                        BassNote(at,beat*.24,root+moog[step%8],step%4 == 0 ? .47 : .31);
+                        if (step == 3 || step == 10 || (bar%2 == 1 && step == 15))
+                            Melody(at,root+48+arp[(bar+step)%8],step == 3 ? .8 : .18,.125);
+                    }
+                    if (boss && step%2 == 0)
+                    {
+                        BassNote(at,beat*.44,root+riff[step/2],.52);
+                        if (step == 0 || step == 6 || step == 12)
+                            Chord(at,beat*.78,root+12,[0,7,12,15,19],true);
+                        if (step%4 == 2)
+                            Melody(at,52+phrygian[(bar*4+step/4)%8],step%8 == 2 ? .25 : .64,.23);
+                    }
+                }
+            }
+
+            // Exact BPMs produce fractional final bars at 24 s. Leave a turnaround
+            // with a held harmony and a two-beat pickup timed backwards from the downbeat.
+            if (boss) Chord(bars*4*beat,24-bars*4*beat+.25,40,[0,7,12,13,19],false);
+            for (int i = 0; i < 4; i++) Hat(24-(4-i)*beat/2,.05+.012*i,65);
+            Snare(24-beat/2,.32);
+            Melody(24-beat,menu ? 69 : boss ? 53 : 65,.75,.16);
+
+            double[] mixL = new double[MusicFrames], mixR = new double[MusicFrames];
+            int echo = (int)(beat*.75*MusicRate);
+            var hallL = new SchroederHall(0);
+            var hallR = new SchroederHall(37);
+            var room = new ResonantLowPass();
+            for (int i = 0; i < MusicFrames; i++)
+            {
+                double cycle = (double)i/MusicFrames, t = i/(double)MusicRate;
+                int tap1 = (i+MusicFrames-echo)%MusicFrames, tap2 = (i+MusicFrames-2*echo)%MusicFrames;
+                double left = keysL[i]+.48*ChorusTap(keysR,i,720+93*Sin(5*cycle));
+                double right = keysR[i]+.48*ChorusTap(keysL,i,867+119*Sin(7*cycle+.24));
+                left += leadL[i]+.42*leadR[tap1]+.18*leadL[tap2];
+                right += leadR[i]+.42*leadL[tap1]+.18*leadR[tap2];
+                if (!boss && !menu)
+                {
+                    double wind = room.Sample(Noise(),360+110*Sin(cycle),1.2)*.085;
+                    double drone = .057*Sin(49*t)+.028*Sin(98*t+.13*Sin(cycle));
+                    left += drone+wind+.025*Sin(147*t+.3*Sin(2*cycle));
+                    right += drone+.6*wind+.025*Sin(147*t+.7*Sin(3*cycle+.2));
+                }
+                double duck = 1-(boss ? .43 : .28)*pump[i];
+                // Short gated reflections on the drum bus; the hall is reserved for pitched layers.
+                double gateL = drum[(i+MusicFrames-1291)%MusicFrames]*.15+drum[(i+MusicFrames-2821)%MusicFrames]*.09;
+                double gateR = drum[(i+MusicFrames-1501)%MusicFrames]*.14+drum[(i+MusicFrames-3163)%MusicFrames]*.08;
+                double center = bass[i]*duck+drum[i];
+                mixL[i] = center+duck*left+air[i]*.78+gateL;
+                mixR[i] = center+duck*right+air[i]+gateR;
+            }
+            // Warm delay networks with one full period before committing the wet return.
+            double peak = 0;
+            for (int pass = 0; pass < 2; pass++)
+            for (int i = 0; i < MusicFrames; i++)
+            {
+                double wetL = hallL.Sample(keysL[i]+leadL[i]+.18*drum[i]);
+                double wetR = hallR.Sample(keysR[i]+leadR[i]+.18*drum[i]);
+                if (pass == 0) continue;
+                mixL[i] = Math.Tanh((mixL[i]+.27*wetL)*1.14);
+                mixR[i] = Math.Tanh((mixR[i]+.27*wetR)*1.14);
+                peak = Math.Max(peak,Math.Max(Math.Abs(mixL[i]),Math.Abs(mixR[i])));
+            }
+            short[] pcm = new short[MusicFrames*2];
+            double trim = .57/peak; // -4.88 dBFS sample ceiling leaves headroom for intersample peaks.
+            // Match the endpoint over the last 2 ms without fading the bed or its reverb to silence.
+            const int stitch = MusicRate / 500;
+            double offsetL = mixL[0] - mixL[^1], offsetR = mixR[0] - mixR[^1];
+            for (int j = 0; j < stitch; j++)
+            {
+                double u = (double)j / (stitch-1);
+                double blend = u*u*(3-2*u);
+                mixL[MusicFrames-stitch+j] += blend*offsetL;
+                mixR[MusicFrames-stitch+j] += blend*offsetR;
+            }
+            for (int i = 0; i < MusicFrames; i++)
+            {
+                pcm[2*i] = ClampSample(mixL[i]*trim);
+                pcm[2*i+1] = ClampSample(mixR[i]*trim);
             }
             return pcm;
         }

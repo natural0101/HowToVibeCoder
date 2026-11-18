@@ -9,6 +9,8 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Installer\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="assets\models\**\*.glb" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="assets/sounds/*.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="assets/ui/*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Raylib-cs" Version="7.0.1" />
   </ItemGroup>

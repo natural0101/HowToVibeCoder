@@ -3,12 +3,14 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent }
 
 internal static unsafe class VisualEngine3D
 {
     private static Shader shader;
     private static Model box, bevel, plane, tube, sphere;
+    private static readonly Dictionary<string, Model> imports = new(StringComparer.OrdinalIgnoreCase);
+    private static int batchLoc, clockLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static int firstPersonLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc;
@@ -19,11 +21,15 @@ internal static unsafe class VisualEngine3D
         #version 330 core
         in vec3 vertexPosition;
         in vec3 vertexNormal;
+        in vec4 vertexColor;
+        uniform int batch;
+        out vec4 tint;
         in vec2 vertexTexCoord;
         uniform mat4 mvp, matModel;
         uniform float taper;
         uniform int firstPerson;
         out vec3 pos, norm;
+        out vec2 localXZ;
         out vec2 uv;
         void main() {
             vec3 p = vertexPosition;
@@ -32,7 +38,8 @@ internal static unsafe class VisualEngine3D
             n.y -= taper * dot(vertexPosition.xz,n.xz);
             pos = (matModel * vec4(p,1)).xyz;
             norm = normalize(transpose(inverse(mat3(matModel))) * n);
-            uv = vertexTexCoord;
+            uv = vertexTexCoord; localXZ = vertexPosition.xz;
+            tint = batch == 1 ? vertexColor : vec4(1.);
             gl_Position = mvp * vec4(p,1);
             if (firstPerson==1) gl_Position.z = gl_Position.z*.002 + gl_Position.w*(-.998);
         }
@@ -41,11 +48,14 @@ internal static unsafe class VisualEngine3D
     private const string Fragment = """
         #version 330 core
         in vec3 pos, norm;
+        in vec2 localXZ;
         in vec2 uv;
+        in vec4 tint;
         uniform sampler2D texture0;
         uniform vec4 colDiffuse;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
-        uniform float power;
+        uniform float power, clock;
+        uniform int firstPerson;
         uniform int finish;
         out vec4 color;
         vec3 point(vec3 at, vec3 tint, vec3 n, vec3 v, float gloss) {
@@ -55,7 +65,21 @@ internal static unsafe class VisualEngine3D
             float spec=pow(max(0.,dot(n,normalize(v+l))),gloss);
             return tint*(.12+max(0.,dot(n,l))+spec*1.4)/(1.+r*.17);
         }
+        float limb(vec2 p,vec2 a,vec2 b,float r) {
+            vec2 v=b-a;
+            return length(p-a-v*clamp(dot(p-a,v)/dot(v,v),0.,1.))-r;
+        }
         void main() {
+            if(finish==19) {
+                vec2 p=vec2(localXZ.x,localXZ.y+.5);
+                float d=limb(p,vec2(-.13,.04),vec2(-.06,.47),.057);
+                d=min(d,limb(p,vec2(.13,.07),vec2(.06,.47),.06));
+                d=min(d,limb(p,vec2(0,.44),vec2(0,.68),.145));
+                d=min(d,limb(p,vec2(-.12,.69),vec2(-.27,.44),.048));
+                d=min(d,limb(p,vec2(.12,.68),vec2(.30,.55),.053));
+                d=min(d,length((p-vec2(.015,.875))*vec2(.88,1.17))-.105);
+                color=vec4(.001,.003,.012,(1.-smoothstep(-.007,.034,d))*.82); return;
+            }
             vec3 n=normalize(cross(dFdx(pos), dFdy(pos))), v=normalize(eye-pos);
             if(dot(n,norm)<0.) n=-n;
             vec2 st=uv;
@@ -66,31 +90,72 @@ internal static unsafe class VisualEngine3D
                 float halo=1.-smoothstep(.35,1.,length(uv*2.-1.));
                 color=vec4(.008,.010,.019,halo*.55); return;
             }
-            vec3 base=tex.rgb*colDiffuse.rgb;
-            vec3 key=normalize(vec3(-.55,.77,.48));
+            vec4 ink=colDiffuse*tint;
+            vec3 base=tex.rgb*ink.rgb;
+            float dist=length(eye-pos);
+            if(finish==13) {
+                vec3 ray=normalize(pos-eye);
+                float altitude=smoothstep(-16.,84.,pos.y);
+                vec3 sky=mix(vec3(.78,.89,.99),vec3(.26,.58,.95),altitude);
+                vec3 sunDir=normalize(vec3(-.55,.36,-.42));
+                float sunAmt=max(0.,dot(ray,sunDir));
+                sky+=vec3(1.,.92,.68)*pow(sunAmt,18.)*.55 + vec3(1.,.98,.88)*smoothstep(.9965,.9992,sunAmt)*1.6;
+                color=vec4(sky,1.); return;
+            }
+            if(finish==12) {
+                vec2 wall=vec2(abs(n.x)>.6 ? pos.z : pos.x,pos.y);
+                vec2 grid=wall*vec2(1.75,1.28);
+                vec2 id=floor(grid), a=abs(fract(grid)-.5);
+                vec2 aa=clamp(fwidth(grid),.008,.24);
+                vec2 pane=1.-smoothstep(vec2(.32,.24)-aa,vec2(.32,.24)+aa,a);
+                float seed=dot(floor(pos.xz*.02),vec2(37.,71.));
+                float occupancy=fract(sin(dot(id,vec2(12.9898,78.233))+seed)*4375.5453);
+                float sunHit=max(.25,dot(n,normalize(vec3(-.55,.52,-.42))));
+                vec3 concrete=mix(vec3(.62,.68,.76),vec3(.78,.82,.88),sunHit);
+                vec3 glassPane=mix(vec3(.32,.56,.82),vec3(.88,.95,1.),occupancy*.55 + sunHit*.35);
+                vec3 facade=mix(concrete,glassPane,pane.x*pane.y*step(abs(n.y),.5));
+                color=vec4(mix(facade,vec3(.74,.86,.98),smoothstep(55.,165.,dist)*.58),1.); return;
+            }
+            if(finish==14) {
+                float edge=pow(1.-abs(dot(n,v)),3.);
+                float glint=pow(max(0.,dot(reflect(-v,n),normalize(vec3(-.55,.72,-.42)))),16.);
+                color=vec4(mix(ink.rgb,vec3(.92,.97,1.),glint),ink.a+edge*.09+glint*.18); return;
+            }
+            if(finish==17) base=pow(base,vec3(.78));
+            if(finish==18) base*=.93+.07*cos(pos.z*133.)*cos(pos.x*107.);
+            vec3 key=normalize(vec3(-.55,.72,-.42));
             float gloss=finish==1 ? mix(22.,85.,tex.r) : (finish==2 ? 44. : 24.);
-            vec3 light=mix(vec3(.26,.26,.35),vec3(.68,.78,.88),n.y*.5+.5)
-                       + vec3(.88,.76,.64)*max(0.,dot(n,key));
-            light+=point(laptop,vec3(.2,.60,.65)*power,n,v,gloss);
-            light+=point(tarot,vec3(.9,.47,.38),n,v,gloss);
-            light+=point(northBeacon,vec3(.63,.39,.23),n,v,gloss);
-            light+=point(southBeacon,vec3(.63,.39,.23),n,v,gloss);
+            vec3 light=vec3(.50,.53,.58)+vec3(.96,.89,.74)*max(0.,dot(n,key));
+            // Window mullions cast warm bright sunbeams across the office floor.
+            float shaft=smoothstep(.28,.94,cos(dot(pos.xz,vec2(.61,-.37)) + pos.y*.7));
+            light+=shaft*vec3(.34,.29,.20)*max(0.,dot(n,key));
+            light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
+            light+=point(tarot,vec3(1.6,.85,.38)*(.94+.06*sin(clock*8.)),n,v,gloss);
+            light+=point(tarot+vec3(.55,-.30,.18),vec3(.42,.18,.82),n,v,gloss);
+            float beacon=.82+.28*sin(clock*3.2);
+            light+=point(northBeacon,vec3(1.4,.12,.15)*beacon,n,v,gloss);
+            light+=point(southBeacon,vec3(1.4,.12,.15)*beacon,n,v,gloss);
+            if(firstPerson==1) light=max(light,vec3(.68,.64,.66));
             float fres=pow(1.-max(0.,dot(n,v)),3.);
-            vec3 lit=base*light+vec3(.055,.07,.09)*fres*(.35+tex.r);
-            lit+=vec3(.22,.19,.15)*pow(max(0.,dot(n,normalize(v+key))),gloss)*(.18+tex.r);
+            vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
+            lit+=vec3(.32,.29,.22)*pow(max(0.,dot(n,normalize(v+key))),gloss)*(.18+tex.r);
             if(finish==1) {
-                // Reflect the rows of overhead luminaires across the polished stone.
+                // Reflect the rows of overhead luminaires and sunlight across the polished stone.
                 vec3 refl=reflect(-v,n);
                 vec2 hit=pos.xz+refl.xz*(6./max(.06,refl.y));
-                vec2 cell=abs(mod(hit+4.,8.)-4.);
+                vec2 cell=abs(mod(hit+3.,6.)-3.);
                 float strip=exp(-cell.x*cell.x*1.1-cell.y*cell.y*6.);
-                lit+=vec3(.35,.48,.58)*strip*(.12+fres*.4)*tex.r;
+                lit+=vec3(.16,.20,.26)*strip*(.14+fres*.4)*tex.r;
+                vec2 pool=mod(pos.xz+3.,6.)-3.;
+                lit+=vec3(.025,.028,.032)*exp(-dot(pool,pool)*.32);
             }
-            if(finish==7) lit=base*1.18;
+            if(finish==7 || finish==15 || finish==16) lit=base*1.18;
+            if(finish==20) {
+                lit=base*1.08;
+            }
             if(finish==4 || finish==3 || finish==10) lit+=base*max(tex.g,tex.r)*.65;
-            float dist=length(eye-pos);
-            float fog=1.-exp(-.00075*dist*dist);
-            color=vec4(mix(lit,vec3(.20,.24,.31),fog),colDiffuse.a);
+            float fog=1.-exp(-.000055*dist*dist);
+            color=vec4(mix(lit,vec3(.68,.79,.92),fog),ink.a);
         }
         """;
 
@@ -101,6 +166,7 @@ internal static unsafe class VisualEngine3D
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         firstPersonLoc = Loc("firstPerson");
+        batchLoc = Loc("batch"); clockLoc = Loc("clock");
         eyeLoc = Loc("eye"); finishLoc = Loc("finish"); taperLoc = Loc("taper");
         laptopLoc = Loc("laptop"); tarotLoc = Loc("tarot"); northLoc = Loc("northBeacon");
         southLoc = Loc("southBeacon"); powerLoc = Loc("power");
@@ -111,13 +177,36 @@ internal static unsafe class VisualEngine3D
         sphere = ModelFor(Raylib.GenMeshSphere(1,6,9));
         foreach (Finish f in Enum.GetValues<Finish>())
             maps[(int)f] = MakeTexture(f,font);
+        string directory = Path.Combine(AppContext.BaseDirectory, "assets", "models");
+        foreach (string path in Directory.EnumerateFiles(directory, "*.glb", SearchOption.AllDirectories))
+        {
+            Model model = Raylib.LoadModel(path);
+            if (model.MeshCount == 0 || model.MaterialCount < 2)
+                throw new InvalidDataException($"Invalid Blender model: {path}");
+            ApplyShaderToModel(model);
+            imports.Add(Path.GetFileNameWithoutExtension(path), model);
+        }
     }
 
     private static Model ModelFor(Mesh mesh)
     {
         Model model = Raylib.LoadModelFromMesh(mesh);
-        model.Materials[0].Shader = shader;
+        ApplyShaderToModel(model);
         return model;
+    }
+
+    private static void ApplyShaderToModel(Model model)
+    {
+        for (int m = 0; m < model.MaterialCount; m++) model.Materials[m].Shader = shader;
+    }
+
+    public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
+                             Color? tint = null, float tilt = 0, Vector3? stretch = null)
+    {
+        Model model = imports[name];
+        model.Transform *= Matrix4x4.CreateRotationX(tilt);
+        Surface(Finish.Imported, 0);
+        Raylib.DrawModelEx(model, position, Vector3.UnitY, yaw, (stretch ?? Vector3.One)*scale, tint ?? Color.White);
     }
 
     // A rounded unit box with flat face centres and two bevel bands along each edge.
@@ -154,6 +243,7 @@ internal static unsafe class VisualEngine3D
     public static void World(Camera3D cam, SkyscraperFloor1World world)
     {
         Raylib.SetShaderValue(shader,firstPersonLoc,0,ShaderUniformDataType.Int);
+        Raylib.SetShaderValue(shader,clockLoc,(float)Raylib.GetTime(),ShaderUniformDataType.Float);
         View(cam.Position,world.CentralMacBookPos+new Vector3(0,1.6f,.35f),
              world.HrTarotBoothPos+new Vector3(0,1.65f,-.6f),
              world.NorthElevatorPos+new Vector3(0,3.7f,-1),
@@ -176,6 +266,13 @@ internal static unsafe class VisualEngine3D
 
     private static void Draw(Model m, Vector3 p, Vector3 scale, Color tint, Finish f, Vector3 axis, float angle=0,float taper=0)
     {
+        Surface(f,taper);
+        m.Materials[0].Maps[0].Texture=maps[(int)f];
+        Raylib.DrawModelEx(m,p,axis,angle,scale,tint);
+    }
+
+    private static void Surface(Finish f, float taper)
+    {
         if (f!=activeFinish)
         {
             Raylib.SetShaderValue(shader,finishLoc,(int)f,ShaderUniformDataType.Int);
@@ -186,8 +283,6 @@ internal static unsafe class VisualEngine3D
             Raylib.SetShaderValue(shader,taperLoc,taper,ShaderUniformDataType.Float);
             activeTaper=taper;
         }
-        m.Materials[0].Maps[0].Texture=maps[(int)f];
-        Raylib.DrawModelEx(m,p,axis,angle,scale,tint);
     }
 
     public static void Box(Vector3 p,float w,float h,float d,Color tint,Finish f=Finish.Paint)
@@ -211,6 +306,85 @@ internal static unsafe class VisualEngine3D
     public static void Floor(float w,float d) => Draw(plane,Vector3.Zero,new(w,1,d),Color.White,Finish.Slate,Vector3.UnitY);
     public static void Shadow(Vector3 p,float w,float d) => Draw(plane,new(p.X,.006f,p.Z),new(w,1,d),Color.White,Finish.Contact,Vector3.UnitY);
 
+    public static void DrawCharacterDirectionalShadow(Vector3 pos, float height, float radius)
+    {
+        Vector3 direction = Vector3.Normalize(new Vector3(.65f, 0, .45f));
+        float length = height * 1.7f;
+        Vector3 middle = new Vector3(pos.X, Math.Max(.043f, pos.Y + .012f), pos.Z) + direction * (length * .48f);
+        Rlgl.DisableDepthMask();
+        Draw(plane, middle, new(radius * 3.4f, 1, length), Color.White, Finish.CharacterShadow,
+             Vector3.UnitY, MathF.Atan2(direction.X, direction.Z) * 180 / MathF.PI);
+        Rlgl.EnableDepthMask();
+    }
+
+    public static void OrientedBox(Vector3 p, Vector3 size, float yaw, Color color) =>
+        Draw(bevel,p,size,color,Finish.Paint,Vector3.UnitY,yaw*180/MathF.PI);
+
+    // Upload the fixed architecture once. An entire bank of blinds or lit towers
+    // then costs one draw per finish, independent of the number of window bays.
+    private static readonly List<(Finish Finish, Model Model)> architecture = new();
+
+    internal sealed class ArchitectureBuilder
+    {
+        private readonly record struct Block(Vector3 Center, Vector3 Size, Color Color, float Yaw);
+        private readonly Dictionary<Finish,List<Block>> groups = new();
+
+        public void Add(Vector3 center, Vector3 size, Color color, Finish finish=Finish.Paint, float yaw=0)
+        {
+            if (!groups.TryGetValue(finish,out var blocks)) groups[finish]=blocks=new();
+            blocks.Add(new(center,size,color,yaw));
+        }
+
+        public void Upload()
+        {
+            Mesh cube = box.Meshes[0];
+            foreach (var (finish, blocks) in groups)
+            {
+                Mesh mesh = new() { TriangleCount=blocks.Count*cube.TriangleCount };
+                mesh.VertexCount=mesh.TriangleCount*3;
+                mesh.AllocVertices(); mesh.AllocNormals(); mesh.AllocTexCoords(); mesh.AllocColors();
+                int vertex=0;
+                foreach (var block in blocks)
+                {
+                    var rotation=Matrix4x4.CreateRotationY(block.Yaw);
+                    for (int i=0;i<cube.TriangleCount*3;i++,vertex++)
+                    {
+                        int source=cube.Indices==null ? i : cube.Indices[i];
+                        Vector3 local=((Vector3*)cube.Vertices)[source]*block.Size;
+                        ((Vector3*)mesh.Vertices)[vertex]=Vector3.Transform(local,rotation)+block.Center;
+                        ((Vector3*)mesh.Normals)[vertex]=Vector3.TransformNormal(((Vector3*)cube.Normals)[source],rotation);
+                        ((Vector2*)mesh.TexCoords)[vertex]=((Vector2*)cube.TexCoords)[source];
+                        ((Color*)mesh.Colors)[vertex]=block.Color;
+                    }
+                }
+                Raylib.UploadMesh(ref mesh,false);
+                Model model=ModelFor(mesh);
+                model.Materials[0].Maps[0].Texture=maps[(int)finish];
+                architecture.Add((finish,model));
+            }
+        }
+    }
+
+    public static void DrawArchitecture(Action<ArchitectureBuilder> build, bool glass=false)
+    {
+        if (architecture.Count==0)
+        {
+            var builder=new ArchitectureBuilder();
+            build(builder);
+            builder.Upload();
+        }
+        Raylib.SetShaderValue(shader,batchLoc,1,ShaderUniformDataType.Int);
+        if (glass) Rlgl.DisableDepthMask();
+        foreach (var group in architecture)
+        {
+            if ((group.Finish==Finish.Glass)!=glass) continue;
+            Surface(group.Finish,0);
+            Raylib.DrawModel(group.Model,Vector3.Zero,1,Color.White);
+        }
+        if (glass) Rlgl.EnableDepthMask();
+        Raylib.SetShaderValue(shader,batchLoc,0,ShaderUniformDataType.Int);
+    }
+
     private static int Hash(int x,int y)
     {
         uint h=unchecked((uint)(x*374761393+y*668265263));
@@ -220,7 +394,8 @@ internal static unsafe class VisualEngine3D
 
     private static Texture2D MakeTexture(Finish f,Font font)
     {
-        int size=f is Finish.Paint or Finish.Contact or Finish.Lamp ? 1 : 512;
+        int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
+                    or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent ? 1 : 512;
         Image img=Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
         for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y);
@@ -232,6 +407,15 @@ internal static unsafe class VisualEngine3D
         }
         if(f==Finish.Tarot)
             Raylib.ImageDrawTextEx(ref img,font,"A R C A N A",new(98,436),48,1,new Color(244,209,146,255));
+        if(f is Finish.Exit or Finish.Billboard)
+        {
+            Raylib.ImageClearBackground(ref img, f==Finish.Exit ? new Color(156,18,39,255) : new Color(27,17,57,255));
+            string label=f==Finish.Exit ? "ВЫХОД" : "NOVA";
+            int width=(int)Raylib.MeasureTextEx(font,label,96,2).X;
+            Raylib.ImageDrawTextEx(ref img,font,label,new((512-width)/2,202),96,2,Color.White);
+            Raylib.ImageDrawRectangle(ref img,24,165,464,5,Color.White);
+            Raylib.ImageDrawRectangle(ref img,24,344,464,5,Color.White);
+        }
         Texture2D tex=Raylib.LoadTextureFromImage(img);
         Raylib.UnloadImage(img);
         if(tex.Id==0) throw new InvalidOperationException($"Could not upload {f}.");
@@ -298,6 +482,10 @@ internal static unsafe class VisualEngine3D
 
     public static void Unload()
     {
+        foreach(Model m in imports.Values) Raylib.UnloadModel(m);
+        imports.Clear();
+        foreach(var group in architecture) Raylib.UnloadModel(group.Model);
+        architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);
         foreach(Texture2D t in maps) Raylib.UnloadTexture(t);
         Raylib.UnloadShader(shader);
