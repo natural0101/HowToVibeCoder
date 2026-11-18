@@ -73,9 +73,8 @@ public static partial class Program
         }
         else if(args.Contains("--host")) MainMenuAndPauseUI.StartNewOrResumeFloor();
 
-        if(gripTest) RunGripAudit();
-        else if(coopSmoke) RunCoopSmoke(join>=0);
-        else if (autoTest) RunAutomatedScreenshotSuite();
+        if (coopSmoke) RunCoopSmoke(join >= 0);
+        else if (autoTest || gripTest) RunAutomatedScreenshotSuite();
         else
         {
             bool shouldExit = false;
@@ -500,26 +499,26 @@ public static partial class Program
         MainMenuAndPauseUI.Center(_uiFont,"[N] Архив   [K] Кейсы   [F8] Звук",new(sw-355,sh-42,335,25),16,white);
 
         Color cyan = new(40,213,243,255);
-        Vector2 badge = new(sw-220,25);
+        Vector2 badge = new(sw-238,25);
         Raylib.DrawPoly(badge,6,14,-90,cyan);
         Raylib.DrawPoly(badge,6,11.5f,-90,new Color(23,41,60,255));
-        MainMenuAndPauseUI.Center(_uiFont,(1+_xp/XpPerLevel).ToString(),new(badge.X-12,13,24,24),13,white);
-        Rectangle xp = new(sw-201,14,186,20);
-        Raylib.DrawRectangleRounded(xp,.95f,8,Color.DarkBlue);
-        Raylib.DrawRectangleRounded(new(xp.X+2,xp.Y+2,182f*(_xp%XpPerLevel)/XpPerLevel,16),1,8,cyan);
+        MainMenuAndPauseUI.Center(_uiFont,(1+_xp/XpPerLevel).ToString(),new(badge.X-12,13,24,24),14,white);
+        Rectangle xp = new(sw-219,14,204,22);
+        Raylib.DrawRectangleRounded(xp,.95f,8,new Color(14,23,35,232));
+        Raylib.DrawRectangleRounded(new(xp.X+2,xp.Y+2,200f*(_xp%XpPerLevel)/XpPerLevel,18),1,8,new Color(18,132,176,245));
         Raylib.DrawRectangleRoundedLinesEx(xp,.95f,8,1,cyan);
-        MainMenuAndPauseUI.Center(_uiFont,$"{_xp%XpPerLevel} / 1 073 XP",xp,14,white);
+        MainMenuAndPauseUI.Center(_uiFont,$"{_xp%XpPerLevel} / 1 073 XP",xp,15,white);
         int working = _world.GalleyDesks.Count(d=>d.IsOccupied && !d.IsSlackingInTwitter);
         int occupied = _world.GalleyDesks.Count(d=>d.IsOccupied);
         void Objective(int top,string label,Color edge)
         {
-            Rectangle r=new(sw-166,top,151,16);
-            Raylib.DrawRectangleRounded(r,.45f,6,new Color(14,23,32,206));
+            Rectangle r=new(sw-207,top,192,22);
+            Raylib.DrawRectangleRounded(r,.45f,6,new Color(14,23,32,216));
             Raylib.DrawRectangleRoundedLinesEx(r,.45f,6,1,edge);
             MainMenuAndPauseUI.Center(_uiFont,label,r,14,white);
         }
-        Objective(37,"Этаж 1: Белая Акула",new Color(215,165,64,240));
-        Objective(57,$"Галера: {occupied}/4 (+${working*20}/с)",cyan);
+        Objective(40,"Этаж 1: Белая Акула",new Color(215,165,64,240));
+        Objective(65,$"Галера: {occupied} / 4 (+ ${working*20}/с)",cyan);
         string target=_world.FocusPrompt(BuildPlayerCamera());
         if(target.Length>0)
         {
@@ -529,8 +528,13 @@ public static partial class Program
             MainMenuAndPauseUI.Surface(plate,new Color(21,30,40,205),1);
             MainMenuAndPauseUI.Center(_serif,prompt,plate,20,white);
         }
-        else if (_hudStatusTimer>0)
-            MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,new(cx-350,cy+24,700,30),18,white);
+        else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner))
+        {
+            float width=Math.Min(sw-24,GameFonts.Measure(_serif,_hudStatusBanner,18).X+28);
+            Rectangle plate=new(cx-width/2,cy+24,width,30);
+            MainMenuAndPauseUI.Surface(plate,new Color(16,24,34,220),1);
+            MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,plate,18,new Color(245,214,128,255));
+        }
         Raylib.DrawCircle(cx,cy,1.3f,white);
         if (AudioMusicSystem.VoiceTimer>0)
         {

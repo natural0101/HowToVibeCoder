@@ -14,14 +14,30 @@ internal static class GameFonts
         .Concat(Enumerable.Range(0x400, 256))
         .Concat("№«»—–…→←₽°♥×★▶◀“”‘’".Select(c => (int)c)).Distinct().ToArray();
 
+    private static string ResolveFontDirectory()
+    {
+        string[] candidates =
+        [
+            Path.Combine(AppContext.BaseDirectory, "assets", "fonts"),
+            Path.Combine(Directory.GetCurrentDirectory(), "assets", "fonts"),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "assets", "fonts")),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "assets", "fonts"))
+        ];
+        foreach (string candidate in candidates)
+        {
+            if (Directory.Exists(candidate)) return candidate;
+        }
+        return Path.Combine(AppContext.BaseDirectory, "assets", "fonts");
+    }
+
     public static void Load()
     {
-        string directory = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
-        string[] names = ["segoeui.ttf", "segoeuib.ttf", "georgia.ttf", "georgiab.ttf"];
+        string directory = ResolveFontDirectory();
+        string[] names = ["Tektur-Medium.ttf", "RussoOne-Regular.ttf", "Tektur-Bold.ttf", "Unbounded-Bold.ttf"];
         foreach (Typeface face in Enum.GetValues<Typeface>())
         {
             files[face] = Path.Combine(directory, names[(int)face]);
-            foreach (int size in new[] {14,16,18,20,22,24,28,36,48,72}) Get(face, size);
+            foreach (int size in new[] {11,12,13,14,15,16,17,18,20,21,22,23,24,28,36,48,58,72}) Get(face, size);
         }
     }
 
@@ -40,17 +56,24 @@ internal static class GameFonts
 
     public static Font At(Font face, int size) => Get(family.GetValueOrDefault(face.Texture.Id), size);
 
+    private static float Spacing(int size) => size <= 16 ? 1f : 0f;
+
     public static Vector2 Measure(Font face, string value, int size) =>
-        Raylib.MeasureTextEx(At(face, size), value, size, 0);
+        Raylib.MeasureTextEx(At(face, size), value, size, Spacing(size));
 
     public static void Draw(Font face, string value, Vector2 at, int size, Color ink)
     {
         if (string.IsNullOrEmpty(value)) return;
         Font native = At(face, size);
+        float spacing = Spacing(size);
         Vector2 pixel = new(MathF.Round(at.X), MathF.Round(at.Y));
-        Raylib.DrawTextEx(native,value,pixel + new Vector2(1,2),size,0,new Color(12,16,24,ink.A / 5));
-        Raylib.DrawTextEx(native,value,pixel + Vector2.UnitY,size,0,new Color(12,16,24,ink.A / 2));
-        Raylib.DrawTextEx(native,value,pixel,size,0,ink);
+        Color shadow = new(8, 11, 18, (ink.A * 185) / 255);
+        Color softShadow = new(8, 11, 18, (ink.A * 95) / 255);
+        Raylib.DrawTextEx(native, value, pixel + new Vector2(1, 2), size, spacing, softShadow);
+        Raylib.DrawTextEx(native, value, pixel + new Vector2(-1, 0), size, spacing, softShadow);
+        Raylib.DrawTextEx(native, value, pixel + new Vector2(1, 0), size, spacing, softShadow);
+        Raylib.DrawTextEx(native, value, pixel + Vector2.UnitY, size, spacing, shadow);
+        Raylib.DrawTextEx(native, value, pixel, size, spacing, ink);
     }
 
     public static void Unload()

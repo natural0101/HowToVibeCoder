@@ -9,6 +9,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Installer\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="assets\fonts\**\*.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="assets\models\**\*.glb" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="assets/sounds/*.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

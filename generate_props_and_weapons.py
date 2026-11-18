@@ -387,119 +387,432 @@ def build_hr_reception_desk():
 # ==============================================================================
 def build_weapon_belt():
     clear_scene()
-    m_leather = make_mat("RichLeather", (0.38, 0.19, 0.09, 1), roughness=0.40)
-    m_stitch = make_mat("LeatherEdge", (0.54, 0.29, 0.14, 1), roughness=0.45)
-    m_gold = make_mat("HeavyBrass", (0.96, 0.78, 0.22, 1), metallic=0.88, roughness=0.18)
-    m_prong = make_mat("SteelProng", (0.90, 0.92, 0.96, 1), metallic=0.9, roughness=0.15)
+    m_leather      = make_mat("RichLeather", (0.28, 0.13, 0.055, 1), roughness=0.38)
+    m_leather_dark = make_mat("DarkLeatherEdge", (0.15, 0.065, 0.025, 1), roughness=0.46)
+    m_stitch       = make_mat("SaddleStitch", (0.86, 0.68, 0.38, 1), roughness=0.40)
+    m_gold         = make_mat("HeavyBrass", (0.98, 0.78, 0.22, 1), metallic=0.90, roughness=0.16)
+    m_brass_recess = make_mat("AgedBrassRecess", (0.52, 0.36, 0.10, 1), metallic=0.82, roughness=0.32)
+    m_prong        = make_mat("SteelProng", (0.88, 0.91, 0.96, 1), metallic=0.92, roughness=0.14)
 
-    # Origin is the right grip. The other fist is 40 cm to its left.
-    # Tilt the broad leather face 40 degrees to the image plane.
-    width=Vector((0,math.cos(math.radians(40)),-math.sin(math.radians(40))))
-    normal=Vector((0,-math.sin(math.radians(40)),-math.cos(math.radians(40))))
-    along=Vector((1,0,0))
-    def strap(t):
-        return Vector((.09-.58*t,-.032*4*t*(1-t),0))
-    # Trim the existing curve without changing its height/contact at either
-    # hand. The outside finger envelope is +/- .233 m in assembly space.
-    # Return reaches +.251 m; rounded tip reaches -.253 m (18/20 mm beyond it).
-    start_t=(.09-.044)/.58
-    end_t=(.09+.446)/.58
-    def ribbon(name,path):
-        verts=[]; faces=[]
-        for c in path:
-            for w,h in ((-1,-1),(1,-1),(1,1),(-1,1)):
-                verts.append(rl_pos(c+width*w*.020+normal*h*.00275))
-        for i in range(len(path)-1):
-            for j in range(4):
-                faces.append((4*i+j,4*i+(j+1)%4,4*(i+1)+(j+1)%4,4*(i+1)+j))
-        end=4*(len(path)-1)
-        faces += [(3,2,1,0),(end,end+1,end+2,end+3)]
-        data=bpy.data.meshes.new(name); data.from_pydata(verts,[],faces); data.update()
-        obj=bpy.data.objects.new(name,data); bpy.context.collection.objects.link(obj)
-        obj.data.materials.append(m_leather)
-    ribbon("Tensioned stitched leather",[strap(start_t+(end_t-start_t)*i/64) for i in range(65)])
-    # Shallow rounded tip, continuous with the full-width leather end.
-    tip=strap(end_t)
-    tip_verts=[]
-    for face in (-1,1):
-        for i in range(25):
-            angle=-math.pi/2+math.pi*i/24
-            tip_verts.append(rl_pos(tip-along*(.007*math.cos(angle))
-                                    +width*(.020*math.sin(angle))+normal*(face*.00275)))
-    tip_faces=[tuple(reversed(range(25))),tuple(range(25,50))]
-    tip_faces += [(i,(i+1)%25,(i+1)%25+25,i+25) for i in range(25)]
-    data=bpy.data.meshes.new("Rounded leather tip"); data.from_pydata(tip_verts,[],tip_faces); data.update()
-    obj=bpy.data.objects.new("Rounded leather tip",data); bpy.context.collection.objects.link(obj)
-    obj.data.materials.append(m_leather)
-    # Continuous return at the end, behind the strap, outside the fingers.
-    fold=[strap(start_t)+along*(.007*math.sin(math.pi*i/24))
-          -normal*(.007*(1-math.cos(math.pi*i/24))) for i in range(25)]
-    fold += [strap(start_t+.01*i/12)-normal*.014 for i in range(1,13)]
-    ribbon("Smooth leather end return",fold)
-    for i in range(56):
-        for edge in (-1,1):
-            for face in (-1,1):
-                offset=width*(edge*.0165)+normal*(face*.0031)
-                add_rod("Saddle stitch",strap(start_t+(end_t-start_t)*(i+.15)/56)+offset,
-                        strap(start_t+(end_t-start_t)*(i+.70)/56)+offset,.00065,.00065,m_stitch,6)
-    # Hollow brass eyelets, with a real opening through the leather.
-    leather=bpy.data.objects["Tensioned stitched leather"]
-    for t in (.23,.35,.47,.59,.71):
-        center=strap(t)
-        bpy.ops.mesh.primitive_cylinder_add(vertices=16,radius=.0027,depth=.02,location=rl_pos(center))
-        cutter=bpy.context.object
-        cutter.rotation_mode='QUATERNION'
-        cutter.rotation_quaternion=Vector((0,0,1)).rotation_difference(Vector(rl_pos(normal)))
-        bpy.context.view_layer.objects.active=leather
-        mod=leather.modifiers.new("Punched eyelet hole",'BOOLEAN'); mod.object=cutter; mod.operation='DIFFERENCE'
-        bpy.ops.object.modifier_apply(modifier=mod.name)
-        bpy.data.objects.remove(cutter,do_unlink=True)
-        for face in (-1,1):
-            pts=[center+normal*(face*.0032)+along*(.0036*math.cos(i*math.tau/20))+width*(.0036*math.sin(i*math.tau/20)) for i in range(20)]
-            for i in range(20): add_rod("Brass eyelet",pts[i],pts[(i+1)%20],.0009,.0009,m_gold,8)
-    # Four straight sides and small rounded corners, never a circular ring.
-    center=strap(.68)+normal*.007
-    buckle=[]
-    for x,y,start in ((.023,.019,0),(-.023,.019,90),(-.023,-.019,180),(.023,-.019,270)):
-        for i in range(7):
-            a=math.radians(start+i*15)
-            buckle.append(center+along*(x+.006*math.cos(a))+width*(y+.006*math.sin(a)))
-    for i in range(len(buckle)):
-        add_rod("Rectangular brass buckle",buckle[i],buckle[(i+1)%len(buckle)],.0038,.0038,m_gold,12)
-    hinge=center-along*.029
-    add_rod("Buckle hinge",hinge-width*.023,hinge+width*.023,.0025,.0025,m_gold,12)
-    add_rod("Steel buckle tongue",hinge+normal*.004,center+along*.030+normal*.004,.002,.002,m_prong,12)
+    # Helper to build a thick beveled leather strap along a 3D path with variable normal/width frames
+    def build_strap_mesh(name, path_pts, width_vecs, norm_vecs, half_w=0.021, half_t=0.0032, mat_main=m_leather):
+        verts = []
+        faces = []
+        profile = [
+            (-half_w,        -half_t * 0.75),
+            (-half_w * 0.88, -half_t),
+            ( half_w * 0.88, -half_t),
+            ( half_w,        -half_t * 0.75),
+            ( half_w,         half_t * 0.75),
+            ( half_w * 0.88,  half_t),
+            (-half_w * 0.88,  half_t),
+            (-half_w,         half_t * 0.75),
+        ]
+        n_prof = len(profile)
+        for p, wv, nv in zip(path_pts, width_vecs, norm_vecs):
+            for pw, pt in profile:
+                verts.append(rl_pos(p + wv * pw + nv * pt))
+        for i in range(len(path_pts) - 1):
+            base0 = i * n_prof
+            base1 = (i + 1) * n_prof
+            for j in range(n_prof):
+                jn = (j + 1) % n_prof
+                faces.append((base0 + j, base0 + jn, base1 + jn, base1 + j))
+        # End caps
+        faces.append(tuple(reversed(range(n_prof))))
+        last = (len(path_pts) - 1) * n_prof
+        faces.append(tuple(range(last, last + n_prof)))
+        data = bpy.data.meshes.new(name)
+        data.from_pydata(verts, [], faces)
+        data.update()
+        obj = bpy.data.objects.new(name, data)
+        bpy.context.collection.objects.link(obj)
+        obj.data.materials.append(mat_main)
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+        return obj
 
-    finalize_and_export("weapon_belt_90s.glb")
+    # --------------------------------------------------------------------------
+    # 1) EXACT FINGER-FITTED UPPER STRAP FRAME (0.0mm FINGER CLIPPING!)
+    # Matches the finger flexion envelope of fps_hands_belt:
+    # Right hand fingers occupy x in [-0.035, +0.038]; Left hand fingers occupy x in [-0.438, -0.365].
+    # Outside x > +0.044 (right) and x < -0.446 (left), and below -width*0.022, is 100% finger-free!
+    # --------------------------------------------------------------------------
+    width_dir  = Vector((0,  math.cos(math.radians(40)), -math.sin(math.radians(40)))).normalized()
+    normal_dir = Vector((0, -math.sin(math.radians(40)), -math.cos(math.radians(40)))).normalized()
+    along      = Vector((-1, 0, 0))  # From right hand (+x) toward left hand (-x)
+
+    def strap_curve(t):
+        return Vector((0.09 - 0.58 * t, -0.032 * 4 * t * (1 - t), 0.0))
+
+    start_t = (0.09 - 0.046) / 0.58
+    end_t   = (0.09 + 0.448) / 0.58
+
+    def upper_strap_pos(u):
+        t = start_t + (end_t - start_t) * u
+        return strap_curve(t)
+
+    def lower_strap_pos(u):
+        t = start_t + (end_t - start_t) * u
+        sag = math.sin(u * math.pi)
+        # Arch below (-width_dir) and slightly behind (-normal_dir) the upper strap,
+        # staying completely clear of both hands' fingers!
+        return strap_curve(t) - width_dir * (0.026 + 0.030 * sag) - normal_dir * (0.015 + 0.010 * sag)
+
+    n_seg = 64
+    u_pts = [upper_strap_pos(i / n_seg) for i in range(n_seg + 1)]
+    l_pts = [lower_strap_pos(i / n_seg) for i in range(n_seg + 1)]
+    u_w = [width_dir for _ in u_pts]
+    u_n = [normal_dir for _ in u_pts]
+    l_w = [width_dir for _ in l_pts]
+    l_n = [-normal_dir for _ in l_pts]
+
+    build_strap_mesh("UpperCombatStrap", u_pts, u_w, u_n, half_w=0.020, half_t=0.0028, mat_main=m_leather)
+    build_strap_mesh("LowerReturnStrap", l_pts, l_w, l_n, half_w=0.0195, half_t=0.0028, mat_main=m_leather_dark)
+
+    # --------------------------------------------------------------------------
+    # 2) TWO TIGHT LEATHER COILS WRAPPED AROUND THE RIGHT FIST / WRIST CUFF
+    # Positioned at x = +0.052..+0.080 (outside the right index/middle/ring/pinky fingers!)
+    # and looping down around the lower right fist into the lower return strap.
+    # --------------------------------------------------------------------------
+    r_anchor = strap_curve(start_t) - width_dir * 0.014 - normal_dir * 0.012 + Vector((0.018, 0, 0))
+    c_rad1 = width_dir
+    c_rad2 = normal_dir
+    c_axis = Vector((1, -0.18, 0.12)).normalized()
+
+    for coil_idx, ax_off in enumerate([0.000, 0.018]):
+        c_pts, c_wvecs, c_nvecs = [], [], []
+        steps = 40
+        for i in range(steps + 1):
+            ang = -math.pi * 0.35 + (math.tau * 0.92) * (i / steps)
+            hel = ax_off + (i / steps - 0.5) * 0.008
+            radial = c_rad1 * (0.022 * math.cos(ang)) + c_rad2 * (0.018 * math.sin(ang))
+            pt = r_anchor + c_axis * hel + radial
+            c_pts.append(pt)
+            c_wvecs.append(c_axis)
+            c_nvecs.append(radial.normalized())
+        build_strap_mesh(f"RightFistWrap_{coil_idx}", c_pts, c_wvecs, c_nvecs, half_w=0.014, half_t=0.0030, mat_main=m_leather)
+        for i in range(0, steps, 2):
+            p0, p1 = c_pts[i], c_pts[min(steps, i + 1)]
+            n0 = c_nvecs[i]
+            for s_edge in (-1, 1):
+                off = c_axis * (s_edge * 0.0105) + n0 * 0.0033
+                add_rod(f"WrapStitch_{coil_idx}_{i}_{s_edge}", p0 + off, p1 + off, 0.00065, 0.00065, m_stitch, 6)
+
+    # Smooth U-fold connecting UpperCombatStrap and LowerReturnStrap at the right end (outside fingers)
+    r_fold_pts, r_fold_w, r_fold_n = [], [], []
+    for i in range(17):
+        theta = (i / 16.0) * math.pi
+        c_mid = 0.5 * (u_pts[0] + l_pts[0])
+        rad_v = 0.5 * (u_pts[0] - l_pts[0])
+        pt = c_mid + rad_v * math.cos(theta) - along * (0.014 * math.sin(theta))
+        n_v = (rad_v.normalized() * math.cos(theta) - along * math.sin(theta)).normalized()
+        r_fold_pts.append(pt)
+        r_fold_w.append(width_dir)
+        r_fold_n.append(n_v)
+    build_strap_mesh("RightEndFold", r_fold_pts, r_fold_w, r_fold_n, half_w=0.0195, half_t=0.0028, mat_main=m_leather)
+
+    # Continuous U-fold bight looping around the outside of the left hand at u_pts[-1] -> l_pts[-1]
+    bight_pts, bight_w, bight_n = [], [], []
+    for i in range(21):
+        theta = (i / 20.0) * math.pi
+        c_mid = 0.5 * (u_pts[-1] + l_pts[-1])
+        rad_v = 0.5 * (u_pts[-1] - l_pts[-1])
+        pt = c_mid + rad_v * math.cos(theta) + along * (0.022 * math.sin(theta))
+        n_v = (rad_v.normalized() * math.cos(theta) + along * math.sin(theta)).normalized()
+        bight_pts.append(pt)
+        bight_w.append(width_dir)
+        bight_n.append(n_v)
+    build_strap_mesh("LeftHandLoopBight", bight_pts, bight_w, bight_n, half_w=0.0198, half_t=0.0028, mat_main=m_leather)
+
+    # Tapered leather tip emerging cleanly past the left fold (x < -0.450, 100% outside left fingers!)
+    tail_pts, tail_w, tail_n = [], [], []
+    for i in range(15):
+        kt = i / 14.0
+        pt = u_pts[-1] + along * (0.004 + kt * 0.036) - width_dir * (0.008 * kt * kt) - normal_dir * (0.003 * kt)
+        tail_pts.append(pt)
+        taper = 1.0 - 0.55 * (kt * kt)
+        tail_w.append(width_dir * taper)
+        tail_n.append(normal_dir)
+    build_strap_mesh("WhipTailEnd", tail_pts, tail_w, tail_n, half_w=0.0195, half_t=0.0027, mat_main=m_leather)
+
+    # Contrasting saddle stitching along the upper strap & burnished edge rails
+    for i in range(0, n_seg, 2):
+        p0 = u_pts[i]
+        p1 = u_pts[min(n_seg, i + 1)]
+        for edge in (-1, 1):
+            edge_pos0 = p0 + width_dir * (edge * 0.0202)
+            edge_pos1 = p1 + width_dir * (edge * 0.0202)
+            add_rod(f"BurnishedEdge_{i}_{edge}", edge_pos0, edge_pos1, 0.0012, 0.0012, m_leather_dark, 6)
+            for face in (-1, 1):
+                st_off = width_dir * (edge * 0.0162) + normal_dir * (face * 0.0031)
+                add_rod(f"SaddleStitch_{i}_{edge}_{face}", p0 + st_off, p1 + st_off, 0.0007, 0.0007, m_stitch, 6)
+
+    # Hollow brass eyelets along the upper strap
+    for idx, t_hole in enumerate([0.20, 0.32, 0.44, 0.56, 0.68, 0.80]):
+        center = upper_strap_pos(t_hole)
+        for face in (-1, 1):
+            ring_pts = [
+                center + normal_dir * (face * 0.0032)
+                + along * (0.0038 * math.cos(k * math.tau / 18))
+                + width_dir * (0.0038 * math.sin(k * math.tau / 18))
+                for k in range(18)
+            ]
+            for k in range(18):
+                add_rod(f"Eyelet_{idx}_{face}_{k}", ring_pts[k], ring_pts[(k + 1) % 18], 0.0010, 0.0010, m_gold, 8)
+        add_rod(f"EyeletHole_{idx}", center - normal_dir * 0.0030, center + normal_dir * 0.0030, 0.0026, 0.0026, m_leather_dark, 12)
+
+    # --------------------------------------------------------------------------
+    # 3) MASSIVE SCULPTED 90s BRASS BUCKLE WITH CHAMFERS, ENGRAVING & STEEL PRONG
+    # --------------------------------------------------------------------------
+    b_center = upper_strap_pos(0.56) + normal_dir * 0.0072
+    bx_half = 0.030
+    by_half = 0.024
+
+    # Outer forged chamfered brass frame
+    frame_corners = []
+    for cx, cy, start_deg in ((bx_half, by_half, 0), (-bx_half, by_half, 90), (-bx_half, -by_half, 180), (bx_half, -by_half, 270)):
+        for k in range(6):
+            a = math.radians(start_deg + k * 18)
+            frame_corners.append(b_center + along * (cx + 0.0065 * math.cos(a)) + width_dir * (cy + 0.0065 * math.sin(a)))
+    for k in range(len(frame_corners)):
+        p_a = frame_corners[k]
+        p_b = frame_corners[(k + 1) % len(frame_corners)]
+        add_rod(f"BuckleOuterFrame_{k}", p_a, p_b, 0.0048, 0.0048, m_gold, 14)
+        p_ia = b_center + (p_a - b_center) * 0.84 - normal_dir * 0.0010
+        p_ib = b_center + (p_b - b_center) * 0.84 - normal_dir * 0.0010
+        add_rod(f"BuckleInnerBevel_{k}", p_ia, p_ib, 0.0022, 0.0022, m_brass_recess, 10)
+
+    # Sculpted 90s decorative crest plate on the rear half of the buckle + engraved relief bars
+    plate_center = b_center - along * 0.011 + normal_dir * 0.0018
+    for rib_k, wy in enumerate([-0.015, -0.008, 0.0, 0.008, 0.015]):
+        rib_p0 = plate_center - along * 0.015 + width_dir * wy
+        rib_p1 = plate_center + along * 0.011 + width_dir * wy
+        mat_rib = m_gold if rib_k % 2 == 0 else m_brass_recess
+        rad_rib = 0.0024 if rib_k % 2 == 0 else 0.0018
+        add_rod(f"BuckleReliefRib_{rib_k}", rib_p0, rib_p1, rad_rib, rad_rib, mat_rib, 10)
+
+    # Raised 5-pointed star / emblem relief in the center of the brass buckle plate
+    star_c = plate_center + normal_dir * 0.0022
+    for ray in range(5):
+        ang = ray * math.tau / 5.0
+        tip_p = star_c + along * (0.010 * math.cos(ang)) + width_dir * (0.010 * math.sin(ang))
+        add_rod(f"BuckleStarRay_{ray}", star_c, tip_p, 0.0026, 0.0009, m_gold, 8)
+
+    # Corner bolster studs on the brass frame
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            stud_p = b_center + along * (sx * 0.029) + width_dir * (sy * 0.022) + normal_dir * 0.0030
+            add_rod(f"BuckleCornerStud_{sx}_{sy}", stud_p - normal_dir * 0.0025, stud_p + normal_dir * 0.0025, 0.0035, 0.0028, m_gold, 10)
+
+    # Front knurled brass roller bar & rear hinge bar
+    roller_c = b_center + along * (bx_half + 0.0055)
+    add_rod("BuckleFrontRoller", roller_c - width_dir * 0.022, roller_c + width_dir * 0.022, 0.0058, 0.0058, m_gold, 16)
+    hinge_c = b_center - along * (bx_half - 0.004)
+    add_rod("BuckleHingeAxle", hinge_c - width_dir * 0.024, hinge_c + width_dir * 0.024, 0.0034, 0.0034, m_brass_recess, 14)
+
+    # Heavy tapered steel buckle prong (стальной язычок)
+    prong_base = hinge_c + normal_dir * 0.0028
+    prong_mid  = b_center + normal_dir * 0.0064
+    prong_tip  = roller_c + along * 0.004 + normal_dir * 0.0050
+    add_rod("SteelProngRear", prong_base, prong_mid, 0.0032, 0.0026, m_prong, 12)
+    add_rod("SteelProngTip",  prong_mid,  prong_tip, 0.0026, 0.0013, m_prong, 12)
+
+    # Leather keeper loop (тренчик) wrapping both upper & lower straps at t=0.42 + flush brass rivets on the curved strap
+    ku_c = upper_strap_pos(0.42)
+    kl_c = lower_strap_pos(0.42)
+    k_pts = [
+        ku_c + width_dir * 0.0225 + normal_dir * 0.0042,
+        ku_c - width_dir * 0.0225 + normal_dir * 0.0042,
+        kl_c - width_dir * 0.0215 - normal_dir * 0.0042,
+        kl_c + width_dir * 0.0215 - normal_dir * 0.0042,
+    ]
+    for k in range(4):
+        add_rod(f"LeatherKeeper_{k}", k_pts[k], k_pts[(k + 1) % 4], 0.0036, 0.0036, m_leather_dark, 10)
+    for t_riv in (0.37, 0.46):
+        rv_p = upper_strap_pos(t_riv)
+        add_rod(f"BrassRivet_{t_riv}", rv_p - normal_dir * 0.0030, rv_p + normal_dir * 0.0038, 0.0032, 0.0032, m_gold, 12)
+
+    finalize_and_export("weapon_belt_90s.glb", preserve_smoothing=True)
 
 # ==============================================================================
 # 11. WEAPON 2: 90s SOLDERING IRON WITH BLUE TAPE (weapon_solder_90s.glb)
 # ==============================================================================
 def build_weapon_solder():
     clear_scene()
-    m_wood = make_mat("LatheWood", (0.50, 0.23, 0.10, 1), roughness=0.42)
-    m_tape = make_mat("BlueTape", (0.10, 0.40, 0.96, 1), roughness=0.28)
-    m_collar = make_mat("Bakelite", (0.14, 0.12, 0.12, 1), roughness=0.35)
-    m_steel = make_mat("HeaterSteel", (0.74, 0.78, 0.84, 1), metallic=0.82, roughness=0.24)
-    m_copper = make_mat("HotCopper", (0.98, 0.46, 0.12, 1), metallic=0.55, roughness=0.20)
-    m_glow = make_mat("TipGlow", (1.0, 0.80, 0.26, 1), roughness=0.1)
+    m_wood       = make_mat("LatheWood", (0.42, 0.19, 0.08, 1), roughness=0.40)
+    m_wood_dark  = make_mat("TurnedWoodGroove", (0.24, 0.10, 0.04, 1), roughness=0.48)
+    m_tape       = make_mat("BluePvcTape", (0.08, 0.36, 0.94, 1), roughness=0.22)
+    m_tape_edge  = make_mat("BlueTapeOverlap", (0.04, 0.22, 0.68, 1), roughness=0.30)
+    m_bakelite   = make_mat("RibbedBakelite", (0.10, 0.09, 0.10, 1), roughness=0.32)
+    m_steel      = make_mat("HeaterSteel", (0.76, 0.80, 0.86, 1), metallic=0.88, roughness=0.22)
+    m_heat_steel = make_mat("HeatTemperedSteel", (0.46, 0.42, 0.54, 1), metallic=0.84, roughness=0.28)
+    m_mica       = make_mat("MicaCore", (0.28, 0.18, 0.12, 1), roughness=0.65)
+    m_copper     = make_mat("ForgedCopper", (0.94, 0.42, 0.14, 1), metallic=0.85, roughness=0.22)
+    m_tinned     = make_mat("SilverTinning", (0.92, 0.95, 0.98, 1), metallic=0.95, roughness=0.12)
+    m_glow       = make_mat("HotEmber", (1.0, 0.72, 0.22, 1), roughness=0.10)
 
-    # Strictly along Raylib +Z axis (from Z=-0.12 to Z=+0.46)!
-    add_sphere("Pommel", (0, 0, -0.12), 0.017, m_wood, segments=14, ring_count=10)
-    add_rod("WoodHandle", (0, 0, -0.12), (0, 0, 0.12), 0.016, 0.016, m_wood, 16)
-    add_rod("BlueTapeWrap", (0, 0, -0.06), (0, 0, 0.06), 0.0175, 0.017, m_tape, 16)
-    for z in (-.105,-.09,.085,.10):
-        add_rod("Turned wood bead",(0,0,z),(0,0,z+.005),.018,.018,m_wood,24)
-    for i in range(6):
-        z=-.058+i*.019
-        add_rod("Tape overlap",(0,0,z),(0,0,z+.0015),.0177,.0177,m_tape,24)
-    add_rod("GuardFlange", (0, 0, 0.115), (0, 0, 0.135), 0.038, 0.036, m_collar, 16)
-    add_rod("HeaterTube", (0, 0, 0.135), (0, 0, 0.365), 0.016, 0.015, m_steel, 14)
-    for r_i in range(4):
-        rz = 0.165 + r_i * 0.048
-        add_rod(f"VentRing_{r_i}", (0, 0, rz), (0, 0, rz+0.012), 0.019, 0.019, m_collar, 14)
-    add_rod("CopperTip", (0, 0, 0.365), (0, 0.014, 0.455), 0.014, 0.005, m_copper, 12)
-    add_rod("GlowingPoint", (0, 0.014, 0.455), (0, 0.018, 0.485), 0.006, 0.002, m_glow, 10)
+    # 1) Ergonomic lathe-turned birch handle along +Z (from Z=-0.125 to Z=+0.115)
+    handle_profile = [
+        (-0.125, 0.0085),
+        (-0.118, 0.0145),
+        (-0.104, 0.0178),
+        (-0.088, 0.0155),
+        (-0.065, 0.0182),
+        (-0.020, 0.0202),
+        ( 0.030, 0.0196),
+        ( 0.072, 0.0168),
+        ( 0.092, 0.0148),
+        ( 0.108, 0.0172),
+        ( 0.115, 0.0165),
+    ]
+    for i in range(len(handle_profile) - 1):
+        z0, r0 = handle_profile[i]
+        z1, r1 = handle_profile[i + 1]
+        mat_seg = m_wood_dark if i in (2, 7) else m_wood
+        add_rod(f"TurnedHandle_{i}", (0, 0, z0), (0, 0, z1), r0, r1, mat_seg, 24)
+
+    # Rubber strain-relief cord boot at rear pommel
+    add_rod("CordBoot_0", (0, 0, -0.152), (0, 0, -0.124), 0.0055, 0.0095, m_bakelite, 16)
+    for bz in (-0.144, -0.136, -0.129):
+        add_rod(f"BootRib_{bz}", (0, 0, bz), (0, 0, bz + 0.003), 0.0098, 0.0098, m_bakelite, 16)
+
+    # 2) Realistic Diagonal Helical Wraps of 90s Blue PVC Electrical Tape (косые витки синей ПВХ-изоленты)
+    # 7 overlapping diagonal spiral turns from Z=-0.068 to Z=+0.074
+    n_turns = 7
+    pts_per_turn = 24
+    total_steps = n_turns * pts_per_turn
+    tape_verts = []
+    tape_faces = []
+    tape_half_w = 0.0095
+    for step in range(total_steps + 1):
+        u = step / total_steps
+        theta = step * (math.tau / pts_per_turn)
+        z_center = -0.064 + u * 0.134 + 0.0045 * math.sin(theta)
+        # Match handle swell radius + tape layer thickness
+        r_base = 0.0185 + 0.0022 * math.sin(u * math.pi) + 0.0007 * ((step // pts_per_turn) % 2)
+        nx = math.cos(theta)
+        ny = math.sin(theta)
+        # Cross section of overlapping PVC tape strip (tilted slightly for shingle overlap)
+        for w_s, r_s in ((-tape_half_w, r_base - 0.0003), (tape_half_w, r_base + 0.0005),
+                         (tape_half_w, r_base + 0.0016), (-tape_half_w, r_base + 0.0008)):
+            tape_verts.append(rl_pos((r_s * nx, r_s * ny, z_center + w_s)))
+    for i in range(total_steps):
+        b0 = i * 4
+        b1 = (i + 1) * 4
+        for j in range(4):
+            jn = (j + 1) % 4
+            tape_faces.append((b0 + j, b0 + jn, b1 + jn, b1 + j))
+    t_mesh = bpy.data.meshes.new("HelicalBlueTape")
+    t_mesh.from_pydata(tape_verts, [], tape_faces)
+    t_mesh.update()
+    t_obj = bpy.data.objects.new("HelicalBlueTape", t_mesh)
+    bpy.context.collection.objects.link(t_obj)
+    t_obj.data.materials.append(m_tape)
+    for poly in t_obj.data.polygons:
+        poly.use_smooth = True
+
+    # Raised darker blue overlap seam ridges along the helical tape
+    for turn in range(n_turns):
+        seam_pts = []
+        for k in range(pts_per_turn + 1):
+            step = turn * pts_per_turn + k
+            u = step / total_steps
+            theta = step * (math.tau / pts_per_turn)
+            zc = -0.064 + u * 0.134 + 0.0045 * math.sin(theta) + tape_half_w
+            rb = 0.0198 + 0.0022 * math.sin(u * math.pi)
+            seam_pts.append((rb * math.cos(theta), rb * math.sin(theta), zc))
+        for k in range(pts_per_turn):
+            add_rod(f"TapeSeam_{turn}_{k}", seam_pts[k], seam_pts[k + 1], 0.0008, 0.0008, m_tape_edge, 6)
+
+    # Loose diagonal blue tape tab sticking out slightly near the front wrap
+    add_box("BlueTapeTailTab", (0.019, -0.008, 0.058), (0.009, 0.002, 0.018), m_tape, rot=(0.2, 0.35, -0.4), bevel=0.0005)
+
+    # 3) Compact Ribbed Black Bakelite Collar / Socket (NO flat saucer guard!)
+    add_rod("BakeliteBase", (0, 0, 0.114), (0, 0, 0.154), 0.0182, 0.0168, m_bakelite, 24)
+    for r_idx, rz in enumerate([0.118, 0.127, 0.136, 0.145]):
+        rad = 0.0218 - r_idx * 0.0007
+        add_rod(f"BakeliteFin_{r_idx}", (0, 0, rz), (0, 0, rz + 0.0048), rad, rad * 0.96, m_bakelite, 24)
+    # Stamped hexagonal steel collar nut
+    add_rod("CollarHexNut", (0, 0, 0.154), (0, 0, 0.166), 0.0172, 0.0165, m_steel, 6)
+
+    # 4) Tubular Steel Heater with Real Longitudinal Ventilation Windows & Clamping Screw
+    # Inner mica insulation core visible through the perforated slots
+    add_rod("InnerMicaCore", (0, 0, 0.166), (0, 0, 0.350), 0.0102, 0.0098, m_mica, 16)
+    for coil_z in range(12):
+        cz = 0.178 + coil_z * 0.013
+        add_rod(f"NichromeWind_{coil_z}", (0, 0, cz), (0, 0, cz + 0.003), 0.0108, 0.0108, m_copper, 16)
+
+    # Outer tubular steel heater shell
+    heater = add_rod("HeaterSteelTube", (0, 0, 0.165), (0, 0, 0.356), 0.0142, 0.0134, m_steel, 28)
+    # Cut 4 longitudinal rows of 2 ventilation slot windows through the steel tube
+    for row_z, slot_len in [(0.212, 0.046), (0.282, 0.046)]:
+        for ang_deg in (0, 90, 180, 270):
+            rad_a = math.radians(ang_deg + 25)
+            cx = 0.0135 * math.cos(rad_a)
+            cy = 0.0135 * math.sin(rad_a)
+            bpy.ops.mesh.primitive_cube_add(size=1.0, location=rl_pos((cx, cy, row_z)))
+            cutter = bpy.context.active_object
+            cutter.scale = rl_scale((0.0085 if abs(math.cos(rad_a)) < 0.7 else 0.018,
+                                     0.0085 if abs(math.sin(rad_a)) < 0.7 else 0.018,
+                                     slot_len))
+            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+            bpy.context.view_layer.objects.active = heater
+            mod = heater.modifiers.new("VentWindow", 'BOOLEAN')
+            mod.operation = 'DIFFERENCE'
+            mod.object = cutter
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+            bpy.data.objects.remove(cutter, do_unlink=True)
+
+    # Heat-blued front nozzle collar + Side Clamping Screw (зажимной винт)
+    add_rod("FrontClampCollar", (0, 0, 0.334), (0, 0, 0.360), 0.0156, 0.0150, m_heat_steel, 24)
+    for band_z in (0.172, 0.248, 0.320):
+        add_rod(f"HeaterReinforceBand_{band_z}", (0, 0, band_z), (0, 0, band_z + 0.007), 0.0152, 0.0152, m_heat_steel, 24)
+
+    # Protruding side clamping screw Boss + Slotted Screw Head on upper-left visible side
+    screw_dir = Vector((-0.78, 0.62, 0)).normalized()
+    boss_p0 = screw_dir * 0.012 + Vector((0, 0, 0.346))
+    boss_p1 = screw_dir * 0.022 + Vector((0, 0, 0.346))
+    head_p1 = screw_dir * 0.027 + Vector((0, 0, 0.346))
+    add_rod("ClampScrewBoss", (boss_p0.x, boss_p0.y, boss_p0.z), (boss_p1.x, boss_p1.y, boss_p1.z), 0.0052, 0.0052, m_heat_steel, 14)
+    add_rod("ClampScrewHead", (boss_p1.x, boss_p1.y, boss_p1.z), (head_p1.x, head_p1.y, head_p1.z), 0.0068, 0.0068, m_steel, 16)
+    add_box("ClampScrewSlot", (head_p1.x, head_p1.y, head_p1.z), (0.002, 0.002, 0.011), m_bakelite)
+
+    # 5) Faceted Chisel/Wedge Copper Tip (граненое клиновидное медное жало) with Silvery Tinning
+    # Round copper shank leaving the heater tube
+    add_rod("CopperShank", (0, 0, 0.358), (0, 0.003, 0.402), 0.0096, 0.0092, m_copper, 18)
+
+    # 4-sided faceted wedge chisel mesh from Z=0.398 to Z=0.478 (copper body -> silvery tinned bevel)
+    def add_chisel_segment(name, z0, y0, rx0, ry0, z1, y1, rx1, ry1, mat_seg):
+        pts = [
+            rl_pos((-rx0, y0 - ry0, z0)),
+            rl_pos(( rx0, y0 - ry0, z0)),
+            rl_pos(( rx0, y0 + ry0, z0)),
+            rl_pos((-rx0, y0 + ry0, z0)),
+            rl_pos((-rx1, y1 - ry1, z1)),
+            rl_pos(( rx1, y1 - ry1, z1)),
+            rl_pos(( rx1, y1 + ry1, z1)),
+            rl_pos((-rx1, y1 + ry1, z1)),
+        ]
+        fcs = [
+            (0, 1, 5, 4), (1, 2, 6, 5),
+            (2, 3, 7, 6), (3, 0, 4, 7),
+            (3, 2, 1, 0), (4, 5, 6, 7),
+        ]
+        m = bpy.data.meshes.new(name)
+        m.from_pydata(pts, [], fcs)
+        m.update()
+        o = bpy.data.objects.new(name, m)
+        bpy.context.collection.objects.link(o)
+        o.data.materials.append(mat_seg)
+        return o
+
+    # Forged copper wedge body
+    add_chisel_segment("CopperWedgeBody", 0.398, 0.003, 0.0088, 0.0085, 0.436, 0.010, 0.0094, 0.0044, m_copper)
+    # Silvery POS-61 tinned chisel working edge (серебристое лужение на острие)
+    add_chisel_segment("SilverTinnedEdge", 0.436, 0.010, 0.0094, 0.0044, 0.474, 0.017, 0.0086, 0.0011, m_tinned)
+    # Hot glowing solder bead right on the chisel apex
+    add_sphere("HotSolderDrop", (0, 0.017, 0.476), 0.0026, m_glow, scale=(2.2, 0.7, 1.4), segments=12, ring_count=8)
 
     finalize_and_export("weapon_solder_90s.glb")
 
@@ -508,67 +821,170 @@ def build_weapon_solder():
 # ==============================================================================
 def build_weapon_shotgun():
     clear_scene()
-    m_walnut = make_mat("WalnutStock", (0.46, 0.22, 0.10, 1), roughness=0.38)
-    m_receiver = make_mat("ReceiverSteel", (0.30, 0.33, 0.38, 1), metallic=0.80, roughness=0.26)
-    m_barrel = make_mat("BluedSteel", (0.18, 0.21, 0.26, 1), metallic=0.88, roughness=0.20)
-    m_brass = make_mat("BrassBead", (0.96, 0.78, 0.24, 1), metallic=0.85, roughness=0.2)
+    m_walnut       = make_mat("DarkWalnut", (0.16, 0.072, 0.034, 1), roughness=0.36)
+    m_walnut_check = make_mat("CheckeredWalnut", (0.095, 0.042, 0.018, 1), roughness=0.58)
+    m_receiver     = make_mat("ReceiverSteel", (0.64, 0.68, 0.75, 1), metallic=0.88, roughness=0.22)
+    m_steel_dark   = make_mat("DarkSteelTrim", (0.25, 0.28, 0.34, 1), metallic=0.82, roughness=0.32)
+    m_barrel       = make_mat("BluedSteel", (0.11, 0.14, 0.19, 1), metallic=0.90, roughness=0.18)
+    m_bore         = make_mat("BoreBlack", (0.02, 0.02, 0.03, 1), roughness=0.85)
+    m_brass        = make_mat("BrassBead", (0.96, 0.78, 0.22, 1), metallic=0.90, roughness=0.16)
 
     def smooth(obj):
-        for face in obj.data.polygons: face.use_smooth = len(face.vertices)<=4
+        for face in obj.data.polygons:
+            face.use_smooth = len(face.vertices) <= 4
         return obj
 
     def curve(name, points, radius, material):
-        data=bpy.data.curves.new(name,'CURVE')
-        data.dimensions='3D'; data.bevel_depth=radius; data.bevel_resolution=3
-        spline=data.splines.new('BEZIER'); spline.bezier_points.add(len(points)-1)
-        for p,co in zip(spline.bezier_points,points):
-            p.co=rl_pos(co); p.handle_left_type=p.handle_right_type='AUTO'
-        obj=bpy.data.objects.new(name,data); bpy.context.collection.objects.link(obj)
+        data = bpy.data.curves.new(name, 'CURVE')
+        data.dimensions = '3D'
+        data.bevel_depth = radius
+        data.bevel_resolution = 4
+        spline = data.splines.new('BEZIER')
+        spline.bezier_points.add(len(points) - 1)
+        for p, co in zip(spline.bezier_points, points):
+            p.co = rl_pos(co)
+            p.handle_left_type = p.handle_right_type = 'AUTO'
+        obj = bpy.data.objects.new(name, data)
+        bpy.context.collection.objects.link(obj)
         data.materials.append(material)
-        bpy.ops.object.select_all(action='DESELECT'); obj.select_set(True)
-        bpy.context.view_layer.objects.active=obj; bpy.ops.object.convert(target='MESH')
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.convert(target='MESH')
         return obj
 
-    # One continuous oval walnut wrist, with 24 vertices around every section.
-    rings=[(-.106,.099,.027,.021),(-.095,.091,.027,.023),(-.065,.071,.024,.024),
-           (-.035,.048,.022,.023),(-.010,.018,.023,.027),(.004,-.018,.026,.029)]
-    verts=[rl_pos((rx*math.cos(i*math.tau/24),y,z+rz*math.sin(i*math.tau/24)))
-           for y,z,rx,rz in rings for i in range(24)]
-    faces=[(k*24+i,k*24+(i+1)%24,(k+1)*24+(i+1)%24,(k+1)*24+i)
-           for k in range(len(rings)-1) for i in range(24)]
-    faces += [tuple(reversed(range(24))),tuple(range(len(verts)-24,len(verts)))]
-    mesh=bpy.data.meshes.new('Walnut wrist 24 segments'); mesh.from_pydata(verts,[],faces); mesh.update()
-    grip=bpy.data.objects.new('Continuous walnut grip',mesh); bpy.context.collection.objects.link(grip)
-    mesh.materials.append(m_walnut); smooth(grip)
-    # Keep the walnut silhouette clean: raised checkering curves extended
-    # beyond the taper and appeared as loose splinters in first person.
-    smooth(add_sphere('Steel grip heel',(0,-.105,.099),1,m_receiver,scale=(.028,.004,.022),segments=24))
-    # Twin rounded fences blend into a tapered action and polished upper tang.
-    for side in (-1,1):
-        smooth(add_sphere('Rounded breech fence',(side*.017,.020,-.064),1,m_receiver,
-                          scale=(.021,.029,.050),segments=32,ring_count=16))
-    smooth(add_sphere('Action belly',(0,-.004,-.055),1,m_receiver,scale=(.031,.023,.055),segments=24))
-    curve('Swept top tang',[(0,.040,-.060),(0,.033,-.020),(0,.017,.021),(0,-.002,.045)],.006,m_receiver)
-    curve('Westley Richards locking lever',[(0,.047,-.075),(.005,.054,-.055),(.008,.054,-.023),(.012,.043,.006)],.0035,m_barrel)
-    smooth(add_sphere('Lever thumb head',(.012,.043,.008),1,m_receiver,scale=(.009,.004,.012),segments=24))
-    for side in (-1,1):
-        x=side*.029
-        smooth(add_rod('Hammer pivot',(x-side*.003,.014,-.047),(x+side*.003,.014,-.047),.007,.007,m_barrel,24))
-        curve('Cocked external hammer',[(x,.014,-.047),(x,.032,-.032),(x,.058,-.024),(x,.065,-.041)],.0045,m_barrel)
-        smooth(add_sphere('Hammer spur',(x,.059,-.017),1,m_receiver,scale=(.006,.004,.011),segments=24))
-    curve('Oval trigger guard',[(0,-.020,-.085),(0,-.047,-.081),(0,-.056,-.053),
-                               (0,-.048,-.019),(0,-.021,-.006)],.003,m_barrel)
-    for x,z in ((-.005,-.065),(.005,-.041)):
-        curve('Separate curved trigger',[(x,-.019,z),(x,-.035,z+.006),(x,-.042,z-.001)],.0023,m_receiver)
-    smooth(add_sphere('Rounded walnut forearm',(0,-.004,-.205),1,m_walnut,
-                      scale=(.027,.019,.105),segments=24,ring_count=16))
+    # 1) ERGONOMIC DARK WALNUT PISTOL GRIP WITH FINGER GROOVES & METAL MEDALLION CAP
+    # Rich dark walnut (never orange!), contoured oval cross-section with 3 front finger grooves
+    rings = [
+        # (y,     z,     rx,    rz,    front_groove_indent)
+        (-0.104, 0.098, 0.025, 0.022,  0.002),  # flared pommel swell
+        (-0.092, 0.090, 0.023, 0.021, -0.003),  # finger groove 3 (pinky)
+        (-0.079, 0.080, 0.024, 0.023,  0.002),  # ridge 2
+        (-0.064, 0.068, 0.022, 0.021, -0.0035), # finger groove 2 (ring)
+        (-0.050, 0.057, 0.023, 0.023,  0.002),  # ridge 1
+        (-0.036, 0.044, 0.021, 0.021, -0.0035), # finger groove 1 (middle)
+        (-0.020, 0.027, 0.021, 0.024,  0.000),  # upper wrist waist
+        (-0.004, 0.005, 0.024, 0.027,  0.000),  # receiver tang transition
+        ( 0.008,-0.020, 0.026, 0.029,  0.000),  # action socket join
+    ]
+    n_circ = 28
+    verts = []
+    for y, z, rx, rz, fg in rings:
+        for i in range(n_circ):
+            ang = i * math.tau / n_circ
+            # Flatten sides slightly for authentic shotgun wrist feel + front finger groove modulation
+            sx = rx * math.cos(ang) * (0.92 + 0.08 * abs(math.sin(ang)))
+            sz = rz * math.sin(ang)
+            if math.sin(ang) < -0.35:
+                sz -= fg * ((-math.sin(ang) - 0.35) / 0.65)
+            verts.append(rl_pos((sx, y, z + sz)))
+    faces = [
+        (k * n_circ + i, k * n_circ + (i + 1) % n_circ, (k + 1) * n_circ + (i + 1) % n_circ, (k + 1) * n_circ + i)
+        for k in range(len(rings) - 1) for i in range(n_circ)
+    ]
+    faces += [tuple(reversed(range(n_circ))), tuple(range(len(verts) - n_circ, len(verts)))]
+    mesh = bpy.data.meshes.new('ErgonomicWalnutGrip')
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    grip = bpy.data.objects.new('ErgonomicWalnutGrip', mesh)
+    bpy.context.collection.objects.link(grip)
+    mesh.materials.append(m_walnut)
+    mesh.materials.append(m_walnut_check)
+    # Assign dark checkered walnut material directly to the flush side-panel polygons of the grip
+    # so the silhouette stays 100% sleek and anatomical without protruding pegs!
+    for k in range(1, len(rings) - 2):
+        for i in range(n_circ):
+            ang = i * math.tau / n_circ
+            if abs(math.cos(ang)) > 0.72 and abs(math.sin(ang)) < 0.62:
+                poly_idx = k * n_circ + i
+                if poly_idx < len(mesh.polygons):
+                    mesh.polygons[poly_idx].material_index = 1
+    smooth(grip)
 
-    for side in [-1, 1]:
-        bx = side * 0.017
-        smooth(add_rod(f"Barrel_{side}", (bx, 0.024, -0.095), (bx, 0.024, -0.455), 0.0165, 0.0160, m_barrel, 32))
-        smooth(add_rod(f"MuzzleCrown_{side}", (bx, 0.024, -0.455), (bx, 0.024, -0.468), 0.0175, 0.0175, m_receiver, 32))
-    add_box("CenterRib", (0, 0.038, -0.275), (0.008, 0.004, 0.36), m_barrel, bevel=.001)
-    add_sphere("FrontBead", (0, 0.045, -0.450), 0.006, m_brass, segments=8, ring_count=6)
+    # Subtle flush brass grip escutcheon pin on the side of the dark walnut wrist
+    add_rod("GripEscutcheonPin", (-0.0205, -0.056, 0.062), (0.0205, -0.056, 0.062), 0.0028, 0.0028, m_brass, 12)
+
+    # Polished steel pommel buttcap (стальной тыльник) + golden brass medallion (латунный медальон)
+    smooth(add_rod("SteelPommelCap", (0, -0.102, 0.096), (0, -0.111, 0.104), 0.0255, 0.0225, m_receiver, 24))
+    smooth(add_rod("PommelBezelRing", (0, -0.103, 0.097), (0, -0.106, 0.100), 0.0265, 0.0262, m_steel_dark, 24))
+    smooth(add_rod("BrassGripMedallion", (0, -0.110, 0.103), (0, -0.1135, 0.1065), 0.0125, 0.0105, m_brass, 18))
+
+    # 2) MACHINED STEEL BOXLOCK RECEIVER WITH SIDE CHEEKS, SCREWS & EXTERNAL HAMMERS
+    # Main sculpted steel receiver block
+    add_box("ReceiverCoreBlock", (0, 0.011, -0.056), (0.048, 0.044, 0.082), m_receiver, bevel=0.008)
+    for side in (-1, 1):
+        # Hemispherical breech balls (яблоки колодки)
+        smooth(add_sphere(f"BreechFence_{side}", (side * 0.0175, 0.023, -0.048), 1.0, m_receiver,
+                          scale=(0.019, 0.026, 0.036), segments=24, ring_count=14))
+        # Teardrop sidelock cheek plates (боковые фигурные щеки колодки)
+        add_box(f"SideCheekPlate_{side}", (side * 0.0245, 0.008, -0.042), (0.004, 0.026, 0.074), m_receiver, bevel=0.003)
+        add_box(f"SideCheekBorder_{side}", (side * 0.0258, 0.008, -0.042), (0.002, 0.020, 0.064), m_steel_dark, bevel=0.0015)
+
+        # Visible slotted gunsmith screws & brass hinge pin on the side cheeks
+        for s_idx, (sy, sz, s_rad, s_mat) in enumerate([
+            (0.012, -0.022, 0.0038, m_steel_dark),
+            (0.004, -0.052, 0.0034, m_steel_dark),
+            (0.006, -0.078, 0.0052, m_brass),  # Main hinge pin rosette
+        ]):
+            sx_in  = side * 0.024
+            sx_out = side * 0.0285
+            add_rod(f"ReceiverScrew_{side}_{s_idx}", (sx_in, sy, sz), (sx_out, sy, sz), s_rad, s_rad, s_mat, 14)
+            add_box(f"ScrewSlot_{side}_{s_idx}", (sx_out, sy, sz), (0.0015, s_rad * 1.6, 0.0012), m_bore)
+
+    # Upper & lower steel tangs gripping the dark walnut wrist
+    curve("UpperSteelTang", [(0, 0.034, -0.040), (0, 0.025, -0.010), (0, 0.010, 0.020), (0, -0.005, 0.044)], 0.0055, m_receiver)
+    add_rod("TangScrew", (0, 0.008, 0.024), (0, 0.013, 0.027), 0.0032, 0.0032, m_steel_dark, 12)
+
+    # Top Westley Richards locking lever
+    curve("TopLockingLever", [(0, 0.042, -0.058), (0.004, 0.049, -0.040), (0.009, 0.048, -0.014), (0.014, 0.039, 0.010)], 0.0038, m_steel_dark)
+    smooth(add_sphere("LeverThumbPaddle", (0.014, 0.039, 0.012), 1.0, m_receiver, scale=(0.008, 0.004, 0.012), segments=18))
+
+    # Twin cocked external hammers (взведенные курки с насечкой)
+    for side in (-1, 1):
+        hx = side * 0.0275
+        smooth(add_rod(f"HammerBoss_{side}", (hx - side * 0.003, 0.014, -0.036), (hx + side * 0.003, 0.014, -0.036), 0.0072, 0.0072, m_receiver, 20))
+        add_rod(f"HammerPivotScrew_{side}", (hx - side * 0.004, 0.014, -0.036), (hx + side * 0.004, 0.014, -0.036), 0.0035, 0.0035, m_brass, 12)
+        curve(f"ExternalHammer_{side}", [(hx, 0.014, -0.036), (hx, 0.034, -0.022), (hx, 0.056, -0.016), (hx, 0.064, -0.034)], 0.0042, m_steel_dark)
+        smooth(add_sphere(f"HammerSpur_{side}", (hx, 0.060, -0.010), 1.0, m_receiver, scale=(0.0055, 0.0038, 0.011), segments=18))
+
+    # Sculpted trigger guard & twin curved triggers
+    curve("TriggerGuardBow", [(0, -0.014, -0.078), (0, -0.044, -0.072), (0, -0.052, -0.042),
+                              (0, -0.043, -0.010), (0, -0.018,  0.006)], 0.0034, m_steel_dark)
+    for t_idx, (tx, tz) in enumerate([(-0.0045, -0.056), (0.0045, -0.034)]):
+        curve(f"ShotgunTrigger_{t_idx}", [(tx, -0.014, tz), (tx, -0.032, tz + 0.005), (tx, -0.040, tz - 0.002)], 0.0024, m_brass if t_idx == 0 else m_receiver)
+
+    # 3) SCULPTED DARK WALNUT SPLINTER FOREND WITH CHECKERING & STEEL DEELEY LATCH
+    smooth(add_sphere("DarkWalnutForend", (0, -0.003, -0.205), 1.0, m_walnut,
+                      scale=(0.028, 0.019, 0.110), segments=28, ring_count=16))
+    for side in (-1, 1):
+        # Finger grooves along the upper side of the walnut forend
+        add_rod(f"ForendFingerGroove_{side}", (side * 0.023, 0.007, -0.140), (side * 0.021, 0.007, -0.270), 0.0032, 0.0028, m_walnut_check, 10)
+        for f_row in range(5):
+            fz = -0.155 - f_row * 0.022
+            add_rod(f"ForendCheck_{side}_{f_row}", (side * 0.0255, -0.004, fz - 0.006), (side * 0.0255, 0.003, fz + 0.006), 0.0020, 0.0020, m_walnut_check, 8)
+    # Bright steel Deeley forend release latch & escutcheon on the bottom of the forend
+    add_box("ForendSteelLatch", (0, -0.021, -0.205), (0.010, 0.004, 0.068), m_receiver, bevel=0.0015)
+    add_rod("ForendIronTip", (0, 0.002, -0.095), (0, 0.002, -0.112), 0.025, 0.026, m_receiver, 20)
+
+    # 4) TWIN BLUED BARRELS WITH VENTILATED SIGHT RIB, HOLLOW BORES & BRASS FRONT BEAD
+    for side in (-1, 1):
+        bx = side * 0.0175
+        smooth(add_rod(f"BluedBarrel_{side}", (bx, 0.024, -0.092), (bx, 0.024, -0.456), 0.0168, 0.0158, m_barrel, 32))
+        smooth(add_rod(f"MuzzleCrown_{side}", (bx, 0.024, -0.456), (bx, 0.024, -0.466), 0.0166, 0.0164, m_receiver, 32))
+        smooth(add_rod(f"HollowBore_{side}",  (bx, 0.024, -0.452), (bx, 0.024, -0.467), 0.0132, 0.0132, m_bore, 24))
+        # Breech decorative reinforcing ring
+        smooth(add_rod(f"BreechBand_{side}",  (bx, 0.024, -0.092), (bx, 0.024, -0.115), 0.0176, 0.0172, m_receiver, 32))
+
+    # Central joining rib & raised ventilated top sighting rib (вентилируемая прицельная планка)
+    add_box("MidBarrelFiller", (0, 0.024, -0.275), (0.012, 0.012, 0.365), m_barrel)
+    add_box("VentilatedTopRib", (0, 0.0425, -0.276), (0.0095, 0.0035, 0.368), m_barrel, bevel=0.001)
+    for post_i in range(9):
+        pz = -0.110 - post_i * 0.042
+        add_box(f"RibBridgePost_{post_i}", (0, 0.0375, pz), (0.0085, 0.007, 0.014), m_receiver if post_i in (0, 8) else m_barrel)
+
+    # Muzzle rib block + bright golden-brass front bead sight (латунная мушка)
+    add_box("FrontSightBase", (0, 0.044, -0.448), (0.0075, 0.004, 0.014), m_receiver, bevel=0.001)
+    add_sphere("BrassFrontBead", (0, 0.049, -0.448), 0.0055, m_brass, segments=14, ring_count=10)
 
     finalize_and_export("weapon_shotgun_90s.glb", preserve_smoothing=True)
 
@@ -595,8 +1011,13 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
     obj.location -= (min_v + max_v) * 0.5
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    # Camera sees the leather face and the long side of the iron, never their ends.
-    direction = Vector((0, -.32, 1)) if "belt" in glb_name else Vector((1, -.35, .55))
+    # Camera sees the 3/4 leather loop & buckle face, and the rich 3/4 side of each weapon.
+    if "belt" in glb_name:
+        direction = Vector((0.08, 0.72, -0.68))
+    elif "solder" in glb_name:
+        direction = Vector((0.88, -0.34, 0.42))
+    else:
+        direction = Vector((1.0, -0.35, 0.52))
     rotation = (-direction).to_track_quat('-Z', 'Y')
     from mathutils import Quaternion
     rotation = rotation @ Quaternion(Vector((0,0,1)), math.radians(roll_deg))
@@ -617,7 +1038,14 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
 
     cam_data = bpy.data.cameras.new("IconCam")
     cam_data.type = 'ORTHO'
-    cam_data.ortho_scale = span * 1.08
+    if "belt" in glb_name:
+        cam_data.ortho_scale = span * 0.76
+    elif "shotgun" in glb_name:
+        cam_data.ortho_scale = span * 0.78
+    elif "solder" in glb_name:
+        cam_data.ortho_scale = span * 0.86
+    else:
+        cam_data.ortho_scale = span * 0.96
     cam_obj = bpy.data.objects.new("IconCam", cam_data)
     scene.collection.objects.link(cam_obj)
 
@@ -631,9 +1059,9 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
     scene.camera = cam_obj
 
     for lname, lpos, energy, col in [
-        ("SunKey",  (1.8, -2.5, 2.0), 5.0, (1.0, 0.96, 0.88)),
-        ("SunFill", (-2.0, -2.0, 1.0), 2.8, (0.78, 0.88, 1.0)),
-        ("SunRim",  (0.0, 2.0, 2.0),  3.5, (1.0, 0.88, 0.65)),
+        ("SunKey",  (1.8, -2.5, 2.0), 6.2, (1.0, 0.96, 0.88)),
+        ("SunFill", (-2.0, -2.0, 1.2), 3.8, (0.80, 0.90, 1.0)),
+        ("SunRim",  (0.0, 2.2, 2.2),  4.5, (1.0, 0.88, 0.65)),
     ]:
         ldata = bpy.data.lights.new(name=lname, type='SUN')
         ldata.energy = energy
@@ -651,13 +1079,21 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
     bpy.ops.render.render(write_still=True)
     print("Rendered icon:", out_png, os.path.getsize(out_png))
 
-if "--belt-only" in __import__("sys").argv:
+if "--weapons-only" in __import__("sys").argv:
     build_weapon_belt()
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 15.0)
+    build_weapon_solder()
+    build_weapon_shotgun()
+    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 28.0)
+    render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -36.0)
+    render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
+    render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 38.0)
+elif "--belt-only" in __import__("sys").argv:
+    build_weapon_belt()
+    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
 elif "--audit-fix" in __import__("sys").argv:
     build_hr_reception_desk()
     build_weapon_belt()
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 15.0)
+    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
 elif "--workshop6-icons" in __import__("sys").argv:
     render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
 elif "--workshop5" in __import__("sys").argv:
@@ -681,8 +1117,7 @@ else:
         build_weapon_solder()
         build_weapon_shotgun()
 
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 35.0)
-    render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -38.0)
+    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
+    render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -36.0)
     render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
-    if "--icons-only" not in __import__("sys").argv:
-        render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 28.0)
+    render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 28.0)

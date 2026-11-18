@@ -833,10 +833,17 @@ public class WeaponAndCombatView
             }
         }
 
-        Vector3 assembly = baseOffset + swingHandOffset;
+        // Rigid 3/4 combat stance for the Belt + Hands assembly:
+        // Positioned at -0.028f Y so there is a clean gap BOTH above the buckle (to the Tarot subtitle box)
+        // and below the buckle (above the white border of hotbar slot [1]).
+        Vector3 assembly = baseOffset + swingHandOffset + new Vector3(0.012f, -0.028f, 0.015f);
         Vector3 beltPos = new Vector3(.18f,-.155f,.592f) + assembly;
-        Matrix4x4 pose = Matrix4x4.CreateTranslation(-beltPos)
-            * Matrix4x4.CreateRotationX(whipExtension*.35f) * Matrix4x4.CreateTranslation(beltPos);
+        Vector3 pivotCenter = beltPos + new Vector3(-0.18f, 0f, 0f);
+        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivotCenter)
+            * Matrix4x4.CreateRotationZ(-0.14f)
+            * Matrix4x4.CreateRotationY(0.19f)
+            * Matrix4x4.CreateRotationX(0.06f + whipExtension * .35f)
+            * Matrix4x4.CreateTranslation(pivotCenter);
         VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_belt", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_belt", pose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
@@ -871,23 +878,31 @@ public class WeaponAndCombatView
             0.04f * lunge,
             0.28f * lunge);
 
-        Vector3 leftWrist = new Vector3(-.16f,-.15f,.70f) + baseOffset;
-        VisualEngine3D.ArmAssembly(false, baseOffset, "fps_hands_solder");
-        VisualEngine3D.ArmAssembly(true, baseOffset + thrustOffset, "fps_hands_solder");
-        Vector3 ironDir = Vector3.UnitZ;
-        Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        Vector3 handleBase = new Vector3(.18f,-.15f,.62f) + baseOffset + thrustOffset;
-        VisualEngine3D.Asset("weapon_solder_90s", handleBase, 0, 1, tint);
-        // Power cord leaves the pommel; the other hand holds solder, not the cable.
-        Vector3 cordMid = handleBase + new Vector3(.03f,-.16f,-.20f);
-        VisualEngine3D.Rod(handleBase - ironDir * .12f, cordMid, .003f, .003f, 8, new Color(28,28,32,255));
+        Vector3 rightAssembly = baseOffset + thrustOffset;
+        Vector3 handleBase = new Vector3(.18f,-.15f,.62f) + rightAssembly;
+        // Pose the right hand & soldering iron at an expressive 3/4 inward angle so the turned handle,
+        // diagonal blue PVC tape wraps, ribbed bakelite collar, perforated heater windows, side clamp screw,
+        // and faceted copper/silver-tinned chisel tip are clearly displayed in first-person view.
+        Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
+            * Matrix4x4.CreateRotationX(-0.14f)
+            * Matrix4x4.CreateRotationY(-0.26f)
+            * Matrix4x4.CreateTranslation(handleBase);
 
-        Vector3 tipMid = handleBase + ironDir * 0.39f + new Vector3(0f, 0.012f, 0f);
-        Vector3 tipPoint = handleBase + ironDir * 0.45f + new Vector3(0f, 0.016f, 0f);
+        VisualEngine3D.ArmAssembly(false, baseOffset, "fps_hands_solder");
+        VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
+        Vector3 ironDir = Vector3.TransformNormal(Vector3.UnitZ, rightPose);
+        Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
+        VisualEngine3D.Asset("weapon_solder_90s", handleBase, 0, 1, tint, assemblyTransform: rightPose);
+        // Power cord leaves the pommel strain-relief boot
+        Vector3 cordStart = Vector3.Transform(handleBase - Vector3.UnitZ * .148f, rightPose);
+        Vector3 cordMid = cordStart + new Vector3(.04f,-.16f,-.18f);
+        VisualEngine3D.Rod(cordStart, cordMid, .0032f, .0032f, 8, new Color(28,28,32,255));
+
+        Vector3 tipPoint = Vector3.Transform(handleBase + new Vector3(0f, 0.017f, 0.474f), rightPose);
         float glow = Math.Clamp(SolderHeatGlow + p * 0.35f, 0.5f, 1.0f);
 
         // Small heat tint at the copper tip, without smoke balls or electric spokes.
-        VisualEngine3D.Orb(tipPoint, 0.006f, new Color(255, 180, 70, (int)(100 * glow)));
+        VisualEngine3D.Orb(tipPoint, 0.0055f, new Color(255, 180, 70, (int)(110 * glow)));
     }
 
     // =========================================================================

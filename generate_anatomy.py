@@ -67,10 +67,12 @@ def mat(key):
         m.use_nodes = True
         shader = m.node_tree.nodes.get("Principled BSDF")
         shader.inputs["Base Color"].default_value = m.diffuse_color
-        shader.inputs["Roughness"].default_value = .34 if key in ("gold","glass","orb","onyx") else .81
-        if key in ("titanium","jointmetal"):
-            shader.inputs["Metallic"].default_value=.8
-            shader.inputs["Roughness"].default_value=.32
+        shader.inputs["Roughness"].default_value = .24 if key in ("gold","glass","orb","onyx","rosin_amber","rosin_gold") else .78
+        if key in ("titanium","jointmetal","GunMetal","MachinedSteel","BrassBolt","solder","tin_cup"):
+            shader.inputs["Metallic"].default_value = .90 if key in ("MachinedSteel","BrassBolt","solder","tin_cup") else .78
+            shader.inputs["Roughness"].default_value = .18 if key in ("MachinedSteel","BrassBolt","solder","tin_cup") else .32
+        if key in ("SelectorRed","SelectorWhite"):
+            shader.inputs["Roughness"].default_value = .25
         if key=="neon":
             shader.inputs["Emission Color"].default_value=m.diffuse_color
             shader.inputs["Emission Strength"].default_value=2.5
@@ -168,8 +170,8 @@ def grip_frame(kind, side):
         c=V((-.1805,-.193,.6665) if right else (-.18,-.125,.80))
         if right: return c,V((0,1,0)),V((-1,0,0)),V((0,0,1)),.040,.036
         return c,V((0,0,1)),V((0,-1,0)),V((-1,0,0)),.034,.025
-    c=V((-.168,-.15,.625) if right else (-.18,-.125,.85))
-    if right: return c,V((0,.79,.61)).normalized(),V((-1,0,0)),V((0,-.61,.79)).normalized(),.042,.034
+    c=V((-.166,-.152,.624) if right else (-.18,-.125,.85))
+    if right: return c,V((0,.79,.61)).normalized(),V((-1,0,0)),V((0,-.61,.79)).normalized(),.025,.024
     return c,V((0,0,1)),V((0,-1,0)),V((-1,0,0)),.040,.037
 
 
@@ -230,11 +232,12 @@ def contact_pose(kind, side):
                  (.247,.679,.883,1.786),(.357,.481,.120,1.630)))
             cup,*angles=belt_flex[d-2]
         if kind=="fps_shotgun" and side=="r" and d>=3:
-            # Each digit meets a different section of the tapered walnut.
-            angles=[.78,1.02,.58]
+            # Wrap phalanges 1 -> 2 -> 3 tightly around the front & left cheek of the tapered walnut grip
+            # (total_angle reaches ~3.0 rad so fingertips hug the wood instead of sticking out to the left).
+            angles=[.52,1.38,1.12]
             total_angle,spread,roll,cup=(
-                (-.329,-.193,.047,-.293),(-.480,-.162,.157,-.210),
-                (-1.148,.183,-.091,.024))[d-3]
+                (.12,-.12,.04,-.18),(.02,-.10,.10,-.14),
+                (-.12,.08,-.06,-.05))[d-3]
         if roll:
             metacarpal=Quaternion(radial,roll)@metacarpal
         if cup:
@@ -259,7 +262,8 @@ def contact_pose(kind, side):
             elif d==2 and side=="r" and kind in ("fps_uzi","fps_shotgun"):
                 # Index extends toward the trigger; other fingers retain the grip.
                 inward,up,forward=((.20,.50,.84),(.40,.20,.89),(.85,-.10,.51))[k]
-                if kind=="fps_shotgun": up=(.12,0,-.10)[k]
+                if kind=="fps_shotgun":
+                    inward,up,forward=((.06,.08,.99),(.22,-.04,.97),(.82,-.12,.56))[k]
                 direction=(-radial*inward+axis*up+tangent*forward).normalized()
                 rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
             else:
@@ -655,22 +659,49 @@ def join(objects, name):
 
 def solder_spool(pieces):
     before=set(bpy.context.scene.objects)
-    PALETTE.update(solder="bbc4cc",spool="385977",label="eee7ce")
+    PALETTE.update(
+        solder="dce5ed",
+        tin_cup="d4a84f",
+        tin_dark="8c6722",
+        rosin_amber="d97414",
+        rosin_gold="f6ad2a",
+        rosin_melt="5c2406"
+    )
     c=V((.16,-.15,.70))
-    for z in (-.052,.052):
-        wire("Spool flange",[c+V((.037*math.cos(i*math.tau/40),.037*math.sin(i*math.tau/40),z)) for i in range(40)],.004,"spool",True)
-    for z in (-.052,.052):
-        for angle in range(6):
-            a=angle*math.tau/6
-            wire("Spool spoke",[c+V((0,0,z)),c+V((.034*math.cos(a),.034*math.sin(a),z))],.002,"spool")
-    for z in range(42):
-        wire("POS61 tin winding",[c+V((.025*math.cos(i*math.tau/32),.025*math.sin(i*math.tau/32),-.047+z*.0023)) for i in range(32)],.0013,"solder",True)
-    wire("Silver solder tail",[c+V((-.025,0,0)),c+V((-.060,.012,.01)),c+V((-.10,.04,.04)),c+V((-.15,.035,.10))],.0013,"solder")
-    box("POS61 label",c+V((0,0,-.055)),(.045,.027,.002),"label",.002)
-    bpy.ops.object.text_add(location=xyz(c+V((.020,-.005,-.057))))
-    label=bpy.context.object; label.data.body="ПОС-61"; label.data.size=.011
-    label.rotation_euler=(math.pi/2,0,0); label.scale.x=-1; label.data.extrude=.0001
-    label.data.materials.append(mat("ink")); bpy.ops.object.convert(target="MESH")
+    # 1) Round Amber Tin of Pine Rosin (янтарная баночка сосновой канифоли) cradled inside left palm
+    rc = c + V((.004, .005, -.010))
+    bpy.ops.mesh.primitive_cylinder_add(vertices=28, radius=.022, depth=.016, location=xyz(rc), rotation=(math.radians(34), math.radians(-18), 0))
+    finish(bpy.context.object, "RosinTinCup", "tin_cup")
+    bpy.ops.mesh.primitive_cylinder_add(vertices=28, radius=.0232, depth=.003, location=xyz(rc + V((-.001, .0055, -.0035))), rotation=(math.radians(34), math.radians(-18), 0))
+    finish(bpy.context.object, "RosinTinRim", "tin_dark")
+    # Glossy amber pine rosin block filling the tin + golden inner glow & melted dark channel
+    bpy.ops.mesh.primitive_cylinder_add(vertices=28, radius=.0202, depth=.013, location=xyz(rc + V((-.0005, .003, -.002))), rotation=(math.radians(34), math.radians(-18), 0))
+    finish(bpy.context.object, "AmberPineRosin", "rosin_amber")
+    oval("GoldenRosinHighlight", rc + V((.003, .0065, -.0045)), (.013, .0035, .011), "rosin_gold")
+    oval("MeltedRosinGroove", rc + V((-.002, .0075, -.0055)), (.010, .0025, .0045), "rosin_melt")
+
+    # 2) Spiral Coil / Hank of POS-61 Tin Solder Wire (спиральная бухта оловянного припоя)
+    # Tucked snugly inside the left fingers right against the lower-inner wall of the brass rosin tin (0 levitation!)
+    sc = c + V((.001, -.006, -.001))
+    coil_pts = []
+    n_turns = 7
+    steps_per_turn = 20
+    for k in range(n_turns * steps_per_turn + 1):
+        u = k / (n_turns * steps_per_turn)
+        ang = k * math.tau / steps_per_turn
+        rad = .0105 + .0008 * math.sin(u * math.pi)
+        axial = -.014 + u * .028
+        coil_pts.append(sc + V((axial * .75 - rad * .35 * math.cos(ang),
+                                rad * math.sin(ang),
+                                axial * .55 + rad * .90 * math.cos(ang))))
+    wire("HelicalSolderCoil", coil_pts, .0019, "solder", False)
+    # Free solder wire tail feeding diagonally up-right from the tucked coil toward the soldering iron tip
+    wire("SilverSolderFeedLead", [
+        coil_pts[-1],
+        c + V((-.024, .016, .024)),
+        c + V((-.068, .038, .054)),
+        c + V((-.118, .048, .088))
+    ], .0017, "solder")
     bpy.context.view_layer.update()
     pieces["l"]=join([pieces["l"]]+list(set(bpy.context.scene.objects)-before),"Left")
 
@@ -765,9 +796,30 @@ def export(kind, filename):
             bpy.ops.import_scene.gltf(filepath=str(OUT/"weapon_uzi_90s.glb"))
             props=list(bpy.context.selected_objects)
             gun=join([o for o in props if o.type=="MESH"],"Micro SMG")
-            # Runtime hideProp identifies the three weapon material groups by name.
-            for material in gun.data.materials:
-                if material.name=="MachinedSteel": material.name="Gold90s"
+            # Runtime hideProp in VisualEngine3D expects exactly 3 weapon material primitives on char_partner_90s:
+            # GunMetal, Gold90s, and PolymerGrip.
+            # NOTE: gun.data.materials.clear() resets poly.material_index to 0 in Blender!
+            # So we compute the new indices first, clear & append the 3 materials, and THEN set poly.material_index!
+            old_to_new = {}
+            three_mats = {}
+            for idx, m_slot in enumerate(gun.data.materials):
+                bname = m_slot.name.split(".")[0]
+                if bname in ("MachinedSteel", "BrassBolt", "SelectorWhite"):
+                    tname = "Gold90s"
+                elif bname in ("PolymerGrip", "SelectorRed"):
+                    tname = "PolymerGrip"
+                else:
+                    tname = "GunMetal"
+                if tname not in three_mats:
+                    m_slot.name = tname
+                    three_mats[tname] = (len(three_mats), m_slot)
+                old_to_new[idx] = three_mats[tname][0]
+            new_poly_indices = [old_to_new.get(poly.material_index, 0) for poly in gun.data.polygons]
+            gun.data.materials.clear()
+            for _, m_obj in sorted(three_mats.values(), key=lambda x: x[0]):
+                gun.data.materials.append(m_obj)
+            for poly, new_idx in zip(gun.data.polygons, new_poly_indices):
+                poly.material_index = new_idx
             gun.location=xyz((-.095,1.308,.325))
             gun.rotation_euler.z=math.pi
             gun.scale=(.57,)*3
@@ -790,89 +842,174 @@ def export(kind, filename):
 
 
 def game_prop():
-    # Shared silhouette for the first-person and partner models. Game units;
-    # the existing viewmodel expects the front of this prop along glTF -Z.
+    # High-contrast 90s IMI Micro-Uzi (weapon_uzi_90s.glb).
+    # Note: in first-person view (+X in this local space faces the camera, -Z is muzzle forward).
     bpy.ops.wm.read_factory_settings(use_empty=True)
     MATS.clear()
-    metal, trim, polymer = "GunMetal", "MachinedSteel", "PolymerGrip"
-    PALETTE.update(GunMetal="414c58", MachinedSteel="78838c", PolymerGrip="252b32")
+    metal   = "GunMetal"
+    trim    = "MachinedSteel"
+    polymer = "PolymerGrip"
+    brass   = "BrassBolt"
+    red_m   = "SelectorRed"
+    white_m = "SelectorWhite"
+    PALETTE.update(
+        GunMetal="252f3b",
+        MachinedSteel="c4d0dd",
+        PolymerGrip="16191f",
+        BrassBolt="f2be3f",
+        SelectorRed="f5222d",
+        SelectorWhite="f4f7fb",
+    )
     def detail(label, p, size, key, bevel=.003):
         obj = box(label, p, size, key)
         bpy.context.view_layer.objects.active = obj
         mod = obj.modifiers.new("Stamped rounded edges", "BEVEL")
-        mod.width, mod.segments = bevel, 5
+        mod.width, mod.segments = bevel, 2
         bpy.ops.object.modifier_apply(modifier=mod.name)
         return obj
     def cut(obj, p, size):
-        cutter = box("Vent cutter", p, size, metal, .003)
+        cutter = box("Vent cutter", p, size, metal, .002)
         bpy.context.view_layer.objects.active = obj
         mod = obj.modifiers.new("Through ventilation window", "BOOLEAN")
         mod.operation, mod.object = 'DIFFERENCE', cutter
         bpy.ops.object.modifier_apply(modifier=mod.name)
         bpy.data.objects.remove(cutter, do_unlink=True)
-    def tube(label, z, length, radius, key):
-        bpy.ops.mesh.primitive_cylinder_add(vertices=48, radius=radius, depth=length,
-            location=xyz((0,.018,z)), rotation=(math.pi/2,0,0))
+    def tube(label, z, length, radius, key, y=.018):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=radius, depth=length,
+            location=xyz((0,y,z)), rotation=(math.pi/2,0,0))
         obj = finish(bpy.context.object,label,key)
         for face in obj.data.polygons: face.use_smooth = len(face.vertices)==4
         return obj
-    receiver=detail("Slim stamped receiver",(0,.007,.014),(.038,.046,.296),metal,.006)
-    # Sloping rear face and a true semicircular cover running along the barrel.
+
+    # 1) Blued Stamped Steel Upper Receiver with Sloping Rear Weld & End Cap
+    receiver=detail("Slim stamped receiver",(0,.007,.014),(.038,.046,.296),metal,.005)
     for v in receiver.data.vertices:
         if v.co.y < -.10: v.co.y += max(0,v.co.z)*.45
-    arc=[(.019*math.cos(i*math.pi/24),.029+.019*math.sin(i*math.pi/24)) for i in range(25)]
-    pts=[(x,y,z) for z in (-.128,.143) for x,y in arc]
+
+    # 2) Bright Milled Steel Top Cover (светлая фрезерованная сталь затворной крышки)
+    arc=[(.0195*math.cos(i*math.pi/24),.029+.0185*math.sin(i*math.pi/24)) for i in range(25)]
+    pts=[(x,y,z) for z in (-.124,.140) for x,y in arc]
     faces=[(i,i+1,26+i,25+i) for i in range(24)]
     faces += [tuple(reversed(range(25))),tuple(range(25,50)),(0,25,49,24)]
-    cover=mesh("Half round bolt cover",pts,faces,metal)
+    cover=mesh("MilledSteelBoltCover",pts,faces,trim)
     for face in cover.data.polygons[:24]: face.use_smooth=True
-    button=tube("Round recoil spring button",.159,.007,.007,trim)
-    detail("Lower receiver",(0,-.025,.010),(.035,.025,.190),metal,.007)
-    # Keep the original grip volume and origin used by fps_hands_uzi.
-    detail("Rounded grip",(0,-.124,.018),(.057,.217,.070),polymer,.016)
-    detail("Magazine floor plate",(0,-.232,.019),(.060,.014,.072),metal,.005)
+    # Top cover longitudinal stiffening ribs & latch release button
+    for sx in (-.009, .009):
+        detail("TopCoverRib",(sx,.046,.008),(.003,.003,.230),metal,.001)
+    tube("RecoilSpringEndButton",.158,.010,.0085,trim,y=.016)
+    detail("RearReceiverEndPlate",(0,.008,.156),(.036,.038,.006),trim,.002)
+
+    # Classic Uzi Top Cocking Knob with Sighting Slot
+    detail("TopCockingSliderBase",(0,.048,-.035),(.018,.006,.034),metal,.002)
+    cock_knob = detail("TopCockingKnob",(0,.056,-.035),(.026,.012,.024),trim,.003)
+    cut(cock_knob, (0,.059,-.035), (.008,.010,.030))
+
+    # 3) Deep Stamped Reinforcing Ribs on Both Receiver Sides (глубокие штампованные ребра жесткости)
+    for side in (-1, 1):
+        sx = side * .0195
+        # Lower full-length stamped corrugation rib + bright milled edge catch
+        detail(f"StampedRibLong_{side}", (sx, -.006, .012), (.0045, .0065, .248), metal, .002)
+        detail(f"StampedRibHighlight_{side}", (side*.0212, -.004, .012), (.0018, .0022, .242), trim, .0006)
+        # Rear upper parallel stamped ribs behind the ejection port
+        for ry in (.006, .018):
+            detail(f"StampedRibRear_{side}_{ry}", (sx, ry, .092), (.0045, .0055, .086), metal, .0018)
+            detail(f"StampedRibRearEdge_{side}_{ry}", (side*.0212, ry+.001, .092), (.0016, .0018, .082), trim, .0005)
+        # Front stamped rib ahead of ejection window
+        detail(f"StampedRibFront_{side}", (sx, .012, -.076), (.0045, .0060, .074), metal, .0018)
+        detail(f"StampedRibFrontEdge_{side}", (side*.0212, .013, -.076), (.0016, .0020, .070), trim, .0005)
+
+    # 4) Open Ejection Window with Gleaming Polished Brass Bolt (латунный затвор в окне выброса)
+    cut(receiver, (.019, .014, .010), (.012, .022, .068))
+    detail("EjectionPortRim", (.0185, .014, .010), (.003, .024, .072), trim, .001)
+    detail("PolishedBrassBolt", (.0145, .014, .010), (.007, .020, .066), brass, .002)
+    detail("BrassExtractorSlot", (.0178, .016, .022), (.003, .005, .028), metal, .001)
+    detail("BoltRecoilRod", (.0165, .021, -.005), (.003, .004, .058), trim, .001)
+
+    # 5) Lower Receiver Frame, Fire Selector Housing & Red/White S / R / A Markings
+    detail("LowerReceiverFrame",(0,-.025,.010),(.036,.025,.194),metal,.006)
+    for side in (-1, 1):
+        sx = side * .019
+        detail(f"SelectorHousing_{side}", (sx, -.024, .048), (.005, .018, .054), trim, .002)
+        detail(f"SelectorSliderSwitch_{side}", (side*.0215, -.026, .046), (.004, .010, .014), polymer, .0015)
+        # S (White Safe), R (Red Semi), A (Red Auto) markings + engraved letter bars
+        detail(f"Mark_S_Dot_{side}", (side*.0215, -.018, .065), (.0025, .0045, .0045), white_m, .001)
+        detail(f"Mark_R_Dot_{side}", (side*.0215, -.018, .048), (.0025, .0048, .0048), red_m,   .001)
+        detail(f"Mark_A_Dot_{side}", (side*.0215, -.018, .031), (.0025, .0052, .0052), red_m,   .001)
+        # Crisp 3D letter strokes below/beside the dots
+        detail(f"Letter_S_{side}", (side*.0215, -.026, .065), (.0022, .0065, .0035), white_m, .0006)
+        detail(f"Letter_R_{side}", (side*.0215, -.026, .048), (.0022, .0070, .0038), red_m,   .0006)
+        detail(f"Letter_A_{side}", (side*.0215, -.026, .031), (.0022, .0075, .0042), red_m,   .0006)
+        # Assembly pins
+        for pz in (-.058, .088):
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=.0038, depth=.044,
+                location=xyz((0, -.025, pz)), rotation=(0, math.pi/2, 0))
+            finish(bpy.context.object, f"ReceiverPin_{pz}", trim)
+
+    # 6) Ergonomic Polymer Pistol Grip, Steel Magazine Housing & Extended Magazine
+    detail("GripFrameStamping",(0,-.118,.018),(.044,.185,.058),metal,.008)
+    detail("PolymerGripPanels",(0,-.124,.018),(.057,.208,.070),polymer,.015)
+    detail("GripSafetyBar",(0,-.088,.054),(.028,.082,.010),trim,.003)
+    detail("ExtendedSteelMag",(0,-.236,.019),(.036,.065,.048),metal,.004)
+    detail("MagazineFloorPlate",(0,-.264,.019),(.044,.012,.056),trim,.003)
     for side in (-1,1):
-        for i in range(9):
-            detail("Grip checkering",(side*.028,-.065-i*.016,.020),(.002,.003,.043),trim,.001)
+        for i in range(8):
+            detail("GripGroove",(side*.0285,-.062-i*.017,.020),(.003,.0035,.046),metal,.001)
+        for sy in (-.072, -.168):
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=.0042, depth=.062,
+                location=xyz((0, sy, .020)), rotation=(0, math.pi/2, 0))
+            finish(bpy.context.object, f"GripEscutcheonScrew_{sy}", trim)
+
     guard=[(0,-.040,-.035),(0,-.046,-.088),(0,-.057,-.102),
            (0,-.084,-.102),(0,-.097,-.088),(0,-.097,-.025)]
-    wire("Rounded trigger guard",guard,.004,metal)
-    wire("Curved trigger",[(0,-.046,-.048),(0,-.064,-.065),(0,-.078,-.060)],.003,trim)
-    # Hollow rounded sheet-metal shroud with real side and top ventilation holes.
-    shroud=detail("Perforated barrel shroud",(0,.018,-.173),(.038,.050,.115),metal,.010)
+    wire("TriggerGuard",guard,.0042,trim)
+    wire("SteelTrigger",[(0,-.044,-.048),(0,-.065,-.066),(0,-.080,-.060)],.0034,brass)
+
+    # 7) Perforated Front Barrel Shroud, Finned Barrel Nut & Slotted Muzzle Compensator
+    shroud=detail("PerforatedBarrelShroud",(0,.018,-.173),(.039,.050,.115),metal,.010)
     cut(shroud,(0,.018,-.173),(.028,.036,.140))
     for z in (-.140,-.169,-.198):
-        cut(shroud,(0,.018,z),(.100,.023,.015))
+        cut(shroud,(0,.018,z),(.100,.022,.015))
         cut(shroud,(0,.043,z),(.019,.022,.015))
-    detail("Ribbed forearm",(0,-.014,-.164),(.036,.018,.100),polymer,.007)
+    detail("RibbedForearm",(0,-.015,-.164),(.038,.019,.102),polymer,.006)
     for z in (-.125,-.139,-.153,-.167,-.181,-.195):
-        detail("Forearm raised rib",(0,-.021,z),(.039,.006,.004),metal,.002)
-    tube("Inner barrel",-.200,.140,.012,polymer)
-    comp=tube("Cylindrical muzzle compensator",-.280,.060,.018,trim)
-    # Open bore, plus transverse compensator ports.
-    bpy.ops.mesh.primitive_cylinder_add(vertices=32,radius=.009,depth=.080,
-        location=xyz((0,.018,-.280)),rotation=(math.pi/2,0,0))
+        detail("ForearmRib",(0,-.022,z),(.041,.005,.004),trim,.0015)
+
+    # Bright Milled Steel Barrel Retaining Collar Nut
+    tube("MilledBarrelNut", -.234, .022, .0165, trim)
+    tube("InnerChromedBarrel", -.248, .085, .0115, metal)
+
+    # Heavy Bright Milled Cylindrical Muzzle Compensator with Slotted Gas Ports & Brass Ring
+    comp=tube("MilledMuzzleCompensator", -.288, .068, .0185, trim)
+    tube("CompensatorBrassCollar", -.258, .008, .0192, brass)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32,radius=.0095,depth=.090,
+        location=xyz((0,.018,-.288)),rotation=(math.pi/2,0,0))
     bore=bpy.context.object
     bpy.context.view_layer.objects.active=comp
-    mod=comp.modifiers.new("Open muzzle bore","BOOLEAN"); mod.object=bore; mod.operation='DIFFERENCE'
+    mod=comp.modifiers.new("OpenMuzzleBore","BOOLEAN"); mod.object=bore; mod.operation='DIFFERENCE'
     bpy.ops.object.modifier_apply(modifier=mod.name)
     bpy.data.objects.remove(bore,do_unlink=True)
-    for z in (-.268,-.291): cut(comp,(0,.031,z),(.060,.012,.006))
-    # Folding steel stock hugs the right side instead of protruding into the hands.
-    for y in (.036,-.014):
-        wire("Folded stock rail",[(.024,y,.146),(.033,y,.112),(.033,y,-.115)],.0035,metal)
-    wire("Stock shoulder loop",[(.033,.036,-.115),(.037,.030,-.143),
-        (.037,-.010,-.143),(.033,-.014,-.115)],.004,polymer)
-    detail("Stock hinge",(.024,.010,.135),(.010,.038,.025),trim,.005)
-    for z in (-.180,.120):
-        wire("Protected sight",[(-.019,.024,z),(-.019,.046,z),
-            (0,.052,z),(.019,.046,z),(.019,.024,z)],.0035,metal)
-    detail("Front sight post",(0,.038,-.180),(.004,.018,.004),trim,.001)
-    detail("Side charging stem",(-.025,.030,-.030),(.020,.007,.009),trim,.003)
-    detail("Side charging handle",(-.035,.030,-.030),(.010,.013,.021),polymer,.005)
-    cut(receiver,(.019,.015,.015),(.008,.019,.060))
-    detail("Dark ejection cavity",(.014,.015,.015),(.002,.018,.059),polymer,.002)
-    detail("Ejection bolt edge",(.016,.015,.040),(.002,.014,.006),trim,.001)
+    for z in (-.272,-.288,-.304):
+        cut(comp,(0,.030,z),(.060,.012,.0065))
+
+    # 8) Crisp High-Visibility Iron Sights (Protective Ears + White/Red Sight Posts)
+    for z, base_mat in ((-.126, metal), (.126, metal)):
+        detail(f"SightBlock_{z}", (0, .038, z), (.034, .014, .022), base_mat, .003)
+        wire(f"SightEars_{z}",[(-.017,.036,z),(-.017,.056,z),
+            (0,.060,z),(.017,.056,z),(.017,.036,z)],.0036,trim)
+    detail("FrontSightBlade",(0,.048,-.126),(.004,.016,.005),white_m,.001)
+    detail("FrontSightRedDot",(0,.054,-.126),(.0045,.0045,.0055),red_m,.001)
+    detail("RearPeepAperture",(0,.049,.126),(.010,.012,.005),white_m,.001)
+
+    # 9) Side-Folding Skeleton Stock (positioned cleanly on outer -X side + bright rear hinge)
+    detail("RearStockHingeBlock",(.002,.008,.154),(.028,.034,.022),trim,.004)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=18, radius=.0065, depth=.044,
+        location=xyz((0, .008, .154)), rotation=(0, math.pi/2, 0))
+    finish(bpy.context.object, "StockHingeLockButton", brass)
+    for y in (.024, -.012):
+        wire(f"FoldedStockStrut_{y}",[(-.020,y,.150),(-.030,y,.112),(-.030,y,-.110)],.0038,trim)
+    wire("FoldedButtplate",[(-.030,.026,-.110),(-.035,.020,-.142),
+        (-.035,-.018,-.142),(-.030,-.014,-.110)],.0045,polymer)
+
     gun=join(list(bpy.context.scene.objects),"SMG")
     bm=bmesh.new();bm.from_mesh(gun.data)
     bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.0000001)
@@ -892,7 +1029,9 @@ for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_cod
                        ("seer","char_hr_veronika"),("fps","fps_hands_cs2"),
                        ("fps_belt","fps_hands_belt"),("fps_solder","fps_hands_solder"),
                        ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
-    if "--hands-only" in __import__("sys").argv:
+    if "--weapons-and-hands" in __import__("sys").argv:
+        if kind == "partner" or kind.startswith("fps"): export(kind,filename)
+    elif "--hands-only" in __import__("sys").argv:
         if kind.startswith("fps_"): export(kind,filename)
     elif "--workshop6" in __import__("sys").argv:
         if kind == "partner": export(kind,filename)
