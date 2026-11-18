@@ -157,7 +157,7 @@ internal static unsafe class VisualEngine3D
             if(finish==1) {
                 // Reflect the rows of overhead luminaires and sunlight across the polished stone.
                 vec3 refl=reflect(-v,n);
-                vec2 hit=pos.xz+refl.xz*(6./max(.06,refl.y));
+                vec2 hit=pos.xz+refl.xz*(11.2/max(.06,refl.y));
                 vec2 cell=abs(mod(hit+3.,6.)-3.);
                 float strip=exp(-cell.x*cell.x*1.1-cell.y*cell.y*6.);
                 lit+=vec3(.16,.20,.26)*strip*(.14+fres*.4)*tex.r;
@@ -270,7 +270,7 @@ internal static unsafe class VisualEngine3D
                              Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false)
     {
         Model model = imports[name];
-        model.Transform *= Matrix4x4.CreateRotationX(tilt);
+        model.Transform = Matrix4x4.CreateRotationX(tilt);
         Surface(name.StartsWith("char_",StringComparison.Ordinal) ? Finish.Anatomy : Finish.Imported, 0);
         if (hideProp)
         {

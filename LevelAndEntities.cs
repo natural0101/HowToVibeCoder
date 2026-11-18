@@ -182,19 +182,19 @@ public sealed class EscapedAgentBoss
 
 public sealed class SkyscraperFloor1World
 {
-    // Massive Warface "White Shark" («Белая Акула») Tactical Skyscraper Floor 1 (76m x 76m!)
+    // Massive Warface "White Shark" («Белая Акула») Tactical Skyscraper Floor 1 (76m x 76m, Soaring 11.2m High-Ceiling Atrium!)
     public const float HalfWidth = 38.0f;
     public const float HalfDepth = 38.0f;
-    public const float CeilingHeight = 6.5f;
+    public const float CeilingHeight = 11.2f;
 
     // Central Armored Elevator Shaft right in the CENTER of the floor (9m x 9m core)
     public readonly Vector3 CentralElevatorCorePos = new(0.0f, 0f, -4.0f);
     public const float ElevatorCoreHalfW = 4.5f;
     public const float ElevatorCoreHalfD = 4.5f;
 
-    // Key Functional Landmarks
-    public readonly Vector3 HrTarotBoothPos = new(-7.4f, 0f, 15.2f);
-    public readonly Vector3 ArsenalShopPos = new(0.0f, 0f, 16.5f);
+    // Key Functional Landmarks (White Shark Layout: HR Reception Desk centered directly opposite the Elevator!)
+    public readonly Vector3 HrTarotBoothPos = new(0.0f, 0f, 13.0f);
+    public readonly Vector3 ArsenalShopPos = new(-8.2f, 0f, 15.2f);
     public readonly Vector3 CentralMacBookPos = new(0.0f, 0f, 5.2f);
     public readonly Vector3 NorthElevatorPos = new(0.0f, 0f, -8.5f);
     public readonly Vector3 SouthElevatorDoorPos = new(0.0f, 0f, 0.5f);
@@ -1838,13 +1838,13 @@ public sealed class SkyscraperFloor1World
         foreach(int z in new[]{-1,1})
         {
             Vector3 corner=CentralElevatorCorePos+new Vector3(x*4.45f,0,z*4.45f);
-            for(int band=0;band<4;band++)
+            for(int band=0;band<7;band++)
             {
-                Vector3 lower=corner+Vector3.UnitY*(band*1.6f+.10f);
-                Vector3 upper=lower+Vector3.UnitY*1.6f;
+                Vector3 lower=corner+Vector3.UnitY*(band*1.58f+.10f);
+                Vector3 upper=lower+Vector3.UnitY*1.58f;
                 Vector3 inset=Vector3.UnitZ*(z*.52f);
-                VisualEngine3D.Rod(lower,upper-inset,.038f,.038f,8,new Color(116,130,145,255));
-                VisualEngine3D.Rod(lower-inset,upper,.038f,.038f,8,new Color(116,130,145,255));
+                VisualEngine3D.Rod(lower,upper-inset,.042f,.042f,8,new Color(116,130,145,255));
+                VisualEngine3D.Rod(lower-inset,upper,.042f,.042f,8,new Color(116,130,145,255));
             }
         }
         DrawElevatorDoors(false);
@@ -1897,53 +1897,26 @@ public sealed class SkyscraperFloor1World
                     VisualEngine3D.Asset("prop_xerox_printer", pos, 180);
                     break;
                 case OfficePropKind.FilingCabinet:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
-
-                    for (int d = 0; d < 4; d++)
-                    {
-                        VisualEngine3D.Box(pos + new Vector3(-p.Size.X * 0.51f, 0.30f + d * 0.42f, 0f), 0.04f, 0.34f, p.Size.Z * 0.82f, p.AccentColor);
-                    }
+                    VisualEngine3D.Asset("prop_filing_cabinet", pos);
                     break;
-                }
-
                 case OfficePropKind.RollingWhiteboard:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, 1.25f, 0f), p.Size.X, 1.25f, 0.08f, p.PrimaryColor);
-
-                    // Architecture diagram boxes drawn on whiteboard
-                    VisualEngine3D.Box(pos + new Vector3(-0.55f, 1.35f, 0.05f), 0.45f, 0.28f, 0.02f, p.AccentColor);
-                    VisualEngine3D.Box(pos + new Vector3(0.45f, 1.15f, 0.05f), 0.52f, 0.32f, 0.02f, new Color(45, 205, 135, 255));
+                    VisualEngine3D.Asset("prop_whiteboard", pos);
                     break;
-                }
-
                 case OfficePropKind.WaterCooler:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, 0.56f, 0f), 0.50f, 1.12f, 0.50f, p.PrimaryColor);
-                    VisualEngine3D.Rod(pos + new Vector3(0f, 1.12f, 0f), pos + new Vector3(0f, 1.72f, 0f), 0.22f, 0.20f, 10, p.AccentColor);
+                    VisualEngine3D.Asset("prop_water_cooler", pos, pos.X < 0 ? 90f : -90f);
                     break;
-                }
-
                 case OfficePropKind.VendingMachine:
-                {
-                    VisualEngine3D.Box(pos + new Vector3(0f, p.Size.Y * 0.5f, 0f), p.Size.X, p.Size.Y, p.Size.Z, p.PrimaryColor);
-                    VisualEngine3D.Box(pos + new Vector3(-0.12f, p.Size.Y * 0.56f, p.Size.Z * 0.49f), p.Size.X * 0.62f, p.Size.Y * 0.64f, 0.04f, p.AccentColor);
-
+                    VisualEngine3D.Asset("prop_vending_machine", pos, pos.Z > 0 ? 180f : 0f);
                     break;
-                }
-
                 case OfficePropKind.LeatherSofa:
                     VisualEngine3D.Asset("prop_leather_sofa", pos);
                     break;
                 case OfficePropKind.PottedFicus:
-                    DrawFicus(pos);
+                    VisualEngine3D.Asset("prop_ficus_tree", pos);
                     break;
                 case OfficePropKind.TrashBin:
-                {
-                    VisualEngine3D.Rod(pos, pos + new Vector3(0f, 0.44f, 0f), 0.18f, 0.22f, 8, p.PrimaryColor);
-                    VisualEngine3D.Orb(pos + new Vector3(0f, 0.45f, 0f), 0.12f, p.AccentColor);
+                    VisualEngine3D.Asset("prop_trash_bin", pos);
                     break;
-                }
 
             }
         }
@@ -2047,14 +2020,18 @@ public sealed class SkyscraperFloor1World
             }
             Block(0,20,155,312,170,.5f,Color.White,Finish.Sky);
             Block(0,CeilingHeight/2,limit,limit*2,CeilingHeight,.025f,new(105,170,195,13),Finish.Glass);
-            foreach(float y in new[] { .08f,3.88f,CeilingHeight-.08f })
+            foreach(float y in new[] { .08f,3.88f,7.60f,CeilingHeight-.08f })
                 Block(0,y,limit-.04f,limit*2,.095f,.13f,steel);
+            // White Shark upper mezzanine balcony slab & glass railing at y = 6.4m around the atrium perimeter
+            Block(0,6.35f,limit-2.2f,limit*2-4.4f,.22f,4.4f,new(72,82,96,255),Finish.Plaster);
+            Block(0,6.95f,limit-4.35f,limit*2-8.7f,.95f,.04f,new(115,185,210,32),Finish.Glass);
+            Block(0,7.45f,limit-4.35f,limit*2-8.7f,.06f,.08f,aluminum);
             for (float u=-limit;u<limit;u+=4.5f)
             {
                 Block(u,CeilingHeight/2,limit-.04f,.105f,CeilingHeight,.17f,steel);
                 float w=Math.Min(4.5f,limit-u)-.13f;
                 int bay=(int)((u+limit)/4.5f);
-                int slats=3+(bay*3+face*7)%12;
+                int slats=5+(bay*3+face*7)%14;
                 for (int i=0;i<slats;i++)
                     Block(u+w/2+.065f,CeilingHeight-.23f-i*.14f,limit-.15f,w,.043f,.16f,aluminum);
             }
@@ -2137,28 +2114,20 @@ public sealed class SkyscraperFloor1World
     private void DrawHrTarotBoothAndVeronika3D()
     {
         Vector3 b = HrTarotBoothPos;
-        VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.4f,2.4f,20,new Color(77,33,83,255));
-        VisualEngine3D.Asset("char_hr_veronika", b+new Vector3(0,.03f,0),180);
-        // An open brass frame leaves a sightline from the counter to the windows.
+        VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.85f,2.85f,24,new Color(77,33,83,255));
+        VisualEngine3D.Asset("prop_hr_reception_desk", b, 0f);
+        VisualEngine3D.Asset("char_hr_veronika", b+new Vector3(0,.03f,0), 180f);
         Color brass=new(187,141,76,255);
         foreach (int side in new[] { -1, 1 })
-            VisualEngine3D.Box(b+new Vector3(side*1.74f,1.67f,1.4f),.055f,3.34f,.055f,brass);
-        VisualEngine3D.Box(b+new Vector3(0,3.36f,1.4f),3.54f,.06f,.06f,brass);
-        VisualEngine3D.Box(b+new Vector3(0,2.9f,1.4f),1.05f,.88f,.045f,Color.White,Finish.Tarot);
+            VisualEngine3D.Box(b+new Vector3(side*2.15f,1.85f,1.15f),.065f,3.70f,.065f,brass);
+        VisualEngine3D.Box(b+new Vector3(0,3.72f,1.15f),4.36f,.07f,.07f,brass);
+        VisualEngine3D.Box(b+new Vector3(0,3.15f,1.15f),1.18f,.96f,.045f,Color.White,Finish.Tarot);
     }
 
     private void Draw90sArsenalAndShopStand3D()
     {
         Vector3 s = ArsenalShopPos;
-
-        // Counter & 90s Crimson/Gold Trim
-        VisualEngine3D.Box(s + new Vector3(0f, 0.55f, 0f), 4.2f, 1.10f, 1.25f, new Color(36, 26, 38, 255));
-        VisualEngine3D.Box(s + new Vector3(0f, 1.12f, 0f), 4.35f, 0.08f, 1.38f, new Color(190, 32, 68, 255));
-
-
-        // Back Weapon Pegboard Rack
-        VisualEngine3D.Box(s + new Vector3(0f, 2.15f, 0.65f), 4.2f, 2.2f, 0.16f, new Color(24, 28, 38, 255));
-
+        VisualEngine3D.Asset("prop_arsenal_counter", s, 0f);
 
         // 4 Subscription Bait Boxes displayed on counter (`Free $0`, `Pro $20`, `Turkey $80`, `Max $200`)
         SubscriptionBaitTier[] tiers =
@@ -2178,7 +2147,6 @@ public sealed class SkyscraperFloor1World
             Vector3 boxPos = s + new Vector3(bx, 1.32f + lift, -0.15f);
 
             VisualEngine3D.Box(boxPos, 0.52f, 0.34f, 0.34f, info.NeonColor);
-
         }
     }
 
@@ -2215,19 +2183,13 @@ public sealed class SkyscraperFloor1World
         Vector3 m = CentralMacBookPos;
         var baitInfo = GetBaitInfo(SelectedBaitTier);
 
-        // 1. Sleek Central Trap Desk
-        VisualEngine3D.Box(m + new Vector3(0f, 0.42f, 0f), 2.35f, 0.84f, 1.35f, new Color(38, 44, 58, 255));
-        VisualEngine3D.Box(m + new Vector3(0f, 0.85f, 0f), 2.50f, 0.07f, 1.50f, new Color(75, 85, 105, 255));
+        // 1. Detailed Blender 3D Tactical Trap Desk + Open Aluminum MacBook Pro
+        VisualEngine3D.Asset("prop_macbook_trap_desk", m, 0f);
 
-
-        // 2. Open 3D Aluminum MacBook Pro on center of desk
         Vector3 mbBase = m + new Vector3(0f, 0.90f, 0.05f);
-        VisualEngine3D.Box(mbBase, 0.62f, 0.03f, 0.44f, new Color(195, 205, 220, 255));
-        Vector3 mbScreen = m + new Vector3(0f, 1.12f, 0.25f);
-        VisualEngine3D.Box(mbScreen, 0.62f, 0.42f, 0.03f, new Color(180, 190, 205, 255));
-
+        Vector3 mbScreen = m + new Vector3(0f, 1.12f, 0.23f);
         Color screenGlow = IsMacBookTrapActive ? baitInfo.NeonColor : new Color(60, 110, 150, 255);
-        VisualEngine3D.Box(mbScreen + new Vector3(0f, 0f, -0.02f), 0.56f, 0.36f, 0.01f, screenGlow, Finish.Screen);
+        VisualEngine3D.Box(mbScreen + new Vector3(0f, 0f, -0.015f), 0.56f, 0.36f, 0.01f, screenGlow, Finish.Screen);
 
         // 3. Floating 3D Hologram Beacon above the MacBook Trap Desk
         float holoY = 1.85f + MathF.Sin(MacBookHologramPhase) * 0.14f;
@@ -2244,8 +2206,7 @@ public sealed class SkyscraperFloor1World
         }
         VisualEngine3D.Box(holoPos, 0.36f, 0.36f, 0.36f, new Color(baitInfo.NeonColor.R, baitInfo.NeonColor.G, baitInfo.NeonColor.B, (byte)(IsMacBookTrapActive ? 225 : 120)));
 
-
-        // 4. Ambush Cover Objects around Central Desk
+        // 4. Ambush Cover Objects around Central Desk (Each a dedicated 3D Blender model!)
         for (int i = 0; i < AmbushCovers.Count; i++)
         {
             var cov = AmbushCovers[i];
@@ -2254,25 +2215,16 @@ public sealed class SkyscraperFloor1World
             switch (cov.VisualKind)
             {
                 case 0: // Leather Sofa from the 90s
-                    VisualEngine3D.Asset("prop_leather_sofa",p);
+                    VisualEngine3D.Asset("prop_leather_sofa", p);
                     break;
-                case 1:
-                    DrawFicus(p);
+                case 1: // Potted Office Ficus Tree
+                    VisualEngine3D.Asset("prop_ficus_tree", p);
                     break;
-
-                case 2: // Office Water Cooler with Blue Bottle
-                    VisualEngine3D.Box(p + new Vector3(0f, 0.58f, 0f), 0.52f, 1.16f, 0.52f, new Color(225, 232, 240, 255));
-                    VisualEngine3D.Rod(p + new Vector3(0f, 1.16f, 0f), p + new Vector3(0f, 1.78f, 0f), 0.22f, 0.20f, 12, new Color(45, 165, 255, 220));
+                case 2: // Office Water Cooler with 19L Blue Bottle & Taps
+                    VisualEngine3D.Asset("prop_water_cooler", p, 90f);
                     break;
-
-                case 3: // Blinking Open-Space Server Rack
-                    VisualEngine3D.Box(p + new Vector3(0f, 1.15f, 0f), 0.95f, 2.30f, 0.85f, Color.White, Finish.Rack);
-
-                    for (int row = 0; row < 5; row++)
-                    {
-                        Color led = ((row + (int)(_worldClock * 4f)) % 2 == 0) ? Color.Lime : Color.SkyBlue;
-                        VisualEngine3D.Box(p + new Vector3(0f, 0.45f + row * 0.36f, -0.43f), 0.72f, 0.08f, 0.04f, led);
-                    }
+                case 3: // 42U Server Rack with Blade Units & LEDs
+                    VisualEngine3D.Asset("prop_server_rack", p);
                     break;
             }
         }
@@ -2288,17 +2240,17 @@ public sealed class SkyscraperFloor1World
 
         foreach(int side in new[]{-1,1})
         {
-            Part(side*4.5f,3.25f,0,.045f,6.5f,9,pane,Finish.Glass);
-            Part(0,5.27f,side*4.5f,9,2.46f,.045f,pane,Finish.Glass);
+            Part(side*4.5f,CeilingHeight*.5f,0,.045f,CeilingHeight,9,pane,Finish.Glass);
+            Part(0,4.0f+(CeilingHeight-4.0f)*.5f,side*4.5f,9,CeilingHeight-4.0f,.045f,pane,Finish.Glass);
             foreach(int end in new[]{-1,1})
             {
                 Part(end*3.32f,2,side*4.5f,2.32f,4,.045f,pane,Finish.Glass);
-                Part(end*4.46f,3.25f,side*4.46f,.20f,6.5f,.20f,steel);
-                Part(end*4.22f,3.25f,side*4.22f,.075f,6.5f,.075f,new(81,205,218,255),Finish.Lamp);
-                Part(end*2.57f,1.91f,side*2.7f,.09f,3.64f,.09f,chrome);
-                Part(end*1.74f,5.08f,side*1.9f,.048f,2.84f,.048f,chrome);
+                Part(end*4.46f,CeilingHeight*.5f,side*4.46f,.22f,CeilingHeight,.22f,steel);
+                Part(end*4.22f,CeilingHeight*.5f,side*4.22f,.08f,CeilingHeight,.08f,new(81,205,218,255),Finish.Lamp);
+                Part(end*2.57f,CeilingHeight*.5f,side*2.7f,.09f,CeilingHeight,.09f,chrome);
+                Part(end*1.74f,3.8f+(CeilingHeight-3.8f)*.5f,side*1.9f,.048f,CeilingHeight-3.8f,.048f,chrome);
             }
-            foreach(float y in new[]{.12f,4.02f,6.37f})
+            foreach(float y in new[]{.12f,4.02f,7.60f,CeilingHeight-.13f})
             {
                 Part(0,y,side*4.5f,9.1f,.15f,.16f,steel);
                 Part(side*4.5f,y,0,.16f,.15f,9.1f,steel);

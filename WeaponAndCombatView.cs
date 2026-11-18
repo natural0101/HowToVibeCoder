@@ -876,72 +876,17 @@ public class WeaponAndCombatView
         Vector3 handForward = Vector3.Normalize(new Vector3(-0.18f - swingHandOffset.X * 0.7f, 0.22f, 0.88f));
         VisualEngine3D.Arm(true,rightWrist);
 
-        // Leather colors (or custom skin tint from [K] Case Roulette)
-        Color leatherDark = SkinTintPrimary.A > 0 ? SkinTintPrimary : new Color(76, 40, 20, 255);
-        Color leatherEdge = new Color(115, 64, 34, 255);
-        Color goldBuckle = new Color(255, 208, 45, 255);
-        Color brassStud = new Color(235, 185, 55, 255);
-
-        Vector3 gripTop = rightWrist + handForward * 0.055f + new Vector3(0f, 0.02f, 0f);
-
-        // Folded leather loop held in fist + 9 segments of flexible leather strap extending to the heavy golden buckle
-        const int beltSegments = 10;
-        Vector3 prevTop = gripTop;
-        Vector3 prevLoop = gripTop - new Vector3(0.018f, 0.025f, 0f);
-
-        for (int i = 1; i <= beltSegments; i++)
-        {
-            float segFrac = i / (float)beltSegments;
-            float idleSwayX = MathF.Sin(_animClock * 3.8f + segFrac * 2.6f) * 0.022f * segFrac;
-            float idleDroopY = -MathF.Pow(segFrac, 1.55f) * (0.14f - MathF.Max(0f, whipExtension) * 0.11f);
-
-            // During whip lash, the strap snaps outward in an S-curve toward the center/target
-            float whipSnapX = -swingHandOffset.X * 1.15f * segFrac + MathF.Sin(segFrac * MathF.PI) * (-0.12f * lashSide * p);
-            float whipSnapY = (0.12f - segFrac * 0.18f) * (1f - p) + (0.08f * p * MathF.Sin(segFrac * MathF.PI));
-            float whipReachZ = (0.28f + MathF.Max(0f, whipExtension)) * segFrac;
-
-            Vector3 curTop = gripTop + new Vector3(
-                -0.06f * segFrac + idleSwayX + whipSnapX,
-                whipSnapY + idleDroopY,
-                whipReachZ);
-
-            // At rest the loose end rests in the support palm. Release it
-            // continuously as the belt goes into its striking animation.
-            Vector3 supportedTip=leftWrist+new Vector3(.045f,.037f,.079f);
-            Vector3 restingTip=gripTop+new Vector3(-.06f,-.20f,.28f);
-            curTop+=(supportedTip-restingTip)*segFrac*(1-Math.Clamp(p*5,0,1));
-
-            // Second folded strap layer underneath
-            float loopGap = 0.026f * (1f - segFrac * 0.55f);
-            Vector3 curLoop = curTop - new Vector3(0.012f, loopGap, 0.008f);
-
-            // Draw thick leather belt strap segment
-            VisualEngine3D.Rod(prevTop, curTop, 0.018f, 0.017f, 6, leatherDark);
-            VisualEngine3D.Rod(prevLoop, curLoop, 0.015f, 0.014f, 6, leatherEdge);
-
-            // Brass/gold studs & belt holes along the strap
-            Vector3 midSeg = (prevTop + curTop) * 0.5f;
-            VisualEngine3D.Orb(midSeg + new Vector3(0f, 0.012f, 0f), 0.0065f, brassStud);
-
-            prevTop = curTop;
-            prevLoop = curLoop;
-        }
-
-        // Gleaming Heavy Golden Buckle ("Массивная золотая пряжка с гравировкой") at the swinging tip!
-        Vector3 buckleCenter = prevTop + new Vector3(0f, -0.005f, 0.025f);
-        VisualEngine3D.Box(buckleCenter, 0.068f, 0.052f, 0.018f, goldBuckle);
-
-        // Inner buckle frame hole & golden prong ("язычок пряжки")
-        VisualEngine3D.Box(buckleCenter, 0.036f, 0.026f, 0.020f, new Color(35, 22, 14, 255));
-        VisualEngine3D.Rod(
-            buckleCenter - new Vector3(0.022f, 0f, 0f),
-            buckleCenter + new Vector3(0.025f, 0.005f, 0.012f),
-            0.005f, 0.003f, 6, Color.White);
+        Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
+        Vector3 beltPos = rightWrist + new Vector3(-0.01f, 0.025f, 0.03f);
+        float beltYaw = MathF.Atan2(handForward.X, handForward.Z) * 180f / MathF.PI;
+        float beltTilt = -0.12f + whipExtension * 0.35f;
+        VisualEngine3D.Asset("weapon_belt_90s", beltPos, beltYaw, 0.94f, tint, beltTilt);
 
         // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
         if (p > 0.18f)
         {
             byte slashAlpha = (byte)(240 * p);
+            Vector3 buckleCenter = beltPos + handForward * 0.30f;
             Vector3 vStart = new Vector3(0.32f * lashSide, 0.22f, 0.72f);
             Vector3 vMid = buckleCenter;
             Vector3 vEnd = new Vector3(-0.36f * lashSide, -0.18f, 0.78f);
@@ -973,54 +918,20 @@ public class WeaponAndCombatView
         Vector3 ironDir = Vector3.Normalize(new Vector3(-0.22f + twist * 0.6f, 0.14f + lunge * 0.04f, 0.96f));
         VisualEngine3D.Arm(true,rightWrist);
 
-        // Colors for the 90s Soviet/Russian 100W Soldering Iron (ЭПСН-100)
-        Color woodHandle = SkinTintPrimary.A > 0 ? SkinTintPrimary : new Color(112, 56, 26, 255);
-        Color bakeliteCollar = new Color(38, 32, 30, 255);
-        Color blueTape = new Color(25, 95, 235, 255);        // Iconic "Синяя изолента"!
-        Color blueTapeHighlight = new Color(65, 135, 255, 255);
-        Color steelTube = new Color(168, 176, 188, 255);
-        Color steelDark = new Color(95, 102, 112, 255);
-
-        Vector3 handleBase = rightWrist - ironDir * 0.05f + new Vector3(0f, 0.02f, 0f);
-        Vector3 handleFront = handleBase + ironDir * 0.22f;
-
-        // 1. Wooden/Bakelite Handle
-        VisualEngine3D.Rod(handleBase, handleFront, 0.029f, 0.024f, 10, woodHandle);
-        VisualEngine3D.Orb(handleBase, 0.029f, woodHandle);
-        VisualEngine3D.Rod(handleFront - ironDir * 0.02f, handleFront + ironDir * 0.015f, 0.028f, 0.022f, 10, bakeliteCollar);
-
-        // 2. Iconic Blue Electrical Tape ("Синяя изолента") wrapped in 3 overlapping bands around the handle grip
-        Vector3 tapeStart = handleBase + ironDir * 0.055f;
-        Vector3 tapeEnd = handleBase + ironDir * 0.155f;
-        VisualEngine3D.Rod(tapeStart, tapeEnd, 0.031f, 0.029f, 10, blueTape);
-
+        Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
+        Vector3 handleBase = rightWrist + new Vector3(-0.01f, 0.028f, 0.02f);
+        float ironYaw = MathF.Atan2(ironDir.X, ironDir.Z) * 180f / MathF.PI;
+        float ironPitch = -MathF.Asin(Math.Clamp(ironDir.Y, -0.9f, 0.9f));
+        VisualEngine3D.Asset("weapon_solder_90s", handleBase, ironYaw, 0.95f, tint, ironPitch);
 
         // Black power cord dangling from the back of the handle toward the left hand
         Vector3 cordMid = (handleBase + leftWrist) * 0.5f + new Vector3(0f, -0.07f, 0f);
-        VisualEngine3D.Rod(handleBase, cordMid, 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
+        VisualEngine3D.Rod(handleBase - ironDir * 0.10f, cordMid, 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
         VisualEngine3D.Rod(cordMid, leftWrist + new Vector3(0.03f, 0.02f, 0f), 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
 
-        // 3. Long Heated Steel Heating Element Rod (with ventilation slots)
-        Vector3 rodStart = handleFront + ironDir * 0.01f;
-        Vector3 rodEnd = rodStart + ironDir * 0.24f;
-        VisualEngine3D.Rod(rodStart, rodEnd, 0.015f, 0.014f, 10, steelTube);
-        for (int ring = 1; ring <= 4; ring++)
-        {
-            Vector3 rPos = Vector3.Lerp(rodStart, rodEnd, ring * 0.2f);
-            VisualEngine3D.Rod(rPos - ironDir * 0.005f, rPos + ironDir * 0.005f, 0.0165f, 0.0165f, 8, steelDark);
-        }
-
-        // 4. Glowing Red-Hot Bent Wedge Copper Tip ("Раскалённое медное жало")
-        Vector3 tipBase = rodEnd;
-        Vector3 tipMid = tipBase + ironDir * 0.065f + new Vector3(0f, 0.008f, 0f);
-        Vector3 tipPoint = tipMid + ironDir * 0.055f + new Vector3(0f, 0.006f, 0f);
-
+        Vector3 tipMid = handleBase + ironDir * 0.39f + new Vector3(0f, 0.012f, 0f);
+        Vector3 tipPoint = handleBase + ironDir * 0.45f + new Vector3(0f, 0.016f, 0f);
         float glow = Math.Clamp(SolderHeatGlow + p * 0.35f, 0.5f, 1.0f);
-        Color hotCopperBase = new Color((byte)230, (byte)(85 + glow * 70), (byte)(25 + glow * 30), (byte)255);
-        Color hotOrangeTip = new Color((byte)255, (byte)(155 + glow * 90), (byte)(40 + glow * 160), (byte)255);
-
-        VisualEngine3D.Rod(tipBase, tipMid, 0.012f, 0.010f, 8, hotCopperBase);
-        VisualEngine3D.Rod(tipMid, tipPoint, 0.010f, 0.003f, 8, hotOrangeTip);
 
         // Glowing thermal aura around the red-hot copper tip
         VisualEngine3D.Orb(tipPoint, 0.018f + p * 0.014f, new Color(255, 220, 110, (int)(155 * glow)));
@@ -1135,7 +1046,6 @@ public class WeaponAndCombatView
         Color receiverMetal = isChatGun ? new Color(40, 48, 62, 255) : new Color(75, 80, 90, 255);
         Color barrelSteel = isChatGun ? new Color(255, 210, 55, 255) : new Color(56, 60, 68, 255);
 
-        Vector3 stockStart = rightWrist+new Vector3(-.034f,-.032f,.074f);
         Vector3 gripTop = rightWrist+new Vector3(-.034f,.059f,.085f);
         Vector3 receiverHinge = gripTop+gunDir*.087f;
         Vector3 barrelDir = Vector3.Normalize(gunDir - Vector3.UnitY*(breakBarrelTilt*.55f));
@@ -1143,24 +1053,15 @@ public class WeaponAndCombatView
         VisualEngine3D.Arm(false,support-new Vector3(.050f,.036f,.078f));
         VisualEngine3D.Arm(true,rightWrist);
 
-        // 1. Sawed-off Walnut Stock & Receiver Block
-        VisualEngine3D.Rod(stockStart,gripTop,.028f,.027f,10,stockWood);
-        VisualEngine3D.Rod(gripTop,receiverHinge,.027f,.025f,10,stockWood);
-        VisualEngine3D.Box(receiverHinge, 0.054f, 0.046f, 0.075f, receiverMetal);
+        Color shotgunTint = isChatGun
+            ? new Color(150, 255, 215, 255)
+            : (SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White);
+        float gunYaw = MathF.Atan2(barrelDir.X, barrelDir.Z) * 180f / MathF.PI + 180f;
+        float gunPitch = MathF.Asin(Math.Clamp(barrelDir.Y, -0.9f, 0.9f));
+        VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, gunYaw, 0.96f, shotgunTint, gunPitch);
 
-        // 2. Break-action Hinge: Twin Barrels tilt downward during reload phase!
-        Vector3 barrelEnd = receiverHinge + barrelDir * 0.34f;
+        Vector3 barrelEnd = receiverHinge + barrelDir * 0.36f;
         Vector3 sideOffset = new Vector3(0.017f, 0f, 0f);
-
-        // Wooden forend under barrels
-        VisualEngine3D.Rod(
-            receiverHinge + barrelDir * 0.04f - new Vector3(0f, 0.016f, 0f),
-            receiverHinge + barrelDir * 0.20f - new Vector3(0f, 0.016f, 0f),
-            0.025f, 0.022f, 8, stockWood);
-
-        // Twin side-by-side barrels
-        VisualEngine3D.Rod(receiverHinge - sideOffset, barrelEnd - sideOffset, 0.016f, 0.015f, 10, barrelSteel);
-        VisualEngine3D.Rod(receiverHinge + sideOffset, barrelEnd + sideOffset, 0.016f, 0.015f, 10, barrelSteel);
 
         // When barrels are tilted open in break-action, show glowing red/gold shell rims inside the breech!
         if (breakBarrelTilt > 0.12f)

@@ -531,28 +531,43 @@ public static partial class Program
         MainMenuAndPauseUI.Center(_serif,"Версия 1.1.3",new(sw-97,sh-23,94,19),14,white);
     }
 
+    private static Texture2D[]? _slotIcons;
+
     internal static void DrawSlotIcon(int index, Vector2 center, bool unlocked, Color? accent = null)
     {
-        Vector2 Point(float x,float y) => center + Vector2.Transform(new Vector2(x,y), Matrix3x2.CreateRotation(-.72f));
-        Color steel=accent ?? new Color(153,171,185,255), leather=accent ?? new Color(144,87,46,255), charcoal=accent ?? new Color(39,46,57,255);
-        void Line(float x,float y,float u,float v,float w,Color col) =>
-            Raylib.DrawLineEx(Point(x,y),Point(u,v),w,unlocked ? col : Raylib.Fade(col,.37f));
-        switch(index)
+        if (_slotIcons == null)
         {
-            case 0:
-                Line(-21,1,17,1,8,leather); Line(-14,-1,15,-1,1.5f,new Color(211,151,82,255));
-                Color brass=new(239,196,102,255);
-                Line(11,-4,21,-4,2,brass); Line(11,5,21,5,2,brass);
-                Line(11,-4,11,5,2,brass); Line(21,-4,21,5,2,brass); break;
-            case 1:
-                Line(-23,0,-4,0,8,new Color(53,125,180,255)); Line(-5,0,11,0,4,steel);
-                Line(11,0,22,0,2,new Color(240,167,77,255)); break;
-            case 2:
-                Line(-17,-3,13,-3,11,charcoal); Line(-16,-7,11,-7,2,steel);
-                Line(9,-4,23,-4,5,steel); Line(-7,0,-12,15,7,charcoal); Line(4,0,4,9,3,steel); break;
-            default:
-                Line(-22,5,-9,2,8,leather); Line(-9,1,3,-2,8,charcoal);
-                Line(0,-4,23,-4,4,steel); Line(1,0,23,0,3,new Color(84,105,127,255)); break;
+            string[] files =
+            [
+                "icon_slot_1_belt.png",
+                "icon_slot_2_solder.png",
+                "icon_slot_3_uzi.png",
+                "icon_slot_4_shotgun.png"
+            ];
+            _slotIcons = new Texture2D[files.Length];
+            for (int i = 0; i < files.Length; i++)
+            {
+                string p = Path.Combine(AppContext.BaseDirectory, "assets", "icons", files[i]);
+                if (!File.Exists(p))
+                    p = Path.Combine(Directory.GetCurrentDirectory(), "assets", "icons", files[i]);
+                if (File.Exists(p))
+                {
+                    Texture2D tex = Raylib.LoadTexture(p);
+                    Raylib.SetTextureFilter(tex, TextureFilter.Bilinear);
+                    _slotIcons[i] = tex;
+                }
+            }
+        }
+
+        int idx = Math.Clamp(index, 0, _slotIcons.Length - 1);
+        Texture2D icon = _slotIcons[idx];
+        if (icon.Id != 0)
+        {
+            Color tint = accent ?? Color.White;
+            if (!unlocked) tint = Raylib.Fade(tint, 0.38f);
+            Rectangle src = new(0, 0, icon.Width, icon.Height);
+            Rectangle dst = new(center.X - 29f, center.Y - 29f, 58f, 58f);
+            Raylib.DrawTexturePro(icon, src, dst, Vector2.Zero, 0f, tint);
         }
     }
 
@@ -638,12 +653,12 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
 
-        // 1. 01_office_hub_hr_tarot.png - South Base: HR Tarot Booth Veronika with candles & crystal ball, 90s Shop, Belt in crimson jacket hands
+        // 1. 01_office_hub_hr_tarot.png - Central White Shark Reception opposite the Elevator: HR Tarot Veronika with crystal ball & candles, Belt in crimson jacket hands
         ResetNewGameFloor();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(1); // Father's Leather Belt
-        _playerPos = new Vector3(-6.95f, 1.72f, 13.0f);
-        LookAtTarget(new Vector3(-7.4f, 1.19f, 15.2f));
+        _playerPos = new Vector3(0.0f, 1.72f, 10.15f);
+        LookAtTarget(new Vector3(0.0f, 1.28f, 13.0f));
         AudioMusicSystem.TriggerVoiceLine("HR-ТАРОЛОГ ВЕРОНИКА", "Расклад Таро готов! Приноси вайб-кодеров на разбор натальной карты!", (int)SpeakerVoiceType.VeronikaTarot);
         CaptureShot("01_office_hub_hr_tarot.png");
 
