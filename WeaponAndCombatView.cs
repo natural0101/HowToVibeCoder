@@ -880,29 +880,20 @@ public class WeaponAndCombatView
 
         Vector3 rightAssembly = baseOffset + thrustOffset;
         Vector3 handleBase = new Vector3(.18f,-.15f,.62f) + rightAssembly;
-        // Pose the right hand & soldering iron at an expressive 3/4 inward angle so the turned handle,
-        // diagonal blue PVC tape wraps, ribbed bakelite collar, perforated heater windows, side clamp screw,
-        // and faceted copper/silver-tinned chisel tip are clearly displayed in first-person view.
         Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
             * Matrix4x4.CreateRotationX(-0.14f)
             * Matrix4x4.CreateRotationY(-0.26f)
             * Matrix4x4.CreateTranslation(handleBase);
 
-        VisualEngine3D.ArmAssembly(false, baseOffset, "fps_hands_solder");
         VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
-        Vector3 ironDir = Vector3.TransformNormal(Vector3.UnitZ, rightPose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
         VisualEngine3D.Asset("weapon_solder_90s", handleBase, 0, 1, tint, assemblyTransform: rightPose);
         // Power cord leaves the pommel strain-relief boot
-        Vector3 cordStart = Vector3.Transform(handleBase - Vector3.UnitZ * .148f, rightPose);
+        Vector3 cordStart = Vector3.Transform(handleBase - Vector3.UnitZ * .099f, rightPose);
         Vector3 cordMid = cordStart + new Vector3(.04f,-.16f,-.18f);
         VisualEngine3D.Rod(cordStart, cordMid, .0032f, .0032f, 8, new Color(28,28,32,255));
 
-        Vector3 tipPoint = Vector3.Transform(handleBase + new Vector3(0f, 0.017f, 0.474f), rightPose);
-        float glow = Math.Clamp(SolderHeatGlow + p * 0.35f, 0.5f, 1.0f);
 
-        // Small heat tint at the copper tip, without smoke balls or electric spokes.
-        VisualEngine3D.Orb(tipPoint, 0.0055f, new Color(255, 180, 70, (int)(110 * glow)));
     }
 
     // =========================================================================

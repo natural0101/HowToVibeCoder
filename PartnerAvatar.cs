@@ -73,8 +73,13 @@ internal sealed class PartnerAvatar
         // The authored SMG is a separate material group in the character asset.
         bool smg = Pose.Weapon == WeaponType.MicroUzi;
         VisualEngine3D.Asset("char_partner_90s",Feet+Vector3.UnitY*step,yaw*180/MathF.PI,
-            stretch:new Vector3(1,height,1), hideProp:!smg);
+            stretch:new Vector3(1,height,1), hideProp:true);
         float kick=flash>0 ? .045f : 0;
+        if (smg)
+        {
+            VisualEngine3D.Asset("weapon_uzi_90s",P(-.094f,1.324f,.258f-kick)+Vector3.UnitY*step,
+                yaw*180f/MathF.PI+194f, scale:.66f*height);
+        }
         switch(Pose.Weapon)
         {
             case WeaponType.Belt:

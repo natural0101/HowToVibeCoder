@@ -2186,6 +2186,7 @@ public sealed class SkyscraperFloor1World
     {
         Vector3 b = HrTarotBoothPos;
         VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.85f,2.85f,24,new Color(77,33,83,255));
+        VisualEngine3D.Asset("prop_reception_chair", b+new Vector3(-2.9f,0,.12f), 145f);
         VisualEngine3D.Asset("prop_hr_reception_desk", b, 0f);
         VisualEngine3D.Asset("char_hr_veronika", b+new Vector3(0,.03f,0), 180f);
         // The dynamic box retains the inscription's upright UVs; the batched wall uses world UVs.

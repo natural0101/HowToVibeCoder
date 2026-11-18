@@ -4,8 +4,12 @@ import math
 import os
 from mathutils import Vector, Matrix
 
-OUT_MODELS = r"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder\assets\models"
-OUT_ICONS  = r"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder\assets\icons"
+from pathlib import Path
+
+ASSETS = Path(__file__).resolve().parent / "assets"
+CHAIR_SOURCE = ASSETS / "external_cc0/SheenChair"
+OUT_MODELS = str(ASSETS / "models")
+OUT_ICONS = str(ASSETS / "icons")
 os.makedirs(OUT_MODELS, exist_ok=True)
 os.makedirs(OUT_ICONS, exist_ok=True)
 
@@ -255,34 +259,13 @@ def build_whiteboard():
 # 5. PROP: POTTED FICUS TREE (prop_ficus_tree.glb)
 # ==============================================================================
 def build_ficus_tree():
-    clear_scene()
-    m_pot = make_mat("PlanterPot", (0.72, 0.46, 0.30, 1), roughness=0.55)
-    m_rim = make_mat("PlanterRim", (0.82, 0.54, 0.36, 1), roughness=0.5)
-    m_soil = make_mat("SoilDark", (0.22, 0.16, 0.12, 1), roughness=0.8)
-    m_bark = make_mat("TrunkBark", (0.42, 0.29, 0.18, 1), roughness=0.7)
-    m_leaf1 = make_mat("LeafDark", (0.14, 0.48, 0.25, 1), roughness=0.45)
-    m_leaf2 = make_mat("LeafMid", (0.20, 0.60, 0.32, 1), roughness=0.45)
-    m_leaf3 = make_mat("LeafBright", (0.28, 0.70, 0.38, 1), roughness=0.4)
-
-    add_rod("PotBody", (0, 0.0, 0), (0, 0.56, 0), 0.26, 0.36, m_pot, 16)
-    add_vcyl("PotRim", (0, 0.55, 0), 0.38, 0.06, m_rim, vertices=16)
-    add_vcyl("Soil", (0, 0.53, 0), 0.34, 0.03, m_soil, vertices=16)
-    add_rod("MainTrunk", (0, 0.52, 0), (0, 1.45, 0), 0.08, 0.042, m_bark, 10)
-
-    branches = [
-        ((-0.24, 1.32, 0.16), m_leaf1, (0.40, 0.34, 0.38)),
-        ((0.26, 1.40, -0.18), m_leaf2, (0.42, 0.36, 0.40)),
-        ((-0.18, 1.58, -0.22), m_leaf3, (0.38, 0.32, 0.38)),
-        ((0.20, 1.66, 0.22), m_leaf1, (0.40, 0.34, 0.40)),
-        ((0.0, 1.86, 0.0), m_leaf2, (0.48, 0.40, 0.48)),
-        ((-0.30, 1.50, 0.02), m_leaf3, (0.34, 0.28, 0.34)),
-        ((0.30, 1.54, 0.04), m_leaf3, (0.34, 0.28, 0.34)),
-    ]
-    for idx, (pos, lmat, scl) in enumerate(branches):
-        add_rod(f"Branch_{idx}", (0, 0.92 + idx*0.06, 0), pos, 0.038, 0.018, m_bark, 8)
-        add_sphere(f"Canopy_{idx}", pos, 1.0, lmat, scale=scl, segments=12, ring_count=8)
-
-    finalize_and_export("prop_ficus_tree.glb")
+    import runpy, shutil
+    ficus_script = ASSETS / "external_cc0/office/build_cc0_ficus.py"
+    runpy.run_path(str(ficus_script), run_name="__main__")
+    src = ASSETS / "external_cc0/office/FicusPlant_CC0.glb"
+    dst = Path(OUT_MODELS) / "prop_ficus_tree.glb"
+    shutil.copy2(src, dst)
+    print("Exported:", dst, os.path.getsize(dst))
 
 # ==============================================================================
 # 6. PROP: OFFICE TRASH BIN (prop_trash_bin.glb)
@@ -638,183 +621,101 @@ def build_weapon_belt():
 # ==============================================================================
 # 11. WEAPON 2: 90s SOLDERING IRON WITH BLUE TAPE (weapon_solder_90s.glb)
 # ==============================================================================
+def build_reception_chair():
+    clear_scene()
+    bpy.ops.import_scene.gltf(filepath=str(CHAIR_SOURCE / "SheenChair.glb"))
+    velvet = make_mat("Reception petrol velvet", (.025,.16,.16,1), roughness=.83)
+    for obj in list(bpy.context.scene.objects):
+        if obj.type != "MESH":
+            continue
+        bpy.context.view_layer.objects.active = obj
+        obj.data.gltf2_variant_default_materials.clear()
+        obj.data.gltf2_variant_mesh_data.clear()
+        for slot in obj.material_slots:
+            if slot.material and slot.material.name.startswith("fabric "):
+                slot.material = velvet
+        # Keep the imported silhouette and upholstery UVs at the lobby viewing distance.
+        if len(obj.data.polygons) > 3000:
+            modifier = obj.modifiers.new("Lobby detail", "DECIMATE")
+            modifier.ratio = .42
+            bpy.ops.object.modifier_apply(modifier=modifier.name)
+    finalize_and_export("prop_reception_chair.glb", preserve_smoothing=True)
+
+
 def build_weapon_solder():
     clear_scene()
-    m_wood       = make_mat("LatheWood", (0.42, 0.19, 0.08, 1), roughness=0.40)
-    m_wood_dark  = make_mat("TurnedWoodGroove", (0.24, 0.10, 0.04, 1), roughness=0.48)
-    m_tape       = make_mat("BluePvcTape", (0.08, 0.36, 0.94, 1), roughness=0.22)
-    m_tape_edge  = make_mat("BlueTapeOverlap", (0.04, 0.22, 0.68, 1), roughness=0.30)
-    m_bakelite   = make_mat("RibbedBakelite", (0.10, 0.09, 0.10, 1), roughness=0.32)
-    m_steel      = make_mat("HeaterSteel", (0.76, 0.80, 0.86, 1), metallic=0.88, roughness=0.22)
-    m_heat_steel = make_mat("HeatTemperedSteel", (0.46, 0.42, 0.54, 1), metallic=0.84, roughness=0.28)
-    m_mica       = make_mat("MicaCore", (0.28, 0.18, 0.12, 1), roughness=0.65)
-    m_copper     = make_mat("ForgedCopper", (0.94, 0.42, 0.14, 1), metallic=0.85, roughness=0.22)
-    m_tinned     = make_mat("SilverTinning", (0.92, 0.95, 0.98, 1), metallic=0.95, roughness=0.12)
-    m_glow       = make_mat("HotEmber", (1.0, 0.72, 0.22, 1), roughness=0.10)
+    wood = make_mat("Turned hardwood", (.47,.21,.075,1), roughness=.49)
+    nodes, links = wood.node_tree.nodes, wood.node_tree.links
+    bsdf = nodes.get("Principled BSDF")
+    grain = nodes.new("ShaderNodeTexImage")
+    grain.image = bpy.data.images.load(str(CHAIR_SOURCE / "chair_wood_albedo.png"))
+    # Stain the source grayscale grain in linear light, then embed the RGB albedo.
+    # The runtime samples the texture directly, so bake the stain into its pixels.
+    import numpy as np
+    source = grain.image
+    pixels = np.empty(len(source.pixels), dtype=np.float32)
+    source.pixels.foreach_get(pixels)
+    pixels.reshape(-1,4)[:,:3] *= (.39,.16,.048)
+    stained = bpy.data.images.new("Walnut stained grain", *source.size)
+    stained.pixels.foreach_set(pixels)
+    stained.pack()
+    grain.image = stained
+    links.new(grain.outputs["Color"], bsdf.inputs["Base Color"])
+    packed = nodes.new("ShaderNodeTexImage")
+    packed.image = bpy.data.images.load(str(CHAIR_SOURCE / "chair_woodbrown_roughnessmetallic.png"))
+    packed.image.colorspace_settings.name = "Non-Color"
+    channels = nodes.new("ShaderNodeSeparateColor")
+    links.new(packed.outputs["Color"], channels.inputs[0])
+    links.new(channels.outputs["Green"], bsdf.inputs["Roughness"])
+    tape = make_mat("Cobalt PVC tape", (.022,.12,.43,1), roughness=.38)
+    edge = make_mat("Tape lap", (.015,.077,.29,1), roughness=.40)
+    black = make_mat("Black phenolic", (.035,.027,.029,1), roughness=.40)
+    steel = make_mat("Blued steel", (.26,.29,.34,1), metallic=.86, roughness=.48)
+    copper = make_mat("Forged copper", (.64,.19,.084,1), metallic=.82, roughness=.37)
+    tin = make_mat("POS-61", (.68,.70,.72,1), metallic=.91, roughness=.33)
 
-    # 1) Ergonomic lathe-turned birch handle along +Z (from Z=-0.125 to Z=+0.115)
-    handle_profile = [
-        (-0.125, 0.0085),
-        (-0.118, 0.0145),
-        (-0.104, 0.0178),
-        (-0.088, 0.0155),
-        (-0.065, 0.0182),
-        (-0.020, 0.0202),
-        ( 0.030, 0.0196),
-        ( 0.072, 0.0168),
-        ( 0.092, 0.0148),
-        ( 0.108, 0.0172),
-        ( 0.115, 0.0165),
-    ]
-    for i in range(len(handle_profile) - 1):
-        z0, r0 = handle_profile[i]
-        z1, r1 = handle_profile[i + 1]
-        mat_seg = m_wood_dark if i in (2, 7) else m_wood
-        add_rod(f"TurnedHandle_{i}", (0, 0, z0), (0, 0, z1), r0, r1, mat_seg, 24)
-
-    # Rubber strain-relief cord boot at rear pommel
-    add_rod("CordBoot_0", (0, 0, -0.152), (0, 0, -0.124), 0.0055, 0.0095, m_bakelite, 16)
-    for bz in (-0.144, -0.136, -0.129):
-        add_rod(f"BootRib_{bz}", (0, 0, bz), (0, 0, bz + 0.003), 0.0098, 0.0098, m_bakelite, 16)
-
-    # 2) Realistic Diagonal Helical Wraps of 90s Blue PVC Electrical Tape (косые витки синей ПВХ-изоленты)
-    # 7 overlapping diagonal spiral turns from Z=-0.068 to Z=+0.074
-    n_turns = 7
-    pts_per_turn = 24
-    total_steps = n_turns * pts_per_turn
-    tape_verts = []
-    tape_faces = []
-    tape_half_w = 0.0095
-    for step in range(total_steps + 1):
-        u = step / total_steps
-        theta = step * (math.tau / pts_per_turn)
-        z_center = -0.064 + u * 0.134 + 0.0045 * math.sin(theta)
-        # Match handle swell radius + tape layer thickness
-        r_base = 0.0185 + 0.0022 * math.sin(u * math.pi) + 0.0007 * ((step // pts_per_turn) % 2)
-        nx = math.cos(theta)
-        ny = math.sin(theta)
-        # Cross section of overlapping PVC tape strip (tilted slightly for shingle overlap)
-        for w_s, r_s in ((-tape_half_w, r_base - 0.0003), (tape_half_w, r_base + 0.0005),
-                         (tape_half_w, r_base + 0.0016), (-tape_half_w, r_base + 0.0008)):
-            tape_verts.append(rl_pos((r_s * nx, r_s * ny, z_center + w_s)))
-    for i in range(total_steps):
-        b0 = i * 4
-        b1 = (i + 1) * 4
-        for j in range(4):
-            jn = (j + 1) % 4
-            tape_faces.append((b0 + j, b0 + jn, b1 + jn, b1 + j))
-    t_mesh = bpy.data.meshes.new("HelicalBlueTape")
-    t_mesh.from_pydata(tape_verts, [], tape_faces)
-    t_mesh.update()
-    t_obj = bpy.data.objects.new("HelicalBlueTape", t_mesh)
-    bpy.context.collection.objects.link(t_obj)
-    t_obj.data.materials.append(m_tape)
-    for poly in t_obj.data.polygons:
-        poly.use_smooth = True
-
-    # Raised darker blue overlap seam ridges along the helical tape
-    for turn in range(n_turns):
-        seam_pts = []
-        for k in range(pts_per_turn + 1):
-            step = turn * pts_per_turn + k
-            u = step / total_steps
-            theta = step * (math.tau / pts_per_turn)
-            zc = -0.064 + u * 0.134 + 0.0045 * math.sin(theta) + tape_half_w
-            rb = 0.0198 + 0.0022 * math.sin(u * math.pi)
-            seam_pts.append((rb * math.cos(theta), rb * math.sin(theta), zc))
-        for k in range(pts_per_turn):
-            add_rod(f"TapeSeam_{turn}_{k}", seam_pts[k], seam_pts[k + 1], 0.0008, 0.0008, m_tape_edge, 6)
-
-    # Loose diagonal blue tape tab sticking out slightly near the front wrap
-    add_box("BlueTapeTailTab", (0.019, -0.008, 0.058), (0.009, 0.002, 0.018), m_tape, rot=(0.2, 0.35, -0.4), bevel=0.0005)
-
-    # 3) Compact Ribbed Black Bakelite Collar / Socket (NO flat saucer guard!)
-    add_rod("BakeliteBase", (0, 0, 0.114), (0, 0, 0.154), 0.0182, 0.0168, m_bakelite, 24)
-    for r_idx, rz in enumerate([0.118, 0.127, 0.136, 0.145]):
-        rad = 0.0218 - r_idx * 0.0007
-        add_rod(f"BakeliteFin_{r_idx}", (0, 0, rz), (0, 0, rz + 0.0048), rad, rad * 0.96, m_bakelite, 24)
-    # Stamped hexagonal steel collar nut
-    add_rod("CollarHexNut", (0, 0, 0.154), (0, 0, 0.166), 0.0172, 0.0165, m_steel, 6)
-
-    # 4) Tubular Steel Heater with Real Longitudinal Ventilation Windows & Clamping Screw
-    # Inner mica insulation core visible through the perforated slots
-    add_rod("InnerMicaCore", (0, 0, 0.166), (0, 0, 0.350), 0.0102, 0.0098, m_mica, 16)
-    for coil_z in range(12):
-        cz = 0.178 + coil_z * 0.013
-        add_rod(f"NichromeWind_{coil_z}", (0, 0, cz), (0, 0, cz + 0.003), 0.0108, 0.0108, m_copper, 16)
-
-    # Outer tubular steel heater shell
-    heater = add_rod("HeaterSteelTube", (0, 0, 0.165), (0, 0, 0.356), 0.0142, 0.0134, m_steel, 28)
-    # Cut 4 longitudinal rows of 2 ventilation slot windows through the steel tube
-    for row_z, slot_len in [(0.212, 0.046), (0.282, 0.046)]:
-        for ang_deg in (0, 90, 180, 270):
-            rad_a = math.radians(ang_deg + 25)
-            cx = 0.0135 * math.cos(rad_a)
-            cy = 0.0135 * math.sin(rad_a)
-            bpy.ops.mesh.primitive_cube_add(size=1.0, location=rl_pos((cx, cy, row_z)))
-            cutter = bpy.context.active_object
-            cutter.scale = rl_scale((0.0085 if abs(math.cos(rad_a)) < 0.7 else 0.018,
-                                     0.0085 if abs(math.sin(rad_a)) < 0.7 else 0.018,
-                                     slot_len))
-            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-            bpy.context.view_layer.objects.active = heater
-            mod = heater.modifiers.new("VentWindow", 'BOOLEAN')
-            mod.operation = 'DIFFERENCE'
-            mod.object = cutter
-            bpy.ops.object.modifier_apply(modifier=mod.name)
-            bpy.data.objects.remove(cutter, do_unlink=True)
-
-    # Heat-blued front nozzle collar + Side Clamping Screw (зажимной винт)
-    add_rod("FrontClampCollar", (0, 0, 0.334), (0, 0, 0.360), 0.0156, 0.0150, m_heat_steel, 24)
-    for band_z in (0.172, 0.248, 0.320):
-        add_rod(f"HeaterReinforceBand_{band_z}", (0, 0, band_z), (0, 0, band_z + 0.007), 0.0152, 0.0152, m_heat_steel, 24)
-
-    # Protruding side clamping screw Boss + Slotted Screw Head on upper-left visible side
-    screw_dir = Vector((-0.78, 0.62, 0)).normalized()
-    boss_p0 = screw_dir * 0.012 + Vector((0, 0, 0.346))
-    boss_p1 = screw_dir * 0.022 + Vector((0, 0, 0.346))
-    head_p1 = screw_dir * 0.027 + Vector((0, 0, 0.346))
-    add_rod("ClampScrewBoss", (boss_p0.x, boss_p0.y, boss_p0.z), (boss_p1.x, boss_p1.y, boss_p1.z), 0.0052, 0.0052, m_heat_steel, 14)
-    add_rod("ClampScrewHead", (boss_p1.x, boss_p1.y, boss_p1.z), (head_p1.x, head_p1.y, head_p1.z), 0.0068, 0.0068, m_steel, 16)
-    add_box("ClampScrewSlot", (head_p1.x, head_p1.y, head_p1.z), (0.002, 0.002, 0.011), m_bakelite)
-
-    # 5) Faceted Chisel/Wedge Copper Tip (граненое клиновидное медное жало) with Silvery Tinning
-    # Round copper shank leaving the heater tube
-    add_rod("CopperShank", (0, 0, 0.358), (0, 0.003, 0.402), 0.0096, 0.0092, m_copper, 18)
-
-    # 4-sided faceted wedge chisel mesh from Z=0.398 to Z=0.478 (copper body -> silvery tinned bevel)
-    def add_chisel_segment(name, z0, y0, rx0, ry0, z1, y1, rx1, ry1, mat_seg):
-        pts = [
-            rl_pos((-rx0, y0 - ry0, z0)),
-            rl_pos(( rx0, y0 - ry0, z0)),
-            rl_pos(( rx0, y0 + ry0, z0)),
-            rl_pos((-rx0, y0 + ry0, z0)),
-            rl_pos((-rx1, y1 - ry1, z1)),
-            rl_pos(( rx1, y1 - ry1, z1)),
-            rl_pos(( rx1, y1 + ry1, z1)),
-            rl_pos((-rx1, y1 + ry1, z1)),
-        ]
-        fcs = [
-            (0, 1, 5, 4), (1, 2, 6, 5),
-            (2, 3, 7, 6), (3, 0, 4, 7),
-            (3, 2, 1, 0), (4, 5, 6, 7),
-        ]
-        m = bpy.data.meshes.new(name)
-        m.from_pydata(pts, [], fcs)
-        m.update()
-        o = bpy.data.objects.new(name, m)
-        bpy.context.collection.objects.link(o)
-        o.data.materials.append(mat_seg)
-        return o
-
-    # Forged copper wedge body
-    add_chisel_segment("CopperWedgeBody", 0.398, 0.003, 0.0088, 0.0085, 0.436, 0.010, 0.0094, 0.0044, m_copper)
-    # Silvery POS-61 tinned chisel working edge (серебристое лужение на острие)
-    add_chisel_segment("SilverTinnedEdge", 0.436, 0.010, 0.0094, 0.0044, 0.474, 0.017, 0.0086, 0.0011, m_tinned)
-    # Hot glowing solder bead right on the chisel apex
-    add_sphere("HotSolderDrop", (0, 0.017, 0.476), 0.0026, m_glow, scale=(2.2, 0.7, 1.4), segments=12, ring_count=8)
-
-    finalize_and_export("weapon_solder_90s.glb")
+    # A continuous turned profile. Each row carries the finish of its forward span.
+    rows = [(-.099,.004,black),(-.089,.006,black),(-.084,.009,wood),
+            (-.080,.0128,wood),(-.074,.0132,wood),(-.068,.0125,wood),(-.051,.0126,tape)]
+    for i in range(8):
+        z = -.050 + i*.011
+        rows.extend([(z,.0131,tape),(z+.0093,.0132,edge),(z+.0105,.0129,tape)])
+    rows += [(.039,.0126,wood),(.052,.0125,wood),(.061,.0108,wood),
+             (.065,.0108,black),(.067,.0155,black),(.071,.0155,black),
+             (.074,.012,black),(.079,.008,steel),(.080,.0052,steel),
+             (.179,.0052,steel),(.181,.0046,copper),(.1812,.0038,copper),
+             (.206,.0038,copper),(.215,.0038,tin),(.2212,.0033,tin)]
+    sides = 40
+    vertices, faces = [], []
+    for z,r,material in rows:
+        for i in range(sides):
+            angle = math.tau*i/sides
+            lap = .0018*math.sin(angle) if -.051 <= z <= .038 else 0
+            wedge = max(0,min(1,(z-.206)/.0152))
+            vertices.append(rl_pos((r*math.cos(angle), r*(1-.82*wedge)*math.sin(angle)+.003*wedge, z+lap)))
+    for j in range(len(rows)-1):
+        for i in range(sides):
+            n=(i+1)%sides
+            faces.append((j*sides+i,j*sides+n,(j+1)*sides+n,(j+1)*sides+i))
+    faces += [tuple(reversed(range(sides))),tuple(range(len(vertices)-sides,len(vertices)))]
+    mesh = bpy.data.meshes.new("Turned EPSN profile")
+    mesh.from_pydata(vertices,[],faces)
+    obj = bpy.data.objects.new("EPSN-40",mesh)
+    bpy.context.collection.objects.link(obj)
+    materials = [wood,tape,edge,black,steel,copper,tin]
+    for material in materials:
+        mesh.materials.append(material)
+    uv = mesh.uv_layers.new(name="Turned grain")
+    for face in mesh.polygons:
+        row, side = divmod(face.index,sides)
+        if row >= len(rows)-1:
+            face.material_index = materials.index(black if face.index==len(faces)-2 else tin)
+            continue
+        face.material_index = materials.index(rows[row][2])
+        face.use_smooth = True
+        for loop,u,v in zip(face.loop_indices,(side,side+1,side+1,side),(row,row,row+1,row+1)):
+            uv.data[loop].uv = ((rows[v][0]+.10)*4, u/sides)
+    finalize_and_export("weapon_solder_90s.glb", preserve_smoothing=True)
 
 # ==============================================================================
 # 12. WEAPON 4: SAWED-OFF DOUBLE-BARREL SHOTGUN (weapon_shotgun_90s.glb)
@@ -823,11 +724,31 @@ def build_weapon_shotgun():
     clear_scene()
     m_walnut       = make_mat("DarkWalnut", (0.16, 0.072, 0.034, 1), roughness=0.36)
     m_walnut_check = make_mat("CheckeredWalnut", (0.095, 0.042, 0.018, 1), roughness=0.58)
-    m_receiver     = make_mat("ReceiverSteel", (0.64, 0.68, 0.75, 1), metallic=0.88, roughness=0.22)
-    m_steel_dark   = make_mat("DarkSteelTrim", (0.25, 0.28, 0.34, 1), metallic=0.82, roughness=0.32)
-    m_barrel       = make_mat("BluedSteel", (0.11, 0.14, 0.19, 1), metallic=0.90, roughness=0.18)
+    m_receiver     = make_mat("ReceiverSteel", (.065, .082, .103, 1), metallic=.89, roughness=.34)
+    m_steel_dark   = make_mat("DarkSteelTrim", (.043, .055, .072, 1), metallic=.85, roughness=.39)
+    m_barrel       = make_mat("BluedSteel", (.032, .045, .061, 1), metallic=.90, roughness=.29)
     m_bore         = make_mat("BoreBlack", (0.02, 0.02, 0.03, 1), roughness=0.85)
     m_brass        = make_mat("BrassBead", (0.96, 0.78, 0.22, 1), metallic=0.90, roughness=0.16)
+
+    walnut = ASSETS / "external_cc0/walnut_veneer"
+    # Bake the oil stain into the photo for the game's diffuse-only shader.
+    import numpy as np
+    original = bpy.data.images.load(str(walnut / "walnut_veneer_diff_1k.jpg"))
+    pixels = np.empty(len(original.pixels), dtype=np.float32)
+    original.pixels.foreach_get(pixels)
+    pixels.reshape(-1, 4)[:, :3] *= (.35, .24, .17)
+    stained = bpy.data.images.new("Oiled walnut veneer", *original.size)
+    stained.pixels.foreach_set(pixels)
+    stained.pack()
+    rough = bpy.data.images.load(str(walnut / "walnut_veneer_rough_1k.jpg"))
+    rough.colorspace_settings.name = "Non-Color"
+    for material in (m_walnut, m_walnut_check):
+        tree = material.node_tree
+        shader = tree.nodes.get("Principled BSDF")
+        for image, socket in ((stained, "Base Color"), (rough, "Roughness")):
+            tex = tree.nodes.new("ShaderNodeTexImage")
+            tex.image = image
+            tree.links.new(tex.outputs["Color"], shader.inputs[socket])
 
     def smooth(obj):
         for face in obj.data.polygons:
@@ -890,6 +811,13 @@ def build_weapon_shotgun():
     bpy.context.collection.objects.link(grip)
     mesh.materials.append(m_walnut)
     mesh.materials.append(m_walnut_check)
+    uv = mesh.uv_layers.new(name="UVMap")
+    for face in mesh.polygons:
+        for index in face.loop_indices:
+            row, column = divmod(mesh.loops[index].vertex_index, n_circ)
+            if face.index < (len(rings)-1)*n_circ and face.index % n_circ == n_circ-1 and column == 0:
+                column = n_circ
+            uv.data[index].uv = (.20 + .60*column/n_circ, .12 + .72*row/(len(rings)-1))
     # Assign dark checkered walnut material directly to the flush side-panel polygons of the grip
     # so the silhouette stays 100% sleek and anatomical without protruding pegs!
     for k in range(1, len(rings) - 2):
@@ -954,8 +882,11 @@ def build_weapon_shotgun():
         curve(f"ShotgunTrigger_{t_idx}", [(tx, -0.014, tz), (tx, -0.032, tz + 0.005), (tx, -0.040, tz - 0.002)], 0.0024, m_brass if t_idx == 0 else m_receiver)
 
     # 3) SCULPTED DARK WALNUT SPLINTER FOREND WITH CHECKERING & STEEL DEELEY LATCH
-    smooth(add_sphere("DarkWalnutForend", (0, -0.003, -0.205), 1.0, m_walnut,
+    forend = smooth(add_sphere("DarkWalnutForend", (0, -0.003, -0.205), 1.0, m_walnut,
                       scale=(0.028, 0.019, 0.110), segments=28, ring_count=16))
+    for loop in forend.data.loops:
+        x, y, z = forend.data.vertices[loop.vertex_index].co
+        forend.data.uv_layers.active.data[loop.index].uv = (.5 + x*3.7 + z*5.1, .5 + y*4)
     for side in (-1, 1):
         # Finger grooves along the upper side of the walnut forend
         add_rod(f"ForendFingerGroove_{side}", (side * 0.023, 0.007, -0.140), (side * 0.021, 0.007, -0.270), 0.0032, 0.0028, m_walnut_check, 10)
@@ -1038,14 +969,7 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
 
     cam_data = bpy.data.cameras.new("IconCam")
     cam_data.type = 'ORTHO'
-    if "belt" in glb_name:
-        cam_data.ortho_scale = span * 0.76
-    elif "shotgun" in glb_name:
-        cam_data.ortho_scale = span * 0.78
-    elif "solder" in glb_name:
-        cam_data.ortho_scale = span * 0.86
-    else:
-        cam_data.ortho_scale = span * 0.96
+    cam_data.ortho_scale = span * 1.07
     cam_obj = bpy.data.objects.new("IconCam", cam_data)
     scene.collection.objects.link(cam_obj)
 
@@ -1079,45 +1003,63 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
     bpy.ops.render.render(write_still=True)
     print("Rendered icon:", out_png, os.path.getsize(out_png))
 
-if "--weapons-only" in __import__("sys").argv:
-    build_weapon_belt()
-    build_weapon_solder()
-    build_weapon_shotgun()
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 28.0)
-    render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -36.0)
-    render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
-    render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 38.0)
-elif "--belt-only" in __import__("sys").argv:
-    build_weapon_belt()
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
-elif "--audit-fix" in __import__("sys").argv:
-    build_hr_reception_desk()
-    build_weapon_belt()
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
-elif "--workshop6-icons" in __import__("sys").argv:
-    render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
-elif "--workshop5" in __import__("sys").argv:
-    build_weapon_shotgun()
-elif "--workshop5-icons" in __import__("sys").argv:
-    render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
-    render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 28.0)
-elif "--reception-only" in __import__("sys").argv:
-    build_hr_reception_desk()
-else:
-    if "--icons-only" not in __import__("sys").argv:
-        build_water_cooler()
-        build_vending_machine()
-        build_filing_cabinet()
-        build_whiteboard()
+def build_weapon_uzi():
+    # The partner and first-person SMG use the same swatches and mesh builder.
+    import sys
+    sys.path.insert(0, str(ASSETS.parent))
+    from generate_anatomy import game_prop
+    game_prop()
+
+
+def render_hotbar_icons():
+    for slot, (name, angle) in enumerate((("belt", 18), ("solder", -36), ("uzi", -26), ("shotgun", 28)), 1):
+        render_centered_icon(f"weapon_{name}_90s.glb", f"icon_slot_{slot}_{name}.png", angle)
+
+
+if __name__ == "__main__":
+    if "--solder-only" in __import__("sys").argv:
+        build_weapon_solder()
+        render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -36)
+    elif "--ficus-only" in __import__("sys").argv:
         build_ficus_tree()
-        build_trash_bin()
-        build_server_rack()
-        build_hr_reception_desk()
+    elif "--chair-only" in __import__("sys").argv:
+        build_reception_chair()
+    elif "--weapons-only" in __import__("sys").argv:
         build_weapon_belt()
         build_weapon_solder()
+        build_weapon_uzi()
         build_weapon_shotgun()
+        render_hotbar_icons()
+    elif "--belt-only" in __import__("sys").argv:
+        build_weapon_belt()
+        render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
+    elif "--audit-fix" in __import__("sys").argv:
+        build_hr_reception_desk()
+        build_weapon_belt()
+        render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
+    elif "--workshop6-icons" in __import__("sys").argv:
+        render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
+    elif "--workshop5" in __import__("sys").argv:
+        build_weapon_shotgun()
+    elif "--workshop5-icons" in __import__("sys").argv:
+        render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
+        render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 28.0)
+    elif "--reception-only" in __import__("sys").argv:
+        build_hr_reception_desk()
+    else:
+        if "--icons-only" not in __import__("sys").argv:
+            build_reception_chair()
+            build_water_cooler()
+            build_vending_machine()
+            build_filing_cabinet()
+            build_whiteboard()
+            build_ficus_tree()
+            build_trash_bin()
+            build_server_rack()
+            build_hr_reception_desk()
+            build_weapon_belt()
+            build_weapon_solder()
+            build_weapon_uzi()
+            build_weapon_shotgun()
 
-    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 18.0)
-    render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -36.0)
-    render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
-    render_centered_icon("weapon_shotgun_90s.glb", "icon_slot_4_shotgun.png", 28.0)
+        render_hotbar_icons()

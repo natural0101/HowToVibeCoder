@@ -1034,45 +1034,40 @@ public static class MainMenuAndPauseUI
 
     public static void DrawMainMenu(Font font, int screenW, int screenH)
     {
-        // Original vector skyline: Cloud Entropic Tower, midnight, 1994 / 2026.
-        Raylib.DrawRectangleGradientV(0,0,screenW,screenH,new Color(8,14,27,255),new Color(32,17,40,255));
-        float scale=Math.Min(screenW/1280f,screenH/720f);
-        for(int i=0;i<14;i++)
+        Color accent = new(95,226,217,255);
+        int fadeEnd = (int)MathF.Round(screenW * .64f);
+        const int slices = 64;
+        static Color Scrim(float t)
         {
-            int x=460+i*68, top=230+(i*73)%240;
-            Raylib.DrawRectangle(x,top,58,screenH-top,new Color(14,24,37,255));
-            for(int row=0;row<15;row++) for(int col=0;col<4;col++)
-                if((row*3+col+i)%4!=0) Raylib.DrawRectangle(x+8+col*12,top+14+row*25,4,9,new Color(87,116,132,90));
+            float u = Math.Clamp((t - .18f) / .82f, 0f, 1f);
+            float opacity = 1f - u * u * (3f - 2f * u);
+            return new Color(8, 16, 26, (int)MathF.Round(244f * opacity));
         }
-        int tx=(int)(screenW*.70f), ty=96;
-        Raylib.DrawRectangle(tx,ty,202,screenH,new Color(12,22,35,255));
-        Raylib.DrawTriangle(new(tx+202,ty),new(tx+202,screenH),new(tx+254,screenH),new Color(7,15,25,255));
-        Raylib.DrawRectangle(tx,ty,3,screenH,new Color(41,180,194,255));
-        Raylib.DrawRectangle(tx+199,ty,3,screenH,new Color(183,47,99,255));
-        Raylib.DrawRectangle(tx+47,ty-21,108,21,new Color(23,42,54,255));
-        Raylib.DrawLineEx(new(tx+101,ty-21),new(tx+101,ty-65),2,new Color(195,154,91,255));
-        for(int row=0;row<22;row++) for(int col=0;col<8;col++)
+        for (int s = 0; s < slices; s++)
         {
-            bool lit=(row*7+col*3)%5<3;
-            Raylib.DrawRectangle(tx+13+col*23,ty+20+row*25,10,12,lit?new Color(184,144,88,170):new Color(24,45,57,255));
+            int x0 = s * fadeEnd / slices;
+            int x1 = (s + 1) * fadeEnd / slices;
+            Raylib.DrawRectangleGradientH(x0, 0, x1 - x0, screenH,
+                Scrim(x0 / (float)fadeEnd), Scrim(x1 / (float)fadeEnd));
         }
-        Raylib.DrawRectangleGradientH(0,0,780,screenH,new Color(8,13,23,255),new Color(8,13,23,0));
-        DrawTextCrisp(font,"CLOUD ENTROPIC TOWER",56,43,18,new Color(82,202,213,255));
-        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,58),"HOW TO",52,91,58,Color.White);
-        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,72),"VIBE CODER",52,150,72,Color.White);
-        DrawTextCrisp(font,"ЭТАЖ 1: БЕЛАЯ АКУЛА IT",56,242,24,new Color(229,178,101,255));
-        DrawTextCrisp(font,"1994 / 2026    Свои правила в чужом офисе",56,285,16,Edge);
+        Raylib.DrawRectangle(55,52,30,3,accent);
+        DrawTextCrisp(font,"CLOUD ENTROPIC TOWER",56,69,16,accent);
+        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,58),"HOW TO",52,105,58,Color.White);
+        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,58),"VIBE CODER",52,157,58,Color.White);
+        DrawTextCrisp(font,"Этаж 1 / Белая Акула IT",56,240,22,new Color(242,205,154,255));
         for(int i=0;i<MainMenuButtonLabels.Length;i++)
         {
             Rectangle r=MainButton(i);
             bool selected=i==_selectedMainIndex;
-            Raylib.DrawRectangleRec(r,selected?new Color(35,62,77,255):new Color(17,28,43,235));
-            if(selected) Raylib.DrawRectangle((int)r.X,(int)r.Y,3,(int)r.Height,new Color(75,212,219,255));
-            DrawTextCrisp(font,MainMenuButtonLabels[i],(int)r.X+18,(int)r.Y+6,21,Color.White);
+            if(selected)
+            {
+                Raylib.DrawRectangleGradientH((int)r.X,(int)r.Y,(int)r.Width,(int)r.Height,
+                    new Color(26,90,95,232),new Color(22,57,69,90));
+                Raylib.DrawRectangle((int)r.X,(int)r.Y,3,(int)r.Height,accent);
+            }
+            DrawTextCrisp(font,MainMenuButtonLabels[i],(int)r.X+16,(int)r.Y+6,21,
+                selected ? Color.White : new Color(212,223,231,255));
         }
-        DrawTextCrisp(font,"ОДИНОЧНАЯ ИГРА / КООПЕРАТИВ ПО IP",56,screenH-31,13,new Color(146,166,184,255));
-        Center(font,"CLOUD ENTROPIC",new(tx+10,ty+173,182,36),17,Color.White);
-        Center(font,"TOWER",new(tx+10,ty+208,182,27),14,new Color(82,202,213,255));
         if (_infoPage != null)
         {
             Raylib.DrawRectangle(0,0,screenW,screenH,new Color(5,10,24,134));

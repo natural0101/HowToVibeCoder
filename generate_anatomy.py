@@ -158,35 +158,52 @@ def frame(forward, across):
 
 # Contact frames in the same metre-space as the four runtime weapon assemblies.
 # X is mirrored once by VisualEngine3D.Arm, as for the original MPFB arms.
-def grip_frame(kind, side):
-    right=side=="r"
-    if kind=="fps_belt":
-        return (V((-.20 if right else .20,-.165,.605)), V((-1 if right else 1,0,0)),
-                V((0,.18,.984)).normalized(), V((0,.984,-.18)).normalized(), .026,.022)
-    if kind=="fps_solder":
-        c=V((-.18,-.15,.62) if right else (.16,-.15,.70))
-        return c,V((0,0,1 if right else -1)),V((-1 if right else 1,0,0)),V((0,1,0)),.034 if right else .044,.034 if right else .044
-    if kind=="fps_uzi":
-        c=V((-.1805,-.193,.6665) if right else (-.18,-.125,.80))
-        if right: return c,V((0,1,0)),V((-1,0,0)),V((0,0,1)),.040,.036
-        return c,V((0,0,1)),V((0,-1,0)),V((-1,0,0)),.034,.025
-    c=V((-.166,-.152,.624) if right else (-.18,-.125,.85))
-    if right: return c,V((0,.79,.61)).normalized(),V((-1,0,0)),V((0,-.61,.79)).normalized(),.025,.024
-    return c,V((0,0,1)),V((0,-1,0)),V((-1,0,0)),.040,.037
+# Authored MPFB key poses in the arm-local coordinate system used by ArmAssembly.
+# Each digit stores its knuckle offset from the wrist and three bone rotations
+# (quaternions in w,x,y,z order). Flexion preserves the MPFB phalanx lengths.
+CONTACT_KEYS = json.loads((OUT.parent / "poses/fps_grips.json").read_text())
+
+
+def keyed_grip(kind, side):
+    key = CONTACT_KEYS[kind.removeprefix("fps_")][side]
+    joint = lambda name: JOINT[f"{side}-{name}"]
+    wrist, elbow = V(key["wrist"]), V(key["elbow"])
+    source = joint("hand") - joint("elbow")
+    axis = source.normalized()
+    stretch = Matrix.Identity(3) + Matrix([list(axis*axis[n]) for n in range(3)]) * (
+        (wrist-elbow).length/source.length - 1)
+    transforms = {
+        "lowerarm_"+side: (joint("elbow"), elbow, Quaternion(key["forearm"]).to_matrix() @ stretch),
+        "hand_"+side: (joint("hand"), wrist, Quaternion(key["hand"]).to_matrix()),
+    }
+    signet = None
+    for d, name in enumerate(DIGITS, 1):
+        root, *rotations = key["digits"][name]
+        pos = wrist + V(root)
+        for k, rotation in enumerate(rotations, 1):
+            rest = joint(f"finger-{d}-{k}")
+            rot = Quaternion(rotation).to_matrix()
+            transforms[f"{name}_{k:02}_{side}"] = (rest, pos, rot)
+            delta = rot @ (joint(f"finger-{d}-{k+1}") - rest)
+            if name == "ring" and k == 1:
+                signet = (pos + delta*.42, delta.normalized())
+            pos = pos + delta
+    return transforms, signet
 
 
 def contact_pose(kind, side):
-    """Forward kinematics on MPFB joints. No skin projection or bone stretching.
-
-    Flexion rotates around the transverse knuckle axis toward the palm.
-    Every phalanx retains its rest length and the palm's orientation.
-    """
-    if side=="l" and kind in ("fps_uzi","fps_shotgun"):
-        # Reuse the longitudinal under-forearm grip, including its opposed thumb.
-        dest_wrist=V((-.148,-.162,.685) if kind=="fps_uzi" else (-.140,-.155,.77))
-        return pose("fps",side,dest_wrist)
+    if kind != "fps_solder":
+        return keyed_grip(kind, side)
     j=lambda key: JOINT[side+"-"+key]
-    c,axis,radial,tangent,rx,ry=grip_frame(kind,side)
+    axis=V((0,0,-1))
+    if side=="r":
+        roll=math.radians(-55)
+        c=V((-.18,-.15,.615))
+        radial,tangent=V((math.cos(roll),math.sin(roll),0)),V((-math.sin(roll),math.cos(roll),0))
+        rx,ry=.037314,.039754
+    else:
+        c,radial,tangent=V((.16,-.15,.70)),V((1,0,0)),V((0,1,0))
+        rx,ry=.044,.044
     wrist=j("hand"); mid=j("finger-3-1")
     # MPFB hands are mirrored: orient BOTH rest normals into the palm.
     palm_sign=1 if side=="l" else -1
@@ -202,10 +219,11 @@ def contact_pose(kind, side):
     hand=target_frame@rest_frame.transposed()
     assert abs(hand.determinant()-1)<1e-6
     assert (hand@palm_rest).dot(palm_target)>.999999
-    knuckle=c+radial*rx+tangent*(.006 if kind=="fps_belt" else -.003)
+    knuckle=c+radial*rx-tangent*.003
+    if side=="r":
+        knuckle=c+radial*rx+tangent*ry
     dest_wrist=knuckle-hand@(mid-wrist)
     dest_elbow=dest_wrist+V((-.12 if side=="r" else .15,-.19,-.28))
-    if kind=="fps_shotgun" and side=="r": dest_elbow=dest_wrist+V((-.10,-.04,-.26))
     transforms={}
     for name,a,b,p,q in [("upperarm",j("shoulder"),j("elbow"),dest_elbow-V((0,0,.2)),dest_elbow),
                          ("lowerarm",j("elbow"),wrist,dest_elbow,dest_wrist)]:
@@ -222,24 +240,14 @@ def contact_pose(kind, side):
         chain=[j(f"finger-{d}-{k}") for k in range(1,5)]
         metacarpal=hand@(chain[0]-wrist)
         angles=[.85,1.10,.75]
-        cup=roll=spread=total_angle=0
-        if kind=="fps_belt" and d>=2:
-            # Cupping and three joint flexions fitted to the sagging upper seam.
-            belt_flex=(
-                ((.097,.277,1.036,.948),(.250,.552,1.212,1.850),
-                 (.278,.501,1.010,1.850),(.350,.348,.120,1.317)) if side=="r" else
-                ((.337,.320,1.295,1.768),(.226,.747,1.105,1.850),
-                 (.247,.679,.883,1.786),(.357,.481,.120,1.630)))
-            cup,*angles=belt_flex[d-2]
-        if kind=="fps_shotgun" and side=="r" and d>=3:
-            # Wrap phalanges 1 -> 2 -> 3 tightly around the front & left cheek of the tapered walnut grip
-            # (total_angle reaches ~3.0 rad so fingertips hug the wood instead of sticking out to the left).
-            angles=[.52,1.38,1.12]
-            total_angle,spread,roll,cup=(
-                (.12,-.12,.04,-.18),(.02,-.10,.10,-.14),
-                (-.12,.08,-.06,-.05))[d-3]
-        if roll:
-            metacarpal=Quaternion(radial,roll)@metacarpal
+        cup=total_angle=0
+        if side=="r" and d>=2:
+            # Metacarpal cup and three flexions on the 26 mm taped handle,
+            # from index to little finger. Fit the skin and the signet together.
+            cup,*angles=((.3123,2.0500,.4331,1.2733),
+                         (.2119,2.0500,.3697,1.3536),
+                         (.3346,2.0311,.6312,1.3743),
+                         (.4253,1.3367,1.5258,.4000))[d-2]
         if cup:
             metacarpal=Quaternion(tangent.cross(-radial).normalized(),cup)@metacarpal
         pos=dest_wrist+metacarpal
@@ -251,28 +259,14 @@ def contact_pose(kind, side):
                 # Keep a continuous thumb arc instead of turning back toward a
                 # target already passed by the previous phalanx.
                 direction=(thumb_direction-axis*(.12*k)-radial*(.12*k)).normalized()
-                if kind=="fps_belt":
-                    # Keep the thumb alongside its own index-side palm edge.
-                    thumb_arc=(((.330,.837,-.369),(.050,.088,-.994),(-.420,.585,.739))
-                               if side=="r" else
-                               ((.447,.837,-.369),(.167,-.135,-.988),(-.303,.585,.739)))
-                    lateral,lift,depth=thumb_arc[k]
-                    direction=(axis*lateral+V((0,lift,depth))).normalized()
-                rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
-            elif d==2 and side=="r" and kind in ("fps_uzi","fps_shotgun"):
-                # Index extends toward the trigger; other fingers retain the grip.
-                inward,up,forward=((.20,.50,.84),(.40,.20,.89),(.85,-.10,.51))[k]
-                if kind=="fps_shotgun":
-                    inward,up,forward=((.06,.08,.99),(.22,-.04,.97),(.82,-.12,.56))[k]
-                direction=(-radial*inward+axis*up+tangent*forward).normalized()
+                if side=="r":
+                    angle,along=((-0.79,.85),(.5815,-.2964),(1.1758,-.7393))[k]
+                    transverse=-radial*math.cos(angle)+tangent*math.sin(angle)
+                    direction=transverse*math.cos(along)+axis*math.sin(along)
                 rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
             else:
                 total_angle+=angles[k]
                 direction=tangent*math.cos(total_angle)-radial*math.sin(total_angle)
-                if kind=="fps_belt" and side=="r" and d==2:
-                    direction=(direction-axis*.14).normalized()
-                if spread:
-                    direction=direction*math.cos(spread)+axis*math.sin(spread)
                 rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
             transforms[f"{name}_{k+1:02}_"+side]=(chain[k],pos.copy(),rot)
             delta=rot@rest
@@ -657,55 +651,6 @@ def join(objects, name):
     return obj
 
 
-def solder_spool(pieces):
-    before=set(bpy.context.scene.objects)
-    PALETTE.update(
-        solder="dce5ed",
-        tin_cup="d4a84f",
-        tin_dark="8c6722",
-        rosin_amber="d97414",
-        rosin_gold="f6ad2a",
-        rosin_melt="5c2406"
-    )
-    c=V((.16,-.15,.70))
-    # 1) Round Amber Tin of Pine Rosin (янтарная баночка сосновой канифоли) cradled inside left palm
-    rc = c + V((.004, .005, -.010))
-    bpy.ops.mesh.primitive_cylinder_add(vertices=28, radius=.022, depth=.016, location=xyz(rc), rotation=(math.radians(34), math.radians(-18), 0))
-    finish(bpy.context.object, "RosinTinCup", "tin_cup")
-    bpy.ops.mesh.primitive_cylinder_add(vertices=28, radius=.0232, depth=.003, location=xyz(rc + V((-.001, .0055, -.0035))), rotation=(math.radians(34), math.radians(-18), 0))
-    finish(bpy.context.object, "RosinTinRim", "tin_dark")
-    # Glossy amber pine rosin block filling the tin + golden inner glow & melted dark channel
-    bpy.ops.mesh.primitive_cylinder_add(vertices=28, radius=.0202, depth=.013, location=xyz(rc + V((-.0005, .003, -.002))), rotation=(math.radians(34), math.radians(-18), 0))
-    finish(bpy.context.object, "AmberPineRosin", "rosin_amber")
-    oval("GoldenRosinHighlight", rc + V((.003, .0065, -.0045)), (.013, .0035, .011), "rosin_gold")
-    oval("MeltedRosinGroove", rc + V((-.002, .0075, -.0055)), (.010, .0025, .0045), "rosin_melt")
-
-    # 2) Spiral Coil / Hank of POS-61 Tin Solder Wire (спиральная бухта оловянного припоя)
-    # Tucked snugly inside the left fingers right against the lower-inner wall of the brass rosin tin (0 levitation!)
-    sc = c + V((.001, -.006, -.001))
-    coil_pts = []
-    n_turns = 7
-    steps_per_turn = 20
-    for k in range(n_turns * steps_per_turn + 1):
-        u = k / (n_turns * steps_per_turn)
-        ang = k * math.tau / steps_per_turn
-        rad = .0105 + .0008 * math.sin(u * math.pi)
-        axial = -.014 + u * .028
-        coil_pts.append(sc + V((axial * .75 - rad * .35 * math.cos(ang),
-                                rad * math.sin(ang),
-                                axial * .55 + rad * .90 * math.cos(ang))))
-    wire("HelicalSolderCoil", coil_pts, .0019, "solder", False)
-    # Free solder wire tail feeding diagonally up-right from the tucked coil toward the soldering iron tip
-    wire("SilverSolderFeedLead", [
-        coil_pts[-1],
-        c + V((-.024, .016, .024)),
-        c + V((-.068, .038, .054)),
-        c + V((-.118, .048, .088))
-    ], .0017, "solder")
-    bpy.context.view_layer.update()
-    pieces["l"]=join([pieces["l"]]+list(set(bpy.context.scene.objects)-before),"Left")
-
-
 def boss_armor():
     """Fitted curved exoskeleton over the full deformed MPFB human surface."""
     loft("Thoracic titanium cuirass",[(.94,.18,.15,.03),(1.07,.20,.165,.04),
@@ -755,8 +700,6 @@ def export(kind, filename):
     MATS.clear()
     pieces=human(kind)
     if kind.startswith("fps"):
-        if kind=="fps_solder":
-            solder_spool(pieces)
         join([o for o in bpy.context.scene.objects if o!=pieces["l"]],"Right")
         pieces["l"].name=pieces["l"].data.name="Left"
     elif kind=="boss":
@@ -853,9 +796,9 @@ def game_prop():
     red_m   = "SelectorRed"
     white_m = "SelectorWhite"
     PALETTE.update(
-        GunMetal="252f3b",
-        MachinedSteel="c4d0dd",
-        PolymerGrip="16191f",
+        GunMetal="38414c",
+        MachinedSteel="54606b",
+        PolymerGrip="292d32",
         BrassBolt="f2be3f",
         SelectorRed="f5222d",
         SelectorWhite="f4f7fb",
@@ -1022,21 +965,24 @@ def game_prop():
         export_texcoords=False,export_animations=False)
 
 
-if "--hands-only" not in __import__("sys").argv:
-    game_prop()
-for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
-                       ("coder","char_vibe_coder"),("partner","char_partner_90s"),
-                       ("seer","char_hr_veronika"),("fps","fps_hands_cs2"),
-                       ("fps_belt","fps_hands_belt"),("fps_solder","fps_hands_solder"),
-                       ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
-    if "--weapons-and-hands" in __import__("sys").argv:
-        if kind == "partner" or kind.startswith("fps"): export(kind,filename)
-    elif "--hands-only" in __import__("sys").argv:
-        if kind.startswith("fps_"): export(kind,filename)
-    elif "--workshop6" in __import__("sys").argv:
-        if kind == "partner": export(kind,filename)
-    elif "--workshop5" in __import__("sys").argv:
-        if kind in ("partner","fps_uzi","fps_shotgun"): export(kind,filename)
-    elif "--uzi-only" not in __import__("sys").argv:
-        export(kind,filename)
+if __name__ == "__main__":
+    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv:
+        game_prop()
+    for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
+                           ("coder","char_vibe_coder"),("partner","char_partner_90s"),
+                           ("seer","char_hr_veronika"),("fps","fps_hands_cs2"),
+                           ("fps_belt","fps_hands_belt"),("fps_solder","fps_hands_solder"),
+                           ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
+        if "--solder-only" in __import__("sys").argv:
+            if kind == "fps_solder": export(kind,filename)
+        elif "--weapons-and-hands" in __import__("sys").argv:
+            if kind == "partner" or kind.startswith("fps"): export(kind,filename)
+        elif "--hands-only" in __import__("sys").argv:
+            if kind.startswith("fps_"): export(kind,filename)
+        elif "--workshop6" in __import__("sys").argv:
+            if kind == "partner": export(kind,filename)
+        elif "--workshop5" in __import__("sys").argv:
+            if kind in ("partner","fps_uzi","fps_shotgun"): export(kind,filename)
+        elif "--uzi-only" not in __import__("sys").argv:
+            export(kind,filename)
 

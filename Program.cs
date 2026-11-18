@@ -27,6 +27,9 @@ public static partial class Program
     private static int _playerHp = 100;
     private const int XpPerLevel = 1073;
     private static int _xp = 412;
+    private static SkyscraperFloor1World _menuFloor = null!;
+    private static float _menuTime;
+
     private static float _energy = 100;
     private static Font _serif;
     private static float _weaponFireCooldown = 0f;
@@ -61,6 +64,8 @@ public static partial class Program
 
         AudioMusicSystem.Initialize(silent);
         _world = new SkyscraperFloor1World();
+        _menuFloor = new SkyscraperFloor1World { Partner = new PartnerAvatar(), ElevatorDoorOpenAmount = .62f };
+        _menuFloor.Partner.Move(new(new(-1.82f,1.72f,10.62f),-1.72f,0,WeaponType.MicroUzi));
         _weapons = new WeaponAndCombatView();
 
         WireUpSystems();
@@ -275,6 +280,7 @@ public static partial class Program
             return;
         }
         MainMenuAndPauseUI.Update(dt, ref shouldExit);
+        if (MainMenuAndPauseUI.IsInMainMenu) _menuTime += dt;
         if (shouldExit || MainMenuAndPauseUI.IsInMainMenu) return;
         if (MainMenuAndPauseUI.IsMenuBlockingGameplay)
         {
@@ -411,6 +417,25 @@ public static partial class Program
 
         if (MainMenuAndPauseUI.IsInMainMenu)
         {
+            // Dolly between the reception and the glass lift without ticking gameplay.
+            float shotTime = _menuTime % 28f;
+            float travel = .5f - .5f*MathF.Cos(MathF.Min(shotTime,18f)*MathF.PI/18f);
+            Camera3D menuCam = new()
+            {
+                Position = Vector3.Lerp(new(-5.6f,1.68f,7.8f),new(-7.2f,2.45f,6.8f),travel),
+                Target = Vector3.Lerp(new(-.5f,1.52f,10.8f),new(.2f,1.75f,-4.8f),travel),
+                Up = Vector3.UnitY, FovY = 48
+            };
+            if (shotTime >= 20f)
+            {
+                // From the mezzanine, track parallel to the curtain wall.
+                float track = (shotTime-20f)*.36f;
+                menuCam.Position = new(7f+track,8.2f,-34.5f);
+                menuCam.Target = new(-9f+track,5.5f,-66f);
+            }
+            Raylib.BeginMode3D(menuCam);
+            _menuFloor.DrawWorld3D(menuCam);
+            Raylib.EndMode3D();
             MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
             LoreAndMenusUI.Draw(_uiFont);
             Raylib.EndDrawing();
@@ -634,7 +659,7 @@ public static partial class Program
         Directory.CreateDirectory(projectScreenshotsDir);
         Directory.CreateDirectory(binScreenshotsDir);
 
-        void CaptureShot(string fileName)
+        void CaptureShot(string fileName, string? detailName = null, Rectangle detail = default)
         {
             // Render 3 warmup frames so all animations/particles/UI settle cleanly
             for (int f = 0; f < 3; f++)
@@ -649,6 +674,16 @@ public static partial class Program
             if (!string.Equals(Path.GetFullPath(path1), Path.GetFullPath(path2), StringComparison.OrdinalIgnoreCase))
             {
                 if (!Raylib.ExportImage(img, path2)) throw new IOException(path2);
+            }
+            if (detailName != null)
+            {
+                Image crop = Raylib.ImageFromImage(img,detail);
+                Raylib.ImageResize(ref crop,crop.Width*2,crop.Height*2);
+                string output = Path.Combine(projectScreenshotsDir,detailName);
+                if (!Raylib.ExportImage(crop,output)) throw new IOException(output);
+                string slotFile = string.Join("_", detailName.Split('_').Take(3)) + ".png";
+                File.Copy(output, Path.Combine(projectScreenshotsDir, slotFile), overwrite: true);
+                Raylib.UnloadImage(crop);
             }
             Raylib.UnloadImage(img);
             Console.WriteLine($"[AUTOTEST] Saved screenshot: {path1}");
@@ -677,7 +712,7 @@ public static partial class Program
         _playerPos = new Vector3(0.0f, 1.72f, 10.15f);
         LookAtTarget(new Vector3(0.0f, 1.28f, 13.0f));
         AudioMusicSystem.TriggerVoiceLine("HR-ТАРОЛОГ ВЕРОНИКА", "Расклад Таро готов! Приноси вайб-кодеров на разбор натальной карты!", (int)SpeakerVoiceType.VeronikaTarot);
-        CaptureShot("01_office_hub_hr_tarot.png");
+        CaptureShot("01_office_hub_hr_tarot.png","crop_slot_1_belt.png",new(268,460,765,260));
 
         // 2. 02_macbook_trap_ambush.png - Ambush behind Leather Sofa/Ficus, glowing MacBook Trap + Central Armored Elevator Shaft + Left/Right Forks + Walking Vibe Coder with Anxiety Bar
         ResetNewGameFloor();
@@ -695,7 +730,7 @@ public static partial class Program
         walkingCoder.SpeechTimer = 5.0f;
         _world.UpdateAmbushState(_playerPos, _isCrouching);
         _weapons.UpdateWeapons(0.16f, BuildPlayerCamera(), isMoving: false, holdingFire: true);
-        CaptureShot("02_macbook_trap_ambush.png");
+        CaptureShot("02_macbook_trap_ambush.png","crop_slot_2_solder.png",new(715,456,292,264));
 
         // 3. 03_uzi_combat_saas_miniboss.png - Firing Micro-Uzi (muzzle flash, brass shells, tracers, hitmarker) at SaaS Guru Mini-Boss + flying 3D "500 INTERNAL ERROR" & "API KEY LEAKED" blocks
         ResetNewGameFloor();
@@ -741,7 +776,7 @@ public static partial class Program
         _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
         StagePartner(new(-.75f,0,6.45f),miniBoss.Position+Vector3.UnitY*1.3f);
-        CaptureShot("03_uzi_combat_saas_miniboss.png");
+        CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(712,405,396,315));
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks
         ResetNewGameFloor();
@@ -791,7 +826,7 @@ public static partial class Program
         _weapons.UpdateWeapons(0.03f, bossCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
-        CaptureShot("05_elevator_boss_escaped_agent.png");
+        CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(555,273,653,447));
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]
         LoreAndMenusUI.IsLoreOpen = true;
