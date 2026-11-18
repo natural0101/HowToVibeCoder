@@ -38,6 +38,7 @@ public static partial class Program
         bool HasFlag(string name) => args.Contains(name, StringComparer.OrdinalIgnoreCase);
         bool autoTest = HasFlag("--autotest") || HasFlag("-autotest");
         bool coopSmoke = HasFlag("--coop-smoke");
+        bool gripTest = HasFlag("--grip-test");
         bool silent = args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
@@ -47,7 +48,7 @@ public static partial class Program
             return 0;
         }
 
-        Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+        Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | (autoTest || gripTest ? ConfigFlags.HiddenWindow : 0));
         Raylib.InitWindow(ScreenWidth, ScreenHeight, "HOW TO VIBE CODER - ЭТАЖ 1: CLOUD ENTROPIC TOWER (1994 -> 2026)");
         Raylib.SetTargetFPS(60);
         Raylib.SetExitKey(KeyboardKey.Null);
@@ -72,7 +73,8 @@ public static partial class Program
         }
         else if(args.Contains("--host")) MainMenuAndPauseUI.StartNewOrResumeFloor();
 
-        if(coopSmoke) RunCoopSmoke(join>=0);
+        if(gripTest) RunGripAudit();
+        else if(coopSmoke) RunCoopSmoke(join>=0);
         else if (autoTest) RunAutomatedScreenshotSuite();
         else
         {
@@ -465,16 +467,24 @@ public static partial class Program
             if (fraction>0) Raylib.DrawRing(p,17.5f,20,-90,-90+360*fraction,64,white);
         }
         Meter(52,_playerHp/100f);
-        Meter(99,_energy/100f);
+
         Color heart = _playerHp>30 ? white : new Color(254,152,159,255);
         Raylib.DrawCircle(47,sh-54,6,heart);
         Raylib.DrawCircle(57,sh-54,6,heart);
         Raylib.DrawTriangle(new(41,sh-53),new(52,sh-39),new(63,sh-53),heart);
-        float y=sh-50;
-        void Stroke(float x1,float y1,float x2,float y2,float w) =>
-            Raylib.DrawLineEx(new(x1,y+y1),new(x2,y+y2),w,white);
-        Stroke(95,-3,93,11,2); Stroke(92,-9,92,-3,1.8f); Stroke(95,-9,95,-3,1.8f);
-        Stroke(98,-9,98,-3,1.8f); Stroke(92,-3,98,-3,2); Stroke(104,-9,102,11,2.3f); Stroke(104,-9,105,1,2);
+        LoreAndMenusUI.DrawTextCrisp(_uiFont,$"{_playerHp} HP",80,sh-61,21,white);
+        LoreAndMenusUI.DrawTextCrisp(_uiFont,"ЗДОРОВЬЕ",80,sh-37,11,white);
+
+        Meter(204,_energy/100f);
+        // Our commerce drive meter: a sharp impulse, sharing the health ring.
+        Vector2[] bolt = [new(207,sh-63), new(195,sh-48), new(203,sh-48),
+            new(200,sh-37), new(214,sh-53), new(206,sh-53)];
+        Raylib.DrawTriangle(bolt[0],bolt[1],bolt[2],white);
+        Raylib.DrawTriangle(bolt[0],bolt[2],bolt[5],white);
+        Raylib.DrawTriangle(bolt[2],bolt[3],bolt[4],white);
+        Raylib.DrawTriangle(bolt[2],bolt[4],bolt[5],white);
+        LoreAndMenusUI.DrawTextCrisp(_uiFont,$"{(int)MathF.Round(_energy)}%",232,sh-61,21,white);
+        LoreAndMenusUI.DrawTextCrisp(_uiFont,"НАПОР",232,sh-37,11,white);
 
         int barX=cx-139, barY=sh-82;
         for(int i=0;i<4;i++)
@@ -487,7 +497,7 @@ public static partial class Program
             bool unlocked = i switch {1=>_weapons.UnlockedSolderingIron,2=>_weapons.UnlockedMicroUzi,3=>_weapons.UnlockedSawedOff || _weapons.UnlockedChatGun,_=>true};
             DrawSlotIcon(i,new(r.X+34,r.Y+35),unlocked);
         }
-        MainMenuAndPauseUI.Center(_serif,"[И]",new(barX+286,barY+7,32,25),19,white);
+        MainMenuAndPauseUI.Center(_uiFont,"[N] Архив   [K] Кейсы   [F8] Звук",new(sw-355,sh-42,335,25),16,white);
 
         Color cyan = new(40,213,243,255);
         Vector2 badge = new(sw-220,25);
@@ -530,7 +540,7 @@ public static partial class Program
             Raylib.DrawRectangleRounded(caption,.5f,8,new Color(20,27,35,204));
             MainMenuAndPauseUI.Center(_uiFont,line,caption,16,white);
         }
-        MainMenuAndPauseUI.Center(_serif,"Версия 1.1.3",new(sw-97,sh-23,94,19),14,white);
+
     }
 
     private static Texture2D[]? _slotIcons;
@@ -614,6 +624,7 @@ public static partial class Program
     private static void RunAutomatedScreenshotSuite()
     {
         CheckElevatorNameplates();
+        LoreAndMenusUI.CheckMixerControls();
         string projectScreenshotsDir = Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
         string binScreenshotsDir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(projectScreenshotsDir);

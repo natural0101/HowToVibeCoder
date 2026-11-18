@@ -97,7 +97,7 @@ public static class MainMenuAndPauseUI
     internal static void LoadArt(Font serif)
     {
         Serif = serif;
-        foreach (string name in new[] { "water", "title", "mixer", "case", "archive" })
+        foreach (string name in new[] { "archive" })
         {
             Texture2D texture = Raylib.LoadTexture(Path.Combine(AppContext.BaseDirectory, "assets", "ui", name + ".png"));
             if (texture.Id == 0) throw new IOException("Missing UI texture: " + name);
@@ -130,7 +130,7 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangleRounded(rect, rounding, 8, fill);
         if (border > 0) Raylib.DrawRectangleRoundedLinesEx(rect, rounding, 8, border, Edge);
     }
-    private static Rectangle MainButton(int i) => new(38, Raylib.GetScreenHeight() - 360 + i * 47, 220, 40);
+    private static Rectangle MainButton(int i) => new(56, Raylib.GetScreenHeight() - 370 + i * 45, 310, 36);
     private static Rectangle SettingsRect(float x, float y, float w, float h) =>
         new(Raylib.GetScreenWidth() / 2f - 343 + x, Raylib.GetScreenHeight() / 2f - 276 + y, w, h);
     private static Rectangle SettingsTab(int i) => SettingsRect(i * 173, 32, 166, 39);
@@ -1034,30 +1034,45 @@ public static class MainMenuAndPauseUI
 
     public static void DrawMainMenu(Font font, int screenW, int screenH)
     {
-        Sprite("water", new(0, 0, screenW, screenH));
-        float scale = Math.Min(screenW / 1280f, screenH / 720f);
-        Rectangle title = new(26, 37, 580 * scale, 310 * scale);
-        Sprite("title", new(title.X+3, title.Y+4, title.Width, title.Height), tint: new Color(15,28,45,115));
-        Sprite("title", title, tint: new Color(245,247,249,255));
-        for (int i = 0; i < MainMenuButtonLabels.Length; i++)
+        // Original vector skyline: Cloud Entropic Tower, midnight, 1994 / 2026.
+        Raylib.DrawRectangleGradientV(0,0,screenW,screenH,new Color(8,14,27,255),new Color(32,17,40,255));
+        float scale=Math.Min(screenW/1280f,screenH/720f);
+        for(int i=0;i<14;i++)
         {
-            Rectangle r = MainButton(i);
-            Surface(r, i == _selectedMainIndex ? new Color(76,111,149,193) : new Color(28,49,81,138));
-            Center(GameFonts.Get(Typeface.SerifBold,24), MainMenuButtonLabels[i], r, 24, Color.White);
-            if (i == 2)
-            {
-                Vector2 c = new(r.X+r.Width-12, r.Y+7);
-                for (int j = 0; j < 16; j++)
-                {
-                    Vector2 Tip(int k) => c + Vector2.Transform(new Vector2(k%2==0 ? 17 : 11,0), Matrix3x2.CreateRotation(k*MathF.PI/8));
-                    Raylib.DrawTriangle(c, Tip(j+1), Tip(j), new Color(246, 92, 13, 255));
-                }
-                Center(Serif, "!", new(c.X-10,c.Y-12,20,23), 23, Color.White);
-            }
+            int x=460+i*68, top=230+(i*73)%240;
+            Raylib.DrawRectangle(x,top,58,screenH-top,new Color(14,24,37,255));
+            for(int row=0;row<15;row++) for(int col=0;col<4;col++)
+                if((row*3+col+i)%4!=0) Raylib.DrawRectangle(x+8+col*12,top+14+row*25,4,9,new Color(87,116,132,90));
         }
-        Center(Serif,"Кооператив по IP",new(screenW-257,6,250,33),23,Edge);
-        Center(Serif,"Версия 1.1.3",new(screenW-112,screenH-28,110,25),17,Edge);
-        Center(Serif,"Присоединиться к Discord",new(263,screenH-60,257,32),22,Edge);
+        int tx=(int)(screenW*.70f), ty=96;
+        Raylib.DrawRectangle(tx,ty,202,screenH,new Color(12,22,35,255));
+        Raylib.DrawTriangle(new(tx+202,ty),new(tx+202,screenH),new(tx+254,screenH),new Color(7,15,25,255));
+        Raylib.DrawRectangle(tx,ty,3,screenH,new Color(41,180,194,255));
+        Raylib.DrawRectangle(tx+199,ty,3,screenH,new Color(183,47,99,255));
+        Raylib.DrawRectangle(tx+47,ty-21,108,21,new Color(23,42,54,255));
+        Raylib.DrawLineEx(new(tx+101,ty-21),new(tx+101,ty-65),2,new Color(195,154,91,255));
+        for(int row=0;row<22;row++) for(int col=0;col<8;col++)
+        {
+            bool lit=(row*7+col*3)%5<3;
+            Raylib.DrawRectangle(tx+13+col*23,ty+20+row*25,10,12,lit?new Color(184,144,88,170):new Color(24,45,57,255));
+        }
+        Raylib.DrawRectangleGradientH(0,0,780,screenH,new Color(8,13,23,255),new Color(8,13,23,0));
+        DrawTextCrisp(font,"CLOUD ENTROPIC TOWER",56,43,18,new Color(82,202,213,255));
+        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,58),"HOW TO",52,91,58,Color.White);
+        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,72),"VIBE CODER",52,150,72,Color.White);
+        DrawTextCrisp(font,"ЭТАЖ 1: БЕЛАЯ АКУЛА IT",56,242,24,new Color(229,178,101,255));
+        DrawTextCrisp(font,"1994 / 2026    Свои правила в чужом офисе",56,285,16,Edge);
+        for(int i=0;i<MainMenuButtonLabels.Length;i++)
+        {
+            Rectangle r=MainButton(i);
+            bool selected=i==_selectedMainIndex;
+            Raylib.DrawRectangleRec(r,selected?new Color(35,62,77,255):new Color(17,28,43,235));
+            if(selected) Raylib.DrawRectangle((int)r.X,(int)r.Y,3,(int)r.Height,new Color(75,212,219,255));
+            DrawTextCrisp(font,MainMenuButtonLabels[i],(int)r.X+18,(int)r.Y+6,21,Color.White);
+        }
+        DrawTextCrisp(font,"ОДИНОЧНАЯ ИГРА / КООПЕРАТИВ ПО IP",56,screenH-31,13,new Color(146,166,184,255));
+        Center(font,"CLOUD ENTROPIC",new(tx+10,ty+173,182,36),17,Color.White);
+        Center(font,"TOWER",new(tx+10,ty+208,182,27),14,new Color(82,202,213,255));
         if (_infoPage != null)
         {
             Raylib.DrawRectangle(0,0,screenW,screenH,new Color(5,10,24,134));

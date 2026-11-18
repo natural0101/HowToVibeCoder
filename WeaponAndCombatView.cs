@@ -762,10 +762,10 @@ public class WeaponAndCombatView
     /// and the active 3D weapon ViewModel with multi-phase attack animations, plus 2D HUD overlays (hitmarker & floating damage numbers).
     /// Can be called either inside or outside BeginMode3D (manages its own dedicated depth-cleared 3D pass + 2D HUD projection).
     /// </summary>
-    public void DrawFirstPersonHandsAndWeapon(Camera3D worldCamera, float walkBobPhase = 0f, bool isCrouching = false, Font uiFont = default)
+    public void DrawFirstPersonHandsAndWeapon(Camera3D worldCamera, float walkBobPhase = 0f, bool isCrouching = false, Font uiFont = default, Camera3D? inspectionCamera = null)
     {
         // Local ViewModel camera at origin looking along +Z so hands never clip into walls
-        Camera3D vmCam = new Camera3D
+        Camera3D vmCam = inspectionCamera ?? new Camera3D
         {
             Position = Vector3.Zero,
             Target = new Vector3(0f, 0f, 1f),
@@ -860,21 +860,23 @@ public class WeaponAndCombatView
 
         // Both contact poses and the strap share one assembly displacement.
         Vector3 assembly = baseOffset + swingHandOffset;
-        Vector3 pivot = new Vector3(.18f,-.15f,.62f) + assembly;
+        Vector3 pivot = new Vector3(.20f,-.18f,.60f) + assembly;
         Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
             * Matrix4x4.CreateRotationX(whipExtension*.35f) * Matrix4x4.CreateTranslation(pivot);
+        // Authored grips at (+/-.20, -.18, .60) follow the same strap transform.
         VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_belt", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_belt", pose);
-        Vector3 handForward = Vector3.UnitZ;
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        Vector3 beltPos = new Vector3(.18f,-.15f,.62f) + assembly;
+        Vector3 beltPos = new Vector3(.20f,-.18f,.60f) + assembly;
         VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose);
 
         // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
         if (p > 0.18f)
         {
             byte slashAlpha = (byte)(240 * p);
-            Vector3 buckleCenter = beltPos + handForward * 0.30f;
+            // Match strap(.92) in build_weapon_belt, including the assembly swing.
+            Vector3 buckleCenter = Vector3.Transform(
+                beltPos + new Vector3(-.40f*.92f, -.035f*4*.92f*.08f, 0), pose);
             Vector3 vStart = new Vector3(0.32f * lashSide, 0.22f, 0.72f);
             Vector3 vMid = buckleCenter;
             Vector3 vEnd = new Vector3(-0.36f * lashSide, -0.18f, 0.78f);

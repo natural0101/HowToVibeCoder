@@ -1,4 +1,5 @@
 import bpy
+import bmesh
 import math
 import os
 from mathutils import Vector, Matrix
@@ -94,6 +95,11 @@ def finalize_and_export(filename, preserve_smoothing=False):
     if len(mesh_objs) > 1:
         bpy.ops.object.join()
     obj = bpy.context.active_object
+    bm=bmesh.new();bm.from_mesh(obj.data)
+    bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.0000001)
+    bmesh.ops.dissolve_degenerate(bm,edges=list(bm.edges),dist=.0000001)
+    bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces))
+    bm.to_mesh(obj.data);bm.free();obj.data.update()
     if not preserve_smoothing:
         for poly in obj.data.polygons:
             poly.use_smooth = False
@@ -361,10 +367,6 @@ def build_hr_reception_desk():
     for i in range(1,24):
         t=math.pi*i/24
         add_rod("Inlay_Brass_Seam",(2.50*math.cos(t),.25,.3-1.74*math.sin(t)),(2.50*math.cos(t),.69,.3-1.74*math.sin(t)),.006,.006,brass,vertices=6)
-    # Subtle pale mineral veins across the dark stone counter.
-    for i in range(7):
-        t=.22+i*.44
-        add_rod("Stone_Vein",(2.13*math.cos(t),.922,.3-1.37*math.sin(t)),(2.52*math.cos(t+.018),.922,.3-1.76*math.sin(t+.018)),.003,.002,vein,vertices=5)
     for side in [-1,1]:
         x=side*2.12
         add_box("Terminal_Foot",(x,.94,-.22),(.32,.025,.22),black,bevel=.012)
@@ -390,56 +392,65 @@ def build_weapon_belt():
     m_gold = make_mat("HeavyBrass", (0.96, 0.78, 0.22, 1), metallic=0.88, roughness=0.18)
     m_prong = make_mat("SteelProng", (0.90, 0.92, 0.96, 1), metallic=0.9, roughness=0.15)
 
-    # One swept rectangular leather ribbon, 44 mm wide and 5.5 mm thick.
-    def centre(t):
-        return Vector((.045-.405*t, -.045*math.sin(math.pi*t), .10*t))
-    across = Vector((.10, 0, .36)).normalized()
-    verts, faces = [], []
-    # Return fold at the right end is connected to the long ribbon, not rods.
-    rings=[]
-    for i in range(9):
-        rings.append((Vector((-.025+.070*i/8,.018,0)),Vector((0,0,1)),Vector((0,1,0))))
-    for i in range(1,17):
-        a=math.pi*i/16
-        rings.append((Vector((.045+.009*math.sin(a),.009+.009*math.cos(a),0)),
-                      Vector((0,0,1)),Vector((math.sin(a),math.cos(a),0))))
-    for i in range(1,65):
-        rings.append((centre(i/64),across,Vector((0,-1,0))))
-    for c,width,normal in rings:
-        for w,h in ((-1,-1),(1,-1),(1,1),(-1,1)):
-            verts.append(rl_pos(c+width*(w*.022)+normal*(h*.00275)))
-    for i in range(len(rings)-1):
-        for j in range(4):
-            faces.append((4*i+j,4*i+(j+1)%4,4*(i+1)+(j+1)%4,4*(i+1)+j))
-    end=4*(len(rings)-1)
-    faces += [(3,2,1,0),(end,end+1,end+2,end+3)]
-    data=bpy.data.meshes.new("Continuous leather ribbon")
-    data.from_pydata(verts,[],faces); data.update()
-    obj=bpy.data.objects.new("Continuous leather ribbon",data)
-    bpy.context.collection.objects.link(obj); obj.data.materials.append(m_leather)
-    bpy.context.view_layer.objects.active=obj; obj.select_set(True)
-    bevel=obj.modifiers.new("Rounded leather edges","BEVEL")
-    bevel.width=.001; bevel.segments=3
-    bpy.ops.object.modifier_apply(modifier=bevel.name)
-    # Stitches are thread, never the leather body.
-    for side in (-1,1):
-        for i in range(48):
-            a=centre((i+.15)/48)+across*(side*.0185)+Vector((0,.0031,0))
-            b=centre((i+.65)/48)+across*(side*.0185)+Vector((0,.0031,0))
-            add_rod("Saddle stitch",a,b,.00055,.00055,m_stitch,6)
-    for i in range(5):
-        c=centre(.23+i*.10)+Vector((0,.0032,0))
-        bpy.ops.mesh.primitive_torus_add(major_segments=20,minor_segments=8,
-            location=rl_pos(c),major_radius=.0032,minor_radius=.0008)
-        bpy.context.object.name="Brass eyelet"
-        bpy.context.object.data.materials.append(m_gold)
-    # Open frame extends beyond the leather end, away from the sleeve.
-    c=centre(1); bx,by,bz=c
-    for z in (-.028,.028):
-        add_box("Buckle long rail",(bx-.022,by,bz+z),(.056,.007,.007),m_gold,bevel=.002)
-    for x in (.006,-.050):
-        add_box("Buckle cross rail",(bx+x,by,bz),(.007,.007,.063),m_gold,bevel=.002)
-    add_rod("Steel buckle tongue",(bx+.006,by+.004,bz),(bx-.049,by+.005,bz),.002,.0016,m_prong,10)
+    # Origin is the right grip. The other fist is 40 cm to its left.
+    # Tilt the broad leather face 40 degrees to the image plane.
+    width=Vector((0,math.cos(math.radians(40)),math.sin(math.radians(40))))
+    normal=Vector((0,math.sin(math.radians(40)),-math.cos(math.radians(40))))
+    along=Vector((1,0,0))
+    def strap(t):
+        return Vector((-.40*t,-.035*4*t*(1-t),0))
+    def ribbon(name,path):
+        verts=[]; faces=[]
+        for c in path:
+            for w,h in ((-1,-1),(1,-1),(1,1),(-1,1)):
+                verts.append(rl_pos(c+width*w*.020+normal*h*.00275))
+        for i in range(len(path)-1):
+            for j in range(4):
+                faces.append((4*i+j,4*i+(j+1)%4,4*(i+1)+(j+1)%4,4*(i+1)+j))
+        end=4*(len(path)-1)
+        faces += [(3,2,1,0),(end,end+1,end+2,end+3)]
+        data=bpy.data.meshes.new(name); data.from_pydata(verts,[],faces); data.update()
+        obj=bpy.data.objects.new(name,data); bpy.context.collection.objects.link(obj)
+        obj.data.materials.append(m_leather)
+    ribbon("Tensioned stitched leather",[strap(i/64) for i in range(65)])
+    # A genuine return fold is pinched inside the right fist.
+    fold=[Vector((-.038+.038*i/12,0,0)) for i in range(13)]
+    fold += [along*(.007*math.sin(math.pi*i/16))-normal*(.007*(1-math.cos(math.pi*i/16))) for i in range(1,17)]
+    fold += [Vector((-.038*i/12,0,0))-normal*.014 for i in range(1,13)]
+    ribbon("Folded leather grip loop",fold)
+    for i in range(56):
+        for edge in (-1,1):
+            for face in (-1,1):
+                offset=width*(edge*.0165)+normal*(face*.0031)
+                add_rod("Saddle stitch",strap((i+.15)/56)+offset,
+                        strap((i+.70)/56)+offset,.00065,.00065,m_stitch,6)
+    # Hollow brass eyelets, with a real opening through the leather.
+    leather=bpy.data.objects["Tensioned stitched leather"]
+    for t in (.23,.35,.47,.59,.71):
+        center=strap(t)
+        bpy.ops.mesh.primitive_cylinder_add(vertices=16,radius=.0027,depth=.02,location=rl_pos(center))
+        cutter=bpy.context.object
+        cutter.rotation_mode='QUATERNION'
+        cutter.rotation_quaternion=Vector((0,0,1)).rotation_difference(Vector(rl_pos(normal)))
+        bpy.context.view_layer.objects.active=leather
+        mod=leather.modifiers.new("Punched eyelet hole",'BOOLEAN'); mod.object=cutter; mod.operation='DIFFERENCE'
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+        bpy.data.objects.remove(cutter,do_unlink=True)
+        for face in (-1,1):
+            pts=[center+normal*(face*.0032)+along*(.0036*math.cos(i*math.tau/20))+width*(.0036*math.sin(i*math.tau/20)) for i in range(20)]
+            for i in range(20): add_rod("Brass eyelet",pts[i],pts[(i+1)%20],.0009,.0009,m_gold,8)
+    # Four straight sides and small rounded corners, never a circular ring.
+    center=strap(.92)
+    buckle=[]
+    for x,y,start in ((.023,.019,0),(-.023,.019,90),(-.023,-.019,180),(.023,-.019,270)):
+        for i in range(7):
+            a=math.radians(start+i*15)
+            buckle.append(center+along*(x+.006*math.cos(a))+width*(y+.006*math.sin(a)))
+    for i in range(len(buckle)):
+        add_rod("Rectangular brass buckle",buckle[i],buckle[(i+1)%len(buckle)],.0038,.0038,m_gold,12)
+    hinge=center-along*.029
+    add_rod("Buckle hinge",hinge-width*.023,hinge+width*.023,.0025,.0025,m_gold,12)
+    add_rod("Steel buckle tongue",hinge+normal*.004,center+along*.030+normal*.004,.002,.002,m_prong,12)
 
     finalize_and_export("weapon_belt_90s.glb")
 
@@ -628,7 +639,14 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
     bpy.ops.render.render(write_still=True)
     print("Rendered icon:", out_png, os.path.getsize(out_png))
 
-if "--workshop6-icons" in __import__("sys").argv:
+if "--belt-only" in __import__("sys").argv:
+    build_weapon_belt()
+    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 15.0)
+elif "--audit-fix" in __import__("sys").argv:
+    build_hr_reception_desk()
+    build_weapon_belt()
+    render_centered_icon("weapon_belt_90s.glb", "icon_slot_1_belt.png", 15.0)
+elif "--workshop6-icons" in __import__("sys").argv:
     render_centered_icon("weapon_uzi_90s.glb", "icon_slot_3_uzi.png", -26.0)
 elif "--workshop5" in __import__("sys").argv:
     build_weapon_shotgun()

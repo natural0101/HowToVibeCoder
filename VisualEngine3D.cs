@@ -45,7 +45,9 @@ internal static unsafe class VisualEngine3D
             uv = vertexTexCoord; localXZ = vertexPosition.xz;
             tint = batch == 1 ? vertexColor : vec4(1.);
             gl_Position = mvp * vec4(p,1);
-            if (firstPerson==1) gl_Position.z = gl_Position.z*.002 + gl_Position.w*(-.998);
+            // Reserve the nearest tenth for the viewmodel, retaining depth
+            // precision between the closely spaced fingers and grip surfaces.
+            if (firstPerson==1) gl_Position.z = gl_Position.z*.1 + gl_Position.w*(-.9);
         }
         """;
 
