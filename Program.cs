@@ -69,6 +69,7 @@ public static partial class Program
         _serif = GameFonts.Get(Typeface.Serif, 24);
         MainMenuAndPauseUI.LoadArt(_serif);
         VisualEngine3D.Load();
+        CombatSprites.Load();
 
         AudioMusicSystem.Initialize(silent);
         _world = new SkyscraperFloor1World();
@@ -101,6 +102,7 @@ public static partial class Program
 
         Net.Dispose();
         LoreAndMenusUI.UnloadArchive();
+        CombatSprites.Unload();
         VisualEngine3D.Unload();
         MainMenuAndPauseUI.UnloadArt();
         GameFonts.Unload();
@@ -464,7 +466,6 @@ public static partial class Program
                 Vector3 right=Vector3.Normalize(Vector3.Cross(aim,Vector3.UnitY));
                 float cone=(gun==WeaponType.SawedOff ? .033f : .009f)*steady*(1+_recoilPitch*12);
                 aim=Vector3.Normalize(aim+cone*(right*(2*ShotRandom.NextSingle()-1)+Vector3.Cross(right,aim)*(2*ShotRandom.NextSingle()-1)));
-                cam.Target=cam.Position+aim;
             }
             PlayCurrentWeaponAudio(gun);
             if (Net.Ready)
@@ -475,13 +476,15 @@ public static partial class Program
                     WeaponType.Belt=>3.8f,_=>5.2f };
                 _weapons.BallisticWorld=_world;
                 float distance=_world.PelletDistance(cam.Position,aim,range);
-                _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false);
+                _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false,shotDirection:aim);
             }
-            else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg) && msg.Length>0) SetHudBanner(msg,1.3f);
+            else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg,aim) && msg.Length>0) SetHudBanner(msg,1.3f);
             float kick=gun==WeaponType.SawedOff ? .077f : melee ? .009f : .023f;
-            _recoilPitch+=kick*steady;
-            _recoilYaw+=(2*ShotRandom.NextSingle()-1)*kick*.38f*steady;
-            if (gun==WeaponType.SawedOff || (_weapons.HitmarkerTimer>=.22f && _weapons.HitmarkerIsCrit)) _shake=.014f;
+            // Impulse the spring velocity. The camera starts at the firing sightline.
+            float yawKick=(2*ShotRandom.NextSingle()-1)*kick*steady;
+            if (melee) { _recoilPitch+=kick*steady; _recoilYaw+=yawKick*.38f; }
+            else { _pitchSpring+=kick*steady*30; _yawSpring+=yawKick*8; }
+            if (melee && _weapons.HitmarkerTimer>=.22f && _weapons.HitmarkerIsCrit) _shake=.014f;
             _crosshairGap=Math.Min(15,_crosshairGap+(melee ? 2 : 4));
             if (_weapons.Ammo==0) _weapons.BeginReload();
         }
@@ -623,7 +626,6 @@ public static partial class Program
             bool unlocked = i switch {1=>_weapons.UnlockedSolderingIron,2=>_weapons.UnlockedMicroUzi,3=>_weapons.UnlockedSawedOff || _weapons.UnlockedChatGun,_=>true};
             DrawSlotIcon(i,new(r.X+34,r.Y+35),unlocked);
         }
-        MainMenuAndPauseUI.Center(_uiFont,"[N] Архив   [K] Кейсы   [F] Осмотр   [F8] Звук",new(sw-419,sh-42,405,25),16,white);
 
         Color cyan = new(40,213,243,255);
         Vector2 badge = new(sw-238,25);
@@ -666,14 +668,11 @@ public static partial class Program
             Raylib.DrawLineEx(a,a+axis*5,2.5f,new Color(18,20,23,150));
             Raylib.DrawLineEx(a,a+axis*5,1.4f,white);
         }
-        string hints="[Space] Прыжок   [Shift] Бег   [Ctrl] Присед   [Q] Рывок   [R] Перезарядка";
-        float hintWidth=GameFonts.Measure(_uiFont,hints,13).X;
-        LoreAndMenusUI.DrawTextCrisp(_uiFont,hints,(int)(sw-hintWidth-24),sh-20,13,white);
         if (_weapons.Capacity>0)
         {
             string rounds=_weapons.Reloading ? $"ПЕРЕЗАРЯДКА  {_weapons.ReloadProgress:0%}" : $"{_weapons.Ammo} / {_weapons.Capacity}";
             int w=(int)GameFonts.Measure(_uiFont,rounds,25).X;
-            LoreAndMenusUI.DrawTextCrisp(_uiFont,rounds,sw-25-w,sh-85,25,white);
+            LoreAndMenusUI.DrawTextCrisp(_uiFont,rounds,sw-25-w,sh-43,25,white);
         }
         if (_damageFlash>0)
         {
@@ -1170,13 +1169,12 @@ public static partial class Program
             }
         }
         LookAtTarget(miniBoss.CombatCenter);
-        Camera3D uziCam=BuildPlayerCamera();
         float hpBeforeShot = miniBoss.Hp;
         UpdateTrigger(1f/60,true,true,false,false);
         if (_weapons.Ammo!=31 || hpBeforeShot-miniBoss.Hp != 46 || !_weapons.HitmarkerIsCrit ||
             _weapons.FloatingTexts.LastOrDefault().Text != "-46")
             throw new InvalidDataException("Critical hit on the scaled coder did not produce the expected damage number");
-        _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
+        UpdateTrigger(.012f,false,false,false,false);
         _hudStatusTimer = AudioMusicSystem.VoiceTimer = 0;
 
         CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(670,317,442,370));
@@ -1225,10 +1223,9 @@ public static partial class Program
         _world.SpawnNodeModulesCube(new Vector3(-3.2f, 2.55f, -9.1f), new Vector3(0f, 1.5f, -18.5f));
         _playerPos = new Vector3(-1.35f, 1.72f, -14.2f);
         LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.15f,0));
-        Camera3D bossCam = BuildPlayerCamera();
         UpdateTrigger(1f/60,true,true,false,false);
         if (_weapons.Ammo!=1 || _world.ElevatorBoss.Hp>=1480) throw new InvalidDataException("Shotgun boss shot failed");
-        _weapons.UpdateWeapons(0.03f, bossCam, isMoving: false, holdingFire: true);
+        UpdateTrigger(.018f,false,false,false,false);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
         CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(575,214,590,420));

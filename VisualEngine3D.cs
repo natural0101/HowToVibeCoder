@@ -19,7 +19,7 @@ internal static unsafe partial class VisualEngine3D
     private static readonly HashSet<int> partnerPropMeshes = new();
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
-    private static int firstPersonLoc;
+    private static int firstPersonLoc, muzzleLoc, flashLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc;
     private static Finish? activeFinish;
     private static float activeTaper;
@@ -72,7 +72,8 @@ internal static unsafe partial class VisualEngine3D
         uniform sampler2D texture0;
         uniform vec4 colDiffuse;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
-        uniform float power, clock;
+        uniform float power, clock, flashStrength;
+        uniform vec3 muzzle;
         uniform int firstPerson;
         uniform int finish;
         out vec4 color;
@@ -82,6 +83,13 @@ internal static unsafe partial class VisualEngine3D
             vec3 l=d*inversesqrt(max(.001,r));
             float spec=pow(max(0.,dot(n,normalize(v+l))),gloss);
             return tint*(.12+max(0.,dot(n,l))+spec*1.4)/(1.+r*.17);
+        }
+        vec3 muzzleLight(vec3 n,vec3 v) {
+            vec3 d=muzzle-pos;
+            vec3 l=d*inversesqrt(max(.0001,dot(d,d)));
+            float facing=max(0.,dot(n,l));
+            float glint=pow(max(0.,dot(n,normalize(l+v))),18.);
+            return vec3(1.,.51,.19)*flashStrength*(.12+.45*facing+.58*glint)/(1.+18.*dot(d,d));
         }
         float limb(vec2 p,vec2 a,vec2 b,float r) {
             vec2 v=b-a;
@@ -156,6 +164,7 @@ internal static unsafe partial class VisualEngine3D
                 float sky=.5+.5*n.y;
                 float bounce=.5+.5*dot(n,normalize(vec3(.75,.16,.5)));
                 vec3 value=pigment*(vec3(.42,.46,.52)+sky*.19+bounce*.14+sun*vec3(.58,.50,.40));
+                if(firstPerson==1) value+=muzzleLight(n,v)*(.14+.65*pigment);
                 color=vec4(mix(value,vec3(.68,.79,.92),1.-exp(-.000055*dist*dist)),ink.a);
                 return;
             }
@@ -204,6 +213,7 @@ internal static unsafe partial class VisualEngine3D
             }
             if(finish==4 || finish==3) lit+=base*max(tex.g,tex.r)*.65;
             if(finish==10) lit=base;
+            if(firstPerson==1) lit+=muzzleLight(n,v)*(.26+base);
             float fog=1.-exp(-.000055*dist*dist);
             color=vec4(mix(lit,vec3(.68,.79,.92),fog),ink.a);
         }
@@ -216,6 +226,8 @@ internal static unsafe partial class VisualEngine3D
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         firstPersonLoc = Loc("firstPerson");
+        muzzleLoc = Loc("muzzle");
+        flashLoc = Loc("flashStrength");
         beltTensionLoc = Loc("beltTension");
         sleeveAxisLoc=Loc("sleeveAxis"); sleevePullLoc=Loc("sleevePull"); wristLoc=Loc("wrist");
         batchLoc = Loc("batch"); clockLoc = Loc("clock");
@@ -416,9 +428,16 @@ internal static unsafe partial class VisualEngine3D
         Rlgl.EnableDepthMask();
     }
 
+    internal static void FlashLight(Vector3 tip,float strength)
+    {
+        Raylib.SetShaderValue(shader,muzzleLoc,tip,ShaderUniformDataType.Vec3);
+        Raylib.SetShaderValue(shader,flashLoc,strength,ShaderUniformDataType.Float);
+    }
+
     public static void Hands(float lift=0)
     {
         inspectLift=lift;
+        Raylib.SetShaderValue(shader,flashLoc,0f,ShaderUniformDataType.Float);
         Raylib.SetShaderValue(shader,firstPersonLoc,1,ShaderUniformDataType.Int);
         Vector3 distant=new(50,50,50);
         View(Vector3.Zero,distant,distant,distant,distant,0);

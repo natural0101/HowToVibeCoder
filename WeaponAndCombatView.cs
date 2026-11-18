@@ -24,6 +24,8 @@ public struct SmokeParticle3D
     public float MaxLife;
     public Color Tint;
     public bool IsRing;
+    public bool IsPowder;
+    public float Rotation, InitialSize;
 }
 
 public struct SparkParticle3D
@@ -36,6 +38,8 @@ public struct SparkParticle3D
     public Color ColorMain;
     public Color ColorCore;
     public bool IsElectricArc;
+    public float BallisticWidth;
+    public bool IsDebris;
 }
 
 public struct WhipSlashRibbon3D
@@ -68,6 +72,7 @@ public struct BulletTracer3D
     public float MaxLife;
     public Color TracerColor;
     public float Thickness;
+    public float StartFraction;
 }
 
 public struct FloatingCombatText3D
@@ -102,7 +107,7 @@ public class WeaponAndCombatView
     public float SolderHeatGlow = 0.65f;    // 0.5..1.0 glowing copper tip intensity
     public float UziRecoilPhase = 0f;       // 0 = idle, >0 = bolt kickback & muzzle flash
     public float UziBoltOffset = 0f;        // Reciprocating top cocking slider
-    public float ShotgunKickPhase = 0f;     // 0 = idle, >0 = 45-degree upward kick + break-action reload
+    public float ShotgunKickPhase = 0f;     // 0 = idle, >0 = rearward impulse then muzzle climb
     public float EquipTransition = 0f;      // Smooth raise animation when switching slots 1..4
 
     // Hitmarker & screen feedback
@@ -122,6 +127,11 @@ public class WeaponAndCombatView
 
     private int _uziRounds = 32, _shells = 2, _spentHulls;
     private float _reloadTime, _flash, _roll;
+    private const float UziFlashTime=.038f, ShotgunFlashTime=.055f;
+    private float FlashDuration => CurrentWeapon==WeaponType.MicroUzi ? UziFlashTime : ShotgunFlashTime;
+    private float FlashStrength => MathF.Sqrt(Math.Clamp(_flash/FlashDuration,0,1));
+    private float _flashAngle;
+    private Quaternion _boreAim=Quaternion.Identity;
     internal SkyscraperFloor1World BallisticWorld;
     private float _stridePhase;
     private bool _lowStance;
@@ -265,17 +275,20 @@ public class WeaponAndCombatView
         int damageDealt = 0,
         bool isCritical = false,
         string customHitLabel = null,
-        Vector3? receiverCenter = null)
+        Vector3? receiverCenter = null,
+        Vector3? shotDirection = null)
     {
         _inspectTimer = 0;
+        Vector3 forward = shotDirection ?? Vector3.Normalize(camera.Target-camera.Position);
         if (CurrentWeapon is WeaponType.SawedOff or WeaponType.ChatGun or WeaponType.MicroUzi)
         {
-            _flash=CurrentWeapon==WeaponType.MicroUzi ? .052f : .075f;
+            _flash=FlashDuration;
+            _flashAngle=NextFloat()*MathF.Tau;
             _roll=(NextFloat()-.5f)*.10f*(_lowStance ? .65f : 1);
             if (CurrentWeapon==WeaponType.MicroUzi) UziRecoilPhase=1;
             else ShotgunKickPhase=1;
+            AimBore(camera,hitWorldPoint ?? camera.Position+forward*24);
         }
-        Vector3 forward = Vector3.Normalize(camera.Target - camera.Position);
         Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
         Vector3 muzzleWorld = GetWeaponTipWorldPosition(camera);
@@ -368,19 +381,11 @@ public class WeaponAndCombatView
 
             case WeaponType.MicroUzi:
             {
-                UziRecoilPhase = 1.0f;
                 UziBoltOffset = 1.0f;
 
-                Vector3 targetPos = hitWorldPoint ?? (camera.Position + forward * 24f);
-                BulletTracers.Add(new BulletTracer3D
-                {
-                    Start = muzzleWorld,
-                    End = targetPos,
-                    Life = 0.063f,
-                    MaxLife = 0.063f,
-                    TracerColor = new Color(255, 235, 85, 255),
-                    Thickness = 0.028f
-                });
+                Vector3 targetPos = hitWorldPoint ?? (camera.Position + forward * 26f);
+                AddTracer(muzzleWorld,targetPos,.038f,.0045f,.035f,new(255,236,196,132));
+                SpawnPowder(muzzleWorld,forward,3,false);
 
                 // Eject spinning 3D brass shell casing to the right-up
                 Vector3 ejectPos = muzzleWorld - forward * 0.16f + right * 0.08f + up * 0.05f;
@@ -398,13 +403,7 @@ public class WeaponAndCombatView
                     IsShotgunShell = false
                 });
 
-                if (hitWorldPoint.HasValue)
-                {
-                    SpawnBurstSparks(hitWorldPoint.Value, -forward, count: hitEnemy ? 14 : 8,
-                        colorA: new Color(255, 230, 90, 255),
-                        colorB: new Color(255, 110, 40, 255),
-                        speedMin: 2.5f, speedMax: 7.0f, electric: false);
-                }
+                if (hitWorldPoint.HasValue) SpawnImpact(targetPos,-forward,5);
 
                 break;
             }
@@ -413,54 +412,65 @@ public class WeaponAndCombatView
             case WeaponType.ChatGun:
             {
                 bool isChat = (CurrentWeapon == WeaponType.ChatGun);
-                ShotgunKickPhase = 1.0f;
-
-                // 8 pellet rays in a cone
-                for (int i = 0; i < 8; i++)
+                float range=isChat ? 28 : 12.5f;
+                float pattern=NextFloat()*MathF.Tau;
+                for (int i=0;i<8;i++)
                 {
-                    Vector3 spread = right * ((NextFloat() - 0.5f) * 0.14f) + up * ((NextFloat() - 0.5f) * 0.11f);
-                    Vector3 rayDir = Vector3.Normalize(forward + spread*(_lowStance ? .65f : 1));
-                    float range=isChat ? 28 : 12.5f;
-                    float length=BallisticWorld?.PelletDistance(camera.Position,rayDir,range) ?? range;
-                    Vector3 pelletEnd=i==0 && hitWorldPoint.HasValue ? impactPoint : camera.Position+rayDir*length;
-
-                    BulletTracers.Add(new BulletTracer3D
+                    // Alternate outer and inner rays. Only outer pellets catch the light.
+                    float a=pattern+i*MathF.Tau/8+(NextFloat()-.5f)*.30f;
+                    float radius=i==0 ? 0 : ((i%2==1 ? .054f : .024f)+NextFloat()*.017f);
+                    var spread=(right*MathF.Cos(a)+up*MathF.Sin(a))*radius*(_lowStance ? .65f : 1);
+                    var direction=Vector3.Normalize(forward+spread);
+                    float length=BallisticWorld?.PelletDistance(camera.Position,direction,range) ?? range;
+                    var end=i==0 && hitWorldPoint.HasValue ? impactPoint : camera.Position+direction*length;
+                    if (i%2==1)
                     {
-                        Start = muzzleWorld + right * ((i % 2 == 0 ? -1 : 1) * 0.03f),
-                        End = pelletEnd,
-                        Life = 0.14f,
-                        MaxLife = 0.14f,
-                        TracerColor = isChat ? new Color(110, 255, 190, 255) : new Color(255, 195, 70, 255),
-                        Thickness = isChat ? 0.04f : 0.032f
-                    });
+                        var tint=isChat ? new Color(151,255,205,102) : new Color(255,231,193,_rng.Next(85,126));
+                        AddTracer(muzzleWorld,end,.045f,.005f+.003f*NextFloat(),.24f+.32f*NextFloat(),tint);
+                    }
+                    if (length<range || (i==0 && hitWorldPoint.HasValue))
+                        SpawnImpact(end,-direction,2+_rng.Next(2));
                 }
-
-                // Twin muzzle blast smoke clouds
-                for (int i = 0; i < 10; i++)
-                {
-                    SmokeParticles.Add(new SmokeParticle3D
-                    {
-                        Position = muzzleWorld + forward * 0.2f + RandomVec3(0.08f),
-                        Velocity = forward * (2.5f + NextFloat() * 2.5f) + up * (0.6f + NextFloat() * 0.6f) + RandomVec3(0.8f),
-                        Size = 0.10f,
-                        MaxSize = 0.42f,
-                        Life = 0.65f,
-                        MaxLife = 0.65f,
-                        Tint = isChat ? new Color(120, 255, 200, 190) : new Color(220, 210, 195, 200),
-                        IsRing = false
-                    });
-                }
-
-                if (hitWorldPoint.HasValue)
-                {
-                    SpawnBurstSparks(hitWorldPoint.Value, -forward, count: 26,
-                        colorA: isChat ? new Color(80, 255, 180, 255) : new Color(255, 190, 60, 255),
-                        colorB: isChat ? new Color(255, 215, 0, 255) : new Color(255, 80, 30, 255),
-                        speedMin: 3.0f, speedMax: 9.0f, electric: isChat);
-                }
+                SpawnPowder(muzzleWorld,forward,6,true);
 
                 break;
             }
+        }
+    }
+
+    private void AddTracer(Vector3 start,Vector3 end,float life,float width,float startFraction,Color tint)
+    {
+        BulletTracers.Add(new() { Start=start,End=end,Life=life,MaxLife=life,Thickness=width,
+                                  StartFraction=startFraction,TracerColor=tint });
+    }
+
+    private void Puff(Vector3 position,Vector3 velocity,float size,float maxSize,float life,Color tint)
+    {
+        SmokeParticles.Add(new() { Position=position,Velocity=velocity,Size=size,InitialSize=size,MaxSize=maxSize,
+            Rotation=NextFloat()*MathF.Tau,Life=life,MaxLife=life,Tint=tint,IsPowder=true });
+    }
+
+    private void SpawnPowder(Vector3 tip,Vector3 forward,int count,bool heavy)
+    {
+        for (int i=0;i<count;i++)
+        {
+            float size=heavy ? .064f : .042f;
+            Puff(tip+forward*(i*.018f),forward*(.35f+i*.18f)+Vector3.UnitY*(.28f+NextFloat()*.36f)+RandomVec3(.15f),
+                 size,.10f+size*2+NextFloat()*.06f,.35f+NextFloat()*.30f,new(204,199,191,heavy ? 111 : 82));
+        }
+    }
+
+    private void SpawnImpact(Vector3 hit,Vector3 outward,int sparks)
+    {
+        Puff(hit,outward*.26f+Vector3.UnitY*.19f,.047f,.12f+NextFloat()*.05f,.23f+NextFloat()*.13f,new(213,209,201,119));
+        for (int i=0;i<=sparks;i++)
+        {
+            bool debris=i==sparks;
+            float life=.075f+NextFloat()*.095f;
+            var velocity=(outward*.50f+RandomVec3(1))*(1.5f+NextFloat()*2.3f);
+            SparkParticles.Add(new() { Position=hit,PrevPosition=hit,Velocity=velocity,Life=life,MaxLife=life,
+                ColorMain=debris ? new(97,87,76,210) : new(255,219,164,240),
+                BallisticWidth=debris ? .007f : .002f+NextFloat()*.002f,IsDebris=debris });
         }
     }
 
@@ -614,7 +624,7 @@ public class WeaponAndCombatView
             p.Velocity.X *= (1f - dt * 1.4f);
             p.Velocity.Z *= (1f - dt * 1.4f);
             p.Velocity.Y += dt * 0.25f; // Buoyant rising smoke
-            p.Size = Lerp(0.03f, p.MaxSize, t);
+            p.Size = Lerp(p.IsPowder ? p.InitialSize : .03f, p.MaxSize, t);
             SmokeParticles[i] = p;
         }
 
@@ -708,20 +718,42 @@ public class WeaponAndCombatView
         }
     }
 
+    private Matrix4x4 GunToWorld(Camera3D camera)
+    {
+        Vector3 f=Vector3.Normalize(camera.Target-camera.Position);
+        Vector3 r=Vector3.Normalize(Vector3.Cross(f,camera.Up));
+        Vector3 u=Vector3.Cross(r,f);
+        float lens=MathF.Tan(camera.FovY*MathF.PI/360)/MathF.Tan(ViewModelFov*MathF.PI/360);
+        r*=lens; u*=lens;
+        Vector3 p=camera.Position;
+        // +X in the mirrored viewmodel points screen-right; preserve projected XY at the world lens.
+        return Matrix4x4.CreateRotationZ(ViewRoll) * new Matrix4x4(r.X,r.Y,r.Z,0, u.X,u.Y,u.Z,0,
+            f.X,f.Y,f.Z,0, p.X,p.Y,p.Z,1);
+    }
+
+    private const float ViewModelFov=54;
+    private float ViewRoll => (-12*Ease(EquipTransition)+_lookLag.X*13)*MathF.PI/180;
+
+    private void AimBore(Camera3D camera,Vector3 target)
+    {
+        _boreAim=Quaternion.Identity;
+        var gun=GunAssembly(BaseOffset());
+        Matrix4x4.Invert(gun.Pose*GunToWorld(camera),out var toGun);
+        Vector3 boreBase=gun.Receiver+new Vector3(MuzzleOffset.X,MuzzleOffset.Y,0);
+        Vector3 line=Vector3.Transform(target,toGun)-boreBase;
+        // A surface inside the viewmodel cannot be reached by a forward-pointing barrel.
+        if (line.Z<=MuzzleOffset.Z) return;
+        Vector3 dir=Vector3.Normalize(line);
+        _boreAim=Quaternion.Normalize(new Quaternion(Vector3.Cross(Vector3.UnitZ,dir),1+dir.Z));
+    }
+
     public Vector3 GetWeaponTipWorldPosition(Camera3D camera)
     {
-        Vector3 forward = Vector3.Normalize(camera.Target - camera.Position);
-        Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
-        Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
-
         if (Capacity>0 || CurrentWeapon==WeaponType.ChatGun)
-        {
-            var gun=GunAssembly(BaseOffset());
-            float roll=(-12*Ease(EquipTransition)+_lookLag.X*13)*(MathF.PI/180);
-            Vector3 local=Vector3.Transform(gun.Tip,Matrix4x4.CreateRotationZ(roll));
-            float lens=MathF.Tan(camera.FovY*MathF.PI/360)/MathF.Tan(54*MathF.PI/360);
-            return camera.Position+forward*local.Z+(right*local.X+up*local.Y)*lens;
-        }
+            return Vector3.Transform(GunAssembly(BaseOffset()).Tip,GunToWorld(camera));
+        Vector3 forward=Vector3.Normalize(camera.Target-camera.Position);
+        Vector3 right=Vector3.Normalize(Vector3.Cross(forward,camera.Up));
+        Vector3 up=Vector3.Cross(right,forward);
         return CurrentWeapon switch
         {
             WeaponType.Belt => camera.Position + forward * (0.95f + BeltSwingPhase * 0.9f) + right * 0.22f - up * 0.14f,
@@ -735,7 +767,7 @@ public class WeaponAndCombatView
     /// </summary>
     public void DrawWeaponWorldEffects3D(Camera3D camera)
     {
-        // Smoke simulation remains available; opaque smoke geometry is intentionally omitted.
+
 
         // 2. Whip Slash 3D Arc Ribbons (for Belt attack)
         for (int i = 0; i < WhipSlashes.Count; i++)
@@ -763,6 +795,7 @@ public class WeaponAndCombatView
         for (int i = 0; i < SparkParticles.Count; i++)
         {
             var s = SparkParticles[i];
+            if (s.BallisticWidth>0) continue;
             float ratio = Math.Clamp(s.Life / s.MaxLife, 0f, 1f);
             Color col = new Color(s.ColorMain.R, s.ColorMain.G, s.ColorMain.B, (byte)(255 * ratio));
 
@@ -773,31 +806,85 @@ public class WeaponAndCombatView
             }
         }
 
-        // 4. Bullet & Electric Tracers
-        for (int i = 0; i < BulletTracers.Count; i++)
-        {
-            var tr = BulletTracers[i];
-            float ratio = Math.Clamp(tr.Life / tr.MaxLife, 0f, 1f);
-            Color c = new Color(tr.TracerColor.R, tr.TracerColor.G, tr.TracerColor.B, (byte)(255 * ratio));
-            Vector3 travel = tr.End - tr.Start;
-            float distance = travel.Length();
-            if (distance > 0.0001f)
-            {
-                Vector3 direction = travel / distance;
-                float t=Math.Min(1, .23f+(1-ratio)*1.8f);
-                Vector3 head=tr.Start+travel*t;
-                Vector3 tail=head-direction*Math.Min(distance*t,Math.Min(3.5f,distance*.48f));
-                Raylib.DrawCylinderEx(tail,head,tr.Thickness*.17f,tr.Thickness*.42f,5,c);
-                Raylib.DrawLine3D(tail,head,Color.RayWhite);
-            }
-        }
-
         foreach (var casing in BrassShells)
         {
             Vector3 angles=casing.Rotation*(MathF.PI/180);
             Vector3 axis=Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromYawPitchRoll(angles.Y,angles.X,angles.Z));
             DrawCasing(casing.Position,axis,casing.IsShotgunShell);
         }
+
+        Vector3 forward=Vector3.Normalize(camera.Target-camera.Position);
+        Vector3 right=Vector3.Normalize(Vector3.Cross(forward,camera.Up)), up=Vector3.Cross(right,forward);
+        if (SmokeParticles.Count>0)
+        {
+            CombatSprites.Begin(BlendMode.Alpha);
+            foreach (var p in SmokeParticles)
+            {
+                if (!p.IsPowder) continue;
+                float remaining=p.Life/p.MaxLife;
+                var tint=p.Tint;
+                tint.A=(byte)(tint.A*Ease(remaining));
+                CombatSprites.Puff(p.Position,right,up,p.Size,p.Rotation+(1-remaining)*.48f,tint);
+            }
+            CombatSprites.End();
+        }
+        if (BulletTracers.Count==0 && SparkParticles.Count==0) return;
+        float pixelAngle=2*MathF.Tan(camera.FovY*MathF.PI/360)/Raylib.GetScreenHeight();
+        CombatSprites.Begin(BlendMode.Additive);
+        foreach (var tr in BulletTracers)
+        {
+            float age=1-tr.Life/tr.MaxLife;
+            Vector3 travel=tr.End-tr.Start;
+            float head=float.Lerp(tr.StartFraction,1,age);
+            float tail=Math.Max(0,head-(tr.StartFraction>.20f ? .20f : .26f));
+            Color tint=tr.TracerColor;
+            tint.A=(byte)(tint.A*(1-age*age));
+            CombatSprites.Streak(tr.Start+travel*tail,tr.Start+travel*head,camera.Position,tr.Thickness,pixelAngle,tint);
+        }
+        foreach (var spark in SparkParticles)
+        {
+            if (spark.BallisticWidth==0 || spark.IsDebris) continue;
+            DrawFragment(spark,camera.Position,pixelAngle);
+        }
+        CombatSprites.End();
+        if (SparkParticles.Exists(s=>s.IsDebris))
+        {
+            CombatSprites.Begin(BlendMode.Alpha);
+            foreach (var spark in SparkParticles)
+                if (spark.IsDebris) DrawFragment(spark,camera.Position,pixelAngle);
+            CombatSprites.End();
+        }
+    }
+
+    private static void DrawFragment(SparkParticle3D spark,Vector3 eye,float pixelAngle)
+    {
+        Color color=spark.ColorMain;
+        color.A=(byte)(color.A*spark.Life/spark.MaxLife);
+        CombatSprites.Streak(spark.Position-spark.Velocity*(spark.IsDebris ? .004f : .011f),spark.Position,
+                             eye,spark.BallisticWidth,pixelAngle,color);
+    }
+
+    private static void DrawCasing(Vector3 basePos,Vector3 axis,bool hull)
+    {
+        float r=hull ? .0085f : .0045f;
+        Vector3 cap=basePos+axis*(hull ? .012f : .004f);
+        var brass=new Color(154,119,66,255);
+        VisualEngine3D.Rod(basePos,cap,r*1.08f,r*1.08f,8,brass);
+        Vector3 lip=cap+axis*(hull ? .038f : .014f);
+        VisualEngine3D.Rod(cap,lip,r,r,10,hull ? new(125,42,32,255) : brass);
+        VisualEngine3D.Rod(lip,lip+axis*.0005f,r*.80f,r*.80f,10,new(49,40,32,255));
+    }
+
+    private Matrix4x4 GunToView => Matrix4x4.CreateRotationZ(ViewRoll)*Matrix4x4.CreateScale(-1,1,1);
+
+    private void DrawMuzzleFlash(Camera3D viewCamera)
+    {
+        var gun=GunAssembly(BaseOffset());
+        var tip=Vector3.Transform(gun.Tip,GunToView);
+        var axis=Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ,gun.Pose*GunToView));
+        var right=Vector3.Normalize(Vector3.Cross(viewCamera.Target-viewCamera.Position,viewCamera.Up));
+        var up=Vector3.Normalize(Vector3.Cross(right,viewCamera.Target-viewCamera.Position));
+        CombatSprites.Muzzle(tip,axis,right,up,CurrentWeapon==WeaponType.MicroUzi ? .31f : .43f,_flashAngle,FlashStrength);
     }
 
     /// <summary>
@@ -805,31 +892,6 @@ public class WeaponAndCombatView
     /// and the active 3D weapon ViewModel with multi-phase attack animations, plus 2D HUD overlays (hitmarker & floating damage numbers).
     /// Can be called either inside or outside BeginMode3D (manages its own dedicated depth-cleared 3D pass + 2D HUD projection).
     /// </summary>
-    private static void DrawCasing(Vector3 basePos,Vector3 axis,bool hull)
-    {
-        float r=hull ? .0085f : .0045f;
-        Vector3 cap=basePos+axis*(hull ? .012f : .004f);
-        var brass=new Color(232,181,68,255);
-        VisualEngine3D.Rod(basePos,cap,r*1.08f,r*1.08f,8,brass);
-        VisualEngine3D.Rod(cap,cap+axis*(hull ? .038f : .014f),r,r,8,hull ? new(177,42,30,255) : brass);
-    }
-
-    private void MuzzleFlash(Vector3 tip,Vector3 axis,float length)
-    {
-        if (_flash<=0) return;
-        float f=Math.Clamp(_flash/.045f,.25f,1);
-        Vector3 end=tip+axis*length*f;
-        VisualEngine3D.Rod(tip,end,.036f*f,.001f,7,new(255,144,32,255),Finish.Lamp);
-        VisualEngine3D.Oval(tip+axis*.016f,new Vector3(.034f,.028f,.050f)*f,new(255,245,173,255),Finish.Lamp);
-        for(int i=0;i<5;i++)
-        {
-            float a=i*MathF.Tau/5+_roll*32;
-            Vector3 spur=new(MathF.Cos(a),MathF.Sin(a),0);
-            VisualEngine3D.Rod(tip+axis*.016f,tip+axis*length*.52f+spur*.073f*f,
-                .019f*f,.0005f,4,new(255,200,71,255),Finish.Lamp);
-        }
-    }
-
     public void DrawFirstPersonHandsAndWeapon(Camera3D worldCamera, float walkBobPhase = 0f, bool isCrouching = false, Font uiFont = default, Camera3D? inspectionCamera = null, bool showCombatText = true)
     {
         // Local ViewModel camera at origin looking along +Z so hands never clip into walls
@@ -838,21 +900,23 @@ public class WeaponAndCombatView
             Position = Vector3.Zero,
             Target = new Vector3(0f, 0f, 1f),
             Up = Vector3.UnitY,
-            FovY = 54f,
+            FovY = ViewModelFov,
             Projection = CameraProjection.Perspective
         };
 
         SetStance(walkBobPhase,isCrouching);
         Vector3 baseOffset=BaseOffset();
-        float equip=Ease(EquipTransition);
 
         // Render 3D First-Person ViewModel
         Raylib.BeginMode3D(vmCam);
         VisualEngine3D.Hands(InspectLift(InspectPhase));
-        if (_flash>0) VisualEngine3D.FlashLight(GunAssembly(baseOffset).Tip);
+        if (_flash>0)
+        {
+            VisualEngine3D.FlashLight(Vector3.Transform(GunAssembly(baseOffset).Tip,GunToView),FlashStrength);
+        }
         Rlgl.PushMatrix();
         Rlgl.Scalef(-1,1,1);
-        Rlgl.Rotatef(-12*equip + _lookLag.X*13,0,0,1);
+        Rlgl.Rotatef(ViewRoll*180/MathF.PI,0,0,1);
         Rlgl.DisableBackfaceCulling();
 
         switch (CurrentWeapon)
@@ -876,6 +940,7 @@ public class WeaponAndCombatView
 
         Rlgl.PopMatrix();
         Rlgl.EnableBackfaceCulling();
+        if (_flash>0) DrawMuzzleFlash(vmCam);
         Raylib.EndMode3D();
 
         // Render 2D projected floating combat numbers (`ШЛЕПОК!`, `ПРИПАЯНО!`, `-35`, `КРИТ!`) & Hitmarker X
@@ -1012,29 +1077,39 @@ public class WeaponAndCombatView
 
     }
 
+    private Vector3 MuzzleOffset => CurrentWeapon==WeaponType.MicroUzi
+        ? new Vector3(0,.018f,.322f)*.75f : new Vector3(_shells==1 ? -.0175f : .0175f,.024f,.467f);
+
     private (Vector3 Offset,Matrix4x4 Pose,Vector3 Receiver,Vector3 Tip) GunAssembly(Vector3 baseOffset)
     {
         bool uzi=CurrentWeapon==WeaponType.MicroUzi;
-        float kick=(uzi ? UziRecoilPhase : ShotgunKickPhase*ShotgunKickPhase)*(_lowStance ? .65f : 1);
+        float phase=uzi ? UziRecoilPhase : ShotgunKickPhase;
+        float age=(1-phase)/(uzi ? 9.5f : 1.85f);
+        float steady=_lowStance ? .65f : 1;
+        float push=phase*phase*steady;
+        float climbTime=Math.Max(0,age-.035f);
+        float spring=uzi ? 52 : 19;
+        float climb=climbTime*spring*MathF.Exp(1-climbTime*spring)*Ease(phase/.20f)*steady;
         float t=ReloadProgress;
         float tilt=Ease(t/(uzi ? .20f : .26f))*Ease((1-t)/(uzi ? .23f : .20f));
-        Vector3 offset=baseOffset+(uzi
-            ? new Vector3(.035f+MathF.Sin(_animClock*55)*.006f*kick,.018f*kick,-.048f*kick)
-            : new Vector3(0,.11f*kick,-.12f*kick));
+        Vector3 offset=baseOffset+new Vector3(uzi ? .035f : 0,0,-(uzi ? .038f : .09f)*push);
         Vector3 pivot=offset+(uzi ? new Vector3(.18f,-.193f,.6665f) : new Vector3(.18f,-.17f,.60f));
-        var pose=Matrix4x4.CreateTranslation(-pivot)
-            * Matrix4x4.CreateRotationX(uzi ? -.11f*kick-.19f*tilt : -.29f*kick-.16f*tilt)
-            * Matrix4x4.CreateRotationZ(_roll*kick+tilt*(uzi ? .50f : .14f))
+        Vector3 receiver=offset+(uzi ? new Vector3(.18f,-.10f,.68f) : new Vector3(.18f,-.12f,.66f));
+        Vector3 muzzle=MuzzleOffset;
+        Vector3 boreBase=receiver+new Vector3(muzzle.X,muzzle.Y,0);
+        var aim=Quaternion.Slerp(Quaternion.Identity,_boreAim,Ease(phase/(uzi ? .55f : .76f)));
+        var pose=Matrix4x4.CreateTranslation(-boreBase)*Matrix4x4.CreateFromQuaternion(aim)
+            * Matrix4x4.CreateTranslation(boreBase-pivot)
+            * Matrix4x4.CreateRotationX(uzi ? -.075f*climb-.19f*tilt : -.23f*climb-.16f*tilt)
+            * Matrix4x4.CreateRotationZ(_roll*climb+tilt*(uzi ? .50f : .14f))
             * Matrix4x4.CreateRotationY(uzi ? -.28f : -.12f)
             * Matrix4x4.CreateTranslation(pivot)*GetInspectTransform(uzi ? 3 : 4,InspectPhase);
-        Vector3 receiver=offset+(uzi ? new Vector3(.18f,-.10f,.68f) : new Vector3(.18f,-.12f,.66f));
-        Vector3 muzzle=uzi ? new Vector3(0,.018f,.322f)*.75f : new Vector3(_shells==1 ? -.018f : .018f,.024f,.465f);
         return (offset,pose,receiver,Vector3.Transform(receiver+muzzle,pose));
     }
 
     private void DrawMicroUziViewModel3D(Vector3 baseOffset)
     {
-        var (assembly,pose,receiverCenter,barrelTip)=GunAssembly(baseOffset);
+        var (assembly,pose,receiverCenter,_)=GunAssembly(baseOffset);
         float reload=ReloadProgress;
         float drop=.24f*Ease((reload-.15f)/.19f)*Ease((.72f-reload)/.19f);
         VisualEngine3D.ArmAssembly(false, assembly+new Vector3(.035f,-.57f,-.12f)*drop, "fps_hands_uzi", pose);
@@ -1043,7 +1118,6 @@ public class WeaponAndCombatView
         VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,180,.75f,
             SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose);
         VisualEngine3D.PoseReloadPart(true,0);
-        MuzzleFlash(barrelTip,Vector3.TransformNormal(Vector3.UnitZ,pose),.22f);
     }
 
     // =========================================================================
@@ -1051,7 +1125,7 @@ public class WeaponAndCombatView
     // =========================================================================
     private void DrawSawedOffViewModel3D(Vector3 baseOffset, bool isChatGun)
     {
-        var (assembly,pose,gripTop,barrelEnd)=GunAssembly(baseOffset);
+        var (assembly,pose,gripTop,_)=GunAssembly(baseOffset);
         float reload=ReloadProgress;
         float breakBarrelTilt=Ease(reload/.26f)*Ease((1-reload)/.20f);
         VisualEngine3D.ArmAssembly(false, assembly+new Vector3(0,-.065f,-.095f)*breakBarrelTilt, "fps_hands_shotgun", pose);
@@ -1073,7 +1147,6 @@ public class WeaponAndCombatView
                 DrawCasing(Vector3.Transform(plug,pose),barrelDir,hull: true);
             }
         }
-        MuzzleFlash(barrelEnd,barrelDir,.34f);
     }
 
     // =========================================================================
@@ -1186,10 +1259,6 @@ internal static unsafe partial class VisualEngine3D
     }
     private static readonly Dictionary<bool,List<ReloadMesh>> reloadMeshes=new();
     private static readonly HashSet<bool> posedWeapons=new();
-
-    // The first-person pass parks its warm point light offscreen when idle.
-    internal static void FlashLight(Vector3 tip) =>
-        Raylib.SetShaderValue(shader,tarotLoc,tip,ShaderUniformDataType.Vec3);
 
     internal static void PoseReloadPart(bool magazine,float amount)
     {

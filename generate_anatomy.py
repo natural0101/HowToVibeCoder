@@ -750,6 +750,10 @@ def boss_armor():
 
 
 def export(kind, filename):
+    if kind == "boss":
+        import runpy
+        runpy.run_path(str(Path(__file__).resolve().parent / "assets/external_cc0/office/build_escaped_ai_boss.py"), run_name="__main__")
+        return
     bpy.ops.wm.read_factory_settings(use_empty=True)
     MATS.clear()
     pieces=human(kind)
