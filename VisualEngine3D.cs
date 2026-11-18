@@ -6,7 +6,7 @@ namespace HowToVibeCoder;
 
 internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke }
 
-internal static unsafe class VisualEngine3D
+internal static unsafe partial class VisualEngine3D
 {
     private static Shader shader;
     private static Model box, bevel, plane, tube, sphere;

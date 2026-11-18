@@ -68,6 +68,9 @@ public sealed class VibeCoderEntity
     public int SpawnSide; // -1 = West door, +1 = East door
 
     public bool IsMiniBoss => Archetype == CoderArchetype.SaasGuruMiniBoss;
+    public const float BodyScale = .70f;
+    public float ModelScale => BodyScale * (IsMiniBoss ? 1.28f : 1f);
+    public Vector3 CombatCenter => Position + Vector3.UnitY * (1.05f * ModelScale);
 }
 
 public sealed class GalleyDeskSlot
@@ -75,6 +78,8 @@ public sealed class GalleyDeskSlot
     public int Index;
     public Vector3 DeskPosition;
     public Vector3 ChairPosition;
+    // Scale about the seat surface and slide forward so the hands reach the keyboard.
+    public Vector3 SeatedFeet => ChairPosition + new Vector3(0, .52f * (1 - VibeCoderEntity.BodyScale), -.25f);
     public bool IsOccupied;
     public string CoderName = "";
     public CoderArchetype Archetype;
@@ -1118,7 +1123,7 @@ public sealed class SkyscraperFloor1World
                     if (c.AttackCooldown <= 0f)
                     {
                         c.AttackCooldown = 2.15f;
-                        SpawnSaasGuruErrorBlock(c.Position + new Vector3(0f, 1.45f, 0f), playerPos);
+                        SpawnSaasGuruErrorBlock(c.CombatCenter, playerPos);
 
                         string[] battleCries =
                         {
@@ -1491,7 +1496,7 @@ public sealed class SkyscraperFloor1World
             var desk = GalleyDesks[i];
             if (!desk.IsOccupied) continue;
 
-            Vector3 deskTarget = desk.ChairPosition + new Vector3(0f, 1.1f, 0f);
+            Vector3 deskTarget = desk.SeatedFeet + Vector3.UnitY * (1.1f * VibeCoderEntity.BodyScale);
             Vector3 toDesk = deskTarget - origin;
             float dist = toDesk.Length();
             if (dist <= 4.2f && Vector3.Dot(forward, Vector3.Normalize(toDesk)) > 0.65f)
@@ -1531,7 +1536,7 @@ public sealed class SkyscraperFloor1World
                 ElevatorBoss.HitFlashTimer = 0.16f;
 
                 AudioMusicSystem.PlayHitmarker();
-                weaponSystem.TriggerWeaponAttack(camera, hitPt, hitEnemy: true, damageDealt: dmg, isCritical: isCrit);
+                weaponSystem.TriggerWeaponAttack(camera, hitPt, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: bossCenter);
 
                 if (ElevatorBoss.Hp <= 0f)
                 {
@@ -1568,8 +1573,8 @@ public sealed class SkyscraperFloor1World
             VibeCoderEntity c = ActiveCoders[i];
             if (c.State == CoderAIState.Subdued) continue;
 
-            Vector3 center = c.Position + new Vector3(0f, 1.05f, 0f);
-            float hitRadius = c.IsMiniBoss ? 0.95f : 0.75f;
+            Vector3 center = c.CombatCenter;
+            float hitRadius = .75f * c.ModelScale;
 
             if (TryRaySphereHit(origin, forward, center, hitRadius, bestDist, out Vector3 hp, out float d))
             {
@@ -1596,7 +1601,7 @@ public sealed class SkyscraperFloor1World
             }
 
             AudioMusicSystem.PlayHitmarker();
-            weaponSystem.TriggerWeaponAttack(camera, bestHitPoint, hitEnemy: true, damageDealt: dmg, isCritical: isCrit);
+            weaponSystem.TriggerWeaponAttack(camera, bestHitPoint, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: target.CombatCenter);
 
             if (target.Hp <= 0f)
             {
@@ -1828,9 +1833,10 @@ public sealed class SkyscraperFloor1World
         VisualEngine3D.DrawCharacterDirectionalShadow(new(camera.Position.X,0,camera.Position.Z),camera.Position.Y+.12f,.36f);
         VisualEngine3D.DrawCharacterDirectionalShadow(HrTarotBoothPos,1.9f,.42f);
         foreach (var desk in GalleyDesks)
-            if (desk.IsOccupied) VisualEngine3D.DrawCharacterDirectionalShadow(desk.ChairPosition,1.46f,.43f);
+            if (desk.IsOccupied) VisualEngine3D.DrawCharacterDirectionalShadow(
+                new(desk.SeatedFeet.X,0,desk.SeatedFeet.Z),1.46f*VibeCoderEntity.BodyScale,.43f*VibeCoderEntity.BodyScale);
         foreach (var coder in ActiveCoders)
-            VisualEngine3D.DrawCharacterDirectionalShadow(coder.Position,coder.IsMiniBoss ? 2.5f : 1.9f,.45f);
+            VisualEngine3D.DrawCharacterDirectionalShadow(coder.Position,1.9f* coder.ModelScale,.45f* coder.ModelScale);
         VisualEngine3D.DrawCharacterDirectionalShadow(ElevatorBoss.Position,2.85f,.85f);
         DrawOfficeProps3D();
         DrawHrTarotBoothAndVeronika3D();
@@ -2230,10 +2236,9 @@ public sealed class SkyscraperFloor1World
             DrawCoffee(p+new Vector3(.53f,.797f,.28f));
             if (d.IsOccupied)
             {
-                Vector3 cPos = d.ChairPosition;
                 // The pelvis stays in contact with the seat while typing.
                 Color hoodie = d.WhackFlashTimer>0 ? Color.Gold : d.HoodieColor;
-                VisualEngine3D.Asset("char_vibe_coder_seated",cPos+new Vector3(0,0,-.10f),180,
+                VisualEngine3D.Asset("char_vibe_coder_seated",d.SeatedFeet,180, VibeCoderEntity.BodyScale,
                     tint:Raylib.ColorLerp(Color.White,hoodie,.30f));
 
 
@@ -2401,9 +2406,9 @@ public sealed class SkyscraperFloor1World
 
     private void DrawVibeCoder3D(VibeCoderEntity c)
     {
-        float scale=c.IsMiniBoss ? 1.28f : 1;
+        float scale=c.ModelScale;
         bool walking=c.State is CoderAIState.WalkingToBait or CoderAIState.PanickedFleeing or CoderAIState.CombatHostile;
-        float bob=walking ? .035f*MathF.Abs(MathF.Sin(c.WalkCycle)) : 0;
+        float bob=walking ? .035f*scale*MathF.Abs(MathF.Sin(c.WalkCycle)) : 0;
         float tilt=c.State==CoderAIState.Subdued ? -.48f : 0;
         Color tint=c.HitFlashTimer>0 ? new Color(255,210,170,255) : Raylib.ColorLerp(Color.White,c.HoodieColor,.36f);
         VisualEngine3D.Asset("char_vibe_coder",c.Position+Vector3.UnitY*bob,
@@ -2526,38 +2531,45 @@ public sealed class SkyscraperFloor1World
         Vector3 look = Vector3.Normalize(camera.Target-camera.Position);
         void ProtectHead(Vector3 feet,float scale,float height)
         {
-            WorldLabelLayout.ReserveProjectedBox(camera,feet+Vector3.UnitY*(1.54f*height),
-                new Vector3(.14f*scale,.16f*height,.18f*scale));
+            WorldLabelLayout.ReserveProjectedBox(camera,feet+Vector3.UnitY*(1.36f*height),
+                new Vector3(.14f*scale,.12f*height,.18f*scale));
         }
         if(Partner is {} partner) ProtectHead(partner.Feet,1,partner.Pose.Eye.Y<1.4f?.75f:1);
         foreach(var actor in ActiveCoders)
         {
             if(actor.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,actor.Position)>100) continue;
-            float scale=actor.IsMiniBoss?1.28f:1;
+            float scale=actor.ModelScale;
             ProtectHead(actor.Position,scale,scale);
+            // Enclose the open computer at its draw yaw, including the tilted lid.
+            var forward = new Vector3(MathF.Sin(actor.FacingYaw),0,MathF.Cos(actor.FacingYaw));
+            var side = new Vector3(forward.Z,0,-forward.X);
+            var laptop = actor.Position + scale * (.37f*forward + 1.18f*Vector3.UnitY);
+            var half = scale * (.21f*Vector3.Abs(side) + .16f*Vector3.Abs(forward) + .16f*Vector3.UnitY);
+            WorldLabelLayout.ReserveProjectedBox(camera,laptop,half);
         }
         void Plate(Vector3 head,string name,float health,Color accent)
         {
             if (Vector3.Dot(head-camera.Position,look)<.1f) return;
             Vector2 screen=Raylib.GetWorldToScreen(head,camera)-new Vector2(0,4);
             Font tag=GameFonts.Get(Typeface.InterfaceBold,16);
-            float width=GameFonts.Measure(tag,name,16).X+22;
-            if (!WorldLabelLayout.Place(screen,width,29,out var r)) return;
-            Raylib.DrawRectangleRounded(r,.70f,10,new Color(19,25,34,223));
-            Raylib.DrawRectangleRoundedLinesEx(r,.70f,10,1,new Color(171,181,189,160));
-            GameFonts.Draw(tag,name,new(r.X+11,r.Y+2),16,new Color(247,244,235,255));
-            Rectangle track=new(r.X+11,r.Y+22,r.Width-22,3);
-            Raylib.DrawRectangleRounded(track,1,8,new Color(75,79,86,255));
+            float width=GameFonts.Measure(tag,name,16).X;
+            if (!WorldLabelLayout.Place(screen,width,22,out var r)) return;
+            GameFonts.Draw(tag,name,new(r.X,r.Y),16,new Color(247,244,235,255));
+            float barWidth = MathF.Min(width,62);
+            Rectangle track=new(r.X+(width-barWidth)/2,r.Y+19,barWidth,3);
+            Raylib.DrawRectangleRec(track,new Color(14,18,26,145));
             track.Width*=Math.Clamp(health,0,1);
-            if(track.Width>=1) Raylib.DrawRectangleRounded(track,1,8,accent);
+            if(track.Width>=1) Raylib.DrawRectangleRec(track,accent);
         }
+        if(Vector3.DistanceSquared(camera.Position,HrTarotBoothPos)<100 && FindFocus(camera).Kind!=FocusKind.Veronika)
+            Plate(HrTarotBoothPos+Vector3.UnitY*1.87f,"HR Вероника",1f,new Color(168,153,202,255));
         if(Partner is {} ally && Vector3.DistanceSquared(camera.Position,ally.Feet)<400)
             Plate(ally.Feet+Vector3.UnitY*(ally.Pose.Eye.Y<1.4f?1.30f:1.72f),"БРАТАН [КООП]",
                 Program.PartnerHp/100f,new Color(109,202,162,255));
         foreach(var c in ActiveCoders)
         {
             if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.State==CoderAIState.Subdued) continue;
-            Plate(c.Position+Vector3.UnitY*(c.IsMiniBoss?2.43f:1.74f),c.IsMiniBoss?"ГУРУ КУРСОРА":c.Name,
+            Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.IsMiniBoss?"ГУРУ КУРСОРА":c.Name,
                 c.Hp/c.MaxHp,new Color(236,168,93,255));
         }
         if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)

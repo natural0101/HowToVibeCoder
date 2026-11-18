@@ -78,7 +78,6 @@ public struct FloatingCombatText3D
     public Color TextColor;
     public float Life;
     public float MaxLife;
-    public float Scale;
     public bool IsCritical;
 }
 
@@ -214,7 +213,8 @@ public class WeaponAndCombatView
         bool hitEnemy = false,
         int damageDealt = 0,
         bool isCritical = false,
-        string customHitLabel = null)
+        string customHitLabel = null,
+        Vector3? receiverCenter = null)
     {
         _inspectTimer = 0;
         Vector3 forward = Vector3.Normalize(camera.Target - camera.Position);
@@ -222,6 +222,14 @@ public class WeaponAndCombatView
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
         Vector3 muzzleWorld = GetWeaponTipWorldPosition(camera);
         Vector3 impactPoint = hitWorldPoint ?? (camera.Position + forward * 3.2f);
+        if (hitEnemy)
+        {
+            TriggerHitmarker(isCritical);
+            if (damageDealt > 0)
+                SpawnFloatingText(receiverCenter ?? impactPoint, right, damageDealt, isCritical);
+            else if (customHitLabel != null)
+                SetCombatBanner(customHitLabel, new Color(250,219,164,255));
+        }
 
         switch (CurrentWeapon)
         {
@@ -256,19 +264,6 @@ public class WeaponAndCombatView
                     colorB: new Color(220, 60, 40, 255),
                     speedMin: 2.5f, speedMax: 6.5f, electric: false);
 
-                if (hitEnemy)
-                {
-                    TriggerHitmarker(isCritical);
-                    string banner = customHitLabel ?? "ШЛЕПОК БАТИ!";
-                    SpawnFloatingText(impactPoint + Vector3.UnitY * 0.35f,
-                        damageDealt > 0 ? $"{banner} -{damageDealt}" : banner,
-                        new Color(255, 215, 50, 255), scale: 1.25f, isCritical: true);
-                    SetCombatBanner("ШЛЕПОК! СБИТА СПЕСЬ!", new Color(255, 200, 50, 255));
-                }
-                else
-                {
-                    SpawnFloatingText(impactPoint, "ВЖЖУХ! ШЛЕПОК!", new Color(245, 195, 90, 220), scale: 0.95f, isCritical: false);
-                }
                 break;
             }
 
@@ -310,18 +305,6 @@ public class WeaponAndCombatView
                     Thickness = 0.045f
                 });
 
-                if (hitEnemy)
-                {
-                    TriggerHitmarker(isCritical: true);
-                    string text = customHitLabel ?? (damageDealt > 0 ? $"ПРИПАЯНО! -{damageDealt}" : "ПРИПАЯНО! ШШШ-ЦЦЦ!");
-                    SpawnFloatingText(impactPoint + Vector3.UnitY * 0.35f,
-                        text, new Color(255, 145, 35, 255), scale: 1.3f, isCritical: true);
-                    SetCombatBanner("ПРИПАЯНО! ШШШ-ЦЦЦ! (ПАНИЧЕСКАЯ АТАКА 1.5с)", new Color(255, 140, 30, 255));
-                }
-                else
-                {
-                    SpawnFloatingText(impactPoint, "ШШШ-ЦЦЦ!", new Color(255, 175, 70, 230), scale: 1.0f, isCritical: false);
-                }
                 break;
             }
 
@@ -365,16 +348,6 @@ public class WeaponAndCombatView
                         speedMin: 2.5f, speedMax: 7.0f, electric: false);
                 }
 
-                if (hitEnemy)
-                {
-                    TriggerHitmarker(isCritical);
-                    string dmgStr = isCritical ? $"КРИТ -{damageDealt}!" : $"-{damageDealt}";
-                    SpawnFloatingText(targetPos + Vector3.UnitY * 0.25f + RandomVec3(0.15f),
-                        dmgStr,
-                        isCritical ? new Color(255, 70, 70, 255) : new Color(255, 235, 95, 255),
-                        scale: isCritical ? 1.3f : 1.0f,
-                        isCritical: isCritical);
-                }
                 break;
             }
 
@@ -443,18 +416,6 @@ public class WeaponAndCombatView
                         speedMin: 3.0f, speedMax: 9.0f, electric: isChat);
                 }
 
-                if (hitEnemy)
-                {
-                    TriggerHitmarker(isCritical: true);
-                    string label = isChat
-                        ? $"IGNORE PREVIOUS INSTRUCTIONS! -{damageDealt}"
-                        : $"ДУПЛЕТ! -{damageDealt}";
-                    SpawnFloatingText(impactPoint + Vector3.UnitY * 0.4f,
-                        label,
-                        isChat ? new Color(90, 255, 190, 255) : new Color(255, 120, 40, 255),
-                        scale: 1.38f,
-                        isCritical: true);
-                }
                 break;
             }
         }
@@ -473,17 +434,16 @@ public class WeaponAndCombatView
         LastCombatBannerTimer = duration;
     }
 
-    public void SpawnFloatingText(Vector3 worldPos, string text, Color color, float scale = 1.0f, bool isCritical = false)
+    private void SpawnFloatingText(Vector3 center, Vector3 right, int damage, bool isCritical)
     {
         FloatingTexts.Add(new FloatingCombatText3D
         {
-            WorldPos = worldPos,
-            Velocity = new Vector3((NextFloat() - 0.5f) * 0.45f, 1.35f + (isCritical ? 0.35f : 0f), (NextFloat() - 0.5f) * 0.45f),
-            Text = text,
-            TextColor = color,
-            Life = 1.15f,
-            MaxLife = 1.15f,
-            Scale = scale,
+            WorldPos = center + right * .38f + Vector3.UnitY * .45f,
+            Velocity = right * .72f + Vector3.UnitY * .38f,
+            Text = $"-{damage}",
+            TextColor = isCritical ? new Color(255,220,163,255) : new Color(247,245,234,255),
+            Life = .78f,
+            MaxLife = .78f,
             IsCritical = isCritical
         });
     }
@@ -951,9 +911,7 @@ public class WeaponAndCombatView
         VisualEngine3D.Rod(cordStart, cordMid, .0032f, .0032f, 8, new Color(28,28,32,255));
         if (Inspecting)
         {
-            Vector3 tip=Vector3.Transform(handleBase+new Vector3(0,.003f,.219f),rightPose);
-            Vector3 copper=Vector3.Transform(handleBase+new Vector3(0,0,.204f),rightPose);
-            VisualEngine3D.Rod(copper,tip,.0035f,.0018f,12,new Color(255,134,62,255),Finish.Lamp);
+            Vector3 tip=Vector3.Transform(handleBase+new Vector3(0,.0016f,.238f),rightPose);
             VisualEngine3D.DrawRosinSmoke(tip);
         }
     }
@@ -1065,23 +1023,21 @@ public class WeaponAndCombatView
         int cx = sw / 2;
         int cy = sh / 2;
 
-        // 1. Crisp Red/Gold Hitmarker X at screen center
         if (HitmarkerTimer > 0f)
         {
             float ratio = Math.Clamp(HitmarkerTimer / 0.22f, 0f, 1f);
             Color hmCol = HitmarkerIsCrit
-                ? new Color(255, 55, 55, (int)(255 * ratio))
-                : new Color(255, 220, 90, (int)(245 * ratio));
-
-            int gap = 6;
-            int len = HitmarkerIsCrit ? 15 : 11;
-            Raylib.DrawLineEx(new Vector2(cx - gap - len, cy - gap - len), new Vector2(cx - gap, cy - gap), 3.0f, hmCol);
-            Raylib.DrawLineEx(new Vector2(cx + gap, cy - gap), new Vector2(cx + gap + len, cy - gap - len), 3.0f, hmCol);
-            Raylib.DrawLineEx(new Vector2(cx - gap - len, cy + gap + len), new Vector2(cx - gap, cy + gap), 3.0f, hmCol);
-            Raylib.DrawLineEx(new Vector2(cx + gap, cy + gap), new Vector2(cx + gap + len, cy + gap + len), 3.0f, hmCol);
+                ? new Color(255, 224, 176, (int)(245 * ratio))
+                : new Color(251, 249, 241, (int)(245 * ratio));
+            Vector2 center = new(cx,cy);
+            for (int x=-1; x<=1; x+=2)
+            for (int y=-1; y<=1; y+=2)
+            {
+                Vector2 axis = Vector2.Normalize(new Vector2(x,y));
+                Raylib.DrawLineEx(center+axis*7,center+axis*11,1.5f,hmCol);
+            }
         }
 
-        // 2. Floating 3D Damage & Impact Numbers (`-35`, `ШЛЕПОК!`, `ПРИПАЯНО! ШШШ-ЦЦЦ!`, `КРИТ!`)
         Vector3 camForward = Vector3.Normalize(worldCamera.Target - worldCamera.Position);
         for (int i = 0; i < FloatingTexts.Count; i++)
         {
@@ -1095,7 +1051,7 @@ public class WeaponAndCombatView
                 continue;
 
             float ratio = Math.Clamp(ft.Life / ft.MaxLife, 0f, 1f);
-            int fontSize = (int)MathF.Round((ft.IsCritical ? 22f : 18f) * ft.Scale);
+            int fontSize = ft.IsCritical ? 20 : 18;
             byte alpha = (byte)(255 * MathF.Min(1f, ratio * 1.4f));
 
             Color fg = new Color(ft.TextColor.R, ft.TextColor.G, ft.TextColor.B, alpha);

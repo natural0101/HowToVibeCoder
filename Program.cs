@@ -92,6 +92,7 @@ public static partial class Program
         }
 
         Net.Dispose();
+        LoreAndMenusUI.UnloadArchive();
         VisualEngine3D.Unload();
         MainMenuAndPauseUI.UnloadArt();
         GameFonts.Unload();
@@ -275,6 +276,7 @@ public static partial class Program
         if (!MainMenuAndPauseUI.JoinPanel && (wasModal || modalShortcut))
         {
             if(Net.Ready && !MainMenuAndPauseUI.IsInMainMenu) TickFloor(dt);
+            else if(LoreAndMenusUI.IsLoreOpen && !MainMenuAndPauseUI.IsInMainMenu) _world.AdvanceLighting(dt);
             LoreAndMenusUI.Update(dt, _weapons);
             if (LoreAndMenusUI.IsAnyModalOpen && Raylib.IsCursorHidden()) Raylib.EnableCursor();
             return;
@@ -550,16 +552,13 @@ public static partial class Program
         if(target.Length>0)
         {
             string prompt="[E]  "+target;
-            float width=Math.Min(sw-24,GameFonts.Measure(_serif,prompt,20).X+24);
-            Rectangle plate=new(cx-width/2,cy+24,width,30);
-            MainMenuAndPauseUI.Surface(plate,new Color(21,30,40,205),1);
-            MainMenuAndPauseUI.Center(_serif,prompt,plate,20,white);
+            float width=GameFonts.Measure(_serif,prompt,19).X;
+            GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
         }
         else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner))
         {
             float width=Math.Min(sw-24,GameFonts.Measure(_serif,_hudStatusBanner,18).X+28);
-            Rectangle plate=new(cx-width/2,cy+24,width,30);
-            MainMenuAndPauseUI.Surface(plate,new Color(16,24,34,220),1);
+            Rectangle plate=new(cx-width/2,cy+22,width,28);
             MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,plate,18,new Color(245,214,128,255));
         }
         Raylib.DrawCircle(cx,cy,1.3f,white);
@@ -642,10 +641,10 @@ public static partial class Program
             Rectangle previous=default;
             foreach(int width in new[]{110,180})
             {
-                if (!WorldLabelLayout.Place((low+high)/2,width,29,out var pill)
-                    || Raylib.CheckCollisionRecs(occupied,pill) || Raylib.CheckCollisionRecs(previous,pill))
+                if (!WorldLabelLayout.Place((low+high)/2,width,22,out var label)
+                    || Raylib.CheckCollisionRecs(occupied,label) || Raylib.CheckCollisionRecs(previous,label))
                     throw new InvalidDataException("Nameplate overlaps the lift sign or another nameplate");
-                previous=pill;
+                previous=label;
                 trials++;
             }
         }
@@ -688,6 +687,8 @@ public static partial class Program
                 (tab >= 0 && LoreAndMenusUI.ActiveLoreTab != tab))
                 throw new InvalidDataException($"Archive input failed for tab {tab}");
         }
+        void ClickCenter(Rectangle rect) =>
+            ClickAt((int)(rect.X+rect.Width/2),(int)(rect.Y+rect.Height/2));
 
         Key(KeyboardKey.N);
         for (int i = 0; i < 4; i++)
@@ -697,23 +698,33 @@ public static partial class Program
         }
         Key(KeyboardKey.Tab);
         Expect(0);
+        if (LoreAndMenusUI.SelectedArchiveEntry != 0)
+            throw new InvalidDataException("Archive did not open on the first thread");
+        Rectangle row = LoreAndMenusUI.ArchiveRowBounds(1);
+        Input(7,(int)(row.X+row.Width/2),(int)(row.Y+row.Height/2));
         Input(8, 0, -12);
         Frame();
-        if (LoreAndMenusUI.LoreScrollOffset is <= 0 or >= 450)
+        float limit = LoreAndMenusUI.ArchiveScrollLimit;
+        if (LoreAndMenusUI.LoreScrollOffset <= 0 || LoreAndMenusUI.LoreScrollOffset >= limit)
             throw new InvalidDataException("Archive wheel did not start smooth scrolling");
         for (int i = 0; i < 48; i++) Frame();
-        if (Math.Abs(LoreAndMenusUI.LoreScrollOffset - 450) > 1)
+        if (Math.Abs(LoreAndMenusUI.LoreScrollOffset-limit)>1 ||
+            LoreAndMenusUI.FirstVisibleArchiveEntry!=3 || LoreAndMenusUI.SelectedArchiveEntry!=5)
             throw new InvalidDataException("Last three archive threads do not fill the viewport");
-        int left = (Raylib.GetScreenWidth() - 940) / 2;
-        int top = (Raylib.GetScreenHeight() - 560) / 2;
+        for (int entry = 3; entry <= 5; entry++)
+        {
+            ClickCenter(LoreAndMenusUI.ArchiveRowBounds(entry));
+            if (LoreAndMenusUI.SelectedArchiveEntry != entry)
+                throw new InvalidDataException($"Archive thread {entry+1} cannot be selected");
+        }
         for (int i = 3; i >= 0; i--)
         {
-            ClickAt(left + 120, top + 202 + 48 * i);
+            ClickCenter(LoreAndMenusUI.ArchiveTabBounds(i));
             Expect(i);
-            if (LoreAndMenusUI.LoreScrollOffset != 0)
+            if (LoreAndMenusUI.LoreScrollOffset != 0 || LoreAndMenusUI.SelectedArchiveEntry != 0)
                 throw new InvalidDataException("Archive tab retained another section's offset");
         }
-        ClickAt(left + 870, top + 34);
+        ClickCenter(LoreAndMenusUI.ArchiveCloseBounds);
         Expect(-1);
         Key(KeyboardKey.N);
         Expect(0);
@@ -862,7 +873,9 @@ public static partial class Program
         var miniBoss = _world.SpawnCoderForTier(SubscriptionBaitTier.CloudEntropicMax, forceSide: 1);
         miniBoss.Position = new Vector3(1.3f, 0f, 6.15f);
         miniBoss.FacingYaw = -.50f;
-        LookAtTarget(miniBoss.Position + Vector3.UnitY*1.35f);
+        // A coder using the bait takes a guaranteed critical hit on the gameplay path.
+        miniBoss.State = CoderAIState.SittingAtMacBook;
+        LookAtTarget(miniBoss.CombatCenter);
         miniBoss.Hp = 420f;
         miniBoss.HitFlashTimer = 0;
         _world.EnemyProjectiles.Add(new EnemyProjectile3D
@@ -890,10 +903,14 @@ public static partial class Program
             WireColor = new Color(255, 225, 70, 255)
         });
         Camera3D uziCam = BuildPlayerCamera();
-        _weapons.TriggerWeaponAttack(uziCam, miniBoss.Position + Vector3.UnitY*1.35f, hitEnemy: true, damageDealt: 46, isCritical: true);
+        float hpBeforeShot = miniBoss.Hp;
+        if (!_world.ProcessPlayerAttack(uziCam, _weapons, GrantCash, out _) ||
+            hpBeforeShot-miniBoss.Hp != 46 || !_weapons.HitmarkerIsCrit ||
+            _weapons.FloatingTexts.LastOrDefault().Text != "-46")
+            throw new InvalidDataException("Critical hit on the scaled coder did not produce the expected damage number");
         _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
-        StagePartner(new(-.75f,0,6.45f),miniBoss.Position+Vector3.UnitY*1.3f);
+        StagePartner(new(-.75f,0,6.45f),miniBoss.CombatCenter);
         CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(670,317,442,370));
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks

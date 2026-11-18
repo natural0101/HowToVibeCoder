@@ -670,9 +670,17 @@ def build_weapon_solder():
     tape = make_mat("Cobalt PVC tape", (.022,.12,.43,1), roughness=.38)
     edge = make_mat("Tape lap", (.015,.077,.29,1), roughness=.40)
     black = make_mat("Black phenolic", (.035,.027,.029,1), roughness=.40)
-    steel = make_mat("Blued steel", (.26,.29,.34,1), metallic=.86, roughness=.48)
-    copper = make_mat("Forged copper", (.64,.19,.084,1), metallic=.82, roughness=.37)
-    tin = make_mat("POS-61", (.68,.70,.72,1), metallic=.91, roughness=.33)
+    steel = make_mat("Brushed nickel steel", (.38,.43,.48,1), metallic=.76, roughness=.35)
+    shadow = make_mat("Heat-darkened steel", (.074,.086,.105,1), metallic=.72, roughness=.46)
+    brass = make_mat("Clamp brass", (.54,.32,.105,1), metallic=.75, roughness=.36)
+    hot = make_mat("Incandescent nichrome", (.98,.36,.08,1), metallic=.12, roughness=.45)
+    heater_bsdf = hot.node_tree.nodes.get("Principled BSDF")
+    heater_bsdf.inputs["Emission Color"].default_value = (.98,.19,.025,1)
+    heater_bsdf.inputs["Emission Strength"].default_value = .7
+    copper_root = make_mat("Oxidised copper", (.27,.076,.039,1), metallic=.68, roughness=.48)
+    oxide = make_mat("Violet temper oxide", (.20,.14,.29,1), metallic=.70, roughness=.38)
+    copper = make_mat("Forged copper", (.82,.28,.105,1), metallic=.73, roughness=.36)
+    tin = make_mat("POS-61", (.84,.88,.90,1), metallic=.83, roughness=.22)
 
     # A continuous turned profile. Each row carries the finish of its forward span.
     rows = [(-.099,.004,black),(-.089,.006,black),(-.084,.009,wood),
@@ -680,19 +688,19 @@ def build_weapon_solder():
     for i in range(8):
         z = -.050 + i*.011
         rows.extend([(z,.0131,tape),(z+.0093,.0132,edge),(z+.0105,.0129,tape)])
-    rows += [(.039,.0126,wood),(.052,.0125,wood),(.061,.0108,wood),
-             (.065,.0108,black),(.067,.0155,black),(.071,.0155,black),
-             (.074,.012,black),(.079,.008,steel),(.080,.0052,steel),
-             (.179,.0052,steel),(.181,.0046,copper),(.1812,.0038,copper),
-             (.206,.0038,copper),(.215,.0038,tin),(.2212,.0033,tin)]
+    rows += [(.039,.0126,wood),(.042,.0126,black),(.0445,.0135,black)]
+    for z, radius in ((.0455,.0163),(.0515,.0182),(.0575,.0195)):
+        rows.extend([(z,radius-.0009,black),(z+.0007,radius,black),
+                     (z+.0023,radius,black),(z+.0034,.0134,black)])
+    rows.extend([(.0613,.0132,steel),(.0622,.0164,steel),
+                 (.0634,.0164,steel),(.064,.0100,shadow)])
     sides = 40
     vertices, faces = [], []
     for z,r,material in rows:
         for i in range(sides):
             angle = math.tau*i/sides
             lap = .0018*math.sin(angle) if -.051 <= z <= .038 else 0
-            wedge = max(0,min(1,(z-.206)/.0152))
-            vertices.append(rl_pos((r*math.cos(angle), r*(1-.82*wedge)*math.sin(angle)+.003*wedge, z+lap)))
+            vertices.append(rl_pos((r*math.cos(angle), r*math.sin(angle), z+lap)))
     for j in range(len(rows)-1):
         for i in range(sides):
             n=(i+1)%sides
@@ -702,19 +710,108 @@ def build_weapon_solder():
     mesh.from_pydata(vertices,[],faces)
     obj = bpy.data.objects.new("EPSN-40",mesh)
     bpy.context.collection.objects.link(obj)
-    materials = [wood,tape,edge,black,steel,copper,tin]
+    materials = [wood,tape,edge,black,steel,shadow]
     for material in materials:
         mesh.materials.append(material)
     uv = mesh.uv_layers.new(name="Turned grain")
     for face in mesh.polygons:
         row, side = divmod(face.index,sides)
         if row >= len(rows)-1:
-            face.material_index = materials.index(black if face.index==len(faces)-2 else tin)
+            face.material_index = materials.index(black if face.index==len(faces)-2 else shadow)
             continue
         face.material_index = materials.index(rows[row][2])
         face.use_smooth = True
         for loop,u,v in zip(face.loop_indices,(side,side+1,side+1,side),(row,row,row+1,row+1)):
             uv.data[loop].uv = ((rows[v][0]+.10)*4, u/sides)
+    def axial(name, z0, z1, r0, r1, material):
+        return add_rod(name, (0,0,z0), (0,0,z1), r0, r1, material, 48)
+
+    # The punched jacket is an actual hollow wall. Each cell connects a curved
+    # patch boundary to a rounded aperture, then down to the dark inner lip.
+    axial("Insulated heater mandrel", .064, .168, .0063, .0063, hot)
+    for index in range(24):
+        z = .066 + .00415 * index
+        axial("Recessed coil groove", z, z+.00125, .00645, .00645, copper_root)
+    jacket_vertices, jacket_faces, jacket_materials = [], [], []
+    def jacket_band(z0, z1, angular_opening, half_length):
+        cells, samples = 6, 24
+        axial_center = (z0+z1)*.5
+        for cell in range(cells):
+            base = len(jacket_vertices)
+            angle = math.tau*cell/cells
+            for boundary, radius in ((True,.0091),(False,.0091),(False,.0081),(True,.0081)):
+                for index in range(samples):
+                    phase = math.tau*index/samples
+                    x, y = math.cos(phase), math.sin(phase)
+                    if boundary:
+                        scale = max(abs(x),abs(y))
+                        azimuth = angle + (math.pi/cells)*x/scale
+                        z = axial_center + (z1-z0)*.5*y/scale
+                    else:
+                        # A short circular punch or a long press-formed slot.
+                        azimuth = angle + angular_opening*x
+                        cap = min(half_length, angular_opening*radius)
+                        z = axial_center + cap*y
+                        if abs(y) > 1e-6:
+                            z += math.copysign(half_length-cap,y)
+                    jacket_vertices.append(rl_pos((radius*math.cos(azimuth), radius*math.sin(azimuth), z)))
+            for layer in range(3):
+                for index in range(samples):
+                    a = base + layer*samples + index
+                    b = base + layer*samples + (index+1)%samples
+                    jacket_faces.append((a,b,b+samples,a+samples))
+                    jacket_materials.append(0 if layer==0 else 1)
+
+    for z0,z1,opening,length in ((.064,.079,.24,.0023),(.079,.107,.34,.0115),
+                                  (.107,.123,.24,.0023),(.123,.151,.34,.0115),
+                                  (.151,.168,.24,.0023)):
+        jacket_band(z0,z1,opening,length)
+    jacket = bpy.data.meshes.new("Pierced heater jacket")
+    jacket.from_pydata(jacket_vertices,[],jacket_faces)
+    jacket.materials.append(steel)
+    jacket.materials.append(shadow)
+    for face,material_index in zip(jacket.polygons,jacket_materials):
+        face.material_index = material_index
+    bpy.context.collection.objects.link(bpy.data.objects.new("Punch-formed vents",jacket))
+    for z in (.065,.078,.106,.122,.150,.164):
+        axial("Rolled stiffener",z,z+.0008,.0089,.0096,steel)
+        axial("Rolled stiffener crown",z+.0008,z+.0020,.0096,.0096,steel)
+        axial("Rolled stiffener return",z+.0020,z+.0028,.0096,.0089,shadow)
+
+    axial("Chuck shoulder",.165,.169,.0091,.0108,shadow)
+    axial("Tool steel chuck",.169,.1815,.0108,.0108,steel)
+    axial("Chuck nose",.1815,.184,.0108,.0078,shadow)
+    for sign in (-1,1):
+        add_rod("Screw shank", (sign*.0095,0,.175),(sign*.013,0,.175),.0026,.0026,shadow,16)
+        add_rod("Brass thumb nut", (sign*.0125,0,.175),(sign*.015,0,.175),.004,.0036,brass,8)
+        add_box("Thumb screw wings", (sign*.015,0,.175),(.0023,.012,.0030),
+                brass, rot=(sign*.24,0,0),bevel=.0007)
+
+    # The eight-sided forging fans out to a 14 mm chisel, with a thin tinned lip.
+    stations = [(.182,.0059,.005,0,copper_root),(.192,.0056,.0048,0,oxide),
+                (.196,.0055,.0047,0,copper),(.211,.0061,.0040,0,copper),
+                (.225,.0069,.0023,.0010,tin),(.233,.007,.0013,.0014,tin),
+                (.238,.0068,.00042,.0016,tin)]
+    section = ((-.72,-1),(.72,-1),(1,-.57),(1,.57),(.72,1),(-.72,1),(-1,.57),(-1,-.57))
+    tip_vertices, tip_faces = [], []
+    for z,width,thickness,lift,material in stations:
+        for x,y in section:
+            tip_vertices.append(rl_pos((width*x, lift+thickness*y, z)))
+    for row in range(len(stations)-1):
+        for side in range(8):
+            a = row*8+side
+            b = row*8+(side+1)%8
+            tip_faces.append((a,b,b+8,a+8))
+    tip_faces.extend((tuple(reversed(range(8))),tuple(range(len(tip_vertices)-8,len(tip_vertices)))))
+    tip_mesh = bpy.data.meshes.new("Forged screwdriver chisel")
+    tip_mesh.from_pydata(tip_vertices,[],tip_faces)
+    finishes = [copper_root,oxide,copper,tin]
+    for material in finishes:
+        tip_mesh.materials.append(material)
+    for face in tip_mesh.polygons:
+        finish = stations[min(face.index//8,len(stations)-1)][4]
+        face.material_index = finishes.index(finish)
+    bpy.context.collection.objects.link(bpy.data.objects.new("Tinned copper chisel",tip_mesh))
     finalize_and_export("weapon_solder_90s.glb", preserve_smoothing=True)
 
 # ==============================================================================
@@ -1011,9 +1108,10 @@ def build_weapon_uzi():
     game_prop()
 
 
-def render_hotbar_icons():
+def render_hotbar_icons(selected=None):
     for slot, (name, angle) in enumerate((("belt", 18), ("solder", -36), ("uzi", -26), ("shotgun", 28)), 1):
-        render_centered_icon(f"weapon_{name}_90s.glb", f"icon_slot_{slot}_{name}.png", angle)
+        if selected is None or name == selected:
+            render_centered_icon(f"weapon_{name}_90s.glb", f"icon_slot_{slot}_{name}.png", angle)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ public sealed class LoreChatMessage
     public Color HandleColor { get; init; }
 }
 
-public static class LoreAndMenusUI
+public static partial class LoreAndMenusUI
 {
     // Состояния окон
     public static bool IsLoreOpen { get; set; }
@@ -52,14 +52,15 @@ public static class LoreAndMenusUI
 
     // Текущая вкладка досье [N] (0..3)
     private static int _activeLoreTab;
-    private static float _scrollTarget, _scrollLimit;
+    private static float _scrollTarget;
     public static int ActiveLoreTab
     {
         get => _activeLoreTab;
         set
         {
             _activeLoreTab = Math.Clamp(value, 0, 3);
-            LoreScrollOffset = _scrollTarget = _scrollLimit = 0;
+            SelectedArchiveEntry = 0;
+            LoreScrollOffset = _scrollTarget = 0;
         }
     }
     public static float LoreScrollOffset { get; private set; }
@@ -453,22 +454,6 @@ public static class LoreAndMenusUI
         }
     }
 
-    private static void UpdateLoreInput(float dt)
-    {
-        if (Click(ArchiveScreen(LoreClose))) { IsLoreOpen = false; return; }
-        for (int i = 0; i < ArchiveTabs.Length; i++)
-        {
-            if (Raylib.IsKeyPressed(KeyboardKey.One + i) ||
-                Raylib.IsKeyPressed(KeyboardKey.Kp1 + i) || Click(ArchiveScreen(LoreTab(i))))
-                ActiveLoreTab = i;
-        }
-        if (Raylib.IsKeyPressed(KeyboardKey.Tab)) ActiveLoreTab = (ActiveLoreTab + 1) % ArchiveTabs.Length;
-
-        _scrollTarget = Math.Clamp(_scrollTarget - Raylib.GetMouseWheelMove() * 64, 0, _scrollLimit);
-        LoreScrollOffset += (_scrollTarget - LoreScrollOffset) * (1 - MathF.Exp(-18 * dt));
-        if (Math.Abs(_scrollTarget - LoreScrollOffset) < .25f) LoreScrollOffset = _scrollTarget;
-    }
-
     // The artwork uses the same 2560 x 1440 coordinate space as the reference captures.
     private static float ArtScale => Math.Min(Raylib.GetScreenWidth()/2560f,Raylib.GetScreenHeight()/1440f);
     private static Rectangle Ref(float x,float y,float w,float h) =>
@@ -821,20 +806,6 @@ public static class LoreAndMenusUI
         "Намотала на левое колесо удлинитель от чайника и 6 часов подряд орала «Я взломал Пентагон!» в закрытую дверь шваброчной, крутясь волчком в while(true).",
         "Кидается папками node_modules по 40 ГБ. Вырубается хорошей очередью из УЗИ!"
     ];
-    private static readonly string[] ArchiveTabs = ["Слитые чаты", "Дневник HR", "Досье ИИ-агента", "Словарь 1994"];
-    private const int ArchiveWidth = 940, ArchiveHeight = 560, IndexWidth = 235;
-    private const int ContentX = 252, ContentRight = 920, ContentY = 79, ContentHeight = 450;
-    private static readonly Rectangle LoreClose = new(826, 20, 94, 28);
-    private static Rectangle LoreTab(int i) => new(0, 178 + i * 48, IndexWidth, 48);
-    private static float ArchiveScale => Math.Min(1, Math.Min(Raylib.GetScreenWidth() / (float)ArchiveWidth,
-                                                             Raylib.GetScreenHeight() / (float)ArchiveHeight));
-    private static Rectangle ArchiveScreen(Rectangle r)
-    {
-        float s = ArchiveScale;
-        return new(MathF.Round((Raylib.GetScreenWidth() - ArchiveWidth * s) / 2) + r.X * s,
-                   MathF.Round((Raylib.GetScreenHeight() - ArchiveHeight * s) / 2) + r.Y * s,
-                   r.Width * s, r.Height * s);
-    }
     private static void ReaderButton(Font f,string title,Rectangle r,bool active)
     {
         Raylib.DrawRectangleRec(r, active ? new Color(235, 168, 56, 255) : new Color(18, 28, 42, 255));
@@ -879,165 +850,6 @@ public static class LoreAndMenusUI
             y += leading;
         }
         return y;
-    }
-
-    private static void DrawArchiveIndex()
-    {
-        Fill(0, 0, IndexWidth, ArchiveHeight, Paper);
-        Type("ДАМП СЕРВЕРА // ЭТАЖ 01", 16, 17, 12, Ink, Typeface.InterfaceBold);
-        Fill(16, 40, 202, 2, Ink);
-        Type("АРХИВ", 14, 48, 43, Ink, Typeface.SerifBold);
-        Type("БАШНИ", 14, 90, 43, Ink, Typeface.SerifBold);
-        Type("ПЕРЕХВАТ АКТИВЕН", 17, 143, 12, new Color(36, 91, 73, 255), Typeface.InterfaceBold);
-        for (int i = 0; i < ArchiveTabs.Length; i++)
-        {
-            var r = LoreTab(i);
-            bool active = ActiveLoreTab == i;
-            bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveScreen(r));
-            if (active || hover) Raylib.DrawRectangleRec(r, active ? Ink : new Color(202, 201, 187, 255));
-            Fill(0, r.Y, IndexWidth, 1, SidebarRule);
-            if (active) Fill(0, r.Y, 4, r.Height, Amber);
-            Type((i + 1).ToString("00"), 16, r.Y + 9, 25, active ? Amber : Ink, Typeface.SerifBold);
-            Type(ArchiveTabs[i].ToUpperInvariant(), 70, r.Y + 17, 13, active ? Paper : Ink, Typeface.InterfaceBold);
-        }
-        int y = 437;
-        Fill(16, y, 202, 2, Ink);
-        Type("СВОДКА ЭТАЖА", 16, y + 9, 11, Ink, Typeface.InterfaceBold);
-        void Status(string name, string value, int top, Color color)
-        {
-            Type(name, 16, top, 14, Ink);
-            int width = (int)Math.Ceiling(GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 14), value, 14).X);
-            Type(value, 218 - width, top, 14, color, Typeface.InterfaceBold);
-        }
-        Status("Перехвачено тредов", _leakedChats.Length.ToString("00"), y + 33, Ink);
-        Status("billing_prod", "DOWN", y + 59, new Color(153, 49, 36, 255));
-        Status("Долг AWS", "$54,000", y + 85, Ink);
-    }
-
-    private static float DrawThread(LoreChatMessage m, float y)
-    {
-        const int x = ContentX + 44;
-        Fill(ContentX, y + 9, 3, 127, m.HandleColor);
-        Fill(ContentX + 8, y + 10, 28, 28, m.HandleColor);
-        Type(m.Monogram, ContentX + 11, y + 16, 14, Ink, Typeface.InterfaceBold);
-        Type(m.Handle, x, y + 7, 16, m.HandleColor, Typeface.InterfaceBold);
-        int roleX = x + 12 + (int)Math.Ceiling(GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 16), m.Handle, 16).X);
-        int badgeWidth = 12 + (int)Math.Ceiling(GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 11), m.RoleBadge, 11).X);
-        Fill(roleX, y + 7, badgeWidth, 19, Rule);
-        Type(m.RoleBadge, roleX + 6, y + 10, 11, Paper, Typeface.InterfaceBold);
-
-        float right = ContentRight - 4;
-        var stamp = GameFonts.Get(Typeface.Interface, 12);
-        Type(m.Time, right - GameFonts.Measure(stamp, m.Time, 12).X, y + 7, 12, Ash);
-        for (int i = m.Metrics.Length - 1; i >= 0; i--)
-        {
-            var metric = m.Metrics[i];
-            string label = $"{metric.Label} {metric.Count}";
-            float width = GameFonts.Measure(stamp, label, 11).X + 12;
-            right -= width;
-            Fill(right, y + 26, width, 16, new Color(44, 49, 46, 255));
-            Type(label, right + 6, y + 28, 11, metric.Accent);
-            right -= 3;
-        }
-
-        float end = Paragraph(m.Text, x, y + 45, ContentRight - x - 4, 15, 18, Paper);
-        float replyY = end + 4;
-        const int replyX = x + 18;
-        Type($"ОТВЕТ {m.ReplyAuthor}:", replyX + 13, replyY, 13, Mint, Typeface.InterfaceBold);
-        // Bent reply arrow drawn as strokes so font fallback cannot replace it.
-        Fill(replyX + 2, replyY + 3, 1, 6, Mint);
-        Fill(replyX + 2, replyY + 8, 6, 1, Mint);
-        Raylib.DrawTriangle(new(replyX + 7, replyY + 5), new(replyX + 7, replyY + 12), new(replyX + 11, replyY + 8), Mint);
-        end = Paragraph(m.ReplyText, replyX + 2, replyY + 16, ContentRight - replyX - 6, 14, 17, Paper);
-        Fill(replyX - 6, replyY, 2, end - replyY, Mint);
-        float next = Math.Max(y + ContentHeight / 3, end + 8);
-        Fill(ContentX, next - 1, ContentRight - ContentX, 1, Rule);
-        return next;
-    }
-
-    private static float DrawArchiveBody(float y)
-    {
-        const int width = ContentRight - ContentX;
-        switch (ActiveLoreTab)
-        {
-            case 0:
-                foreach (var thread in _leakedChats) y = DrawThread(thread, y);
-                break;
-            case 1:
-                foreach (var e in TarotEntries)
-                {
-                    y = Paragraph(e.title, ContentX, y + 12, width, 18, 23, Paper, Typeface.InterfaceBold);
-                    y = Paragraph(e.verdict, ContentX, y + 5, width, 13, 17, e.accent, Typeface.InterfaceBold);
-                    y = Paragraph(e.body, ContentX + 18, y + 8, width - 18, 15, 20, Paper) + 14;
-                    Fill(ContentX, y - 1, width, 1, Rule);
-                }
-                break;
-            case 2:
-                float Column(int x, string title, string[] paragraphs, Color accent)
-                {
-                    const int columnWidth = 318;
-                    float at = Paragraph(title, x, y + 12, columnWidth, 14, 19, accent, Typeface.InterfaceBold) + 10;
-                    for (int i = 0; i < paragraphs.Length; i++)
-                        at = Paragraph(paragraphs[i], x, at, columnWidth, i == 0 ? 19 : 15, i == 0 ? 24 : 20,
-                                       Paper, i == 0 ? Typeface.InterfaceBold : Typeface.Interface) + 12;
-                    return at;
-                }
-                float left = Column(ContentX, "ОФИЦИАЛЬНЫЙ ПРЕСС-РЕЛИЗ PR", PressRelease, Amber);
-                float right = Column(ContentX + 348, "КАМЕРЫ НАБЛЮДЕНИЯ ПЕТРОВИЧА", CameraLog, Mint);
-                float bottom = Math.Max(left, right);
-                Fill(ContentX + 333, y + 10, 1, bottom - y - 18, Rule);
-                Fill(ContentX, bottom, width, 1, Rule);
-                Type("СЕВЕРНЫЙ ЛИФТ", ContentX, bottom + 10, 13, Amber, Typeface.InterfaceBold);
-                y = Paragraph("Купи ключ за $1000. Прячься за колоннами от кубов node_modules.", ContentX, bottom + 30, width, 15, 20, Paper);
-                break;
-            case 3:
-                const int split = ContentX + 245;
-                Type("ЗУМЕРСКИЙ ТЕРМИН", ContentX, y + 10, 13, Amber, Typeface.InterfaceBold);
-                Type("ПОНЯТИЕ 90-Х", split + 16, y + 10, 13, Amber, Typeface.InterfaceBold);
-                float start = y;
-                y += 36;
-                foreach (var e in DictionaryEntries)
-                {
-                    Fill(ContentX, y, width, 1, Rule);
-                    float termEnd = Paragraph(e.zoomer, ContentX, y + 12, 232, 16, 20, Paper, Typeface.InterfaceBold);
-                    float valueEnd = Paragraph(e.nineties, split + 16, y + 12, 395, 16, 20, Paper, Typeface.InterfaceBold);
-                    valueEnd = Paragraph(e.comment, split + 16, valueEnd + 3, 395, 14, 18, Ash);
-                    y = Math.Max(termEnd, valueEnd) + 10;
-                }
-                Fill(split, start + 8, 1, y - start - 8, Rule);
-                break;
-        }
-        return y;
-    }
-
-    public static void DrawLoreWindow(Font font)
-    {
-        Dim(.68f);
-        Rectangle screen = ArchiveScreen(new(0, 0, ArchiveWidth, ArchiveHeight));
-        Raylib.BeginMode2D(new Camera2D { Offset = new(screen.X, screen.Y), Zoom = ArchiveScale });
-        Fill(0, 0, ArchiveWidth, ArchiveHeight, Ink);
-        DrawArchiveIndex();
-        Type(ArchiveTabs[ActiveLoreTab], ContentX, 14, 35, Paper, Typeface.SerifBold);
-        bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveScreen(LoreClose));
-        Raylib.DrawRectangleLinesEx(LoreClose, 1, hover ? Amber : Rule);
-        Type("Закрыть [N]", LoreClose.X + 9, LoreClose.Y + 6, 13, hover ? Amber : Ash);
-        Fill(ContentX, ContentY - 1, ContentRight - ContentX, 1, Ash);
-        Rectangle clip = ArchiveScreen(new(ContentX, ContentY, ContentRight - ContentX, ContentHeight));
-        Raylib.BeginScissorMode((int)MathF.Round(clip.X), (int)MathF.Round(clip.Y),
-                                (int)MathF.Round(clip.Width), (int)MathF.Round(clip.Height));
-        float top = ContentY - LoreScrollOffset;
-        float height = DrawArchiveBody(top) - top;
-        Raylib.EndScissorMode();
-        _scrollLimit = Math.Max(0, height - ContentHeight);
-        if (_scrollLimit > 0)
-        {
-            float thumb = ContentHeight * ContentHeight / height;
-            Fill(930, ContentY, 2, ContentHeight, Rule);
-            Fill(930, ContentY + (ContentHeight - thumb) * LoreScrollOffset / _scrollLimit, 2, thumb, Amber);
-        }
-        Type("1–4 / Tab   Разделы", ContentX, 538, 12, Ash);
-        if (_scrollLimit > 0) Type("Колесо   Прокрутка", ContentRight - 139, 538, 12, Ash);
-        Raylib.EndMode2D();
     }
 
     public static void DrawSettingsWindow(Font font)

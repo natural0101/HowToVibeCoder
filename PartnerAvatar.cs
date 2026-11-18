@@ -49,7 +49,7 @@ internal sealed class PartnerAvatar
             eye=world.ResolvePlayerCollision(eye+Vector3.Normalize(delta)*Math.Min(delta.Length(),dt*6.8f));
         Vector3? target=world.ElevatorBoss.IsActive ? world.ElevatorBoss.Position+Vector3.UnitY*1.35f :
             world.ActiveCoders.Where(c=>c.State!=CoderAIState.Subdued).OrderBy(c=>Vector3.DistanceSquared(c.Position,eye))
-                .Select(c=>(Vector3?)(c.Position+Vector3.UnitY*1.05f)).FirstOrDefault();
+                .Select(c=>(Vector3?)c.CombatCenter).FirstOrDefault();
         Vector3 aim=target.HasValue ? Vector3.Normalize(target.Value-eye) : player.Forward;
         Move(new(eye,MathF.Atan2(aim.X,aim.Z),MathF.Asin(Math.Clamp(aim.Y,-1,1)),WeaponType.MicroUzi));
         botCooldown-=dt;

@@ -313,12 +313,14 @@ def pose(kind, side, support_wrist=None):
         dest_elbow = V((sign*.235,1.09,.12))
         dest_wrist = V((-.018,1.245,.36) if sign==1 else (-.122,1.21,.235))
     elif kind=="coder_seated":
-        dest_elbow, dest_wrist = V((sign*.22,.815,.23)), V((sign*.12,.825,.49))
+        # The chair and keyboard remain full size in the level. Raise the forearms
+        # in model space so the scaled fingertips still rest on the keys.
+        dest_elbow, dest_wrist = V((sign*.22,.925,.23)), V((sign*.12,1.012,.49))
     elif kind=="boss":
         dest_elbow = V((sign*.36,1.08,.12 if sign==1 else -.04))
         dest_wrist = V((sign*.30,1.04,.43 if sign==1 else .27))
     elif kind=="coder":
-        dest_elbow, dest_wrist = V((sign*.245,1.04,.102)),V((sign*.196,1.03,.313))
+        dest_elbow, dest_wrist = V((sign*.235,1.02,.105)),V((sign*.145,1.020,.274))
     else:
         dest_elbow, dest_wrist = V((sign*.25,1.15,.12)),V((sign*.155,1.31,.30))
     transforms = {}
@@ -341,7 +343,7 @@ def pose(kind, side, support_wrist=None):
         # Lay the support palm below the prop, its fingers turning around the side.
         if sign==1: direction=(-.52,.20,.80); across=(.75,.0,.65)
     elif kind=="coder_seated":
-        direction=(0,-.10,1); across=(1,0,0)
+        direction=(0,-.07,1); across=(-sign,0,0)
     else:
         direction=(-sign*.46,.07,.88) if kind=="coder" else (-sign*.61,-.20,.78)
         across=(sign*.85,.03,.45) if kind=="coder" else (-sign*.75,.02,-.59)
@@ -364,8 +366,12 @@ def pose(kind, side, support_wrist=None):
                 goals = [(-.10,.49,.83),(-.45,.65,.56),(-.70,.68,.20)] if sign==1 else [
                     (.38,.66,.62),(.18,.44,.89),(.08,.22,.97)]
                 target=V(goals[k]).normalized()
-            elif kind=="coder" and d>1:
-                target=V((-sign*.84,.16+.12*k,.52-.17*k)).normalized()
+            elif kind=="coder":
+                # Both thumbs sit alongside the deck. The other fingers extend
+                # beneath it and support its underside on the distal pads.
+                target=V((-sign*.35,.01,.94) if d==1 else (-sign*.78,.11-.075*k,.63)).normalized()
+            elif kind=="coder_seated" and d>1:
+                target=V((0,-.10-.14*k,1)).normalized()
             else:
                 target=(hand@rest).normalized()
                 if kind=="seer" and d>1: target=(target+V((0,-.20*k,0))).normalized()
@@ -642,19 +648,29 @@ def clothing(kind):
 
 
 def laptop():
-    box("Laptop deck",(0,1.047,.363),(.355,.016,.205),"laptop",.007)
-    box("Keyboard",(0,1.057,.345),(.288,.003,.080),"coal",.002)
+    bottom=1.052
+    deck_top=bottom+.016
+    width=.389
+    hinge=.457
+    box("Laptop deck",(0,bottom+.008,.347),(width,.016,.224),"laptop",.006)
+    box("Keyboard",(0,deck_top+.0005,.371),(.309,.002,.093),"coal",.002)
+    box("Trackpad",(0,deck_top+.0005,.281),(.121,.001,.055),"glass",.002)
     for row in range(4):
         for col in range(12):
-            box("Key",((col-5.5)*.022,1.059,.315+row*.018),(.018,.002,.012),"glass")
-    lid=box("Open lid",(0,1.151,.48),(.355,.211,.012),"laptop",.006)
-    lid.rotation_euler.x=math.radians(11)
-    screen=box("Terminal",(0,1.151,.472),(.331,.185,.005),"display")
-    screen.rotation_euler.x=lid.rotation_euler.x
+            box("Key",((col-5.5)*.024,deck_top+.002,.341+row*.020),(.020,.002,.014),"glass")
+    lean=math.radians(14)
+    def lid_point(x,h,depth=0):
+        return (x,deck_top+h*math.cos(lean)-depth*math.sin(lean),
+                hinge+h*math.sin(lean)+depth*math.cos(lean))
+    lid=box("Open lid",lid_point(0,.112),(width,.224,.009),"laptop",.005)
+    lid.rotation_euler.x=lean
+    screen=box("Terminal",lid_point(0,.113,-.0045),(.363,.198,.002),"display",.002)
+    screen.rotation_euler.x=lean
     for i in range(5):
-        z=1.11+i*.018
-        box("Terminal line",(-.07,z,.466+(z-1.15)*.194),(.08+.014*(i%3),.003,.001),"cyan")
-    oval("Lid emblem",(0,1.155,.489),(.020,.017,.003),"ivory")
+        line=box("Terminal line",lid_point(-.074,.065+i*.018,-.006),(.08+.014*(i%3),.003,.001),"cyan")
+        line.rotation_euler.x=lean
+    emblem=oval("Lid emblem",lid_point(0,.112,.005),(.020,.017,.002),"ivory")
+    emblem.rotation_euler.x=lean
 
 
 def tarot():

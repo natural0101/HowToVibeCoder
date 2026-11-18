@@ -11,6 +11,7 @@ internal static class WorldLabelLayout
     {
         occupied.Clear();
         int w=Raylib.GetScreenWidth(), h=Raylib.GetScreenHeight();
+        Reserve(new(w/2-14,h/2-14,28,28));        // reticle and hit confirmation
         Reserve(new(w-248,0,248,84));             // XP and objectives
         Reserve(new(w/2-365,h-165,730,165));      // interaction, speech and inventory
         Reserve(new(0,h-120,116,120));
