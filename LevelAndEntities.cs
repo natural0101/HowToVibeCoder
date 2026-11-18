@@ -198,7 +198,7 @@ public sealed class SkyscraperFloor1World
     public readonly Vector3 CentralMacBookPos = new(0.0f, 0f, 5.2f);
     public readonly Vector3 NorthElevatorPos = new(0.0f, 0f, -8.5f);
     public readonly Vector3 SouthElevatorDoorPos = new(0.0f, 0f, 0.5f);
-    public readonly Vector3 ElevatorButtonPos = new(3.2f, 0f, -9.2f);
+    public readonly Vector3 ElevatorButtonPos = new(-3.2f, 0f, -9.2f);
     public readonly Vector3 SouthElevatorButtonPos = new(3.2f, 0f, 1.1f);
     public readonly Vector3 WestSpawnDoorPos = new(-20.5f, 0f, 5.2f);
     public readonly Vector3 EastSpawnDoorPos = new(20.5f, 0f, 5.2f);
@@ -2164,7 +2164,7 @@ public sealed class SkyscraperFloor1World
                 mesh.Add(new(p.X,CeilingHeight-.77f,z),new(1.28f,.05f,.08f),steel);
             }
         }
-        foreach (var door in new[] { WestSpawnDoorPos,EastSpawnDoorPos,NorthElevatorPos,SouthElevatorDoorPos })
+        foreach (var door in new[] { WestSpawnDoorPos,EastSpawnDoorPos })
         {
             mesh.Add(door+Vector3.UnitY*4.45f,new(1.65f,.62f,.12f),Color.White,Finish.Exit);
             foreach (int side in new[] { -1,1 })
@@ -2278,15 +2278,45 @@ public sealed class SkyscraperFloor1World
         Vector3 center = CentralElevatorCorePos;
         Color steel=new(67,83,100,255), chrome=new(159,166,168,255);
         Color pane=new(84,164,185,25), cabinPane=new(112,173,182,17);
+        Color anthracite=new(42,48,54,255), black=new(24,30,36,255), bronze=new(164,117,67,255);
+        Color gold=new(227,182,112,255), teal=new(75,224,208,255);
         void Part(float x,float y,float z,float w,float h,float d,Color color,Finish finish=Finish.Paint) =>
             mesh.Add(center+new Vector3(x,y,z),new(w,h,d),color,finish);
 
         foreach(int side in new[]{-1,1})
         {
+            void Front(float x,float y,float depth,float w,float h,float d,Color c,Finish f=Finish.Paint) =>
+                Part(x,y,side*(4.5f+depth),w,h,d,c,f);
+            // Recessed doors, stepped jambs and a continuous projecting entablature.
+            Front(0,4.83f,.08f,8.95f,1.46f,.58f,anthracite,Finish.BlackMarble);
+            Front(0,4.12f,.28f,8.8f,.12f,.38f,bronze,Finish.Bronze);
+            Front(0,5.58f,.16f,9.02f,.15f,.66f,gold,Finish.Bronze);
+            Front(0,5.77f,.03f,8.60f,.24f,.46f,black);
+            Front(0,5.95f,-.07f,7.82f,.12f,.35f,bronze);
+            Front(0,4.85f,.395f,5.98f,1.27f,.12f,bronze,Finish.Bronze);
+            Front(0,.055f,.21f,4.47f,.11f,.78f,black);
+            for(int stripe=-7;stripe<=7;stripe++)
+                mesh.Add(center+new Vector3(stripe*.28f,.116f,side*4.79f),new(.13f,.012f,.32f),new Color(239,188,45,255),Finish.Paint,side*.45f);
             Part(side*4.5f,CeilingHeight*.5f,0,.045f,CeilingHeight,9,pane,Finish.Glass);
             Part(0,4.0f+(CeilingHeight-4.0f)*.5f,side*4.5f,9,CeilingHeight-4.0f,.045f,pane,Finish.Glass);
             foreach(int end in new[]{-1,1})
             {
+                float jamb=end*3.27f;
+                Front(jamb,2.12f,.02f,2.24f,4.22f,.68f,anthracite,Finish.BlackMarble);
+                Front(jamb,.20f,.10f,2.32f,.40f,.82f,black);
+                Front(jamb,3.94f,.12f,2.30f,.24f,.76f,bronze);
+                for(int rib=0;rib<4;rib++)
+                {
+                    float x=end*(2.25f+.20f*rib), h=3.65f-.18f*rib;
+                    Front(x,.35f+h/2,.36f,.12f,h,.12f,bronze,Finish.Bronze);
+                    Front(x,.35f+h/2,.432f,.033f,h,.025f,gold,Finish.Bronze);
+                }
+                Front(end*4.10f,2.13f,.38f,.14f,3.50f,.13f,black);
+                Front(end*4.10f,2.13f,.455f,.048f,3.34f,.03f,teal,Finish.Lamp);
+                // Three plates form the web and flanges of each guide rail.
+                Part(end*2.91f,CeilingHeight/2,side*3.02f,.14f,CeilingHeight,.36f,steel);
+                foreach(int flange in new[]{-1,1})
+                    Part(end*2.91f,CeilingHeight/2,side*3.02f+flange*.18f,.38f,CeilingHeight,.075f,chrome);
                 Part(end*3.32f,2,side*4.5f,2.32f,4,.045f,pane,Finish.Glass);
                 Part(end*4.46f,CeilingHeight*.5f,side*4.46f,.22f,CeilingHeight,.22f,steel);
                 Part(end*4.22f,CeilingHeight*.5f,side*4.22f,.08f,CeilingHeight,.08f,new(81,205,218,255),Finish.Lamp);
@@ -2300,17 +2330,36 @@ public sealed class SkyscraperFloor1World
             }
             Part(side*2.57f,1.91f,0,.035f,3.55f,5.40f,cabinPane,Finish.Glass);
             Part(side*2.57f,1.10f,0,.085f,.065f,5.4f,chrome);
+            Part(side*2.50f,.23f,0,.075f,.055f,5.45f,teal,Finish.Lamp);
+            Part(0,.23f,side*2.67f,5.05f,.055f,.075f,teal,Finish.Lamp);
+            Part(side*2.30f,3.57f,0,.09f,.07f,4.7f,gold,Finish.Lamp);
             Part(0,3.65f,side*2.7f,5.25f,.055f,.11f,new(205,186,131,255),Finish.Lamp);
             foreach(int end in new[]{-1,1})
                 Part(end*2.23f,1.91f,side*2.7f,.64f,3.55f,.035f,cabinPane,Finish.Glass);
         }
         Part(0,.08f,0,5.3f,.16f,5.55f,steel);
         Part(0,3.78f,0,5.3f,.17f,5.55f,steel);
+        Part(0,3.64f,0,4.75f,.11f,4.9f,bronze);
+        Part(0,3.55f,0,4.34f,.08f,4.46f,new Color(226,221,188,255),Finish.Lamp);
+        Part(0,4.34f,0,5.64f,.37f,.58f,anthracite);
+        foreach(int end in new[]{-1,1})
+        {
+            Part(end*2.24f,4.05f,0,.28f,.52f,.44f,steel);
+            foreach(float dx in new[]{-.32f,.32f})
+                Part(end*1.72f+dx,7.88f,0,.055f,6.64f,.055f,chrome);
+        }
     }
 
     private void DrawElevatorDoors(bool glass)
     {
-        Color steel=new(135,149,158,255), pane=new(82,165,189,32);
+        Color steel=new(116,122,123,255), pane=new(135,92,56,138), brass=new(196,151,90,255);
+        if(!glass)
+            foreach(int end in new[]{-1,1})
+            {
+                Vector3 wheel=CentralElevatorCorePos+new Vector3(end*1.72f,4.56f,0);
+                VisualEngine3D.Rod(wheel-Vector3.UnitZ*.13f,wheel+Vector3.UnitZ*.13f,.35f,.35f,20,steel);
+                VisualEngine3D.Rod(wheel-Vector3.UnitZ*.16f,wheel+Vector3.UnitZ*.16f,.13f,.13f,16,brass);
+            }
         foreach(int side in new[]{-1,1})
         {
             Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
@@ -2326,24 +2375,27 @@ public sealed class SkyscraperFloor1World
                         VisualEngine3D.Box(p+Vector3.UnitX*(edge*1.04f),.053f,3.95f,.09f,steel);
                         VisualEngine3D.Box(p+Vector3.UnitY*(edge*1.95f),2.13f,.08f,.09f,steel);
                     }
-                    VisualEngine3D.Box(p-Vector3.UnitY*.88f,2.1f,.048f,.075f,steel);
-                    VisualEngine3D.Box(face+new Vector3(leaf*2.46f,4.22f,side*.10f),.055f,.28f,.025f,
-                        new Color(255,40+(int)(17*MathF.Sin(WarningBeaconPhase)),49,255),Finish.Lamp);
+                    VisualEngine3D.Box(p-Vector3.UnitY*1.59f,2.07f,.65f,.084f,steel);
+                    VisualEngine3D.Box(p+new Vector3(-leaf*.97f,0,side*.055f),.035f,3.78f,.023f,
+                        new Color(123,231,215,255),Finish.Lamp);
+                    for(int rib=0;rib<3;rib++)
+                    {
+                        Vector3 foot=p+new Vector3(leaf*(.25f+rib*.19f),-1.80f,side*.063f);
+                        Vector3 bend=foot+Vector3.UnitY*(1.89f+rib*.33f);
+                        VisualEngine3D.Rod(foot,bend,.021f,.021f,8,brass);
+                        VisualEngine3D.Rod(bend,bend+new Vector3(-leaf*.65f,.73f,0),.021f,.021f,8,brass);
+                    }
                 }
             }
             if(glass) continue;
             VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
             Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
-            VisualEngine3D.Box(button+new Vector3(0,.035f,0),.38f,.07f,.30f,steel);
-            VisualEngine3D.Box(button+new Vector3(0,.60f,0),.23f,1.16f,.18f,steel);
-            // Stepped bevel keeps the inclined control face flush with the steel housing.
-            for(int i=0;i<8;i++)
-                VisualEngine3D.Box(button+new Vector3(0,1.10f+i*.018f,side*(.11f-i*.012f)),
-                    .27f,.019f,.13f,steel);
-            VisualEngine3D.Box(button+new Vector3(0,1.13f,side*.178f),.18f,.13f,.012f,new Color(23,31,38,255));
-            VisualEngine3D.Box(button+new Vector3(0,1.16f,side*.187f),.065f,.019f,.008f,
-                HasElevatorKey ? new Color(96,214,166,255) : new Color(226,176,83,255),Finish.Lamp);
-            VisualEngine3D.Box(button+new Vector3(0,1.105f,side*.187f),.055f,.027f,.008f,steel);
+            Vector3 panel=new(button.X,1.43f,face.Z+side*.39f);
+            VisualEngine3D.Box(panel,.46f,.94f,.12f,brass);
+            VisualEngine3D.Box(panel+Vector3.UnitZ*(side*.075f),.38f,.85f,.04f,new Color(22,32,38,255));
+            VisualEngine3D.Box(panel+new Vector3(0,.19f,side*.106f),.23f,.11f,.02f,new Color(113,228,211,255),Finish.Lamp);
+            VisualEngine3D.Box(panel+new Vector3(0,-.14f,side*.108f),.14f,.14f,.025f,
+                HasElevatorKey ? new Color(96,214,166,255) : brass,Finish.Lamp);
         }
     }
 
@@ -2461,8 +2513,8 @@ public sealed class SkyscraperFloor1World
         return focus;
     }
 
-    private static readonly Vector3 LiftSignSize=new(1.48f,1.12f,.08f);
-    private static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,4.75f,side*.14f);
+    internal static readonly Vector3 LiftSignSize=new(5.78f,1.17f,.08f);
+    internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,4.85f,side*.48f);
 
     public void DrawWorldLabelsAndIndicators2D(Camera3D camera, Font font)
     {

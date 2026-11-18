@@ -4,7 +4,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke }
 
 internal static unsafe class VisualEngine3D
 {
@@ -13,8 +13,11 @@ internal static unsafe class VisualEngine3D
     private static readonly Dictionary<string, Model> imports = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, ((int Start, int Count) Left, (int Start, int Count) Right)> armGroups = new();
     private static readonly Dictionary<(string Asset, bool Right), Vector3> armWrists = new();
+    private static readonly Dictionary<(string Asset, bool Right), Vector3> sleeveEnds = new();
+    private static int sleeveAxisLoc,sleevePullLoc,wristLoc;
+    private static float inspectLift;
     private static readonly HashSet<int> partnerPropMeshes = new();
-    private static int batchLoc, clockLoc;
+    private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static int firstPersonLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc;
@@ -31,12 +34,21 @@ internal static unsafe class VisualEngine3D
         in vec2 vertexTexCoord;
         uniform mat4 mvp, matModel;
         uniform float taper;
+        uniform float beltTension;
+        uniform vec3 sleeveAxis,sleevePull,wrist;
         uniform int firstPerson;
         out vec3 pos, norm;
         out vec2 localXZ;
         out vec2 uv;
         void main() {
             vec3 p = vertexPosition;
+            float armAlong=dot(p-wrist,sleeveAxis);
+            p+=sleevePull*smoothstep(.18,.96,armAlong);
+            if(beltTension>0.) {
+                float span=smoothstep(-.36,-.04,p.x);
+                p.x+=.014*beltTension*(2.*span-1.);
+                p.y+=.024*beltTension*4.*span*(1.-span);
+            }
             p.xz *= 1.0 + p.y*taper;
             vec3 n = vertexNormal;
             n.y -= taper * dot(vertexPosition.xz,n.xz);
@@ -86,8 +98,16 @@ internal static unsafe class VisualEngine3D
                 d=min(d,length((p-vec2(.015,.875))*vec2(.88,1.17))-.105);
                 color=vec4(.001,.003,.012,(1.-smoothstep(-.007,.034,d))*.82); return;
             }
+            if(finish==24) {
+                float h=clamp(.5-localXZ.y,0.,1.);
+                float center=h*(.17*sin(h*8.-clock*2.)+.12*sin(h*14.-clock*1.3));
+                float d=(localXZ.x-center)/(.033+h*.15);
+                float opacity=exp(-d*d)*smoothstep(0.,.07,h)*(1.-smoothstep(.18,1.,h));
+                color=vec4(.70,.77,.85,.48*opacity); return;
+            }
             vec3 n=normalize(cross(dFdx(pos), dFdy(pos))), v=normalize(eye-pos);
             if(dot(n,norm)<0.) n=-n;
+            if((finish==21 || finish==17) && dot(norm,norm)>.01) n=normalize(norm);
             vec2 st=uv;
             if(finish==1) st=pos.xz*.36;
             if(finish==11) st=(abs(n.y)>.6 ? pos.xz : (abs(n.x)>.6 ? pos.zy : pos.xy))*.5;
@@ -157,6 +177,17 @@ internal static unsafe class VisualEngine3D
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
             lit+=vec3(.32,.29,.22)*pow(max(0.,dot(n,normalize(v+key))),gloss)*(.18+tex.r);
+            if(finish==22) {
+                vec2 p=vec2(abs(n.x)>.7 ? pos.z : pos.x,pos.y);
+                float vein=p.y*2.9+p.x*1.8+.36*sin(p.x*3.+p.y)+.07*sin(p.y*12.);
+                float filament=1.-smoothstep(.015,.047+fwidth(vein),abs(sin(vein)));
+                lit+=vec3(.13,.13,.12)*filament*(.6+.4*cos(p.x*2.));
+            }
+            if(finish==23) {
+                vec3 r=reflect(-v,n);
+                float band=.5+.5*sin(r.y*13.+r.x*3.);
+                lit=base*(.63+.57*band+.24*max(0.,dot(n,key)))+vec3(.17,.12,.07)*pow(band,8.);
+            }
             if(finish==1) {
                 // Reflect the rows of overhead luminaires and sunlight across the polished stone.
                 vec3 refl=reflect(-v,n);
@@ -171,7 +202,8 @@ internal static unsafe class VisualEngine3D
             if(finish==20) {
                 lit=base*1.08;
             }
-            if(finish==4 || finish==3 || finish==10) lit+=base*max(tex.g,tex.r)*.65;
+            if(finish==4 || finish==3) lit+=base*max(tex.g,tex.r)*.65;
+            if(finish==10) lit=base;
             float fog=1.-exp(-.000055*dist*dist);
             color=vec4(mix(lit,vec3(.68,.79,.92),fog),ink.a);
         }
@@ -184,6 +216,8 @@ internal static unsafe class VisualEngine3D
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         firstPersonLoc = Loc("firstPerson");
+        beltTensionLoc = Loc("beltTension");
+        sleeveAxisLoc=Loc("sleeveAxis"); sleevePullLoc=Loc("sleevePull"); wristLoc=Loc("wrist");
         batchLoc = Loc("batch"); clockLoc = Loc("clock");
         eyeLoc = Loc("eye"); finishLoc = Loc("finish"); taperLoc = Loc("taper");
         laptopLoc = Loc("laptop"); tarotLoc = Loc("tarot"); northLoc = Loc("northBeacon");
@@ -237,6 +271,9 @@ internal static unsafe class VisualEngine3D
                 var wrist = mesh.GetProperty("extras").GetProperty("wrist");
                 armWrists.Add((asset, mesh.GetProperty("name").GetString() == "Right"),
                     new Vector3(wrist[0].GetSingle(), wrist[1].GetSingle(), wrist[2].GetSingle()));
+                if(mesh.GetProperty("extras").TryGetProperty("sleeveEnd",out var end))
+                    sleeveEnds.Add((asset,mesh.GetProperty("name").GetString()=="Right"),
+                        new(end[0].GetSingle(),end[1].GetSingle(),end[2].GetSingle()));
             }
             switch (mesh.GetProperty("name").GetString())
             {
@@ -264,8 +301,22 @@ internal static unsafe class VisualEngine3D
         Matrix4x4 transform = Matrix4x4.CreateTranslation(offset) * Matrix4x4.CreateScale(-1,1,1);
         if (assemblyTransform.HasValue) transform *= assemblyTransform.Value;
         Surface(Finish.Anatomy,0);
+        bool pull=inspectLift>0 && sleeveEnds.ContainsKey((handAsset,right));
+        if(pull)
+        {
+            Vector3 end=sleeveEnds[(handAsset,right)], axis=end-bind;
+            // Keep the cuff on the authored wrist. The far end of the sleeve
+            // follows an offscreen elbow while the hand turns with the prop.
+            Vector3 anchor=new(right ? .52f : -.52f,-.47f,.25f);
+            Matrix4x4.Invert(transform,out var inverse);
+            Vector3 delta=(Vector3.Transform(anchor,inverse)-end)*inspectLift;
+            Raylib.SetShaderValue(shader,wristLoc,bind,ShaderUniformDataType.Vec3);
+            Raylib.SetShaderValue(shader,sleeveAxisLoc,axis/axis.LengthSquared(),ShaderUniformDataType.Vec3);
+            Raylib.SetShaderValue(shader,sleevePullLoc,delta,ShaderUniformDataType.Vec3);
+        }
         for (int i=range.Start; i<range.Start+range.Count; i++)
             Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
+        if(pull) Raylib.SetShaderValue(shader,sleevePullLoc,Vector3.Zero,ShaderUniformDataType.Vec3);
     }
 
     // Keep the authored contacts while moving/rotating an entire weapon assembly.
@@ -355,8 +406,19 @@ internal static unsafe class VisualEngine3D
              world.SouthElevatorDoorPos+new Vector3(0,3.7f,1),world.IsMacBookTrapActive ? 1.4f : .42f);
     }
 
-    public static void Hands()
+    public static void SetBeltTension(float amount) =>
+        Raylib.SetShaderValue(shader,beltTensionLoc,amount,ShaderUniformDataType.Float);
+
+    public static void DrawRosinSmoke(Vector3 tip)
     {
+        Rlgl.DisableDepthMask();
+        Draw(plane,tip+Vector3.UnitY*.0475f,new(.043f,1,.095f),Color.White,Finish.RosinSmoke,Vector3.UnitX,90);
+        Rlgl.EnableDepthMask();
+    }
+
+    public static void Hands(float lift=0)
+    {
+        inspectLift=lift;
         Raylib.SetShaderValue(shader,firstPersonLoc,1,ShaderUniformDataType.Int);
         Vector3 distant=new(50,50,50);
         View(Vector3.Zero,distant,distant,distant,distant,0);
@@ -500,21 +562,35 @@ internal static unsafe class VisualEngine3D
     private static Texture2D MakeTexture(Finish f)
     {
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
-                    or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy ? 1 : 512;
-        Image img=Raylib.GenImageColor(size,size,Color.White);
+                    or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
+                    or Finish.BlackMarble or Finish.Bronze or Finish.RosinSmoke ? 1 : 512;
+        Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(16,25,30,255))
+                                 : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
-        for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y);
+        if(f!=Finish.Lift)
+            for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y);
         void Inscription(string value, int size, int y, Color ink)
         {
-            Font native = GameFonts.Get(Typeface.InterfaceBold,size);
-            int x = (512 - (int)Raylib.MeasureTextEx(native,value,size,0).X)/2;
-            Raylib.ImageDrawTextEx(ref img,native,value,new(x,y),size,0,ink);
+            Font native = GameFonts.Get(Typeface.InterfaceBold, Math.Max(1, size / 2));
+            int drawSize = native.BaseSize;
+            int x = (512 - (int)Raylib.MeasureTextEx(native,value,drawSize,0).X)/2;
+            Raylib.ImageDrawTextEx(ref img,native,value,new(x,y),drawSize,0,ink);
         }
         if(f==Finish.Lift)
         {
-            Inscription("01",260,23,new Color(244,211,150,255));
-            Inscription("CLOUD ENTROPIC",49,302,new Color(205,207,192,255));
-            Inscription("T O W E R",44,372,new Color(218,159,87,255));
+            Color brass=new(235,195,128,255), ivory=new(253,242,215,255);
+            void Letter(string value,int x,int y,int height,Color color)
+            {
+                Font native = GameFonts.Get(Typeface.InterfaceBold, Math.Max(1, height / 2));
+                Raylib.ImageDrawTextEx(ref img,native,value,new(x,y),native.BaseSize,0,color);
+            }
+            Letter("ЭТАЖ",92,32,76,brass);
+            Letter("01",78,104,236,ivory);
+            Raylib.ImageDrawRectangle(ref img,496,48,6,288,brass);
+            Letter("CLOUD ENTROPIC",548,46,128,ivory);
+            Letter("T O W E R",552,204,112,brass);
+            Raylib.ImageDrawTriangle(ref img,new(372,155),new(410,102),new(448,155),new Color(111,234,218,255));
+            Raylib.ImageDrawTriangle(ref img,new(372,211),new(448,211),new(410,264),brass);
         }
         if(f==Finish.Tarot) Inscription("A R C A N A",48,436,new Color(244,209,146,255));
         if(f is Finish.Exit or Finish.Billboard)
@@ -595,6 +671,7 @@ internal static unsafe class VisualEngine3D
         partnerPropMeshes.Clear();
         armGroups.Clear();
         armWrists.Clear();
+        sleeveEnds.Clear();
         foreach(var group in architecture) Raylib.UnloadModel(group.Model);
         architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);

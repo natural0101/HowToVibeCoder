@@ -125,6 +125,50 @@ public class WeaponAndCombatView
     private float _idleSmokeAccumulator = 0f;
     private float _continuousSolderSparkTimer = 0f;
     private float _animClock = 0f;
+    private const float _inspectDuration = 2.4f;
+    private float _inspectTimer, _walkWeight;
+    private Vector2 _lookLag;
+    internal bool Inspecting => _inspectTimer > 0;
+    private float InspectPhase => Inspecting ? 1 - _inspectTimer / _inspectDuration : 0;
+
+    public void TriggerInspect()
+    {
+        if (!Inspecting) _inspectTimer = _inspectDuration;
+    }
+
+    public void UpdateLookLag(Vector2 angularDelta, float dt)
+    {
+        _lookLag = Vector2.Clamp(_lookLag * MathF.Exp(-10f*dt) + angularDelta,
+            new Vector2(-.16f), new Vector2(.16f));
+    }
+
+    private static float Ease(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return t*t*(3-2*t);
+    }
+
+    private static float InspectLift(float t) => Ease(t/.28f)*Ease((1-t)/.23f);
+
+    private static Matrix4x4 GetInspectTransform(int slot, float t)
+    {
+        float lift = InspectLift(t);
+        if (lift == 0) return Matrix4x4.Identity;
+        float turn = Ease((t-.37f)/.31f);
+        Vector3 pivot = slot==1 ? new(0,-.15f,.60f) : new(.18f,-.15f,.62f);
+        (Vector3 travel, Vector3 degrees) = slot switch
+        {
+            1 => (new Vector3(0,.095f,.045f), new Vector3(-19,8,-8+12*turn)),
+            2 => (new Vector3(-.105f,.062f,-.04f), new Vector3(-9,-27,-42*turn)),
+            // The receiver already has a -16 degree resting yaw.
+            3 => (new Vector3(-.135f,.085f,.065f), new Vector3(-9,-22+70*turn,12-23*turn)),
+            _ => (new Vector3(-.13f,.09f,.055f), new Vector3(-12+34*turn,-35+8*turn,9+11*turn))
+        };
+        Vector3 a = degrees*(MathF.PI/180*lift);
+        return Matrix4x4.CreateTranslation(-pivot)
+            * Matrix4x4.CreateFromYawPitchRoll(a.Y,a.X,a.Z)
+            * Matrix4x4.CreateTranslation(pivot+travel*lift);
+    }
 
     public void SelectSlot(int slotNumber)
     {
@@ -140,12 +184,14 @@ public class WeaponAndCombatView
         if (target != CurrentWeapon)
         {
             CurrentWeapon = target;
+            _inspectTimer = 0;
             EquipTransition = 1.0f;
         }
         else if (slotNumber == 4 && UnlockedChatGun)
         {
             // Toggle between SawedOff and ChatGun on pressing [4] again
             CurrentWeapon = (CurrentWeapon == WeaponType.SawedOff) ? WeaponType.ChatGun : WeaponType.SawedOff;
+            _inspectTimer = 0;
             EquipTransition = 1.0f;
         }
     }
@@ -170,6 +216,7 @@ public class WeaponAndCombatView
         bool isCritical = false,
         string customHitLabel = null)
     {
+        _inspectTimer = 0;
         Vector3 forward = Vector3.Normalize(camera.Target - camera.Position);
         Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
@@ -475,6 +522,8 @@ public class WeaponAndCombatView
     public void UpdateWeapons(float dt, Camera3D camera, bool isMoving = false, bool holdingFire = false)
     {
         _animClock += dt;
+        _inspectTimer = MathF.Max(0,_inspectTimer-dt);
+        _walkWeight = Lerp(_walkWeight,isMoving ? 1 : 0,1-MathF.Exp(-9*dt));
 
         // Smoothly decay animation phases
         if (EquipTransition > 0f)
@@ -507,7 +556,7 @@ public class WeaponAndCombatView
             float targetGlow = (SolderThrustPhase > 0.05f || holdingFire) ? 1.0f : (0.68f + 0.14f * MathF.Sin(_animClock * 5.5f));
             SolderHeatGlow = Lerp(SolderHeatGlow, targetGlow, dt * 8f);
 
-            _idleSmokeAccumulator += dt * (SolderThrustPhase > 0.05f ? 32f : 12f);
+            if(!Inspecting) _idleSmokeAccumulator += dt * (SolderThrustPhase > 0.05f ? 32f : 12f);
             while (_idleSmokeAccumulator >= 1f)
             {
                 _idleSmokeAccumulator -= 1f;
@@ -737,7 +786,7 @@ public class WeaponAndCombatView
     /// and the active 3D weapon ViewModel with multi-phase attack animations, plus 2D HUD overlays (hitmarker & floating damage numbers).
     /// Can be called either inside or outside BeginMode3D (manages its own dedicated depth-cleared 3D pass + 2D HUD projection).
     /// </summary>
-    public void DrawFirstPersonHandsAndWeapon(Camera3D worldCamera, float walkBobPhase = 0f, bool isCrouching = false, Font uiFont = default, Camera3D? inspectionCamera = null)
+    public void DrawFirstPersonHandsAndWeapon(Camera3D worldCamera, float walkBobPhase = 0f, bool isCrouching = false, Font uiFont = default, Camera3D? inspectionCamera = null, bool showCombatText = true)
     {
         // Local ViewModel camera at origin looking along +Z so hands never clip into walls
         Camera3D vmCam = inspectionCamera ?? new Camera3D
@@ -749,17 +798,20 @@ public class WeaponAndCombatView
             Projection = CameraProjection.Perspective
         };
 
-        float bobX = MathF.Sin(walkBobPhase * 1.0f) * 0.014f;
-        float bobY = MathF.Abs(MathF.Cos(walkBobPhase * 2.0f)) * -0.012f + (isCrouching ? -0.025f : 0f);
-        float equipDropY = -EquipTransition * 0.075f;
+        float bobX = MathF.Sin(walkBobPhase)*.018f*_walkWeight + .0032f*MathF.Sin(_animClock*1.7f);
+        float bobY = -.016f*MathF.Cos(walkBobPhase*2)*_walkWeight + .0042f*MathF.Sin(_animClock*2.1f)
+                     + (isCrouching ? -.025f : 0);
+        float equip = Ease(EquipTransition);
+        float equipDropY = -.10f*equip;
 
-        Vector3 baseOffset = new Vector3(bobX, bobY + equipDropY + .033f, 0f);
+        Vector3 baseOffset = new(bobX-_lookLag.X*.12f, bobY+equipDropY+.024f+_lookLag.Y*.10f, -.035f*equip);
 
         // Render 3D First-Person ViewModel
         Raylib.BeginMode3D(vmCam);
-        VisualEngine3D.Hands();
+        VisualEngine3D.Hands(InspectLift(InspectPhase));
         Rlgl.PushMatrix();
         Rlgl.Scalef(-1,1,1);
+        Rlgl.Rotatef(-12*equip + _lookLag.X*13,0,0,1);
         Rlgl.DisableBackfaceCulling();
 
         switch (CurrentWeapon)
@@ -786,7 +838,8 @@ public class WeaponAndCombatView
         Raylib.EndMode3D();
 
         // Render 2D projected floating combat numbers (`ШЛЕПОК!`, `ПРИПАЯНО!`, `-35`, `КРИТ!`) & Hitmarker X
-        DrawCombatFloatingTextsAndHitmarker2D(worldCamera, uiFont);
+        if (showCombatText)
+            DrawCombatFloatingTextsAndHitmarker2D(worldCamera, uiFont);
     }
 
     // =========================================================================
@@ -843,11 +896,15 @@ public class WeaponAndCombatView
             * Matrix4x4.CreateRotationZ(-0.14f)
             * Matrix4x4.CreateRotationY(0.19f)
             * Matrix4x4.CreateRotationX(0.06f + whipExtension * .35f)
-            * Matrix4x4.CreateTranslation(pivotCenter);
-        VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_belt", pose);
-        VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_belt", pose);
+            * Matrix4x4.CreateTranslation(pivotCenter) * GetInspectTransform(1,InspectPhase);
+        float tension=InspectLift(InspectPhase);
+        Vector3 spread=Vector3.UnitX*(.014f*tension);
+        VisualEngine3D.ArmAssembly(false, assembly-spread, "fps_hands_belt", pose);
+        VisualEngine3D.ArmAssembly(true, assembly+spread, "fps_hands_belt", pose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
+        VisualEngine3D.SetBeltTension(tension);
         VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose);
+        VisualEngine3D.SetBeltTension(0);
 
         // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
         if (p > 0.18f)
@@ -883,7 +940,7 @@ public class WeaponAndCombatView
         Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
             * Matrix4x4.CreateRotationX(-0.14f)
             * Matrix4x4.CreateRotationY(-0.26f)
-            * Matrix4x4.CreateTranslation(handleBase);
+            * Matrix4x4.CreateTranslation(handleBase) * GetInspectTransform(2,InspectPhase);
 
         VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
@@ -892,8 +949,13 @@ public class WeaponAndCombatView
         Vector3 cordStart = Vector3.Transform(handleBase - Vector3.UnitZ * .099f, rightPose);
         Vector3 cordMid = cordStart + new Vector3(.04f,-.16f,-.18f);
         VisualEngine3D.Rod(cordStart, cordMid, .0032f, .0032f, 8, new Color(28,28,32,255));
-
-
+        if (Inspecting)
+        {
+            Vector3 tip=Vector3.Transform(handleBase+new Vector3(0,.003f,.219f),rightPose);
+            Vector3 copper=Vector3.Transform(handleBase+new Vector3(0,0,.204f),rightPose);
+            VisualEngine3D.Rod(copper,tip,.0035f,.0018f,12,new Color(255,134,62,255),Finish.Lamp);
+            VisualEngine3D.DrawRosinSmoke(tip);
+        }
     }
 
     // =========================================================================
@@ -911,7 +973,7 @@ public class WeaponAndCombatView
         Vector3 pivot = new Vector3(.18f,-.193f,.6665f) + assembly;
         Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
             * Matrix4x4.CreateRotationX(-kick*.05f)
-            * Matrix4x4.CreateRotationY(-.28f) * Matrix4x4.CreateTranslation(pivot);
+            * Matrix4x4.CreateRotationY(-.28f) * Matrix4x4.CreateTranslation(pivot) * GetInspectTransform(3,InspectPhase);
         VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_uzi", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_uzi", pose);
         Vector3 aimDir = Vector3.UnitZ;
@@ -959,7 +1021,7 @@ public class WeaponAndCombatView
         Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
             * Matrix4x4.CreateRotationX(-kickUp*.65f + breakBarrelTilt*.35f)
             * Matrix4x4.CreateRotationY(-.12f)
-            * Matrix4x4.CreateTranslation(pivot);
+            * Matrix4x4.CreateTranslation(pivot) * GetInspectTransform(4,InspectPhase);
         Vector3 gripTop = new Vector3(.18f,-.12f,.66f) + assembly;
         Vector3 barrelDir = Vector3.UnitZ;
         Vector3 receiverHinge = gripTop + new Vector3(0,.015f,.065f);

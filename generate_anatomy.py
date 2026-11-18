@@ -197,13 +197,12 @@ def contact_pose(kind, side):
     j=lambda key: JOINT[side+"-"+key]
     axis=V((0,0,-1))
     if side=="r":
-        roll=math.radians(-55)
+        # Arm mirrors X at draw time: (-X,+Y) puts the knuckles upper right.
+        roll=math.radians(135)
         c=V((-.18,-.15,.615))
         radial,tangent=V((math.cos(roll),math.sin(roll),0)),V((-math.sin(roll),math.cos(roll),0))
-        rx,ry=.037314,.039754
     else:
         c,radial,tangent=V((.16,-.15,.70)),V((1,0,0)),V((0,1,0))
-        rx,ry=.044,.044
     wrist=j("hand"); mid=j("finger-3-1")
     # MPFB hands are mirrored: orient BOTH rest normals into the palm.
     palm_sign=1 if side=="l" else -1
@@ -214,16 +213,22 @@ def contact_pose(kind, side):
     rest_frame=Matrix((f_rest,a_rest,palm_rest)).transposed()
     f_target=tangent.normalized()
     palm_target=(-radial).normalized()
+    if side=="r":
+        # Aim the metacarpals forward from the cuff, with the back facing up.
+        f_target=V((.83,.29,.48)).normalized()
+        dorsal=V((-.28,.96,-.10))
+        palm_target=-(dorsal-f_target*dorsal.dot(f_target)).normalized()
     a_target=palm_target.cross(f_target).normalized()
     target_frame=Matrix((f_target,a_target,palm_target)).transposed()
     hand=target_frame@rest_frame.transposed()
     assert abs(hand.determinant()-1)<1e-6
     assert (hand@palm_rest).dot(palm_target)>.999999
-    knuckle=c+radial*rx-tangent*.003
     if side=="r":
-        knuckle=c+radial*rx+tangent*ry
+        knuckle=c+radial*.031-tangent*.014
+    else:
+        knuckle=c+radial*.044-tangent*.003
     dest_wrist=knuckle-hand@(mid-wrist)
-    dest_elbow=dest_wrist+V((-.12 if side=="r" else .15,-.19,-.28))
+    dest_elbow=dest_wrist+V((-.21,-.11,-.28) if side=="r" else (.15,-.19,-.28))
     transforms={}
     for name,a,b,p,q in [("upperarm",j("shoulder"),j("elbow"),dest_elbow-V((0,0,.2)),dest_elbow),
                          ("lowerarm",j("elbow"),wrist,dest_elbow,dest_wrist)]:
@@ -239,35 +244,47 @@ def contact_pose(kind, side):
     for d,name in enumerate(DIGITS,1):
         chain=[j(f"finger-{d}-{k}") for k in range(1,5)]
         metacarpal=hand@(chain[0]-wrist)
-        angles=[.85,1.10,.75]
-        cup=total_angle=0
-        if side=="r" and d>=2:
-            # Metacarpal cup and three flexions on the 26 mm taped handle,
-            # from index to little finger. Fit the skin and the signet together.
-            cup,*angles=((.3123,2.0500,.4331,1.2733),
-                         (.2119,2.0500,.3697,1.3536),
-                         (.3346,2.0311,.6312,1.3743),
-                         (.4253,1.3367,1.5258,.4000))[d-2]
-        if cup:
-            metacarpal=Quaternion(tangent.cross(-radial).normalized(),cup)@metacarpal
         pos=dest_wrist+metacarpal
+        if side=="r" and d==1:
+            pos+=V((.018,-.014,.029))
+        if side=="r" and d>=2:
+            # Index through little finger: cup around the MCP row, limit its
+            # radius, and stagger the roots along the length of the blue tape.
+            cup_deg,max_radius,along=(
+                (0,.038,-.028),(0,.037,-.007),(15,.038,.013),(18,.037,.039)
+            )[d-2]
+            off=pos-c
+            azimuth=math.atan2(off.y,off.x)-math.radians(cup_deg)
+            radius=min(math.hypot(off.x,off.y),max_radius)
+            pos=c+V((radius*math.cos(azimuth),radius*math.sin(azimuth),along))
         thumb_direction=(c+axis*.035+radial*.032+tangent*.025-pos).normalized()
+        total_angle=0
+        parent=hand
         for k in range(3):
             rest=chain[k+1]-chain[k]
-            if d==1:
-                # Opposed thumb rests across the index proximal phalanx.
-                # Keep a continuous thumb arc instead of turning back toward a
-                # target already passed by the previous phalanx.
+            if side=="r" and d==1:
+                # Oppose the thumb along the exposed side, aiming at the guard.
+                target=c+V(((-.007,-.034,-.015),(.024,-.017,.003),(.023,.009,.027))[k])
+                direction=(target-pos).normalized()
+            elif side=="r":
+                # The transverse chord is fixed by bone length and axial travel.
+                # Solve its sweep so each successive joint wraps under the tape.
+                next_radius=(.028,.024,.020 if d==5 else .022)[k]
+                dz=rest.length*(.10 if d==5 else .28)
+                chord_sq=rest.length_squared-dz*dz
+                cos_sweep=(radius**2+next_radius**2-chord_sq)/(2*radius*next_radius)
+                azimuth-=math.acos(max(-1,min(1,cos_sweep)))
+                joint=c+V((next_radius*math.cos(azimuth),next_radius*math.sin(azimuth),pos.z-c.z+dz))
+                direction=(joint-pos).normalized()
+                radius=next_radius
+            elif d==1:
                 direction=(thumb_direction-axis*(.12*k)-radial*(.12*k)).normalized()
-                if side=="r":
-                    angle,along=((-0.79,.85),(.5815,-.2964),(1.1758,-.7393))[k]
-                    transverse=-radial*math.cos(angle)+tangent*math.sin(angle)
-                    direction=transverse*math.cos(along)+axis*math.sin(along)
-                rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
             else:
-                total_angle+=angles[k]
+                total_angle+=(.85,1.10,.75)[k]
                 direction=tangent*math.cos(total_angle)-radial*math.sin(total_angle)
-                rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
+            rot=(parent@rest).rotation_difference(direction).to_matrix()@parent
+            if side=="r":
+                parent=rot
             transforms[f"{name}_{k+1:02}_"+side]=(chain[k],pos.copy(),rot)
             delta=rot@rest
             assert abs(delta.length-rest.length)<1e-6
@@ -275,6 +292,14 @@ def contact_pose(kind, side):
             if d==4 and k==0: signet=(pos+delta*.42,delta.normalized())
             pos+=delta
     return transforms,signet
+
+
+def solder_palm_fit(p):
+    # Cup the thumb web against the grip on the palm side. The cuff and
+    # fingertips lie outside this small patch of soft tissue.
+    offset=p-V((-.190,-.150,.590))
+    weight=math.exp(-((offset.x/.013)**2+(offset.y/.020)**2+(offset.z/.020)**2))
+    return p-V((.012*weight,0,0))
 
 
 def pose(kind, side, support_wrist=None):
@@ -411,7 +436,10 @@ def human(kind):
                 a,c = (JOINT[s+"-elbow"],JOINT[s+"-hand"]) if b.startswith("lower") else (JOINT[s+"-shoulder"],JOINT[s+"-elbow"])
                 axis = (c-a).normalized()
                 centre = a+axis*(p-a).dot(axis)
-                p+=(p-centre)*(.25 if kind=="seer" else .48)
+                fullness=.25 if kind=="seer" else .48
+                if kind=="fps_solder" and s=="r":
+                    fullness*=max(0,min(1,(c-p).dot(axis)/.065))
+                p+=(p-centre)*fullness
             if REST[i].y<.91 and abs(REST[i].x)<.27:
                 p.x*=1.06
                 p.z=(p.z-.03)*1.12+.03
@@ -451,13 +479,10 @@ def human(kind):
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         bpy.context.view_layer.objects.active=obj
-        dec=obj.modifiers.new("Anatomical planes","DECIMATE")
-        dec.ratio=.65 if fps else .18
-        bpy.ops.object.modifier_apply(modifier=dec.name)
-        tri=obj.modifiers.new("Facets","TRIANGULATE")
-        bpy.ops.object.modifier_apply(modifier=tri.name)
-        for p in obj.data.polygons: p.use_smooth=False
         if fps:
+            sub=obj.modifiers.new("Smooth anatomical contours","SUBSURF")
+            sub.levels=1
+            bpy.ops.object.modifier_apply(modifier=sub.name)
             fore=transforms["lowerarm_"+side]
             start=fore[1]
             end=transforms["hand_"+side][1]
@@ -474,20 +499,26 @@ def human(kind):
                     if edges: bmesh.ops.holes_fill(bm,edges=edges)
             for face in bm.faces:
                 # A curled finger can sit behind the wrist plane. It is still skin.
-                if face.material_index==slots["skin"]: continue
+                if face.material_index==slots["skin"] and (kind,side)!=("fps_solder","r"): continue
                 distance=(face.calc_center_median()-V(xyz(end))).dot(normal)
                 key="skin" if distance>=-.006 else ("ivory" if distance>=-.034 else "crimson")
                 face.material_index=slots[key]
-            bmesh.ops.triangulate(bm,faces=list(bm.faces))
             bm.to_mesh(obj.data)
             bm.free()
+        else:
+            dec=obj.modifiers.new("Anatomical planes","DECIMATE")
+            dec.ratio=.18
+            bpy.ops.object.modifier_apply(modifier=dec.name)
+            tri=obj.modifiers.new("Facets","TRIANGULATE")
+            bpy.ops.object.modifier_apply(modifier=tri.name)
+        for poly in obj.data.polygons: poly.use_smooth=fps
         pieces[side]=obj
     if fps:
         # Anchor to the final proximal ring-finger transform, then fit the band
         # to the skinned surface (joint centres alone omit the skin envelope).
         origin,start,rotation=transforms["ring_01_r"]
         delta=rotation@(JOINT["r-finger-4-2"]-JOINT["r-finger-4-1"])
-        pos,axis=start+delta*.5,delta.normalized()
+        pos,axis=start+delta*(.78 if kind=="fps_solder" else .5),delta.normalized()
         rings["r"]=(pos,axis)
         basis=frame(axis,(0,1,0))
         skin=pieces["r"]
@@ -500,6 +531,9 @@ def human(kind):
         wire("Gold ring band",[surface(basis.col[1]*math.cos(i*math.tau/32)+
              basis.col[2]*math.sin(i*math.tau/32)) for i in range(32)],.0012,"gold",True)
         outward=rotation@V((-1,0,0))
+        if kind=="fps_solder":
+            outward=pos-V((-.18,-.15,pos.z))
+            outward.z=-outward.length
         outward=(outward-axis*outward.dot(axis)).normalized()
         top=surface(outward)
         oval("Signet setting",top,(.003,.004,.004),"gold")
@@ -770,7 +804,18 @@ def export(kind, filename):
     if kind.startswith("fps_"):
         for obj in bpy.context.scene.objects:
             side="l" if obj.name=="Left" else "r"
-            obj.data["wrist"]=list(contact_pose(kind,side)[0]["hand_"+side][1])
+            arm=contact_pose(kind,side)[0]
+            wrist=arm["hand_"+side][1]
+            elbow=arm["lowerarm_"+side][1]
+            sleeve_end=elbow+(wrist-elbow).normalized()*.042
+            if kind=="fps_solder" and side=="r":
+                for vertex in obj.data.vertices:
+                    x,y,z=vertex.co
+                    vertex.co=xyz(solder_palm_fit(V((x,z,-y))))
+                wrist=solder_palm_fit(wrist)
+                sleeve_end=solder_palm_fit(sleeve_end)
+            obj.data["wrist"]=list(wrist)
+            obj.data["sleeveEnd"]=list(sleeve_end)
     for obj in bpy.context.scene.objects:
         assert obj.type=="MESH" and len(obj.data.polygons)>0
         bm=bmesh.new();bm.from_mesh(obj.data)
@@ -778,9 +823,11 @@ def export(kind, filename):
         bmesh.ops.dissolve_degenerate(bm,edges=list(bm.edges),dist=.0000001)
         bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces))
         bm.to_mesh(obj.data);bm.free();obj.data.update()
+        if kind.startswith("fps"):
+            for poly in obj.data.polygons: poly.use_smooth=True
         assert all(math.isfinite(c) for v in obj.data.vertices for c in v.co)
     bpy.ops.export_scene.gltf(filepath=str(OUT/(filename+".glb")),export_format="GLB",
-        export_texcoords=False,export_animations=False,export_cameras=False,export_lights=False,export_extras=True)
+        export_normals=True,export_texcoords=False,export_animations=False,export_cameras=False,export_lights=False,export_extras=True)
     print("STAGE4",filename,len(BODY),"source body faces")
 
 

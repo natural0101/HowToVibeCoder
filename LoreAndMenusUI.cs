@@ -284,7 +284,7 @@ public static class LoreAndMenusUI
             Handle = "@timlead_sedoy",
             RoleBadge = "TECH LEAD | СЕДОЙ В 27",
             Time = "Суббота, 03:12",
-            Text = "«КТО ЗАКОММИТИЛ КЛЮЧИ ОТ AWS ПРЯМО В `index.html`?! Нам пришёл счёт на $54,000 за ночь!»",
+            Text = "«КТО ЗАКОММИТИЛ КЛЮЧИ ОТ AWS ПРЯМО В index.html?! Нам пришёл счёт на $54,000 за ночь!»",
             ThreadReaction = " 42   [$$$] 19   Ответ @danila_vibe: «ИИ сказал так быстрее для фронта без бэкенда бро»",
             HandleColor = new Color(255, 92, 92, 255)
         },
@@ -311,7 +311,7 @@ public static class LoreAndMenusUI
             Handle = "@senior_pomidor",
             RoleBadge = "DBA / DEVOPS",
             Time = "Понедельник, 12:40",
-            Text = "«КТО УДАЛИЛ ТАБЛИЦУ USERS И ЗАМЕНИЛ ЕЁ НА КОММЕНТАРИЙ `// rest of database here`?! У нас 400 тысяч клиентов не могут войти!»",
+            Text = "«КТО УДАЛИЛ ТАБЛИЦУ USERS И ЗАМЕНИЛ ЕЁ НА КОММЕНТАРИЙ [// rest of database here]?! У нас 400 тысяч клиентов не могут войти!»",
             ThreadReaction = "[RIP] 64    12   Ответ @danila_vibe: «Там контекстное окно кончилось, я не заметил, сорян [ПИС]»",
             HandleColor = new Color(255, 138, 64, 255)
         },

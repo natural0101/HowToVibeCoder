@@ -310,6 +310,7 @@ public static partial class Program
         if (Raylib.IsKeyPressed(KeyboardKey.Two)) _weapons.SelectSlot(2);
         if (Raylib.IsKeyPressed(KeyboardKey.Three)) _weapons.SelectSlot(3);
         if (Raylib.IsKeyPressed(KeyboardKey.Four)) _weapons.SelectSlot(4);
+        if (Raylib.IsKeyPressed(KeyboardKey.F) && !Raylib.IsKeyDown(KeyboardKey.E)) _weapons.TriggerInspect();
 
         // Ambush crouch toggle [C] or Left Control
         if (Raylib.IsKeyPressed(KeyboardKey.C) || Raylib.IsKeyPressed(KeyboardKey.LeftControl))
@@ -320,6 +321,7 @@ public static partial class Program
         // Mouse look
         Vector2 md = Raylib.GetMouseDelta();
         float sens = LoreAndMenusUI.MouseSensitivity * 0.015f;
+        _weapons.UpdateLookLag(md*sens,dt);
         _playerYaw -= md.X * sens;
         _playerPitch = Math.Clamp(_playerPitch - md.Y * sens, -1.25f, 1.25f);
 
@@ -410,7 +412,7 @@ public static partial class Program
         }
     }
 
-    private static void DrawFrame()
+    private static void DrawFrame(bool showHud=true)
     {
         Raylib.BeginDrawing();
         Raylib.ClearBackground(new Color(10, 12, 20, 255));
@@ -457,9 +459,9 @@ public static partial class Program
         if (!modalOpen)
         {
             // World tags, combat overlays and the gameplay HUD belong only to gameplay.
-            _world.DrawWorldLabelsAndIndicators2D(playerCam, _uiFont);
-            _weapons.DrawFirstPersonHandsAndWeapon(playerCam, _walkBobPhase, _isCrouching, _uiFont);
-            DrawGameplayHud2D();
+            if(showHud) _world.DrawWorldLabelsAndIndicators2D(playerCam, _uiFont);
+            _weapons.DrawFirstPersonHandsAndWeapon(playerCam, _walkBobPhase, _isCrouching, _uiFont, showCombatText:showHud);
+            if(showHud) DrawGameplayHud2D();
         }
 
         // 5. Modal Windows ([N] Lore, [F8] Audio Mixer, [K] Case Roulette) & [ESC] Pause Overlay
@@ -521,7 +523,7 @@ public static partial class Program
             bool unlocked = i switch {1=>_weapons.UnlockedSolderingIron,2=>_weapons.UnlockedMicroUzi,3=>_weapons.UnlockedSawedOff || _weapons.UnlockedChatGun,_=>true};
             DrawSlotIcon(i,new(r.X+34,r.Y+35),unlocked);
         }
-        MainMenuAndPauseUI.Center(_uiFont,"[N] Архив   [K] Кейсы   [F8] Звук",new(sw-355,sh-42,335,25),16,white);
+        MainMenuAndPauseUI.Center(_uiFont,"[N] Архив   [K] Кейсы   [F] Осмотр   [F8] Звук",new(sw-419,sh-42,405,25),16,white);
 
         Color cyan = new(40,213,243,255);
         Vector2 badge = new(sw-238,25);
@@ -617,14 +619,14 @@ public static partial class Program
     // =========================================================================
     private static void CheckElevatorNameplates()
     {
-        Vector3 half=new(.74f,.56f,.04f);
+        Vector3 half=SkyscraperFloor1World.LiftSignSize*.5f;
         int trials=0;
         foreach(int side in new[]{-1,1})
         foreach(float distance in new[]{2f,4f,9f})
         foreach(float angle in new[]{-.4f,0,.4f})
         {
             Vector3 face=side<0?_world.NorthElevatorPos:_world.SouthElevatorDoorPos;
-            Vector3 sign=face+new Vector3(0,4.75f,side*.14f);
+            Vector3 sign=SkyscraperFloor1World.LiftSignCenter(face,side);
             Camera3D camera=new() { Position=sign+new Vector3(angle*distance,-.8f,side*distance),
                 Target=sign,Up=Vector3.UnitY,FovY=76 };
             WorldLabelLayout.BeginFrame();
@@ -659,15 +661,16 @@ public static partial class Program
         Directory.CreateDirectory(projectScreenshotsDir);
         Directory.CreateDirectory(binScreenshotsDir);
 
-        void CaptureShot(string fileName, string? detailName = null, Rectangle detail = default)
+        void CaptureShot(string fileName, string? detailName = null, Rectangle detail = default, bool cropOnly=false)
         {
             // Render 3 warmup frames so all animations/particles/UI settle cleanly
             for (int f = 0; f < 3; f++)
             {
-                DrawFrame();
+                DrawFrame(showHud:!cropOnly);
             }
 
             Image img = Raylib.LoadImageFromScreen();
+            if (cropOnly) Raylib.ImageCrop(ref img,detail);
             string path1 = Path.Combine(projectScreenshotsDir, fileName);
             string path2 = Path.Combine(binScreenshotsDir, fileName);
             if (!Raylib.ExportImage(img, path1)) throw new IOException(path1);
@@ -677,7 +680,11 @@ public static partial class Program
             }
             if (detailName != null)
             {
-                Image crop = Raylib.ImageFromImage(img,detail);
+                // Same camera and animation time. Keep subtitles and inventory out of the grip detail.
+                DrawFrame(showHud:false);
+                Image clean = Raylib.LoadImageFromScreen();
+                Image crop = Raylib.ImageFromImage(clean,detail);
+                Raylib.UnloadImage(clean);
                 Raylib.ImageResize(ref crop,crop.Width*2,crop.Height*2);
                 string output = Path.Combine(projectScreenshotsDir,detailName);
                 if (!Raylib.ExportImage(crop,output)) throw new IOException(output);
@@ -712,7 +719,7 @@ public static partial class Program
         _playerPos = new Vector3(0.0f, 1.72f, 10.15f);
         LookAtTarget(new Vector3(0.0f, 1.28f, 13.0f));
         AudioMusicSystem.TriggerVoiceLine("HR-ТАРОЛОГ ВЕРОНИКА", "Расклад Таро готов! Приноси вайб-кодеров на разбор натальной карты!", (int)SpeakerVoiceType.VeronikaTarot);
-        CaptureShot("01_office_hub_hr_tarot.png","crop_slot_1_belt.png",new(268,460,765,260));
+        CaptureShot("01_office_hub_hr_tarot.png","crop_slot_1_belt.png",new(307,452,715,214));
 
         // 2. 02_macbook_trap_ambush.png - Ambush behind Leather Sofa/Ficus, glowing MacBook Trap + Central Armored Elevator Shaft + Left/Right Forks + Walking Vibe Coder with Anxiety Bar
         ResetNewGameFloor();
@@ -730,13 +737,51 @@ public static partial class Program
         walkingCoder.SpeechTimer = 5.0f;
         _world.UpdateAmbushState(_playerPos, _isCrouching);
         _weapons.UpdateWeapons(0.16f, BuildPlayerCamera(), isMoving: false, holdingFire: true);
-        CaptureShot("02_macbook_trap_ambush.png","crop_slot_2_solder.png",new(715,456,292,264));
+        CaptureShot("02_macbook_trap_ambush.png","crop_slot_2_solder.png",new(690,405,395,315));
+
+        // Exercise Raylib's key state and the normal gameplay input dispatch.
+        static unsafe void ReplayF(bool down)
+        {
+            AutomationEvent key = new() { Type=down ? 2u : 1u }; // raylib INPUT_KEY_DOWN / UP
+            key.Params[0]=(int)KeyboardKey.F;
+            Raylib.PlayAutomationEvent(key);
+        }
+        bool exit=false;
+        _hudStatusTimer=0;
+        _playerPos=new Vector3(1.2f,1.72f,11.4f);
+        _isCrouching=false;
+        LookAtTarget(new Vector3(0,2.65f,.5f));
+        LoreAndMenusUI.IsLoreOpen=true;
+        ReplayF(true);
+        UpdateFrame(1f/60,ref exit);
+        ReplayF(false);
+        if (_weapons.Inspecting) throw new InvalidDataException("Inspection started over archive");
+        LoreAndMenusUI.IsLoreOpen=false;
+        for(int slot=1;slot<=4;slot++)
+        {
+            _weapons.SelectSlot(slot);
+            ReplayF(true);
+            UpdateFrame(1f/60,ref exit);
+            ReplayF(false);
+            if (!_weapons.Inspecting) throw new InvalidDataException($"F failed in slot {slot}");
+            for(int frame=1;frame<=145;frame++)
+            {
+                _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
+                if(frame==138 && !_weapons.Inspecting)
+                    throw new InvalidDataException($"Inspection ended early in slot {slot}");
+                if(slot==2 && frame==97)
+                    CaptureShot("crop_inspect_f.png",detail:new(400,260,690,390),cropOnly:true);
+            }
+            if (_weapons.Inspecting) throw new InvalidDataException($"Inspect did not finish in slot {slot}");
+        }
+        Console.WriteLine("[AUTOTEST] F started and finished inspection in all four slots.");
 
         // 3. 03_uzi_combat_saas_miniboss.png - Firing Micro-Uzi (muzzle flash, brass shells, tracers, hitmarker) at SaaS Guru Mini-Boss + flying 3D "500 INTERNAL ERROR" & "API KEY LEAKED" blocks
         ResetNewGameFloor();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _isCrouching = false;
         _weapons.SelectSlot(3); // Micro-Uzi
+        _weapons.UpdateWeapons(.3f,BuildPlayerCamera());
         _playerPos = new Vector3(0.0f, 1.72f, 9.4f);
         LookAtTarget(new Vector3(0.0f, 1.35f, 4.5f));
         _world.SelectedBaitTier = SubscriptionBaitTier.CloudEntropicMax;
@@ -776,7 +821,7 @@ public static partial class Program
         _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
         StagePartner(new(-.75f,0,6.45f),miniBoss.Position+Vector3.UnitY*1.3f);
-        CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(712,405,396,315));
+        CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(670,317,442,370));
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks
         ResetNewGameFloor();
@@ -811,6 +856,7 @@ public static partial class Program
         ResetNewGameFloor();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(4); // Sawed-Off Shotgun / Chat-Gun
+        _weapons.UpdateWeapons(.3f,BuildPlayerCamera());
         _world.HasElevatorKey = true;
         _world.TrySummonElevatorBoss(_ => true, out _);
         _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
@@ -819,14 +865,14 @@ public static partial class Program
         _world.ElevatorBoss.FacingYaw = 3.14159f; // Facing North toward player in North Boss Arena
         _world.SpawnNodeModulesCube(new Vector3(3.35f, 1.15f, -8.1f), new Vector3(0f, 1.5f, -18.5f));
         _world.SpawnNodeModulesCube(new Vector3(-3.2f, 2.55f, -9.1f), new Vector3(0f, 1.5f, -18.5f));
-        _playerPos = new Vector3(-3.1f, 1.72f, -13.5f);
-        LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.3f,1.6f,0));
+        _playerPos = new Vector3(-1.35f, 1.72f, -14.2f);
+        LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.15f,0));
         Camera3D bossCam = BuildPlayerCamera();
         _weapons.TriggerWeaponAttack(bossCam, _world.ElevatorBoss.Position+Vector3.UnitY*1.55f, hitEnemy: true, damageDealt: 165, isCritical: true);
         _weapons.UpdateWeapons(0.03f, bossCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
-        CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(555,273,653,447));
+        CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(575,214,590,420));
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]
         LoreAndMenusUI.IsLoreOpen = true;

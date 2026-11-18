@@ -33,20 +33,20 @@ internal static class GameFonts
     public static void Load()
     {
         string directory = ResolveFontDirectory();
-        string[] names = ["Tektur-Medium.ttf", "RussoOne-Regular.ttf", "Tektur-Bold.ttf", "Unbounded-Bold.ttf"];
+        string[] names = ["Onest-Medium.ttf", "Onest-Bold.ttf", "Unbounded-Bold.ttf", "Unbounded-Bold.ttf"];
         foreach (Typeface face in Enum.GetValues<Typeface>())
         {
             files[face] = Path.Combine(directory, names[(int)face]);
-            foreach (int size in new[] {11,12,13,14,15,16,17,18,20,21,22,23,24,28,36,48,58,72}) Get(face, size);
         }
     }
 
     public static Font Get(Typeface face, int size)
     {
+        if (face == Typeface.SerifBold) face = Typeface.Serif;
         if (fonts.TryGetValue((face, size), out Font font)) return font;
-        int[] glyphSet = size == 260 ? ['0','1','?'] : codepoints;
-        font = Raylib.LoadFontEx(files[face],size,glyphSet,glyphSet.Length);
-        if (font.Texture.Id == 0 || font.Texture.Id == Raylib.GetFontDefault().Texture.Id || font.BaseSize != size)
+        int atlasSize = checked(size * 2);
+        font = Raylib.LoadFontEx(files[face],atlasSize,codepoints,codepoints.Length);
+        if (font.Texture.Id == 0 || font.Texture.Id == Raylib.GetFontDefault().Texture.Id || font.BaseSize != atlasSize)
             throw new InvalidDataException($"Cannot load {face} at {size}px");
         Raylib.SetTextureFilter(font.Texture, TextureFilter.Bilinear);
         fonts.Add((face,size), font);
@@ -68,10 +68,6 @@ internal static class GameFonts
         float spacing = Spacing(size);
         Vector2 pixel = new(MathF.Round(at.X), MathF.Round(at.Y));
         Color shadow = new(8, 11, 18, (ink.A * 185) / 255);
-        Color softShadow = new(8, 11, 18, (ink.A * 95) / 255);
-        Raylib.DrawTextEx(native, value, pixel + new Vector2(1, 2), size, spacing, softShadow);
-        Raylib.DrawTextEx(native, value, pixel + new Vector2(-1, 0), size, spacing, softShadow);
-        Raylib.DrawTextEx(native, value, pixel + new Vector2(1, 0), size, spacing, softShadow);
         Raylib.DrawTextEx(native, value, pixel + Vector2.UnitY, size, spacing, shadow);
         Raylib.DrawTextEx(native, value, pixel, size, spacing, ink);
     }

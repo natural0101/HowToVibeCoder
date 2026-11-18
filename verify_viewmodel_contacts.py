@@ -2,6 +2,7 @@
 from pathlib import Path
 import math
 import re
+import sys
 
 import bpy
 from mathutils import Vector
@@ -10,6 +11,21 @@ from mathutils.bvhtree import BVHTree
 ROOT = Path(__file__).resolve().parent
 MODELS = ROOT / "assets/models"
 SLOTS = ("belt", "solder", "uzi", "shotgun")
+
+
+def check_solder_pads(vertices, prop):
+    # Check each pad near its own distal phalanx against the exported tape.
+    # A single minimum for the entire hand can miss a floating little finger.
+    sys.path.insert(0, str(ROOT))
+    from generate_anatomy import contact_pose, DIGITS, JOINT, solder_palm_fit
+    pose, _ = contact_pose("fps_solder", "r")
+    for i, digit in enumerate(DIGITS, 1):
+        origin, joint, rotation = pose[digit + "_03_r"]
+        center = solder_palm_fit(joint + .65 * (rotation @ (JOINT[f"r-finger-{i}-4"] - origin)))
+        candidates = [p for p in vertices if (p-center).length < .012]
+        gap = min(prop.find_nearest(p)[3] for p in candidates)
+        print(f"  {digit} pad to tape: {gap*1000:.2f} mm")
+        assert gap <= .003, f"{digit} pad floats {gap*1000:.2f} mm from tape"
 
 
 def read_meshes(name):
@@ -72,6 +88,8 @@ def verify():
             counts.append(hits)
             gap = min(prop.find_nearest(p)[3] for p in vertices)
             print(f"Slot {number} {side}: {hits} intersecting triangle pairs, nearest vertex {gap*1000:.3f} mm")
+            if slot=="solder" and side=="Right":
+                check_solder_pads(vertices, prop)
         between = len(hands["Right"].overlap(hands["Left"]))
         print(f"Slot {number} ({slot}): FINAL overlap = {sum(counts)}, hand-hand = {between}")
         failed |= bool(sum(counts) or between)
