@@ -55,102 +55,10 @@ def export_glb(filename):
     print("Exported:", path)
 
 # ==============================================================================
-# 1. `char_vibe_coder.glb` — Detailed 3D Vibe Coder (Hoodie, Hood, Kangaroo Pocket,
-#    Headphones, Glowing AR Visor, Jeans, Sneakers with White Soles, Laptop in hands)
-#    Coordinate convention: Blender +Z is Up -> glTF exports +Y as Up automatically!
-# ==============================================================================
-clear_scene()
-m_hoodie = make_mat("Hoodie", (0.22, 0.56, 0.96, 1.0), roughness=0.65)
-m_hoodie_dark = make_mat("HoodieAccent", (0.14, 0.38, 0.72, 1.0), roughness=0.7)
-m_jeans = make_mat("Jeans", (0.14, 0.17, 0.25, 1.0), roughness=0.75)
-m_sneaker = make_mat("SneakerTop", (0.88, 0.22, 0.32, 1.0), roughness=0.5)
-m_sole = make_mat("WhiteSole", (0.95, 0.95, 0.97, 1.0), roughness=0.4)
-m_skin = make_mat("Skin", (0.95, 0.78, 0.66, 1.0), roughness=0.55)
-m_hair = make_mat("Hair", (0.18, 0.12, 0.08, 1.0), roughness=0.7)
-m_visor = make_mat("CyberVisor", (0.10, 0.95, 0.88, 1.0), metallic=0.8, roughness=0.1)
-m_phones = make_mat("Headphones", (0.12, 0.13, 0.16, 1.0), metallic=0.6, roughness=0.3)
-m_laptop = make_mat("SilverMac", (0.82, 0.85, 0.90, 1.0), metallic=0.85, roughness=0.2)
-
-# Sneakers & Soles
-for sx in (-0.16, 0.16):
-    add_box(f"Sole_{sx}", (sx, 0.04, 0.04), (0.16, 0.30, 0.06), m_sole, bevel=0.01)
-    add_box(f"Shoe_{sx}", (sx, 0.02, 0.10), (0.15, 0.26, 0.09), m_sneaker, bevel=0.02)
-    add_cyl(f"Leg_{sx}", (sx, 0.0, 0.44), 0.095, 0.62, m_jeans, verts=12)
-
-# Oversized Hoodie Torso + Kangaroo Pocket + Back Hood
-add_box("Torso", (0, 0, 1.05), (0.58, 0.36, 0.68), m_hoodie, bevel=0.06)
-add_box("KangarooPocket", (0, 0.19, 0.88), (0.38, 0.06, 0.22), m_hoodie_dark, bevel=0.02)
-add_sphere("BackHood", (0, -0.16, 1.38), 0.22, m_hoodie_dark, scale=(1.1, 0.8, 0.7))
-
-# Arms & Hands holding open MacBook
-for side in (-1, 1):
-    add_box(f"UpperArm_{side}", (side * 0.35, 0.04, 1.12), (0.15, 0.16, 0.42), m_hoodie, bevel=0.03, rot=(0.45, 0, -side * 0.15))
-    add_box(f"ForeArm_{side}", (side * 0.28, 0.24, 0.94), (0.13, 0.32, 0.13), m_hoodie, bevel=0.02, rot=(0.2, 0, side * 0.25))
-    add_sphere(f"Hand_{side}", (side * 0.18, 0.38, 0.92), 0.065, m_skin)
-
-# Open Laptop in Hands
-add_box("LaptopBase", (0, 0.42, 0.91), (0.34, 0.24, 0.025), m_laptop, bevel=0.005)
-add_box("LaptopLid", (0, 0.53, 1.03), (0.34, 0.02, 0.24), m_laptop, bevel=0.005, rot=(-0.25, 0, 0))
-add_box("LaptopScreenGlow", (0, 0.515, 1.03), (0.30, 0.01, 0.20), m_visor, bevel=0.002, rot=(-0.25, 0, 0))
-
-# Neck, Head, Messy Zoomer Hair, AR Visor Glasses & Over-Ear Headphones
-add_cyl("Neck", (0, 0, 1.44), 0.08, 0.14, m_skin, verts=10)
-add_sphere("Head", (0, 0.02, 1.64), 0.21, m_skin, scale=(0.95, 1.0, 1.08))
-add_sphere("HairTop", (0, 0.04, 1.79), 0.19, m_hair, scale=(1.08, 1.12, 0.65))
-add_box("ARVisor", (0, 0.20, 1.66), (0.34, 0.08, 0.10), m_visor, bevel=0.015)
-
-# Headphones earcups + headband
-for side in (-1, 1):
-    add_cyl(f"EarCup_{side}", (side * 0.22, 0.02, 1.65), 0.08, 0.06, m_phones, rot=(0, math.pi/2, 0), verts=12)
-add_box("Headband", (0, 0.02, 1.87), (0.44, 0.06, 0.05), m_phones, bevel=0.015)
-
-export_glb("char_vibe_coder.glb")
-
-# ==============================================================================
-# 2. `char_hr_veronika.glb` — Detailed 3D HR-Tarot Veronika + Tarot Table + Candles + Crystal Ball
-# ==============================================================================
-clear_scene()
-m_skin = make_mat("Skin", (0.95, 0.78, 0.66, 1.0), roughness=0.55)
-m_hair = make_mat("Hair", (0.18, 0.12, 0.08, 1.0), roughness=0.7)
-m_velvet = make_mat("PurpleVelvet", (0.42, 0.12, 0.64, 1.0), roughness=0.7)
-m_gold = make_mat("GoldTrim", (0.96, 0.78, 0.20, 1.0), metallic=0.9, roughness=0.22)
-m_dress = make_mat("MysticDress", (0.56, 0.14, 0.78, 1.0), roughness=0.55)
-m_orb = make_mat("CrystalOrb", (0.78, 0.36, 1.0, 1.0), metallic=0.2, roughness=0.1)
-m_wax = make_mat("CandleWax", (0.96, 0.93, 0.84, 1.0), roughness=0.5)
-m_flame = make_mat("CandleFlame", (1.0, 0.72, 0.15, 1.0), roughness=0.1)
-m_card1 = make_mat("TarotCard", (0.95, 0.82, 0.35, 1.0), roughness=0.3)
-
-# Velvet Tarot Table
-add_box("TarotTableBody", (0, 0, 0.52), (2.75, 1.45, 1.04), m_velvet, bevel=0.04)
-add_box("TarotTableTopGold", (0, 0, 1.06), (2.86, 1.56, 0.08), m_gold, bevel=0.02)
-
-# Crystal Ball on golden pedestal
-add_cyl("OrbBase", (0, -0.10, 1.14), 0.22, 0.10, m_gold, verts=16)
-add_sphere("CrystalBall", (0, -0.10, 1.36), 0.24, m_orb)
-
-# 4 Tarot Cards on table
-for i, cx in enumerate((-0.82, -0.32, 0.32, 0.82)):
-    add_box(f"Card_{i}", (cx, -0.38, 1.11), (0.26, 0.40, 0.02), m_card1, bevel=0.004, rot=(0, 0, (i - 1.5) * 0.08))
-
-# 4 Wax Candles with flames
-for cx, cy in ((-1.15, -0.45), (-1.02, 0.25), (1.02, 0.25), (1.15, -0.45)):
-    add_cyl(f"Candle_{cx}", (cx, cy, 1.24), 0.055, 0.28, m_wax, verts=12)
-    add_sphere(f"Flame_{cx}", (cx, cy, 1.43), 0.06, m_flame, scale=(0.7, 0.7, 1.5))
-
-# HR Veronika standing behind table
-add_cyl("VeronikaSkirt", (0, 0.82, 0.55), 0.46, 1.10, m_dress, verts=16)
-add_sphere("VeronikaTorso", (0, 0.80, 1.28), 0.38, m_dress, scale=(1.15, 0.92, 1.15))
-add_cyl("VeronikaNecklace", (0, 0.78, 1.58), 0.22, 0.06, m_gold, verts=16)
-add_sphere("VeronikaHead", (0, 0.78, 1.82), 0.23, m_skin)
-add_sphere("VeronikaHairBun", (0, 0.88, 2.04), 0.18, m_hair)
-add_box("VeronikaHeadband", (0, 0.60, 1.90), (0.36, 0.12, 0.06), m_gold, bevel=0.01)
-
-# Arms raised mystically over the Crystal Ball
-for side in (-1, 1):
-    add_box(f"VArm_{side}", (side * 0.42, 0.52, 1.44), (0.16, 0.52, 0.16), m_dress, bevel=0.03, rot=(0.35, 0, side * 0.3))
-    add_sphere(f"VHand_{side}", (side * 0.28, 0.22, 1.48), 0.075, m_skin)
-
-export_glb("char_hr_veronika.glb")
+# The anatomical character generator also produces the shared viewmodel.
+import runpy
+from pathlib import Path
+runpy.run_path(str(Path(__file__).with_name("generate_anatomy.py")),run_name="__main__")
 
 # ==============================================================================
 # 3. `prop_workstation_full.glb` — Rich Office Cubicle (Frosted Partition, Desk,

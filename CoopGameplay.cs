@@ -8,7 +8,8 @@ public static partial class Program
 {
     private static CoopNetworkSystem Net => MainMenuAndPauseUI.Coop;
     private static bool bot, awaitingSpawn, pendingCase;
-    private static int guestHp=100;
+    private static int guestHp=100, hostHp=100;
+    internal static int PartnerHp => Net.Guest ? hostHp : Net.Ready ? guestHp : 100;
     private static VibeCoderEntity? guestCarried;
     private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon);
     private static void StartHosting()
@@ -62,14 +63,14 @@ public static partial class Program
     private static FloorSnapshot CaptureFloor() => new(_playerCash,_world.ElevatorBoss,_world.ElevatorDoorOpenAmount,
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
-        guestCarried,_world.TotalCodersSoldToHr,guestHp);
+        guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp);
 
     private static void HandleCoopMessage(CoopMessage message)
     {
         if(Net.Guest && message is {Kind:"floor", Floor:{} state})
         {
             if(state.Boss==null || state.Coders==null || state.Desks?.Length!=4 || state.Projectiles==null) return;
-            _playerCash=state.Cash; _playerHp=state.GuestHp;
+            _playerCash=state.Cash; _playerHp=state.GuestHp; hostHp=state.HostHp;
             _world.ElevatorBoss=state.Boss; _world.ElevatorDoorOpenAmount=state.Door;
             _world.HasElevatorKey=state.Key; _world.IsFloor2Unlocked=state.Unlocked;
             if(state.Unlocked) _weapons.UnlockedChatGun=true;

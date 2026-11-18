@@ -17,7 +17,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Game publish failed.' }
 # Include all assets, including audio and artwork not covered by the game project.
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'assets') -Destination $GameOut -Recurse -Force
 Copy-Item -LiteralPath $IcoPath -Destination (Join-Path $GameOut 'HowToVibeCoder.ico') -Force
-foreach ($required in @('HowToVibeCoder.exe', 'HowToVibeCoder.dll', 'coreclr.dll', 'assets/ui/water.png', 'assets/ui/title.png')) {
+foreach ($required in @('HowToVibeCoder.exe', 'HowToVibeCoder.dll', 'coreclr.dll', 'assets/ui/water.png', 'assets/ui/title.png',
+    'assets/models/char_vibe_coder.glb', 'assets/models/char_partner_90s.glb',
+    'assets/models/char_hr_veronika.glb', 'assets/models/fps_hands_cs2.glb', 'assets/models/weapon_uzi_90s.glb')) {
     if (-not (Test-Path -LiteralPath (Join-Path $GameOut $required))) { throw "Missing game file: $required" }
 }
 

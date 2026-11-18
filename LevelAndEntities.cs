@@ -2337,7 +2337,7 @@ public sealed class SkyscraperFloor1World
                 }
             }
             if(glass) continue;
-            VisualEngine3D.Box(face+new Vector3(0,4.75f,side*.14f),1.48f,1.12f,.08f,Color.White,Finish.Lift);
+            VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
             Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
             VisualEngine3D.Rod(button,button+Vector3.UnitY*1.15f,.14f,.10f,10,steel);
             VisualEngine3D.Orb(button+Vector3.UnitY*1.2f,.12f,HasElevatorKey ? Color.Lime : Color.Gold,Finish.Lamp);
@@ -2350,11 +2350,11 @@ public sealed class SkyscraperFloor1World
         bool walking=c.State is CoderAIState.WalkingToBait or CoderAIState.PanickedFleeing or CoderAIState.CombatHostile;
         float bob=walking ? .035f*MathF.Abs(MathF.Sin(c.WalkCycle)) : 0;
         float tilt=c.State==CoderAIState.Subdued ? -.48f : 0;
-        Color tint=c.HitFlashTimer>0 ? Color.Gold : Raylib.ColorLerp(Color.White,c.HoodieColor,.36f);
+        Color tint=c.HitFlashTimer>0 ? new Color(255,210,170,255) : Raylib.ColorLerp(Color.White,c.HoodieColor,.36f);
         VisualEngine3D.Asset("char_vibe_coder",c.Position+Vector3.UnitY*bob,
-            180+c.FacingYaw*180/MathF.PI,scale,tint,tilt);
+            c.FacingYaw*180/MathF.PI,scale,tint,tilt);
         if (!c.IsMiniBoss) return;
-        Vector3 crown=c.Position+Vector3.UnitY*(2.6f+.07f*MathF.Sin(_worldClock*3));
+        Vector3 crown=c.Position+Vector3.UnitY*(2.20f+.035f*MathF.Sin(_worldClock*3));
         Color gold=new(255,197,57,255);
         VisualEngine3D.Rod(crown,crown+Vector3.UnitY*.065f,.22f,.22f,10,gold,Finish.Lamp);
         for (int i=0;i<5;i++)
@@ -2466,24 +2466,66 @@ public sealed class SkyscraperFloor1World
         return focus;
     }
 
+    private static readonly Vector3 LiftSignSize=new(1.48f,1.12f,.08f);
+    private static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,4.75f,side*.14f);
+
     public void DrawWorldLabelsAndIndicators2D(Camera3D camera, Font font)
     {
-        Vector3 look = Vector3.Normalize(camera.Target - camera.Position);
-        void Label(Vector3 point, string value, int size, Color color)
+        WorldLabelLayout.BeginFrame();
+        if(camera.Position.Z<NorthElevatorPos.Z)
+            WorldLabelLayout.ReserveProjectedBox(camera,LiftSignCenter(NorthElevatorPos,-1),LiftSignSize*.5f);
+        if(camera.Position.Z>SouthElevatorDoorPos.Z)
+            WorldLabelLayout.ReserveProjectedBox(camera,LiftSignCenter(SouthElevatorDoorPos,1),LiftSignSize*.5f);
+        Vector3 look = Vector3.Normalize(camera.Target-camera.Position);
+        void ProtectHead(Vector3 feet,float scale,float height)
         {
-            if (Vector3.Dot(point-camera.Position, look) < .2f) return;
-            Vector2 p = Raylib.GetWorldToScreen(point, camera);
-            MainMenuAndPauseUI.Center(font,value,new(p.X-165,p.Y-11,330,22),size,color);
+            WorldLabelLayout.ReserveProjectedBox(camera,feet+Vector3.UnitY*(1.54f*height),
+                new Vector3(.14f*scale,.16f*height,.18f*scale));
+        }
+        if(Partner is {} partner) ProtectHead(partner.Feet,1,partner.Pose.Eye.Y<1.4f?.75f:1);
+        foreach(var actor in ActiveCoders)
+        {
+            if(actor.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,actor.Position)>100) continue;
+            float scale=actor.IsMiniBoss?1.28f:1;
+            ProtectHead(actor.Position,scale,scale);
+        }
+        void Plate(Vector3 head,string name,float health,Color accent)
+        {
+            if (Vector3.Dot(head-camera.Position,look)<.1f) return;
+            Vector2 screen=Raylib.GetWorldToScreen(head,camera)-new Vector2(0,4);
+            Font tag=GameFonts.Get(Typeface.InterfaceBold,16);
+            float width=GameFonts.Measure(tag,name,16).X+22;
+            if (!WorldLabelLayout.Place(screen,width,29,out var r)) return;
+            Raylib.DrawRectangleRounded(r,.70f,10,new Color(19,25,34,223));
+            Raylib.DrawRectangleRoundedLinesEx(r,.70f,10,1,new Color(171,181,189,160));
+            GameFonts.Draw(tag,name,new(r.X+11,r.Y+2),16,new Color(247,244,235,255));
+            Rectangle track=new(r.X+11,r.Y+22,r.Width-22,3);
+            Raylib.DrawRectangleRounded(track,1,8,new Color(75,79,86,255));
+            track.Width*=Math.Clamp(health,0,1);
+            if(track.Width>=1) Raylib.DrawRectangleRounded(track,1,8,accent);
         }
         if(Partner is {} ally && Vector3.DistanceSquared(camera.Position,ally.Feet)<400)
-            Label(ally.Feet+Vector3.UnitY*2.12f,"БРАТАН [КООП]",16,new Color(255,221,166,255));
-        foreach (var c in ActiveCoders)
+            Plate(ally.Feet+Vector3.UnitY*(ally.Pose.Eye.Y<1.4f?1.30f:1.72f),"БРАТАН [КООП]",
+                Program.PartnerHp/100f,new Color(109,202,162,255));
+        foreach(var c in ActiveCoders)
         {
-            if (Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.State==CoderAIState.Subdued) continue;
-            Label(c.Position + Vector3.UnitY*2.6f, $"{c.Name}   {(int)c.Hp}/{(int)c.MaxHp}", 13, Color.White);
+            if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.State==CoderAIState.Subdued) continue;
+            Plate(c.Position+Vector3.UnitY*(c.IsMiniBoss?2.43f:1.74f),c.IsMiniBoss?"ГУРУ КУРСОРА":c.Name,
+                c.Hp/c.MaxHp,new Color(236,168,93,255));
         }
-        foreach (var p in EnemyProjectiles) Label(p.Position+Vector3.UnitY*(p.Radius+.15f),p.Label,12,Color.White);
-        if (ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
-            Label(ElevatorBoss.Position+Vector3.UnitY*3.4f,$"{ElevatorBoss.Name}   {(int)ElevatorBoss.Hp}/{(int)ElevatorBoss.MaxHp}",16,Color.White);
+        if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
+            Plate(ElevatorBoss.Position+Vector3.UnitY*3.4f,"СБЕЖАВШИЙ ИИ-АГЕНТ",
+                ElevatorBoss.Hp/ElevatorBoss.MaxHp,new Color(228,110,105,255));
+        foreach(var p in EnemyProjectiles)
+        {
+            Vector3 head=p.Position+Vector3.UnitY*(p.Radius+.15f);
+            if(Vector3.Dot(head-camera.Position,look)<.1f) continue;
+            float w=GameFonts.Measure(font,p.Label,14).X+12;
+            if(WorldLabelLayout.Place(Raylib.GetWorldToScreen(head,camera),w,22,out var r))
+            {
+                Raylib.DrawRectangleRounded(r,.5f,8,new Color(18,26,34,182));
+                GameFonts.Draw(font,p.Label,new(r.X+6,r.Y+2),14,Color.White);
+            }
+        }
     }
 }

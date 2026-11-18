@@ -346,36 +346,11 @@ public static class LoreAndMenusUI
     }
 
     // Универсальный хелпер чёткого рендера кириллицы/текста
-    public static float MeasureTextWidth(Font font, string text, int size)
-    {
-        if (string.IsNullOrEmpty(text))
-            return 0f;
-        if (font.Texture.Id != 0)
-            return Raylib.MeasureTextEx(font, text, size, 1f).X;
-        return Raylib.MeasureText(text, size);
-    }
+    public static float MeasureTextWidth(Font font, string text, int size) =>
+        GameFonts.Measure(font,text,size).X;
 
-    public static void DrawTextCrisp(Font font, string text, int x, int y, int size, Color color)
-    {
-        if (string.IsNullOrEmpty(text))
-            return;
-
-        // Чёткая тень для читаемости на неоновых плашках
-        Vector2 shadowPos = new(x + 1f, y + 1f);
-        Vector2 mainPos = new(x, y);
-        Color shadow = new(0, 0, 0, Math.Min(220, (int)color.A));
-
-        if (font.Texture.Id != 0)
-        {
-            Raylib.DrawTextEx(font, text, shadowPos, size, 1f, shadow);
-            Raylib.DrawTextEx(font, text, mainPos, size, 1f, color);
-        }
-        else
-        {
-            Raylib.DrawText(text, x + 1, y + 1, size, shadow);
-            Raylib.DrawText(text, x, y, size, color);
-        }
-    }
+    public static void DrawTextCrisp(Font font, string text, int x, int y, int size, Color color) =>
+        GameFonts.Draw(font,text,new(x,y),size,color);
 
     // Обновление хоткеев и интерактивных элементов (вызывать каждый кадр)
     public static void Update(float dt, WeaponAndCombatView? weaponView)
@@ -824,7 +799,7 @@ public static class LoreAndMenusUI
         foreach(string word in value.Split(' ',StringSplitOptions.RemoveEmptyEntries))
         {
             string next=line.Length==0 ? word : line+" "+word;
-            if(line.Length>0 && Raylib.MeasureTextEx(f,next,size,.35f).X>width) { lines.Add(line); line=word; }
+            if(line.Length>0 && GameFonts.Measure(f,next,size).X>width) { lines.Add(line); line=word; }
             else line=next;
         }
         lines.Add(line);
@@ -850,11 +825,11 @@ public static class LoreAndMenusUI
             Raylib.DrawRectangleRounded(card,.12f,6,new Color(19,31,48,255));
             Raylib.DrawRectangleRoundedLinesEx(card,.12f,6,1,new Color(43,61,88,255));
             Vector2 p=new(card.X+10,card.Y+7);
-            Raylib.DrawTextEx(font,title,p,15,.35f,new Color(246,189,76,255));
-            Raylib.DrawTextEx(font,meta,p+new Vector2(0,20),12,.35f,new Color(157,179,204,255));
+            GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold,16),title,p,16,new Color(246,189,76,255));
+            GameFonts.Draw(font,meta,p+new Vector2(0,20),14,new Color(157,179,204,255));
             foreach(var line in wrapped.Split('\n'))
             {
-                Raylib.DrawTextEx(font,line,new(p.X,y+42),14,.35f,new Color(214,223,236,255));
+                GameFonts.Draw(font,line,new(p.X,y+42),14,new Color(214,223,236,255));
                 y+=17;
             }
             y=card.Y+height+6;
@@ -887,8 +862,16 @@ public static class LoreAndMenusUI
         // Extend the existing console with its own wooden test strip and lower frame.
         MainMenuAndPauseUI.Sprite("mixer",Ref(823,1010,916,78),new(0,235,916,78));
         MainMenuAndPauseUI.Sprite("mixer",Ref(908,1010,335,78),new(174,235,239,78));
-        MainMenuAndPauseUI.Center(font,"Фоновая музыка и Босс",Ref(910,1016,334,63),29*ArtScale,Color.White);
         MainMenuAndPauseUI.Sprite("mixer",Ref(823,1088,916,45),new(0,629,916,45));
+        void Engraved(string label,Rectangle r,Font face,int pixels,Color surface)
+        {
+            Raylib.DrawRectangleRounded(r,.15f,8,surface);
+            MainMenuAndPauseUI.Center(face,label,r,pixels,new Color(248,238,213,255));
+        }
+        Font titles=GameFonts.Get(Typeface.SerifBold,24);
+        Font controls=GameFonts.Get(Typeface.InterfaceBold,16);
+        Engraved("Звуковая рубка",Ref(1041,401,431,66),titles,24,new Color(39,48,50,255));
+        Engraved("Общая громкость",Ref(920,523,256,56),controls,16,new Color(40,49,51,255));
         for(int row=0;row<=MusicRow;row++)
         {
             Rectangle track=MixerTrack(row);
@@ -904,10 +887,12 @@ public static class LoreAndMenusUI
             }
             Rectangle toggle=MixerSwitch(row);
             MainMenuAndPauseUI.Sprite("mixer",toggle,new(1455-823,636-381,value>0 ? -69 : 69,40));
-            if(row>0 && row<5)
+            if(row>0)
             {
-                Rectangle label=Ref(1006,627+(row-1)*78,242,55);
-                MainMenuAndPauseUI.Center(font,MixerNames[row-1],label,Math.Max(13,30*ArtScale),Color.White);
+                Rectangle label=row==MusicRow ? Ref(910,1016,334,63) : Ref(1003,628+(row-1)*78,244,55);
+                Engraved(row==MusicRow ? "Фоновая музыка и босс" : MixerNames[row-1],label,font,16,new Color(113,75,45,255));
+                var button=MixerTest(row);
+                Engraved("Тест",new(button.X+3,button.Y+3,button.Width-6,button.Height-6),controls,14,new Color(89,60,42,255));
             }
         }
         if(_settingsStatusTimer>0) MainMenuAndPauseUI.Center(font,_settingsStatusBanner,Ref(730,1140,1100,40),14,Color.White);
@@ -917,6 +902,9 @@ public static class LoreAndMenusUI
     {
         Dim(.56f);
         MainMenuAndPauseUI.Sprite("case",Ref(720,373,1100,699));
+        Rectangle title=Ref(1094,373,485,59);
+        Raylib.DrawRectangleRounded(title,.1f,6,new Color(33,53,73,255));
+        MainMenuAndPauseUI.Center(MainMenuAndPauseUI.Serif,"Контрабандный кейс",title,24,Color.White);
         ReaderButton(font,_caseCollection?"К рулетке":"Коллекция ("+AllSkins.Length+")",Ref(869,410,250,37),false);
         if(_caseCollection)
         {

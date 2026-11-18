@@ -77,31 +77,8 @@ for wx in (-0.58, 0.58):
 
 bpy.ops.export_scene.gltf(filepath=os.path.join(out_dir, "escaped_ai_boss.glb"), export_format='GLB')
 
-# 2. Generate `weapon_uzi_90s.glb` (Detailed 90s Micro-Uzi SMG)
-clear_scene()
-mat_gun = make_mat("GunMetal", (0.20, 0.22, 0.26, 1.0), metallic=0.85, roughness=0.28)
-mat_gold = make_mat("Gold90s", (0.95, 0.78, 0.22, 1.0), metallic=0.92, roughness=0.20)
-mat_grip = make_mat("PolymerGrip", (0.08, 0.08, 0.10, 1.0), metallic=0.1, roughness=0.7)
-
-bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0, 0, 0))
-rec = bpy.context.active_object
-rec.scale = (0.12, 0.44, 0.14)
-bpy.ops.object.transform_apply(scale=True)
-add_bevel(rec, 0.012, 2)
-rec.data.materials.append(mat_gun)
-
-bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.024, depth=0.22, location=(0, 0.28, 0.01), rotation=(math.pi/2, 0, 0))
-barrel = bpy.context.active_object
-barrel.data.materials.append(mat_gold)
-
-bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0, -0.02, -0.18))
-mag = bpy.context.active_object
-mag.scale = (0.06, 0.08, 0.32)
-bpy.ops.object.transform_apply(scale=True)
-add_bevel(mag, 0.006, 1)
-mag.data.materials.append(mat_grip)
-
-bpy.ops.export_scene.gltf(filepath=os.path.join(out_dir, "weapon_uzi_90s.glb"), export_format='GLB')
+# The SMG now shares its grip geometry with the anatomical partner model.
+# Both assets are authored by generate_anatomy.py.
 
 # 3. Generate `office_workstation.glb` (Beveled L-Desk + Dual Monitors + Swivel Chair)
 clear_scene()

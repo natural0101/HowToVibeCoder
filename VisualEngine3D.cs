@@ -1,15 +1,18 @@
+using System.Text.Json;
 using System.Numerics;
 using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy }
 
 internal static unsafe class VisualEngine3D
 {
     private static Shader shader;
     private static Model box, bevel, plane, tube, sphere;
     private static readonly Dictionary<string, Model> imports = new(StringComparer.OrdinalIgnoreCase);
+    private static (int Start, int Count) leftArm, rightArm;
+    private static readonly HashSet<int> partnerPropMeshes = new();
     private static int batchLoc, clockLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static int firstPersonLoc;
@@ -121,6 +124,18 @@ internal static unsafe class VisualEngine3D
                 float glint=pow(max(0.,dot(reflect(-v,n),normalize(vec3(-.55,.72,-.42)))),16.);
                 color=vec4(mix(ink.rgb,vec3(.92,.97,1.),glint),ink.a+edge*.09+glint*.18); return;
             }
+            if(finish==21) {
+                // Imported MPFB swatches are linear glTF factors. Convert once
+                // for the display framebuffer and keep the planes readable.
+                vec3 pigment=pow(base,vec3(1./2.2));
+                vec3 key=normalize(vec3(-.44,.80,-.38));
+                float sun=max(0.,dot(n,key));
+                float sky=.5+.5*n.y;
+                float bounce=.5+.5*dot(n,normalize(vec3(.75,.16,.5)));
+                vec3 value=pigment*(vec3(.42,.46,.52)+sky*.19+bounce*.14+sun*vec3(.58,.50,.40));
+                color=vec4(mix(value,vec3(.68,.79,.92),1.-exp(-.000055*dist*dist)),ink.a);
+                return;
+            }
             if(finish==17) base=pow(base,vec3(.78));
             if(finish==18) base*=.93+.07*cos(pos.z*133.)*cos(pos.x*107.);
             vec3 key=normalize(vec3(-.55,.72,-.42));
@@ -159,7 +174,7 @@ internal static unsafe class VisualEngine3D
         }
         """;
 
-    public static void Load(Font font)
+    public static void Load()
     {
         shader = Raylib.LoadShaderFromMemory(Vertex, Fragment);
         if (shader.Id == 0 || shader.Id == Rlgl.GetShaderIdDefault())
@@ -176,7 +191,7 @@ internal static unsafe class VisualEngine3D
         tube = ModelFor(Raylib.GenMeshCylinder(1,1,10));
         sphere = ModelFor(Raylib.GenMeshSphere(1,6,9));
         foreach (Finish f in Enum.GetValues<Finish>())
-            maps[(int)f] = MakeTexture(f,font);
+            maps[(int)f] = MakeTexture(f);
         string directory = Path.Combine(AppContext.BaseDirectory, "assets", "models");
         foreach (string path in Directory.EnumerateFiles(directory, "*.glb", SearchOption.AllDirectories))
         {
@@ -184,8 +199,59 @@ internal static unsafe class VisualEngine3D
             if (model.MeshCount == 0 || model.MaterialCount < 2)
                 throw new InvalidDataException($"Invalid Blender model: {path}");
             ApplyShaderToModel(model);
-            imports.Add(Path.GetFileNameWithoutExtension(path), model);
+            string name = Path.GetFileNameWithoutExtension(path);
+            imports.Add(name, model);
+            if (name is "fps_hands_cs2" or "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
         }
+    }
+
+    // Raylib expands each glTF primitive into a mesh, in mesh/primitive order.
+    private static void ReadMeshGroups(string path, string asset, int meshCount)
+    {
+        using var reader = new BinaryReader(File.OpenRead(path));
+        reader.BaseStream.Position = 12;
+        int length = reader.ReadInt32();
+        if (reader.ReadUInt32() != 0x4E4F534A) throw new InvalidDataException(path);
+        using var json = JsonDocument.Parse(reader.ReadBytes(length));
+        int index = 0;
+        foreach (var mesh in json.RootElement.GetProperty("meshes").EnumerateArray())
+        {
+            int count = mesh.GetProperty("primitives").GetArrayLength();
+            if (asset == "char_partner_90s")
+            {
+                var materials = json.RootElement.GetProperty("materials");
+                foreach (var part in mesh.GetProperty("primitives").EnumerateArray())
+                {
+                    string material = materials[part.GetProperty("material").GetInt32()].GetProperty("name").GetString();
+                    if (material is "GunMetal" or "Gold90s" or "PolymerGrip") partnerPropMeshes.Add(index);
+                    index++;
+                }
+                continue;
+            }
+            switch (mesh.GetProperty("name").GetString())
+            {
+                case "Left": leftArm = (index,count); break;
+                case "Right": rightArm = (index,count); break;
+                default: throw new InvalidDataException(path);
+            }
+            index += count;
+        }
+        if (index != meshCount || (asset == "fps_hands_cs2" ? leftArm.Count * rightArm.Count == 0 : partnerPropMeshes.Count != 3))
+            throw new InvalidDataException("Incomplete first-person arm mesh");
+    }
+
+    public static void Arm(bool right, Vector3 wrist)
+    {
+        // The existing prop camera uses a mirrored X axis; the anatomy already
+        // faces the view direction. Undo that mirror for anatomical handedness.
+        Vector3 bind = right ? new(-.20f,-.22f,.54f) : new(-.085f,-.185f,.68f);
+        Vector3 offset = new Vector3(-wrist.X,wrist.Y,wrist.Z) - bind;
+        Model model = imports["fps_hands_cs2"];
+        var range = right ? rightArm : leftArm;
+        Matrix4x4 transform = Matrix4x4.CreateTranslation(offset) * Matrix4x4.CreateScale(-1,1,1);
+        Surface(Finish.Anatomy,0);
+        for (int i=range.Start; i<range.Start+range.Count; i++)
+            Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
     }
 
     private static Model ModelFor(Mesh mesh)
@@ -201,11 +267,19 @@ internal static unsafe class VisualEngine3D
     }
 
     public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
-                             Color? tint = null, float tilt = 0, Vector3? stretch = null)
+                             Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false)
     {
         Model model = imports[name];
         model.Transform *= Matrix4x4.CreateRotationX(tilt);
-        Surface(Finish.Imported, 0);
+        Surface(name.StartsWith("char_",StringComparison.Ordinal) ? Finish.Anatomy : Finish.Imported, 0);
+        if (hideProp)
+        {
+            var transform = model.Transform * Matrix4x4.CreateScale((stretch ?? Vector3.One)*scale)
+                * Matrix4x4.CreateRotationY(yaw*MathF.PI/180) * Matrix4x4.CreateTranslation(position);
+            for (int i=0;i<model.MeshCount;i++)
+                if (!partnerPropMeshes.Contains(i)) Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
+            return;
+        }
         Raylib.DrawModelEx(model, position, Vector3.UnitY, yaw, (stretch ?? Vector3.One)*scale, tint ?? Color.White);
     }
 
@@ -392,27 +466,30 @@ internal static unsafe class VisualEngine3D
         return (int)((h^(h>>16))&255);
     }
 
-    private static Texture2D MakeTexture(Finish f,Font font)
+    private static Texture2D MakeTexture(Finish f)
     {
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
-                    or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent ? 1 : 512;
+                    or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy ? 1 : 512;
         Image img=Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
         for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y);
+        void Inscription(string value, int size, int y, Color ink)
+        {
+            Font native = GameFonts.Get(Typeface.InterfaceBold,size);
+            int x = (512 - (int)Raylib.MeasureTextEx(native,value,size,0).X)/2;
+            Raylib.ImageDrawTextEx(ref img,native,value,new(x,y),size,0,ink);
+        }
         if(f==Finish.Lift)
         {
-            Raylib.ImageDrawTextEx(ref img,font,"01",new(104,23),260,0,new Color(244,211,150,255));
-            Raylib.ImageDrawTextEx(ref img,font,"CLOUD ENTROPIC",new(42,302),49,1,new Color(205,207,192,255));
-            Raylib.ImageDrawTextEx(ref img,font,"T O W E R",new(136,372),44,1,new Color(218,159,87,255));
+            Inscription("01",260,23,new Color(244,211,150,255));
+            Inscription("CLOUD ENTROPIC",49,302,new Color(205,207,192,255));
+            Inscription("T O W E R",44,372,new Color(218,159,87,255));
         }
-        if(f==Finish.Tarot)
-            Raylib.ImageDrawTextEx(ref img,font,"A R C A N A",new(98,436),48,1,new Color(244,209,146,255));
+        if(f==Finish.Tarot) Inscription("A R C A N A",48,436,new Color(244,209,146,255));
         if(f is Finish.Exit or Finish.Billboard)
         {
             Raylib.ImageClearBackground(ref img, f==Finish.Exit ? new Color(156,18,39,255) : new Color(27,17,57,255));
-            string label=f==Finish.Exit ? "ВЫХОД" : "NOVA";
-            int width=(int)Raylib.MeasureTextEx(font,label,96,2).X;
-            Raylib.ImageDrawTextEx(ref img,font,label,new((512-width)/2,202),96,2,Color.White);
+            Inscription(f==Finish.Exit ? "ВЫХОД" : "NOVA",96,202,Color.White);
             Raylib.ImageDrawRectangle(ref img,24,165,464,5,Color.White);
             Raylib.ImageDrawRectangle(ref img,24,344,464,5,Color.White);
         }
@@ -484,6 +561,8 @@ internal static unsafe class VisualEngine3D
     {
         foreach(Model m in imports.Values) Raylib.UnloadModel(m);
         imports.Clear();
+        partnerPropMeshes.Clear();
+        leftArm=rightArm=default;
         foreach(var group in architecture) Raylib.UnloadModel(group.Model);
         architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);

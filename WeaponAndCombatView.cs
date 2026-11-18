@@ -823,42 +823,6 @@ public class WeaponAndCombatView
         DrawCombatFloatingTextsAndHitmarker2D(worldCamera, uiFont);
     }
 
-    private void DrawRussianBusinessmanArm(
-        Vector3 shoulderPos,
-        Vector3 wristPos,
-        Vector3 handForward,
-        bool isRightHand,
-        bool showGoldSignetRing = true)
-    {
-        Vector3 forward = Vector3.Normalize(handForward);
-        Vector3 across = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
-        float side = isRightHand ? -1 : 1;
-        Color glove = new(137, 54, 190, 255);
-        Color finger = new(155, 66, 204, 255);
-        Vector3 cuff = Vector3.Lerp(shoulderPos, wristPos, .85f);
-        VisualEngine3D.Rod(shoulderPos,cuff,.088f,.061f,8,new Color(120,27,77,255));
-        VisualEngine3D.Rod(cuff,wristPos,.063f,.058f,8,new Color(94,36,135,255));
-        Vector3 palm = wristPos + forward*.047f;
-        VisualEngine3D.Oval(palm,new(.067f,.055f,.084f),glove);
-        for (int i=0;i<4;i++)
-        {
-            Vector3 root = palm + across*((i-1.5f)*.028f) + forward*.036f;
-            float length = .061f - .009f*MathF.Abs(i-1);
-            Vector3 joint = root + forward*length + across*((i-1.5f)*.008f) + Vector3.UnitY*(isRightHand ? .006f : .031f);
-            Vector3 tip = joint + forward*(isRightHand ? .006f : .027f) - Vector3.UnitY*(isRightHand ? .036f : .018f);
-            VisualEngine3D.Rod(root,joint,.020f,.016f,7,finger);
-            VisualEngine3D.Orb(joint,.016f,finger);
-            VisualEngine3D.Rod(joint,tip,.016f,.011f,7,glove);
-            if (showGoldSignetRing && i==2 && isRightHand)
-                VisualEngine3D.Oval(joint+Vector3.UnitY*.012f,new(.014f,.006f,.012f),new Color(218,170,82,255));
-        }
-        Vector3 thumbRoot = palm + across*side*.042f;
-        Vector3 thumbJoint = thumbRoot + across*side*.041f + Vector3.UnitY*.032f;
-        VisualEngine3D.Rod(thumbRoot,thumbJoint,.029f,.021f,7,glove);
-        VisualEngine3D.Orb(thumbJoint,.021f,glove);
-        VisualEngine3D.Rod(thumbJoint,thumbJoint+forward*.045f+Vector3.UnitY*.012f,.021f,.014f,7,finger);
-    }
-
     // =========================================================================
     // SLOT 1: ОТЦОВСКИЙ КОЖАНЫЙ РЕМЕНЬ (`WeaponType.Belt`)
     // =========================================================================
@@ -904,15 +868,13 @@ public class WeaponAndCombatView
         }
 
         // Left supporting hand in crimson sleeve (bracing in lower-left)
-        Vector3 leftShoulder = new Vector3(-0.38f, -0.44f, 0.22f) + baseOffset;
-        Vector3 leftWrist = new Vector3(-0.22f, -0.26f + p * 0.04f, 0.50f) + baseOffset;
-        DrawRussianBusinessmanArm(leftShoulder, leftWrist, Vector3.Normalize(new Vector3(0.25f, 0.15f, 0.9f)), isRightHand: false, showGoldSignetRing: true);
+        Vector3 leftWrist = new Vector3(-.105f, -.205f + p*.04f, .68f) + baseOffset;
+        VisualEngine3D.Arm(false,leftWrist);
 
         // Right striking hand gripping the folded dark-brown leather belt
-        Vector3 rightShoulder = new Vector3(0.42f, -0.42f, 0.22f) + baseOffset;
         Vector3 rightWrist = new Vector3(0.24f, -0.20f, 0.56f) + baseOffset + swingHandOffset;
         Vector3 handForward = Vector3.Normalize(new Vector3(-0.18f - swingHandOffset.X * 0.7f, 0.22f, 0.88f));
-        DrawRussianBusinessmanArm(rightShoulder, rightWrist, handForward, isRightHand: true, showGoldSignetRing: true);
+        VisualEngine3D.Arm(true,rightWrist);
 
         // Leather colors (or custom skin tint from [K] Case Roulette)
         Color leatherDark = SkinTintPrimary.A > 0 ? SkinTintPrimary : new Color(76, 40, 20, 255);
@@ -942,6 +904,12 @@ public class WeaponAndCombatView
                 -0.06f * segFrac + idleSwayX + whipSnapX,
                 whipSnapY + idleDroopY,
                 whipReachZ);
+
+            // At rest the loose end rests in the support palm. Release it
+            // continuously as the belt goes into its striking animation.
+            Vector3 supportedTip=leftWrist+new Vector3(.045f,.037f,.079f);
+            Vector3 restingTip=gripTop+new Vector3(-.06f,-.20f,.28f);
+            curTop+=(supportedTip-restingTip)*segFrac*(1-Math.Clamp(p*5,0,1));
 
             // Second folded strap layer underneath
             float loopGap = 0.026f * (1f - segFrac * 0.55f);
@@ -997,15 +965,13 @@ public class WeaponAndCombatView
             0.28f * lunge);
 
         // Left hand holding coiled black power cord / bracing
-        Vector3 leftShoulder = new Vector3(-0.38f, -0.44f, 0.22f) + baseOffset;
         Vector3 leftWrist = new Vector3(-0.18f, -0.25f + lunge * 0.03f, 0.52f) + baseOffset;
-        DrawRussianBusinessmanArm(leftShoulder, leftWrist, Vector3.Normalize(new Vector3(0.3f, 0.15f, 0.9f)), isRightHand: false, showGoldSignetRing: true);
+        VisualEngine3D.Arm(false,leftWrist);
 
         // Right hand lunging the soldering iron forward
-        Vector3 rightShoulder = new Vector3(0.40f, -0.42f, 0.22f) + baseOffset;
         Vector3 rightWrist = new Vector3(0.22f, -0.21f, 0.54f) + baseOffset + thrustOffset;
         Vector3 ironDir = Vector3.Normalize(new Vector3(-0.22f + twist * 0.6f, 0.14f + lunge * 0.04f, 0.96f));
-        DrawRussianBusinessmanArm(rightShoulder, rightWrist, ironDir, isRightHand: true, showGoldSignetRing: true);
+        VisualEngine3D.Arm(true,rightWrist);
 
         // Colors for the 90s Soviet/Russian 100W Soldering Iron (ЭПСН-100)
         Color woodHandle = SkinTintPrimary.A > 0 ? SkinTintPrimary : new Color(112, 56, 26, 255);
@@ -1100,24 +1066,22 @@ public class WeaponAndCombatView
             -0.048f * kick);
 
         // Left supporting hand in crimson sleeve
-        Vector3 leftShoulder = new Vector3(-0.38f, -0.44f, 0.22f) + baseOffset;
-        Vector3 leftWrist = new Vector3(-0.14f, -0.24f, 0.56f) + baseOffset + recoilOffset * 0.5f;
-        DrawRussianBusinessmanArm(leftShoulder, leftWrist, Vector3.Normalize(new Vector3(0.35f, 0.18f, 0.9f)), isRightHand: false, showGoldSignetRing: true);
+        Vector3 leftWrist = new Vector3(.175f, -.136f, .738f) + baseOffset + recoilOffset;
+        VisualEngine3D.Arm(false,leftWrist);
 
         // Right firing hand gripping Uzi pistol grip
-        Vector3 rightShoulder = new Vector3(0.40f, -0.42f, 0.22f) + baseOffset;
-        Vector3 rightWrist = new Vector3(0.20f, -0.22f, 0.54f) + baseOffset + recoilOffset;
+        Vector3 rightWrist = new Vector3(.275f, -.155f, .65f) + baseOffset + recoilOffset;
         Vector3 aimDir = Vector3.Normalize(new Vector3(-0.16f, 0.10f + kick * 0.05f, 0.98f));
-        DrawRussianBusinessmanArm(rightShoulder, rightWrist, aimDir, isRightHand: true, showGoldSignetRing: true);
+        VisualEngine3D.Arm(true,rightWrist);
 
-        Vector3 receiverCenter=rightWrist+aimDir*.09f+Vector3.UnitY*.075f;
+        Vector3 receiverCenter=rightWrist+aimDir*.092f+Vector3.UnitY*.068f-Vector3.UnitX*.016f;
         float yaw=MathF.Atan2(aimDir.X,aimDir.Z)*180/MathF.PI+180;
         float elevation=MathF.Asin(aimDir.Y);
         VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,yaw,.62f,
             SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White,elevation);
         Vector3 bolt=receiverCenter+Vector3.UnitY*.048f+aimDir*(.028f-UziBoltOffset*.055f);
         VisualEngine3D.Box(bolt,.026f,.019f,.028f,SkinTintAccent.A>0 ? SkinTintAccent : Color.LightGray);
-        Vector3 barrelTip=receiverCenter+aimDir*(.39f*.62f)+Vector3.UnitY*.006f;
+        Vector3 barrelTip=receiverCenter+aimDir*(.31f*.62f)+Vector3.UnitY*.006f;
 
         // 6. Star-shaped 3D Muzzle Flash when firing
         if (kick > 0.15f)
@@ -1161,16 +1125,9 @@ public class WeaponAndCombatView
 
         Vector3 kickOffset = new Vector3(0f, kickUp * 0.11f, -kickUp * 0.12f);
 
-        // Left hand under forend
-        Vector3 leftShoulder = new Vector3(-0.38f, -0.44f, 0.22f) + baseOffset;
-        Vector3 leftWrist = new Vector3(-0.06f, -0.22f + kickUp * 0.09f - breakBarrelTilt * 0.05f, 0.62f) + baseOffset + kickOffset * 0.6f;
-        DrawRussianBusinessmanArm(leftShoulder, leftWrist, Vector3.Normalize(new Vector3(0.28f, 0.20f, 0.92f)), isRightHand: false, showGoldSignetRing: true);
-
         // Right hand on sawed-off walnut grip
-        Vector3 rightShoulder = new Vector3(0.40f, -0.42f, 0.22f) + baseOffset;
         Vector3 rightWrist = new Vector3(0.18f, -0.23f, 0.52f) + baseOffset + kickOffset;
         Vector3 gunDir = Vector3.Normalize(new Vector3(-0.18f, 0.10f + kickUp * 0.42f, 0.96f));
-        DrawRussianBusinessmanArm(rightShoulder, rightWrist, gunDir, isRightHand: true, showGoldSignetRing: true);
 
         Color stockWood = isChatGun
             ? new Color(235, 185, 35, 255)
@@ -1178,15 +1135,20 @@ public class WeaponAndCombatView
         Color receiverMetal = isChatGun ? new Color(40, 48, 62, 255) : new Color(75, 80, 90, 255);
         Color barrelSteel = isChatGun ? new Color(255, 210, 55, 255) : new Color(56, 60, 68, 255);
 
-        Vector3 stockStart = rightWrist - gunDir * 0.04f + new Vector3(0f, 0.01f, 0f);
-        Vector3 receiverHinge = stockStart + gunDir * 0.16f + new Vector3(0f, 0.03f, 0f);
+        Vector3 stockStart = rightWrist+new Vector3(-.034f,-.032f,.074f);
+        Vector3 gripTop = rightWrist+new Vector3(-.034f,.059f,.085f);
+        Vector3 receiverHinge = gripTop+gunDir*.087f;
+        Vector3 barrelDir = Vector3.Normalize(gunDir - Vector3.UnitY*(breakBarrelTilt*.55f));
+        Vector3 support=receiverHinge+barrelDir*.13f-Vector3.UnitY*.023f;
+        VisualEngine3D.Arm(false,support-new Vector3(.050f,.036f,.078f));
+        VisualEngine3D.Arm(true,rightWrist);
 
         // 1. Sawed-off Walnut Stock & Receiver Block
-        VisualEngine3D.Rod(stockStart, receiverHinge, 0.030f, 0.026f, 8, stockWood);
+        VisualEngine3D.Rod(stockStart,gripTop,.028f,.027f,10,stockWood);
+        VisualEngine3D.Rod(gripTop,receiverHinge,.027f,.025f,10,stockWood);
         VisualEngine3D.Box(receiverHinge, 0.054f, 0.046f, 0.075f, receiverMetal);
 
         // 2. Break-action Hinge: Twin Barrels tilt downward during reload phase!
-        Vector3 barrelDir = Vector3.Normalize(gunDir + new Vector3(0f, -breakBarrelTilt * 0.55f, 0f));
         Vector3 barrelEnd = receiverHinge + barrelDir * 0.34f;
         Vector3 sideOffset = new Vector3(0.017f, 0f, 0f);
 
@@ -1273,10 +1235,8 @@ public class WeaponAndCombatView
             Color fg = new Color(ft.TextColor.R, ft.TextColor.G, ft.TextColor.B, alpha);
 
             int textW = (int)LoreAndMenusUI.MeasureTextWidth(uiFont, ft.Text, fontSize);
-            int drawX = (int)screenPos.X - textW / 2;
-            int drawY = (int)screenPos.Y;
-
-            LoreAndMenusUI.DrawTextCrisp(uiFont, ft.Text, drawX, drawY, fontSize, fg);
+            if (WorldLabelLayout.Place(screenPos+Vector2.UnitY*fontSize,textW+4,fontSize+3,out var bounds))
+                GameFonts.Draw(uiFont,ft.Text,new(bounds.X+2,bounds.Y),fontSize,fg);
         }
 
         // 3. Action Impact Banner (`ШЛЕПОК!`, `ПРИПАЯНО! ШШШ-ЦЦЦ!`)

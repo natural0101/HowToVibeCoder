@@ -97,7 +97,7 @@ public static class MainMenuAndPauseUI
     internal static void LoadArt(Font serif)
     {
         Serif = serif;
-        foreach (string name in new[] { "water", "title", "menu-type", "mixer", "case", "archive" })
+        foreach (string name in new[] { "water", "title", "mixer", "case", "archive" })
         {
             Texture2D texture = Raylib.LoadTexture(Path.Combine(AppContext.BaseDirectory, "assets", "ui", name + ".png"));
             if (texture.Id == 0) throw new IOException("Missing UI texture: " + name);
@@ -118,13 +118,11 @@ public static class MainMenuAndPauseUI
     }
     internal static void Center(Font font, string value, Rectangle r, float size, Color color)
     {
-        float spacing = size * .025f;
-        float width = Raylib.MeasureTextEx(font, value, size, spacing).X;
-        if (width > r.Width - 6 && width > 0) size *= (r.Width - 6) / width;
-        Vector2 dims = Raylib.MeasureTextEx(font, value, size, spacing);
-        Vector2 pos = new(r.X + (r.Width - dims.X) / 2, r.Y + (r.Height - dims.Y) / 2);
-        Raylib.DrawTextEx(font, value, pos + new Vector2(1, 1), size, spacing, new Color(13, 21, 38, 185));
-        Raylib.DrawTextEx(font, value, pos, size, spacing, color);
+        int pixels = Math.Max(1,(int)MathF.Round(size));
+        Vector2 dims = GameFonts.Measure(font,value,pixels);
+        while (pixels > 1 && (dims.X > r.Width - 4 || dims.Y > r.Height))
+            dims = GameFonts.Measure(font,value,--pixels);
+        GameFonts.Draw(font,value,new(r.X+(r.Width-dims.X)/2,r.Y+(r.Height-dims.Y)/2),pixels,color);
     }
     internal static void Surface(Rectangle rect, Color fill, float border = 1.5f)
     {
@@ -1045,7 +1043,7 @@ public static class MainMenuAndPauseUI
         {
             Rectangle r = MainButton(i);
             Surface(r, i == _selectedMainIndex ? new Color(76,111,149,193) : new Color(28,49,81,138));
-            Sprite("menu-type", new(r.X+10,r.Y+3,200,34), new(0,i*68,400,68));
+            Center(GameFonts.Get(Typeface.SerifBold,24), MainMenuButtonLabels[i], r, 24, Color.White);
             if (i == 2)
             {
                 Vector2 c = new(r.X+r.Width-12, r.Y+7);
@@ -1194,21 +1192,6 @@ public static class MainMenuAndPauseUI
         }
     }
 
-    private static void DrawTextCrisp(Font font, string text, int x, int y, int size, Color color)
-    {
-        Vector2 shadowPos = new(x + 1.5f, y + 1.5f);
-        Vector2 mainPos = new(x, y);
-        Color shadow = new((byte)0, (byte)0, (byte)0, (byte)Math.Min(230, (int)color.A));
-
-        if (font.Texture.Id != 0)
-        {
-            Raylib.DrawTextEx(font, text, shadowPos, size, 1f, shadow);
-            Raylib.DrawTextEx(font, text, mainPos, size, 1f, color);
-        }
-        else
-        {
-            Raylib.DrawText(text, x + 1, y + 1, size, shadow);
-            Raylib.DrawText(text, x, y, size, color);
-        }
-    }
+    private static void DrawTextCrisp(Font font, string text, int x, int y, int size, Color color) =>
+        GameFonts.Draw(font,text,new(x,y),size,color);
 }

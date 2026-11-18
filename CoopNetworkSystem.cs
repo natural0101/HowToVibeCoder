@@ -11,7 +11,7 @@ namespace HowToVibeCoder;
 
 internal sealed record FloorSnapshot(int Cash, EscapedAgentBoss Boss, float Door, bool Key, bool Unlocked,
     bool Trap, SubscriptionBaitTier Bait, VibeCoderEntity[] Coders, GalleyDeskSlot[] Desks,
-    EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp);
+    EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100);
 
 internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0);
 internal sealed record Motion(string Session, long Sequence, PlayerPose Pose);
