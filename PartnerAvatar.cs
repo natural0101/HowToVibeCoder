@@ -8,7 +8,7 @@ internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponTyp
     public Vector3 Forward => new(MathF.Sin(Yaw)*MathF.Cos(Pitch), MathF.Sin(Pitch), MathF.Cos(Yaw)*MathF.Cos(Pitch));
     public Camera3D Camera => new() { Position=Eye, Target=Eye+Forward, Up=Vector3.UnitY, FovY=76 };
     public bool Valid => float.IsFinite(Yaw) && float.IsFinite(Pitch) && Math.Abs(Pitch)<=1.6f &&
-        Math.Abs(Eye.X)<=38 && Math.Abs(Eye.Z)<=38 && Eye.Y is >=.8f and <=2.5f && Enum.IsDefined(Weapon);
+        Math.Abs(Eye.X)<=38 && Math.Abs(Eye.Z)<=38 && Eye.Y is >=.8f and <=5.0f && Enum.IsDefined(Weapon);
 }
 
 internal sealed class PartnerAvatar

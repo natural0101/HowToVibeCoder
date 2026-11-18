@@ -21,6 +21,14 @@ public static partial class Program
     private static float _playerYaw = MathF.PI; // Looking North (-Z) toward Central MacBook & Elevator Core
     private static float _playerPitch = -0.05f;
     private static bool _isCrouching = false;
+    private static float _playerVelY, _coyoteTimer, _jumpBufferTimer, _landDip;
+    private static float _eyeHeight = 1.72f, _dashTime, _dashCooldown, _regenDelay, _fovKick;
+    private static float _recoilPitch, _recoilYaw, _shake, _crosshairGap = 4, _damageFlash;
+    private static float _pitchSpring, _yawSpring;
+    private static Vector3 _dashDirection;
+    private static bool _isGrounded = true, _sprinting, _toggleCrouch, _exhausted;
+    private static int _lastHudHp = 100;
+    private static readonly Random ShotRandom = new(413);
     private static float _walkBobPhase = 0f;
 
     private static int _playerCash = 450;
@@ -51,7 +59,7 @@ public static partial class Program
             return 0;
         }
 
-        Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | (autoTest || gripTest ? ConfigFlags.HiddenWindow : 0));
+        Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | (autoTest || gripTest || coopSmoke ? ConfigFlags.HiddenWindow : 0));
         Raylib.InitWindow(ScreenWidth, ScreenHeight, "HOW TO VIBE CODER - ЭТАЖ 1: CLOUD ENTROPIC TOWER (1994 -> 2026)");
         Raylib.SetTargetFPS(60);
         Raylib.SetExitKey(KeyboardKey.Null);
@@ -213,7 +221,10 @@ public static partial class Program
         LoreAndMenusUI.ActiveWeaponView = _weapons;
         _xp = 412;
         _energy = 100;
-        _weaponFireCooldown = _walkBobPhase = 0;
+        _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _landDip = _pitchSpring = _yawSpring = 0;
+        _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _damageFlash = 0;
+        _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _lastHudHp=100;
+        _sprinting=_toggleCrouch=_exhausted=false;
         SetHudBanner("Найди макбук в центре зала");
     }
 
@@ -240,21 +251,18 @@ public static partial class Program
 
     private static Camera3D BuildPlayerCamera()
     {
-        float eyeHeight = _isCrouching ? 1.12f : 1.72f;
-        float bobY = MathF.Sin(_walkBobPhase * 2f) * 0.035f;
-        Vector3 eyePos = new(_playerPos.X, eyeHeight + bobY, _playerPos.Z);
-
-        Vector3 forward = new(
-            MathF.Sin(_playerYaw) * MathF.Cos(_playerPitch),
-            MathF.Sin(_playerPitch),
-            MathF.Cos(_playerYaw) * MathF.Cos(_playerPitch));
+        float bob = _isGrounded ? .022f*MathF.Sin(_walkBobPhase*2)*_weapons.WalkWeight : 0;
+        Vector3 eyePos = _playerPos + Vector3.UnitY*(bob-_landDip);
+        float pitch = _playerPitch+_recoilPitch+_shake*MathF.Sin(_shake*720);
+        float yaw = _playerYaw+_recoilYaw+_shake*MathF.Cos(_shake*860);
+        Vector3 forward = new(MathF.Sin(yaw)*MathF.Cos(pitch),MathF.Sin(pitch),MathF.Cos(yaw)*MathF.Cos(pitch));
 
         return new Camera3D
         {
             Position = eyePos,
             Target = eyePos + forward,
             Up = Vector3.UnitY,
-            FovY = Math.Clamp(LoreAndMenusUI.CameraFov, 60f, 100f),
+            FovY = Math.Clamp(LoreAndMenusUI.CameraFov, 60f, 100f)+_fovKick,
             Projection = CameraProjection.Perspective
         };
     }
@@ -314,11 +322,8 @@ public static partial class Program
         if (Raylib.IsKeyPressed(KeyboardKey.Four)) _weapons.SelectSlot(4);
         if (Raylib.IsKeyPressed(KeyboardKey.F) && !Raylib.IsKeyDown(KeyboardKey.E)) _weapons.TriggerInspect();
 
-        // Ambush crouch toggle [C] or Left Control
-        if (Raylib.IsKeyPressed(KeyboardKey.C) || Raylib.IsKeyPressed(KeyboardKey.LeftControl))
-        {
-            _isCrouching = !_isCrouching;
-        }
+        if (Raylib.IsKeyPressed(KeyboardKey.C)) _toggleCrouch = !_toggleCrouch;
+        _isCrouching = _toggleCrouch || Raylib.IsKeyDown(KeyboardKey.LeftControl);
 
         // Mouse look
         Vector2 md = Raylib.GetMouseDelta();
@@ -327,7 +332,7 @@ public static partial class Program
         _playerYaw -= md.X * sens;
         _playerPitch = Math.Clamp(_playerPitch - md.Y * sens, -1.25f, 1.25f);
 
-        // Keyboard turning fallback (Q/Left/Right arrows)
+        // Keyboard turning fallback
         if (Raylib.IsKeyDown(KeyboardKey.Left)) _playerYaw += 1.8f * dt;
         if (Raylib.IsKeyDown(KeyboardKey.Right)) _playerYaw -= 1.8f * dt;
 
@@ -342,16 +347,8 @@ public static partial class Program
         if (Raylib.IsKeyDown(KeyboardKey.A)) moveDir -= rightXZ;
 
         bool isMoving = moveDir.LengthSquared() > 0.01f;
-        bool sprinting = isMoving && !_isCrouching && Raylib.IsKeyDown(KeyboardKey.LeftShift) && _energy > 1;
-        _energy = Math.Clamp(_energy + (sprinting ? -14f : 9f)*dt, 0, 100);
-        if (isMoving)
-        {
-            moveDir = Vector3.Normalize(moveDir);
-            float moveSpeed = _isCrouching ? 4.4f : (sprinting ? 8.8f : 6.6f);
-            Vector3 desired = _playerPos + moveDir * moveSpeed * dt;
-            _playerPos = _world.ResolvePlayerCollision(desired);
-            _walkBobPhase += dt * (moveSpeed * 1.35f);
-        }
+        MovePlayer(dt,moveDir,forwardXZ,Raylib.IsKeyPressed(KeyboardKey.Space),
+            Raylib.IsKeyDown(KeyboardKey.LeftShift),Raylib.IsKeyPressed(KeyboardKey.LeftAlt) || Raylib.IsKeyPressed(KeyboardKey.Q));
 
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
@@ -360,36 +357,137 @@ public static partial class Program
             else SetHudBanner(_world.Interact(BuildPlayerCamera(), TrySpendCash, GrantCash),4.8f);
         }
 
-        // Weapon firing (LMB)
-        if (_weaponFireCooldown > 0f)
-        {
-            _weaponFireCooldown = MathF.Max(0f, _weaponFireCooldown - dt);
-        }
-
-        Camera3D cam = BuildPlayerCamera();
-        bool holdingFire = Raylib.IsMouseButtonDown(MouseButton.Left);
-        bool pressedFire = Raylib.IsMouseButtonPressed(MouseButton.Left);
-
-        bool wantsFire = _weapons.CurrentWeapon == WeaponType.MicroUzi ? holdingFire : pressedFire;
-        if (wantsFire && _weaponFireCooldown <= 0f)
-        {
-            _weaponFireCooldown = _weapons.CurrentWeapon switch
-            {
-                WeaponType.Belt => 0.34f,
-                WeaponType.SolderingIron => 0.38f,
-                WeaponType.MicroUzi => 0.095f,
-                WeaponType.SawedOff => 0.62f,
-                WeaponType.ChatGun => 0.28f,
-                _ => 0.35f
-            };
-
-            PlayCurrentWeaponAudio(_weapons.CurrentWeapon);
-            Fire(cam);
-        }
-
-        _weapons.UpdateWeapons(dt, cam, isMoving, holdingFire);
-
+        UpdateTrigger(dt, Raylib.IsMouseButtonDown(MouseButton.Left),Raylib.IsMouseButtonPressed(MouseButton.Left),
+            Raylib.IsKeyPressed(KeyboardKey.R),isMoving);
         TickFloor(dt);
+        if (_playerHp < _lastHudHp) _damageFlash = .22f;
+        _lastHudHp = _playerHp;
+    }
+
+    private static void MovePlayer(float dt, Vector3 move, Vector3 facing, bool jump, bool sprint, bool dash)
+    {
+        float feet = Math.Max(0,_playerPos.Y-_eyeHeight);
+        _eyeHeight += ((_isCrouching ? 1.16f : 1.72f)-_eyeHeight)*(1-MathF.Exp(-15*dt));
+        _jumpBufferTimer = jump ? .12f : Math.Max(0,_jumpBufferTimer-dt);
+        _coyoteTimer = _isGrounded ? .12f : Math.Max(0,_coyoteTimer-dt);
+        if (_jumpBufferTimer>0 && _coyoteTimer>0)
+        {
+            _playerVelY=8.2f; _isGrounded=false; _coyoteTimer=_jumpBufferTimer=0;
+        }
+        _dashCooldown = Math.Max(0,_dashCooldown-dt);
+        bool moving = move.LengthSquared()>.01f;
+        if (moving) move=Vector3.Normalize(move);
+        if (dash && _dashCooldown<=0 && _energy>=22)
+        {
+            _dashDirection=moving ? move : facing;
+            _dashTime=.16f; _dashCooldown=.85f; _energy-=22; _regenDelay=.65f; _fovKick=8;
+        }
+        if (_energy>=12) _exhausted=false;
+        _sprinting=moving && sprint && !_isCrouching && !_exhausted && _energy>0 && _dashTime<=0;
+        if (_sprinting)
+        {
+            _energy=Math.Max(0,_energy-17*dt); _regenDelay=.65f;
+            if (_energy<=0) _exhausted=true;
+        }
+        else if (_dashTime<=0 && (_regenDelay-=dt)<=0) _energy=Math.Min(100,_energy+20*dt);
+        float speed = _isCrouching ? 4.25f : 6.6f*(_sprinting ? 1.48f : 1);
+        float burst = Math.Min(dt,_dashTime);
+        Vector3 travel = move*speed*(dt-burst) + _dashDirection*18*burst;
+        _dashTime-=burst;
+        _fovKick+=((_dashTime>0 ? 8 : _sprinting ? 4 : 0)-_fovKick)*(1-MathF.Exp(-10*dt));
+        if (moving && _isGrounded) _walkBobPhase+=dt*speed*1.5f;
+
+        // Small swept steps keep a diagonal dash sliding along narrow partitions.
+        int steps=Math.Max(1,(int)MathF.Ceiling(travel.Length()/.14f));
+        for (int i=0;i<steps;i++)
+        {
+            float h=dt/steps;
+            float nextFeet=feet+_playerVelY*h-11.25f*h*h;
+            _playerVelY-=22.5f*h;
+            _playerPos=_world.ResolvePlayerCollision(_playerPos+travel/steps,.4f,Math.Max(feet,nextFeet));
+            float support=_world.SupportHeight(_playerPos,Math.Max(feet,nextFeet));
+            if (nextFeet<=support && _playerVelY<=0)
+            {
+                if (!_isGrounded && _playerVelY < -2)
+                {
+                    _landDip=Math.Min(.135f,-_playerVelY*.014f);
+                    AudioMusicSystem.PlayLanding();
+                }
+                nextFeet=support; _playerVelY=0; _isGrounded=true;
+            }
+            else _isGrounded=false;
+            feet=nextFeet;
+        }
+        _landDip*=MathF.Exp(-12*dt);
+        _playerPos.Y=feet+_eyeHeight;
+    }
+
+    private static void UpdateTrigger(float dt,bool held,bool pressed,bool reload,bool moving)
+    {
+        var gun=_weapons.CurrentWeapon;
+        bool automatic=gun==WeaponType.MicroUzi;
+        bool trigger=automatic ? held : pressed;
+        _weaponFireCooldown=Math.Max(-dt,_weaponFireCooldown-dt);
+        static void Recover(ref float angle,ref float velocity,float speed,float dt)
+        {
+            float slope=velocity+speed*angle;
+            float decay=MathF.Exp(-speed*dt);
+            velocity=(velocity-speed*slope*dt)*decay;
+            angle=(angle+slope*dt)*decay;
+        }
+        Recover(ref _recoilPitch,ref _pitchSpring,23,dt);
+        Recover(ref _recoilYaw,ref _yawSpring,26,dt);
+        _shake*=MathF.Exp(-20*dt);
+        _damageFlash=Math.Max(0,_damageFlash-dt);
+        Camera3D cam=BuildPlayerCamera();
+        _weapons.SetStance(_walkBobPhase,_isCrouching);
+        _weapons.UpdateWeapons(dt,cam,moving && _isGrounded,held);
+        if(reload || _weapons.Ammo==0) _weapons.BeginReload();
+        if(trigger && _weaponFireCooldown<=.00001f && !_weapons.Reloading)
+        {
+            float interval=gun switch {
+                WeaponType.MicroUzi=>1f/12, WeaponType.Belt=>.30f, WeaponType.SolderingIron=>.34f,
+                WeaponType.SawedOff=>.42f, _=>.28f };
+            _weaponFireCooldown=interval+(automatic && !pressed ? _weaponFireCooldown : 0);
+            _weapons.UseRound();
+            float steady=_isCrouching ? .65f : 1;
+            bool melee=gun is WeaponType.Belt or WeaponType.SolderingIron;
+            Vector3 aim=Vector3.Normalize(cam.Target-cam.Position);
+            if (melee)
+            {
+                Vector3 flat=new(aim.X,0,aim.Z);
+                _playerPos=_world.ResolvePlayerCollision(_playerPos+Vector3.Normalize(flat)*.24f,.40f,_playerPos.Y-_eyeHeight);
+                cam=BuildPlayerCamera();
+            }
+            else
+            {
+                Vector3 right=Vector3.Normalize(Vector3.Cross(aim,Vector3.UnitY));
+                float cone=(gun==WeaponType.SawedOff ? .033f : .009f)*steady*(1+_recoilPitch*12);
+                aim=Vector3.Normalize(aim+cone*(right*(2*ShotRandom.NextSingle()-1)+Vector3.Cross(right,aim)*(2*ShotRandom.NextSingle()-1)));
+                cam.Target=cam.Position+aim;
+            }
+            PlayCurrentWeaponAudio(gun);
+            if (Net.Ready)
+                Net.Send(new("fire",new PlayerPose(cam.Position,MathF.Atan2(aim.X,aim.Z),MathF.Asin(aim.Y),gun)));
+            if (Net.Guest)
+            {
+                float range=gun switch { WeaponType.SawedOff=>12.5f, WeaponType.ChatGun=>28, WeaponType.MicroUzi=>26,
+                    WeaponType.Belt=>3.8f,_=>5.2f };
+                _weapons.BallisticWorld=_world;
+                float distance=_world.PelletDistance(cam.Position,aim,range);
+                _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false);
+            }
+            else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg) && msg.Length>0) SetHudBanner(msg,1.3f);
+            float kick=gun==WeaponType.SawedOff ? .077f : melee ? .009f : .023f;
+            _recoilPitch+=kick*steady;
+            _recoilYaw+=(2*ShotRandom.NextSingle()-1)*kick*.38f*steady;
+            if (gun==WeaponType.SawedOff || (_weapons.HitmarkerTimer>=.22f && _weapons.HitmarkerIsCrit)) _shake=.014f;
+            _crosshairGap=Math.Min(15,_crosshairGap+(melee ? 2 : 4));
+            if (_weapons.Ammo==0) _weapons.BeginReload();
+        }
+        else if (!trigger) _weaponFireCooldown=Math.Max(0,_weaponFireCooldown);
+        float targetGap=(_isCrouching ? 3 : 4)+(_isGrounded ? 0 : 5)+(_sprinting ? 4 : 0);
+        _crosshairGap+=(targetGap-_crosshairGap)*(1-MathF.Exp(-9*dt));
     }
 
     private static void PlayCurrentWeaponAudio(WeaponType wt)
@@ -561,13 +659,34 @@ public static partial class Program
             Rectangle plate=new(cx-width/2,cy+22,width,28);
             MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,plate,18,new Color(245,214,128,255));
         }
-        Raylib.DrawCircle(cx,cy,1.3f,white);
+        for(int i=0;i<4;i++)
+        {
+            Vector2 axis=i switch {0=>Vector2.UnitX,1=>-Vector2.UnitX,2=>Vector2.UnitY,_=>-Vector2.UnitY};
+            Vector2 a=new Vector2(cx,cy)+axis*MathF.Round(_crosshairGap);
+            Raylib.DrawLineEx(a,a+axis*5,2.5f,new Color(18,20,23,150));
+            Raylib.DrawLineEx(a,a+axis*5,1.4f,white);
+        }
+        string hints="[Space] Прыжок   [Shift] Бег   [Ctrl] Присед   [Q] Рывок   [R] Перезарядка";
+        float hintWidth=GameFonts.Measure(_uiFont,hints,13).X;
+        LoreAndMenusUI.DrawTextCrisp(_uiFont,hints,(int)(sw-hintWidth-24),sh-20,13,white);
+        if (_weapons.Capacity>0)
+        {
+            string rounds=_weapons.Reloading ? $"ПЕРЕЗАРЯДКА  {_weapons.ReloadProgress:0%}" : $"{_weapons.Ammo} / {_weapons.Capacity}";
+            int w=(int)GameFonts.Measure(_uiFont,rounds,25).X;
+            LoreAndMenusUI.DrawTextCrisp(_uiFont,rounds,sw-25-w,sh-85,25,white);
+        }
+        if (_damageFlash>0)
+        {
+            Color red=new(195,35,32,(int)(110*_damageFlash/.22f));
+            Raylib.DrawRectangleGradientH(0,0,52,sh,red,Color.Blank);
+            Raylib.DrawRectangleGradientH(sw-52,0,52,sh,Color.Blank,red);
+        }
         if (AudioMusicSystem.VoiceTimer>0)
         {
             string line=AudioMusicSystem.ActiveVoiceText;
             float width=Math.Min(sw-24,GameFonts.Measure(_uiFont,line,16).X+22);
-            Rectangle caption=new(cx-width/2,cy+66,width,25);
-            Raylib.DrawRectangleRounded(caption,.5f,8,new Color(20,27,35,204));
+            Rectangle caption=new(cx-width/2,sh-122,width,26);
+            Raylib.DrawRectangleRounded(caption,.35f,8,new Color(14,20,28,212));
             MainMenuAndPauseUI.Center(_uiFont,line,caption,16,white);
         }
 
@@ -736,8 +855,164 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 4-6");
     }
 
+    private static unsafe void CheckFpsGameplay(Action<string> capture)
+    {
+        const float dt=1f/60;
+        bool exit=false;
+        static void Require(bool ok,string what)
+        {
+            if(!ok) throw new InvalidDataException("FPS regression: "+what);
+        }
+        static void Input(uint type,int code)
+        {
+            AutomationEvent e=new() { Type=type };
+            e.Params[0]=code;
+            Raylib.PlayAutomationEvent(e);
+        }
+        void Key(KeyboardKey key,bool down) => Input(down ? 2u : 1u,(int)key);
+        void Mouse(bool down) => Input(down ? 6u : 5u,0);
+        void Tick(int frames=1)
+        {
+            for(int i=0;i<frames;i++)
+            {
+                UpdateFrame(dt,ref exit);
+                Raylib.PollInputEvents();
+            }
+        }
+
+        ResetNewGameFloor();
+        Raylib.DisableCursor();
+        Tick(2);
+        _playerPos=new(24,1.72f,17);
+        Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false);
+        float peak=_playerPos.Y;
+        for(int i=0;i<55;i++) { Tick(); peak=Math.Max(peak,_playerPos.Y); }
+        Require(peak>3.1f && _isGrounded && Math.Abs(_playerPos.Y-1.72f)<.002f,"Space arc / landing");
+        Key(KeyboardKey.LeftControl,true); Tick(28);
+        float crouched=BuildPlayerCamera().Position.Y;
+        Require(crouched<1.30f,"Ctrl eye");
+        Key(KeyboardKey.LeftControl,false); Tick(28);
+        _playerYaw=MathF.PI;
+        Vector3 beforeSprint=_playerPos;
+        Key(KeyboardKey.W,true); Key(KeyboardKey.LeftShift,true); Tick(30);
+        float sprintEnergy=_energy;
+        Require(_sprinting && Math.Abs(sprintEnergy-91.5f)<.1f && _fovKick>3 &&
+            Math.Abs(Vector3.Distance(beforeSprint,_playerPos)-6.6f*1.48f*.5f)<.02f,"sprint speed, FOV and drain");
+        Key(KeyboardKey.LeftShift,false); Key(KeyboardKey.Q,true); Tick(); Key(KeyboardKey.Q,false);
+        float dashEnergy=_energy;
+        Require(_dashTime>0 && Math.Abs(sprintEnergy-dashEnergy-22)<.01f,"dash impulse");
+        Key(KeyboardKey.W,false); Tick(28);
+        Require(Math.Abs(dashEnergy-_energy)<.01f,"regeneration delay"); Tick(160);
+        Require(_energy==100,"energy recovery");
+        Console.WriteLine($"[AUTOTEST] Space peak={peak:F3}m landing=1.720m Ctrl={crouched:F3}m sprint={sprintEnergy:F1} dash={dashEnergy:F1} recovered={_energy}");
+
+        // Walk into the table, vault its edge, stand on top, then jump just after stepping off.
+        _playerPos=_world.CentralMacBookPos+new Vector3(.70f,1.72f,1.2f);
+        _playerYaw=MathF.PI;
+        Key(KeyboardKey.W,true); Tick(8);
+        Require(_playerPos.Z>5.9f,"desk side collision");
+        Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false); Tick(8);
+        Key(KeyboardKey.W,false); Tick(48);
+        Require(_isGrounded && Math.Abs(_playerPos.Y-1.72f-SkyscraperFloor1World.TrapTop)<.01f,"table landing");
+        Key(KeyboardKey.D,true);
+        for(int i=0;i<18 && _isGrounded;i++) Tick();
+        Key(KeyboardKey.D,false);
+        Require(!_isGrounded && _coyoteTimer>0,"table edge");
+        Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false);
+        Require(_playerVelY>7,"coyote jump");
+        int descent=0;
+        while((_playerVelY>=0 || _playerPos.Y>2.12f) && descent++<90) Tick();
+        Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false); Tick(6);
+        Require(_playerVelY>5,"buffered landing jump");
+        Console.WriteLine($"[AUTOTEST] Bait top={SkyscraperFloor1World.TrapTop:F3}m, side collision, vault, coyote and buffered jump PASS");
+
+        ResetNewGameFloor();
+        _playerPos=new(24,1.72f,17);
+        Key(KeyboardKey.Three,true); Tick(); Key(KeyboardKey.Three,false);
+        Mouse(true); Tick(60); Mouse(false); Tick();
+        int burst=32-_weapons.Ammo;
+        Require(burst==12,"held LMB burst: "+burst);
+        Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false);
+        Tick(32); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
+        capture("reload_uzi.png"); Tick(45); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
+        Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false);
+        Mouse(true); Tick(); Mouse(false); Tick(27); Require(_weapons.Ammo==1,"shotgun first shell");
+        Mouse(true); Tick(); Mouse(false); Require(_weapons.Ammo==0 && _weapons.Reloading,"shotgun auto reload");
+        Tick(40); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
+        capture("reload_shotgun.png"); Tick(43); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
+        Mouse(true); Tick(); Mouse(false); Tick();
+        Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(83);
+        Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
+        Key(KeyboardKey.Three,true); Tick(); Key(KeyboardKey.Three,false);
+        Mouse(true); Tick(156); Mouse(false);
+        Require(_weapons.Ammo==0 && _weapons.Reloading,"Uzi empty auto reload");
+        Tick(78); Require(_weapons.Ammo==32,"empty Uzi refill");
+        Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 20->32; shotgun 2->1->0->2, two ejected hulls");
+
+        ResetNewGameFloor();
+        var fighters=_world.ActiveCoders.Where(c=>c.IsCombatCoder).ToArray();
+        Require(fighters.Length==4 && fighters.All(c=>c.MaxHp is >=40 and <=55),"weak fighters");
+        var enemy=fighters[0];
+        // Keep the test lane clear of the nearby architectural pillar.
+        _playerPos=new(-5.6f,1.72f,5.6f);
+        enemy.Position=new(-5.6f,0,10.4f);
+        Tick(32);
+        Require(enemy.Aggro && enemy.Windup>0 && _world.EnemyProjectiles.Count==0,"warn before throw");
+        for(int i=0;i<60 && !_world.EnemyProjectiles.Any(p=>p.IsGlitch);i++) Tick();
+        var pr=_world.EnemyProjectiles.First(p=>p.IsGlitch);
+        Require(Math.Abs(pr.Velocity.Length()-12)<.01f && pr.Damage==7,"weak thrown cube");
+        int hp=_playerHp; Tick(35);
+        Require(hp-_playerHp==7,"projectile hit damage");
+        int wait=0;
+        while(!_world.EnemyProjectiles.Any(p=>p.IsGlitch) && wait++<200) Tick();
+        Require(wait<200,"second telegraph");
+        hp=_playerHp;
+        Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false); Tick(64);
+        Require(_playerHp==hp && !_world.EnemyProjectiles.Any(p=>p.IsGlitch && Vector3.Distance(p.Position,_playerPos)<2),"jump dodges locked throw");
+        _playerPos=enemy.Position+new Vector3(0,1.72f,1.9f);
+        int meleeHp=_playerHp;
+        for(int i=0;i<160 && _playerHp==meleeHp;i++) Tick();
+        Require(meleeHp-_playerHp==6,"telegraphed laptop slap");
+        _weapons.SelectSlot(3);
+        LookAtTarget(enemy.CombatCenter); Mouse(true); Tick(); Mouse(false);
+        Require(enemy.HitStaggerTimer>0 && enemy.KnockbackVel.Length()>2 && enemy.Hp>0,"impact impulse");
+        Vector3 hitPos=enemy.Position; Tick(6); float knockback=Vector3.Distance(hitPos,enemy.Position);
+        Require(knockback>.1f,"knockback displacement");
+        int shots=1, cash=_playerCash, xp=_xp;
+        while(enemy.Hp>0 && shots<4)
+        {
+            LookAtTarget(enemy.CombatCenter); Mouse(true); Tick(); Mouse(false); Tick(6); shots++;
+        }
+        Require(enemy.State==CoderAIState.Subdued && shots<=3 && _playerCash-cash==35 && _xp-xp==7,"KO reward");
+        Tick(90); Require(!_world.ActiveCoders.Contains(enemy),"KO cleanup");
+        Require(Math.Abs(_recoilPitch)<.0001f && Math.Abs(_recoilYaw)<.0001f,"camera spring recovery");
+        foreach(var (weapon,hits,target) in new[] {
+            (WeaponType.Belt,2,fighters[1]),(WeaponType.SolderingIron,2,fighters[2]),(WeaponType.SawedOff,1,fighters[3]) })
+        {
+            _playerPos=new(23,1.72f,17); target.Position=new(23,0,15.15f);
+            _weapons.SelectSlot((int)weapon);
+            for(int i=0;i<hits;i++)
+            {
+                LookAtTarget(target.CombatCenter);
+                Mouse(true); Tick(); Mouse(false); Tick(29);
+                Require((target.Hp<=0)==(i==hits-1),"KO count "+weapon);
+            }
+        }
+        var wallTarget=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
+        wallTarget.Position=new(0,0,-2);
+        _playerPos=new(0,1.72f,2.8f);
+        LookAtTarget(wallTarget.CombatCenter);
+        _weapons.SelectSlot(3);
+        float wallHp=wallTarget.Hp;
+        Mouse(true); Tick(); Mouse(false);
+        Require(wallTarget.Hp==wallHp && Math.Abs(_weapons.BulletTracers[^1].End.Z-.5f)<.02f,"wall stops ray and tracer");
+        Console.WriteLine("[AUTOTEST] Jump dodge, recoil recovery, wall impact, belt/iron/shotgun KO=2/2/1 PASS");
+        Console.WriteLine($"[AUTOTEST] Fighters={fighters.Length} HP={enemy.MaxHp} cube={pr.Velocity.Length():F0}m/s damage=7 slap=6 knockback={knockback:F2}m KO={shots} rounds cash=+35 XP=+7");
+    }
+
     private static void RunAutomatedScreenshotSuite()
     {
+        AudioMusicSystem.CheckMovementSounds();
         CheckElevatorNameplates();
         LoreAndMenusUI.CheckMixerControls();
         string projectScreenshotsDir = Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
@@ -796,6 +1071,8 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
 
+        CheckFpsGameplay(name=>CaptureShot(name));
+
         // 1. 01_office_hub_hr_tarot.png - Central White Shark Reception opposite the Elevator: HR Tarot Veronika with crystal ball & candles, Belt in crimson jacket hands
         ResetNewGameFloor();
         MainMenuAndPauseUI.IsInMainMenu = false;
@@ -810,8 +1087,9 @@ public static partial class Program
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(2); // 90s Soldering Iron with rising rosin smoke
         _isCrouching = true;
-        _playerPos = new Vector3(-1.75f, 1.12f, 8.5f);
-        LookAtTarget(new Vector3(0.0f, 1.18f, 5.2f));
+        _eyeHeight=1.16f;
+        _playerPos = new Vector3(-1.6f, _eyeHeight, 8.05f);
+        LookAtTarget(new Vector3(-.15f, .77f, 5.2f));
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         var walkingCoder = _world.SpawnCoderForTier(SubscriptionBaitTier.CursorPro, forceSide: -1);
         walkingCoder.Position = new Vector3(-1.55f, 0f, 4.65f);
@@ -878,39 +1156,29 @@ public static partial class Program
         LookAtTarget(miniBoss.CombatCenter);
         miniBoss.Hp = 420f;
         miniBoss.HitFlashTimer = 0;
-        _world.EnemyProjectiles.Add(new EnemyProjectile3D
+        var fighter=_world.ActiveCoders.First(c=>c.IsCombatCoder);
+        fighter.Position=new(-.66f,0,5.95f);
+        for(int i=0;i<100 && !_world.EnemyProjectiles.Any(p=>p.IsGlitch);i++) TickFloor(1f/60);
+        for(int i=0;i<5;i++) TickFloor(1f/60);
+        for(int i=0;i<_world.EnemyProjectiles.Count;i++)
         {
-            Position = new Vector3(-.78f, 2.16f, 5.75f),
-            Velocity = new Vector3(0f, 0f, 4f),
-            Radius = 0.44f,
-            Life = 3.5f,
-            MaxLife = 4.0f,
-            Damage = 12,
-            Label = "500 INTERNAL ERROR",
-            PrimaryColor = new Color(235, 35, 55, 245),
-            WireColor = new Color(255, 225, 70, 255)
-        });
-        _world.EnemyProjectiles.Add(new EnemyProjectile3D
-        {
-            Position = new Vector3(2.86f, 1.51f, 5.55f),
-            Velocity = new Vector3(0f, 0f, 4f),
-            Radius = 0.44f,
-            Life = 3.5f,
-            MaxLife = 4.0f,
-            Damage = 12,
-            Label = "API KEY LEAKED ($50K)",
-            PrimaryColor = new Color(235, 35, 55, 245),
-            WireColor = new Color(255, 225, 70, 255)
-        });
-        Camera3D uziCam = BuildPlayerCamera();
+            if (_world.EnemyProjectiles[i].IsGlitch)
+            {
+                var gp = _world.EnemyProjectiles[i];
+                gp.Position += new Vector3(0.26f, 0.05f, 0.22f);
+                _world.EnemyProjectiles[i] = gp;
+            }
+        }
+        LookAtTarget(miniBoss.CombatCenter);
+        Camera3D uziCam=BuildPlayerCamera();
         float hpBeforeShot = miniBoss.Hp;
-        if (!_world.ProcessPlayerAttack(uziCam, _weapons, GrantCash, out _) ||
-            hpBeforeShot-miniBoss.Hp != 46 || !_weapons.HitmarkerIsCrit ||
+        UpdateTrigger(1f/60,true,true,false,false);
+        if (_weapons.Ammo!=31 || hpBeforeShot-miniBoss.Hp != 46 || !_weapons.HitmarkerIsCrit ||
             _weapons.FloatingTexts.LastOrDefault().Text != "-46")
             throw new InvalidDataException("Critical hit on the scaled coder did not produce the expected damage number");
         _weapons.UpdateWeapons(0.02f, uziCam, isMoving: false, holdingFire: true);
-        _hudStatusTimer = 0;
-        StagePartner(new(-.75f,0,6.45f),miniBoss.CombatCenter);
+        _hudStatusTimer = AudioMusicSystem.VoiceTimer = 0;
+
         CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(670,317,442,370));
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks
@@ -958,7 +1226,8 @@ public static partial class Program
         _playerPos = new Vector3(-1.35f, 1.72f, -14.2f);
         LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.15f,0));
         Camera3D bossCam = BuildPlayerCamera();
-        _weapons.TriggerWeaponAttack(bossCam, _world.ElevatorBoss.Position+Vector3.UnitY*1.55f, hitEnemy: true, damageDealt: 165, isCritical: true);
+        UpdateTrigger(1f/60,true,true,false,false);
+        if (_weapons.Ammo!=1 || _world.ElevatorBoss.Hp>=1480) throw new InvalidDataException("Shotgun boss shot failed");
         _weapons.UpdateWeapons(0.03f, bossCam, isMoving: false, holdingFire: true);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
@@ -983,8 +1252,7 @@ public static partial class Program
 
     private static void LookAtTarget(Vector3 target)
     {
-        float eyeHeight = _isCrouching ? 1.12f : 1.72f;
-        Vector3 eye = new(_playerPos.X, eyeHeight, _playerPos.Z);
+        Vector3 eye = BuildPlayerCamera().Position;
         Vector3 d = Vector3.Normalize(target - eye);
         _playerYaw = MathF.Atan2(d.X, d.Z);
         _playerPitch = MathF.Asin(Math.Clamp(d.Y, -0.95f, 0.95f));

@@ -12,7 +12,7 @@ internal static class GameFonts
     private static readonly Dictionary<Typeface, string> files = new();
     private static readonly int[] codepoints = Enumerable.Range(32, 95)
         .Concat(Enumerable.Range(0x400, 256))
-        .Concat("№«»—–…→←₽°♥×★▶◀“”‘’·•↳▲▼".Select(c => (int)c)).Distinct().ToArray();
+        .Concat("№«»—–…→←₽°♥×★▶◀“”‘’·•↳▲▼▪▫│─".Select(c => (int)c)).Distinct().ToArray();
 
     private static string ResolveFontDirectory()
     {
@@ -33,7 +33,7 @@ internal static class GameFonts
     public static void Load()
     {
         string directory = ResolveFontDirectory();
-        string[] names = ["Onest-Medium.ttf", "Onest-Bold.ttf", "Unbounded-Bold.ttf", "Unbounded-Bold.ttf"];
+        string[] names = ["PTSans-Regular.ttf", "PTSans-Bold.ttf", "Oswald-SemiBold.ttf", "Oswald-Bold.ttf"];
         foreach (Typeface face in Enum.GetValues<Typeface>())
         {
             files[face] = Path.Combine(directory, names[(int)face]);
@@ -42,7 +42,6 @@ internal static class GameFonts
 
     public static Font Get(Typeface face, int size)
     {
-        if (face == Typeface.SerifBold) face = Typeface.Serif;
         if (fonts.TryGetValue((face, size), out Font font)) return font;
         int atlasSize = checked(size * 2);
         font = Raylib.LoadFontEx(files[face],atlasSize,codepoints,codepoints.Length);
@@ -56,7 +55,7 @@ internal static class GameFonts
 
     public static Font At(Font face, int size) => Get(family.GetValueOrDefault(face.Texture.Id), size);
 
-    private static float Spacing(int size) => size <= 16 ? 1f : 0f;
+    private static float Spacing(int size) => size <= 16 ? 0.5f : 0f;
 
     public static Vector2 Measure(Font face, string value, int size) =>
         Raylib.MeasureTextEx(At(face, size), value, size, Spacing(size));
@@ -67,8 +66,11 @@ internal static class GameFonts
         Font native = At(face, size);
         float spacing = Spacing(size);
         Vector2 pixel = new(MathF.Round(at.X), MathF.Round(at.Y));
-        Color shadow = new(8, 11, 18, (ink.A * 185) / 255);
-        Raylib.DrawTextEx(native, value, pixel + Vector2.UnitY, size, spacing, shadow);
+        if (ink.R + ink.G + ink.B > 180)
+        {
+            Color shadow = new(8, 11, 18, (ink.A * 175) / 255);
+            Raylib.DrawTextEx(native, value, pixel + Vector2.UnitY, size, spacing, shadow);
+        }
         Raylib.DrawTextEx(native, value, pixel, size, spacing, ink);
     }
 

@@ -181,6 +181,8 @@ namespace HowToVibeCoder
                 }
 
                 EnsureAllWavFilesExist();
+                _soundsByName["boot_land"]=LoadMechanicalSound(true);
+                _soundsByName["action_clack"]=LoadMechanicalSound(false);
                 SfxBeltWhip = LoadAndRegister("belt_whip.wav");
                 SfxSolderSizzle = LoadAndRegister("solder_sizzle.wav");
                 SfxUziShot = LoadAndRegister("uzi_shot.wav");
@@ -328,9 +330,51 @@ namespace HowToVibeCoder
 
         internal static readonly float[] EffectLevels = [.58f,.58f,.58f,.58f,.72f];
 
+        private static short[] MechanicalTransient(bool landing)
+        {
+            short[] samples=new short[landing ? 8600 : 5500];
+            var noise=new Random(landing ? 39 : 72);
+            double low=0;
+            for(int i=0;i<samples.Length;i++)
+            {
+                double t=i/44100d, white=noise.NextDouble()*2-1;
+                low+=(white-low)*.12;
+                double sound=landing ? .64*Math.Sin(Math.Tau*(56*t+.42*(1-Math.Exp(-24*t))))*Math.Exp(-26*t)
+                                      + low*Math.Exp(-40*t)
+                    : .36*Math.Sin(Math.Tau*1320*t)*Math.Exp(-80*t) + .48*white*Math.Exp(-145*t)
+                      + (t>.025 ? .42*Math.Sin(Math.Tau*635*(t-.025))*Math.Exp(-78*(t-.025)) : 0);
+                samples[i]=ClampSample(.89*sound*Math.Min(1,t*1400));
+            }
+            return samples;
+        }
+        private static unsafe Sound LoadMechanicalSound(bool landing)
+        {
+            short[] samples=MechanicalTransient(landing);
+            fixed(short* pcm=samples)
+            {
+                Wave wave=new() { SampleCount=(uint)samples.Length, SampleRate=44100, SampleSize=16, Channels=1, Data=pcm };
+                return Raylib.LoadSoundFromWave(wave);
+            }
+        }
+
+        internal static void CheckMovementSounds()
+        {
+            if (!Raylib.IsAudioDeviceReady()) return;
+            if (Raylib.GetMasterVolume()!=0) throw new InvalidOperationException("Autotest master must be muted");
+            foreach(bool landing in new[]{true,false})
+            {
+                Sound sound=LoadMechanicalSound(landing);
+                if (!Raylib.IsSoundValid(sound)) throw new InvalidDataException("Invalid movement/reload sound");
+                Raylib.UnloadSound(sound);
+            }
+            Console.WriteLine("[AUTOTEST] Landing thump and reload clack loaded, native master=0");
+        }
+
+        public static void PlayLanding() => PlaySfx("boot_land",1,.65f);
+        public static void PlayActionClack(float pitch) => PlaySfx("action_clack",pitch,.74f);
         public static void PlayBeltWhip() => PlayWeaponSound(SfxBeltWhip, volumeScale: EffectLevels[0]);
         public static void PlaySolderSizzle() => PlayWeaponSound(SfxSolderSizzle, volumeScale: EffectLevels[0]);
-        public static void PlayUziShot() => PlayWeaponSound(SfxUziShot, volumeScale: EffectLevels[1]);
+        public static void PlayUziShot() => PlayWeaponSound(SfxUziShot,.97f+.07f*_rng.NextSingle(),EffectLevels[1]);
         public static void PlayShotgunBlast() => PlayWeaponSound(SfxShotgunBlast, volumeScale: EffectLevels[1]);
         public static void PlayChatgunBeam() => PlayWeaponSound(SfxChatgunBeam, volumeScale: EffectLevels[1]);
         public static void PlayHitmarker() => PlayWeaponSound(SfxHitmarker, volumeScale: EffectLevels[1]);

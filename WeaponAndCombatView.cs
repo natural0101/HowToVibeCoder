@@ -120,6 +120,57 @@ public class WeaponAndCombatView
     public readonly List<BulletTracer3D> BulletTracers = new(128);
     public readonly List<FloatingCombatText3D> FloatingTexts = new(64);
 
+    private int _uziRounds = 32, _shells = 2, _spentHulls;
+    private float _reloadTime, _flash, _roll;
+    internal SkyscraperFloor1World BallisticWorld;
+    private float _stridePhase;
+    private bool _lowStance;
+    internal float WalkWeight => _walkWeight;
+    internal void SetStance(float stride,bool crouched) { _stridePhase=stride; _lowStance=crouched; }
+    internal int Capacity => CurrentWeapon switch { WeaponType.MicroUzi=>32, WeaponType.SawedOff=>2, _=>0 };
+    internal int Ammo => CurrentWeapon switch { WeaponType.MicroUzi=>_uziRounds, WeaponType.SawedOff=>_shells, _=>-1 };
+    internal bool Reloading => _reloadTime > 0;
+    private float ReloadDuration => CurrentWeapon==WeaponType.MicroUzi ? 1.25f : 1.35f;
+    internal float ReloadProgress => Reloading ? 1-_reloadTime/ReloadDuration : 0;
+    internal void UseRound()
+    {
+        if (CurrentWeapon==WeaponType.MicroUzi) _uziRounds--;
+        if (CurrentWeapon==WeaponType.SawedOff) { _shells--; _spentHulls++; }
+    }
+    internal void BeginReload()
+    {
+        if (Reloading || Ammo<0 || Ammo==Capacity) return;
+        _inspectTimer=0;
+        _reloadTime=ReloadDuration;
+        AudioMusicSystem.PlayActionClack(CurrentWeapon==WeaponType.SawedOff ? .72f : 1.30f);
+    }
+
+    private void TickReload(float dt, Camera3D camera)
+    {
+        if (!Reloading) return;
+        float before=ReloadProgress;
+        _reloadTime=Math.Max(0,_reloadTime-dt);
+        float after=1-_reloadTime/ReloadDuration;
+        if (before<.28f && after>=.28f && CurrentWeapon==WeaponType.SawedOff)
+        {
+            Vector3 f=Vector3.Normalize(camera.Target-camera.Position);
+            Vector3 right=Vector3.Normalize(Vector3.Cross(f,Vector3.UnitY));
+            for (int i=0;i<_spentHulls;i++)
+                BrassShells.Add(new() {
+                    Position=camera.Position+f*.52f+right*.16f-Vector3.UnitY*.12f,
+                    Velocity=right*(1.4f+i*.6f)+Vector3.UnitY*(1.8f+i*.2f)-f*.6f,
+                    AngularVelocity=new(300,510,270),Life=2.6f,MaxLife=2.6f,IsShotgunShell=true });
+            _spentHulls=0;
+        }
+        if (before<.70f && after>=.70f) AudioMusicSystem.PlayActionClack(CurrentWeapon==WeaponType.MicroUzi ? 1.6f : 1.15f);
+        if (_reloadTime==0)
+        {
+            if (CurrentWeapon==WeaponType.MicroUzi) _uziRounds=32;
+            else _shells=2;
+            AudioMusicSystem.PlayActionClack(CurrentWeapon==WeaponType.MicroUzi ? 1.05f : .63f);
+        }
+    }
+
     private readonly Random _rng = new(1994);
     private float _idleSmokeAccumulator = 0f;
     private float _continuousSolderSparkTimer = 0f;
@@ -132,7 +183,7 @@ public class WeaponAndCombatView
 
     public void TriggerInspect()
     {
-        if (!Inspecting) _inspectTimer = _inspectDuration;
+        if (!Inspecting && !Reloading) _inspectTimer = _inspectDuration;
     }
 
     public void UpdateLookLag(Vector2 angularDelta, float dt)
@@ -183,14 +234,14 @@ public class WeaponAndCombatView
         if (target != CurrentWeapon)
         {
             CurrentWeapon = target;
-            _inspectTimer = 0;
+            _inspectTimer = _reloadTime = _flash = 0;
             EquipTransition = 1.0f;
         }
         else if (slotNumber == 4 && UnlockedChatGun)
         {
             // Toggle between SawedOff and ChatGun on pressing [4] again
             CurrentWeapon = (CurrentWeapon == WeaponType.SawedOff) ? WeaponType.ChatGun : WeaponType.SawedOff;
-            _inspectTimer = 0;
+            _inspectTimer = _reloadTime = _flash = 0;
             EquipTransition = 1.0f;
         }
     }
@@ -217,6 +268,13 @@ public class WeaponAndCombatView
         Vector3? receiverCenter = null)
     {
         _inspectTimer = 0;
+        if (CurrentWeapon is WeaponType.SawedOff or WeaponType.ChatGun or WeaponType.MicroUzi)
+        {
+            _flash=CurrentWeapon==WeaponType.MicroUzi ? .052f : .075f;
+            _roll=(NextFloat()-.5f)*.10f*(_lowStance ? .65f : 1);
+            if (CurrentWeapon==WeaponType.MicroUzi) UziRecoilPhase=1;
+            else ShotgunKickPhase=1;
+        }
         Vector3 forward = Vector3.Normalize(camera.Target - camera.Position);
         Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
@@ -259,7 +317,7 @@ public class WeaponAndCombatView
                 });
 
                 // Leather slap impact burst
-                SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 22 : 12,
+                if (hitWorldPoint.HasValue) SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 22 : 12,
                     colorA: new Color(255, 210, 65, 255),
                     colorB: new Color(220, 60, 40, 255),
                     speedMin: 2.5f, speedMax: 6.5f, electric: false);
@@ -289,9 +347,9 @@ public class WeaponAndCombatView
                 }
 
                 // Hot orange/yellow solder droplets + cyan electric stun arcs
-                SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 34 : 20,
+                if (hitWorldPoint.HasValue) SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 34 : 20,
                     colorA: new Color(255, 185, 30, 255),
-                    colorB: new Color(70, 235, 255, 255),
+                    colorB: new Color(255, 93, 14, 255),
                     speedMin: 3.0f, speedMax: 8.5f, electric: true);
 
                 // Electric arc tracer from soldering tip to target
@@ -318,8 +376,8 @@ public class WeaponAndCombatView
                 {
                     Start = muzzleWorld,
                     End = targetPos,
-                    Life = 0.09f,
-                    MaxLife = 0.09f,
+                    Life = 0.063f,
+                    MaxLife = 0.063f,
                     TracerColor = new Color(255, 235, 85, 255),
                     Thickness = 0.028f
                 });
@@ -361,10 +419,10 @@ public class WeaponAndCombatView
                 for (int i = 0; i < 8; i++)
                 {
                     Vector3 spread = right * ((NextFloat() - 0.5f) * 0.14f) + up * ((NextFloat() - 0.5f) * 0.11f);
-                    Vector3 rayDir = Vector3.Normalize(forward + spread);
-                    Vector3 pelletEnd = hitWorldPoint.HasValue && i < 4
-                        ? hitWorldPoint.Value + RandomVec3(0.35f)
-                        : camera.Position + rayDir * 16f;
+                    Vector3 rayDir = Vector3.Normalize(forward + spread*(_lowStance ? .65f : 1));
+                    float range=isChat ? 28 : 12.5f;
+                    float length=BallisticWorld?.PelletDistance(camera.Position,rayDir,range) ?? range;
+                    Vector3 pelletEnd=i==0 && hitWorldPoint.HasValue ? impactPoint : camera.Position+rayDir*length;
 
                     BulletTracers.Add(new BulletTracer3D
                     {
@@ -390,21 +448,6 @@ public class WeaponAndCombatView
                         MaxLife = 0.65f,
                         Tint = isChat ? new Color(120, 255, 200, 190) : new Color(220, 210, 195, 200),
                         IsRing = false
-                    });
-                }
-
-                // Eject 2 red/gold shotgun shells
-                for (int s = 0; s < 2; s++)
-                {
-                    BrassShells.Add(new BrassShell3D
-                    {
-                        Position = muzzleWorld - forward * 0.34f + right * (0.16f + s * 0.025f) + up * 0.10f,
-                        Velocity = right * (2.0f + s * 0.6f) + up * (0.65f + s * 0.15f) + forward * 0.15f,
-                        Rotation = new Vector3(NextFloat() * 180f, NextFloat() * 180f, NextFloat() * 180f),
-                        AngularVelocity = new Vector3(420f, 510f, 380f),
-                        Life = 2.6f,
-                        MaxLife = 2.6f,
-                        IsShotgunShell = true
                     });
                 }
 
@@ -482,6 +525,8 @@ public class WeaponAndCombatView
     public void UpdateWeapons(float dt, Camera3D camera, bool isMoving = false, bool holdingFire = false)
     {
         _animClock += dt;
+        _flash=Math.Max(0,_flash-dt);
+        TickReload(dt,camera);
         _inspectTimer = MathF.Max(0,_inspectTimer-dt);
         _walkWeight = Lerp(_walkWeight,isMoving ? 1 : 0,1-MathF.Exp(-9*dt));
 
@@ -669,12 +714,18 @@ public class WeaponAndCombatView
         Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
 
+        if (Capacity>0 || CurrentWeapon==WeaponType.ChatGun)
+        {
+            var gun=GunAssembly(BaseOffset());
+            float roll=(-12*Ease(EquipTransition)+_lookLag.X*13)*(MathF.PI/180);
+            Vector3 local=Vector3.Transform(gun.Tip,Matrix4x4.CreateRotationZ(roll));
+            float lens=MathF.Tan(camera.FovY*MathF.PI/360)/MathF.Tan(54*MathF.PI/360);
+            return camera.Position+forward*local.Z+(right*local.X+up*local.Y)*lens;
+        }
         return CurrentWeapon switch
         {
             WeaponType.Belt => camera.Position + forward * (0.95f + BeltSwingPhase * 0.9f) + right * 0.22f - up * 0.14f,
-            WeaponType.SolderingIron => camera.Position + forward * (0.88f + MathF.Sin(SolderThrustPhase * MathF.PI) * 0.55f) + right * 0.24f - up * 0.15f,
-            WeaponType.MicroUzi => camera.Position + forward * 0.85f + right * 0.22f - up * 0.14f,
-            _ => camera.Position + forward * 0.92f + right * 0.20f - up * 0.16f
+            _ => camera.Position + forward * (0.88f + MathF.Sin(SolderThrustPhase * MathF.PI) * 0.55f) + right * 0.24f - up * 0.15f
         };
     }
 
@@ -717,8 +768,8 @@ public class WeaponAndCombatView
 
             if (s.Velocity.LengthSquared() > 0.000001f)
             {
-                Vector3 tail = s.Position - Vector3.Normalize(s.Velocity) * 0.035f;
-                Raylib.DrawLine3D(tail, s.Position, col);
+                Vector3 tail = s.Position - Vector3.Normalize(s.Velocity) * (.045f+.065f*ratio);
+                Raylib.DrawCylinderEx(tail,s.Position,.003f,.010f*ratio,4,col);
             }
         }
 
@@ -733,12 +784,20 @@ public class WeaponAndCombatView
             if (distance > 0.0001f)
             {
                 Vector3 direction = travel / distance;
-                Vector3 head = Vector3.Lerp(tr.Start, tr.End, 1f - ratio);
-                Raylib.DrawLine3D(head, head + direction * MathF.Min(0.12f, distance), c);
+                float t=Math.Min(1, .23f+(1-ratio)*1.8f);
+                Vector3 head=tr.Start+travel*t;
+                Vector3 tail=head-direction*Math.Min(distance*t,Math.Min(3.5f,distance*.48f));
+                Raylib.DrawCylinderEx(tail,head,tr.Thickness*.17f,tr.Thickness*.42f,5,c);
+                Raylib.DrawLine3D(tail,head,Color.RayWhite);
             }
         }
 
-        // Ejected shells retain their simulation lifetime but are not rendered.
+        foreach (var casing in BrassShells)
+        {
+            Vector3 angles=casing.Rotation*(MathF.PI/180);
+            Vector3 axis=Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromYawPitchRoll(angles.Y,angles.X,angles.Z));
+            DrawCasing(casing.Position,axis,casing.IsShotgunShell);
+        }
     }
 
     /// <summary>
@@ -746,6 +805,31 @@ public class WeaponAndCombatView
     /// and the active 3D weapon ViewModel with multi-phase attack animations, plus 2D HUD overlays (hitmarker & floating damage numbers).
     /// Can be called either inside or outside BeginMode3D (manages its own dedicated depth-cleared 3D pass + 2D HUD projection).
     /// </summary>
+    private static void DrawCasing(Vector3 basePos,Vector3 axis,bool hull)
+    {
+        float r=hull ? .0085f : .0045f;
+        Vector3 cap=basePos+axis*(hull ? .012f : .004f);
+        var brass=new Color(232,181,68,255);
+        VisualEngine3D.Rod(basePos,cap,r*1.08f,r*1.08f,8,brass);
+        VisualEngine3D.Rod(cap,cap+axis*(hull ? .038f : .014f),r,r,8,hull ? new(177,42,30,255) : brass);
+    }
+
+    private void MuzzleFlash(Vector3 tip,Vector3 axis,float length)
+    {
+        if (_flash<=0) return;
+        float f=Math.Clamp(_flash/.045f,.25f,1);
+        Vector3 end=tip+axis*length*f;
+        VisualEngine3D.Rod(tip,end,.036f*f,.001f,7,new(255,144,32,255),Finish.Lamp);
+        VisualEngine3D.Oval(tip+axis*.016f,new Vector3(.034f,.028f,.050f)*f,new(255,245,173,255),Finish.Lamp);
+        for(int i=0;i<5;i++)
+        {
+            float a=i*MathF.Tau/5+_roll*32;
+            Vector3 spur=new(MathF.Cos(a),MathF.Sin(a),0);
+            VisualEngine3D.Rod(tip+axis*.016f,tip+axis*length*.52f+spur*.073f*f,
+                .019f*f,.0005f,4,new(255,200,71,255),Finish.Lamp);
+        }
+    }
+
     public void DrawFirstPersonHandsAndWeapon(Camera3D worldCamera, float walkBobPhase = 0f, bool isCrouching = false, Font uiFont = default, Camera3D? inspectionCamera = null, bool showCombatText = true)
     {
         // Local ViewModel camera at origin looking along +Z so hands never clip into walls
@@ -758,17 +842,14 @@ public class WeaponAndCombatView
             Projection = CameraProjection.Perspective
         };
 
-        float bobX = MathF.Sin(walkBobPhase)*.018f*_walkWeight + .0032f*MathF.Sin(_animClock*1.7f);
-        float bobY = -.016f*MathF.Cos(walkBobPhase*2)*_walkWeight + .0042f*MathF.Sin(_animClock*2.1f)
-                     + (isCrouching ? -.025f : 0);
-        float equip = Ease(EquipTransition);
-        float equipDropY = -.10f*equip;
-
-        Vector3 baseOffset = new(bobX-_lookLag.X*.12f, bobY+equipDropY+.024f+_lookLag.Y*.10f, -.035f*equip);
+        SetStance(walkBobPhase,isCrouching);
+        Vector3 baseOffset=BaseOffset();
+        float equip=Ease(EquipTransition);
 
         // Render 3D First-Person ViewModel
         Raylib.BeginMode3D(vmCam);
         VisualEngine3D.Hands(InspectLift(InspectPhase));
+        if (_flash>0) VisualEngine3D.FlashLight(GunAssembly(baseOffset).Tip);
         Rlgl.PushMatrix();
         Rlgl.Scalef(-1,1,1);
         Rlgl.Rotatef(-12*equip + _lookLag.X*13,0,0,1);
@@ -919,31 +1000,50 @@ public class WeaponAndCombatView
     // =========================================================================
     // SLOT 3: БАНДИТСКИЙ MICRO-UZI (`WeaponType.MicroUzi`)
     // =========================================================================
+    private Vector3 BaseOffset()
+    {
+        float bobX = MathF.Sin(_stridePhase)*.018f*_walkWeight + .0032f*MathF.Sin(_animClock*1.7f);
+        float bobY = -.016f*MathF.Cos(_stridePhase*2)*_walkWeight + .0042f*MathF.Sin(_animClock*2.1f)
+                     + (_lowStance ? -.025f : 0);
+        float equip = Ease(EquipTransition);
+        float equipDropY = -.10f*equip;
+
+        return new(bobX-_lookLag.X*.12f, bobY+equipDropY+.024f+_lookLag.Y*.10f, -.035f*equip);
+
+    }
+
+    private (Vector3 Offset,Matrix4x4 Pose,Vector3 Receiver,Vector3 Tip) GunAssembly(Vector3 baseOffset)
+    {
+        bool uzi=CurrentWeapon==WeaponType.MicroUzi;
+        float kick=(uzi ? UziRecoilPhase : ShotgunKickPhase*ShotgunKickPhase)*(_lowStance ? .65f : 1);
+        float t=ReloadProgress;
+        float tilt=Ease(t/(uzi ? .20f : .26f))*Ease((1-t)/(uzi ? .23f : .20f));
+        Vector3 offset=baseOffset+(uzi
+            ? new Vector3(.035f+MathF.Sin(_animClock*55)*.006f*kick,.018f*kick,-.048f*kick)
+            : new Vector3(0,.11f*kick,-.12f*kick));
+        Vector3 pivot=offset+(uzi ? new Vector3(.18f,-.193f,.6665f) : new Vector3(.18f,-.17f,.60f));
+        var pose=Matrix4x4.CreateTranslation(-pivot)
+            * Matrix4x4.CreateRotationX(uzi ? -.11f*kick-.19f*tilt : -.29f*kick-.16f*tilt)
+            * Matrix4x4.CreateRotationZ(_roll*kick+tilt*(uzi ? .50f : .14f))
+            * Matrix4x4.CreateRotationY(uzi ? -.28f : -.12f)
+            * Matrix4x4.CreateTranslation(pivot)*GetInspectTransform(uzi ? 3 : 4,InspectPhase);
+        Vector3 receiver=offset+(uzi ? new Vector3(.18f,-.10f,.68f) : new Vector3(.18f,-.12f,.66f));
+        Vector3 muzzle=uzi ? new Vector3(0,.018f,.322f)*.75f : new Vector3(_shells==1 ? -.018f : .018f,.024f,.465f);
+        return (offset,pose,receiver,Vector3.Transform(receiver+muzzle,pose));
+    }
+
     private void DrawMicroUziViewModel3D(Vector3 baseOffset)
     {
-        float kick = UziRecoilPhase;
-        Vector3 recoilOffset = new Vector3(
-            (MathF.Sin(_animClock * 55f) * 0.006f) * kick,
-            0.018f * kick,
-            -0.048f * kick);
-
-        Vector3 assembly = baseOffset + recoilOffset + new Vector3(.035f,0,0);
-        Vector3 pivot = new Vector3(.18f,-.193f,.6665f) + assembly;
-        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
-            * Matrix4x4.CreateRotationX(-kick*.05f)
-            * Matrix4x4.CreateRotationY(-.28f) * Matrix4x4.CreateTranslation(pivot) * GetInspectTransform(3,InspectPhase);
-        VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_uzi", pose);
+        var (assembly,pose,receiverCenter,barrelTip)=GunAssembly(baseOffset);
+        float reload=ReloadProgress;
+        float drop=.24f*Ease((reload-.15f)/.19f)*Ease((.72f-reload)/.19f);
+        VisualEngine3D.ArmAssembly(false, assembly+new Vector3(.035f,-.57f,-.12f)*drop, "fps_hands_uzi", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_uzi", pose);
-        Vector3 aimDir = Vector3.UnitZ;
-        Vector3 receiverCenter = new Vector3(.18f,-.10f,.68f) + assembly;
+        VisualEngine3D.PoseReloadPart(true,drop);
         VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,180,.75f,
             SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose);
-        Vector3 barrelTip=Vector3.Transform(receiverCenter+aimDir*(.31f*.75f)+Vector3.UnitY*.006f,pose);
-        aimDir=Vector3.TransformNormal(aimDir,pose);
-
-        if (kick > 0.15f)
-            Raylib.DrawLine3D(barrelTip, barrelTip + aimDir * 0.025f,
-                new Color(255, 225, 160, (int)(210 * kick)));
+        VisualEngine3D.PoseReloadPart(true,0);
+        MuzzleFlash(barrelTip,Vector3.TransformNormal(Vector3.UnitZ,pose),.22f);
     }
 
     // =========================================================================
@@ -951,66 +1051,29 @@ public class WeaponAndCombatView
     // =========================================================================
     private void DrawSawedOffViewModel3D(Vector3 baseOffset, bool isChatGun)
     {
-        float p = ShotgunKickPhase; // 1.0 -> 0.0
-        float t = 1f - p;
-
-        // Phase A (0..0.35): Massive 45-degree upward recoil kick
-        // Phase B (0.35..0.85): Break-action barrel tilt reload animation ("перелом стволов")
-        float kickUp = 0f;
-        float breakBarrelTilt = 0f;
-        if (p > 0.001f)
-        {
-            if (t < 0.35f)
-            {
-                float k = MathF.Sin((t / 0.35f) * MathF.PI);
-                kickUp = k * 1.0f;
-            }
-            else if (t < 0.88f)
-            {
-                float k = MathF.Sin(((t - 0.35f) / 0.53f) * MathF.PI);
-                breakBarrelTilt = k * 1.0f;
-            }
-        }
-
-        Vector3 kickOffset = new Vector3(0f, kickUp * 0.11f, -kickUp * 0.12f);
-
-        Vector3 assembly = baseOffset + kickOffset;
-        Vector3 pivot = new Vector3(.18f,-.17f,.60f) + assembly;
-        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
-            * Matrix4x4.CreateRotationX(-kickUp*.65f + breakBarrelTilt*.35f)
-            * Matrix4x4.CreateRotationY(-.12f)
-            * Matrix4x4.CreateTranslation(pivot) * GetInspectTransform(4,InspectPhase);
-        Vector3 gripTop = new Vector3(.18f,-.12f,.66f) + assembly;
-        Vector3 barrelDir = Vector3.UnitZ;
-        Vector3 receiverHinge = gripTop + new Vector3(0,.015f,.065f);
-        VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_shotgun", pose);
+        var (assembly,pose,gripTop,barrelEnd)=GunAssembly(baseOffset);
+        float reload=ReloadProgress;
+        float breakBarrelTilt=Ease(reload/.26f)*Ease((1-reload)/.20f);
+        VisualEngine3D.ArmAssembly(false, assembly+new Vector3(0,-.065f,-.095f)*breakBarrelTilt, "fps_hands_shotgun", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_shotgun", pose);
         Color shotgunTint = isChatGun ? new Color(150,255,215,255)
             : (SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White);
+        VisualEngine3D.PoseReloadPart(false,.68f*breakBarrelTilt);
         VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, 180, 1, shotgunTint, assemblyTransform: pose);
 
-        Vector3 barrelEnd = Vector3.Transform(receiverHinge + barrelDir * 0.36f,pose);
-        barrelDir=Vector3.TransformNormal(barrelDir,pose);
-        receiverHinge=Vector3.Transform(receiverHinge,pose);
-        Vector3 sideOffset = new Vector3(0.017f, 0f, 0f);
+        VisualEngine3D.PoseReloadPart(false,0);
+        Vector3 barrelDir=Vector3.TransformNormal(Vector3.UnitZ,pose);
 
-        // When barrels are tilted open in break-action, show small flat brass rims inside the breech.
-        if (breakBarrelTilt > 0.12f)
+        if (reload>.35f && reload<.81f)
         {
-            Color rimCol = isChatGun ? new Color(80, 255, 190, 255) : new Color(255, 210, 50, 255);
-            foreach (float side in new[] { -1f, 1f })
+            for(int i=0;i<2-_shells;i++)
             {
-                Vector3 rim = Vector3.Transform(gripTop + new Vector3(side*.017f,.024f,.095f),pose);
-                Raylib.DrawCylinderEx(rim, rim + barrelDir*.002f, .006f, .006f, 12, rimCol);
+                float insert=Ease((reload-.39f-.08f*i)/.20f);
+                Vector3 plug=gripTop+new Vector3(i==0 ? -.018f : .018f,.047f+(1-insert)*.065f,.093f-(1-insert)*.12f);
+                DrawCasing(Vector3.Transform(plug,pose),barrelDir,hull: true);
             }
         }
-
-        if (kickUp > 0.35f)
-        {
-            Color flash = isChatGun ? new Color(90,255,195,180) : new Color(255,205,130,180);
-            Raylib.DrawLine3D(barrelEnd - sideOffset, barrelEnd - sideOffset + barrelDir * .035f, flash);
-            Raylib.DrawLine3D(barrelEnd + sideOffset, barrelEnd + sideOffset + barrelDir * .035f, flash);
-        }
+        MuzzleFlash(barrelEnd,barrelDir,.34f);
     }
 
     // =========================================================================
@@ -1108,5 +1171,67 @@ public class WeaponAndCombatView
     {
         float u = 1f - t;
         return (u * u) * a + (2f * u * t) * b + (t * t) * c;
+    }
+}
+
+// Both GLBs merge their mechanical parts by material. Animate the authored vertices
+// in the viewmodel pass and restore the shared buffers before drawing the next actor.
+internal static unsafe partial class VisualEngine3D
+{
+    private sealed class ReloadMesh
+    {
+        public Mesh Mesh;
+        public int[] Moving;
+        public Vector3[] Positions, Normals, Animated, Rotated;
+    }
+    private static readonly Dictionary<bool,List<ReloadMesh>> reloadMeshes=new();
+    private static readonly HashSet<bool> posedWeapons=new();
+
+    // The first-person pass parks its warm point light offscreen when idle.
+    internal static void FlashLight(Vector3 tip) =>
+        Raylib.SetShaderValue(shader,tarotLoc,tip,ShaderUniformDataType.Vec3);
+
+    internal static void PoseReloadPart(bool magazine,float amount)
+    {
+        if (amount==0 && !posedWeapons.Remove(magazine)) return;
+        if (!reloadMeshes.TryGetValue(magazine,out var parts))
+        {
+            var model=imports[magazine ? "weapon_uzi_90s" : "weapon_shotgun_90s"];
+            reloadMeshes[magazine]=parts=new();
+            for(int m=0;m<model.MeshCount;m++)
+            {
+                Mesh mesh=model.Meshes[m];
+                var positions=new ReadOnlySpan<Vector3>((Vector3*)mesh.Vertices,mesh.VertexCount).ToArray();
+                var normals=new ReadOnlySpan<Vector3>((Vector3*)mesh.Normals,mesh.VertexCount).ToArray();
+                var moving=new List<int>();
+                for(int i=0;i<positions.Length;i++)
+                {
+                    Vector3 v=positions[i];
+                    // The exposed steel magazine is narrower than the polymer grip.
+                    bool moves=magazine ? m<2 && v.Y<-.202f && Math.Abs(v.X)<=.0221f && Math.Abs(v.Z-.019f)<=.0281f
+                        : v.Z<-.090f;
+                    if(moves) moving.Add(i);
+                }
+                if(moving.Count>0) parts.Add(new() { Mesh=mesh,Moving=moving.ToArray(),Positions=positions,
+                    Normals=normals,Animated=(Vector3[])positions.Clone(),Rotated=(Vector3[])normals.Clone() });
+            }
+        }
+        if(amount!=0) posedWeapons.Add(magazine);
+        Vector3 hinge=new(0,.006f,-.078f);
+        var tilt=Quaternion.CreateFromAxisAngle(Vector3.UnitX,-amount);
+        foreach(var part in parts)
+        {
+            foreach(int i in part.Moving)
+            {
+                Vector3 rest=part.Positions[i];
+                part.Animated[i]=magazine ? rest-Vector3.UnitY*amount : hinge+Vector3.Transform(rest-hinge,tilt);
+                if(!magazine) part.Rotated[i]=Vector3.Transform(part.Normals[i],tilt);
+            }
+            fixed(Vector3* p=part.Animated)
+                Raylib.UpdateMeshBuffer(part.Mesh,0,p,part.Animated.Length*sizeof(Vector3),0);
+            if(!magazine)
+                fixed(Vector3* n=part.Rotated)
+                    Raylib.UpdateMeshBuffer(part.Mesh,2,n,part.Rotated.Length*sizeof(Vector3),0);
+        }
     }
 }

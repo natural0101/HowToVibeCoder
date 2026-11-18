@@ -1050,23 +1050,22 @@ public static class MainMenuAndPauseUI
             Raylib.DrawRectangleGradientH(x0, 0, x1 - x0, screenH,
                 Scrim(x0 / (float)fadeEnd), Scrim(x1 / (float)fadeEnd));
         }
-        Raylib.DrawRectangle(55,52,30,3,accent);
-        DrawTextCrisp(font,"CLOUD ENTROPIC TOWER",56,69,16,accent);
-        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,58),"HOW TO",52,105,58,Color.White);
-        DrawTextCrisp(GameFonts.Get(Typeface.InterfaceBold,58),"VIBE CODER",52,157,58,Color.White);
-        DrawTextCrisp(font,"Этаж 1 / Белая Акула IT",56,240,22,new Color(242,205,154,255));
+        DrawTextCrisp(font,"// CLOUD ENTROPIC TOWER //",56,64,15,accent);
+        DrawTextCrisp(GameFonts.Get(Typeface.SerifBold,58),"HOW TO",52,100,58,Color.White);
+        DrawTextCrisp(GameFonts.Get(Typeface.SerifBold,58),"VIBE CODER",52,156,58,Color.White);
+        DrawTextCrisp(font,"ЭТАЖ 01 : БЕЛАЯ АКУЛА IT",56,236,20,new Color(242,205,154,255));
         for(int i=0;i<MainMenuButtonLabels.Length;i++)
         {
             Rectangle r=MainButton(i);
             bool selected=i==_selectedMainIndex;
             if(selected)
             {
-                Raylib.DrawRectangleGradientH((int)r.X,(int)r.Y,(int)r.Width,(int)r.Height,
-                    new Color(26,90,95,232),new Color(22,57,69,90));
-                Raylib.DrawRectangle((int)r.X,(int)r.Y,3,(int)r.Height,accent);
+                Raylib.DrawRectangleRec(r,new Color(235,204,132,244));
+                Raylib.DrawRectangleLinesEx(r,1f,new Color(255,236,184,255));
             }
-            DrawTextCrisp(font,MainMenuButtonLabels[i],(int)r.X+16,(int)r.Y+6,21,
-                selected ? Color.White : new Color(212,223,231,255));
+            string label = selected ? $"▶  {MainMenuButtonLabels[i]}" : MainMenuButtonLabels[i];
+            DrawTextCrisp(selected ? GameFonts.Get(Typeface.InterfaceBold,21) : font, label, (int)r.X+14, (int)r.Y+6, 21,
+                selected ? new Color(12,18,24,255) : new Color(212,223,231,255));
         }
         if (_infoPage != null)
         {

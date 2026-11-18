@@ -60,7 +60,13 @@ def weapon_mesh(slot):
                      r'",\s*(\w+),\s*([\d.]+)f?,\s*([\d.]+)f?,', source)
     position, yaw, scale = draw.groups()
     origin = re.search(r'Vector3 ' + position + r' = new Vector3\(([^)]+)\) \+ ', source)
-    offset = Vector(tuple(float(x.strip().rstrip("f")) for x in origin[1].split(",")))
+    if origin is not None:
+        raw_offset = origin[1]
+    else:
+        gun = re.search(r'Vector3 receiver=offset\+\(uzi \? new Vector3\(([^)]+)\) : new Vector3\(([^)]+)\)\);', source)
+        assert gun is not None, (slot, position)
+        raw_offset = gun[1 if slot == "uzi" else 2]
+    offset = Vector(tuple(float(x.strip().rstrip("f")) for x in raw_offset.split(",")))
     angle = math.radians(float(yaw))
     verts, faces = [], []
     for points, triangles in read_meshes(name).values():

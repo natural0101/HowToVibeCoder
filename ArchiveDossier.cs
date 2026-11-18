@@ -90,11 +90,30 @@ public static partial class LoreAndMenusUI
         _ => SelectedArchiveEntry == 2 ? SolderModel : PartnerModel
     };
 
+    private static void DrawCornerTicks(Rectangle r, Color c, float len = 9f)
+    {
+        Fill(r.X, r.Y, len, 2, c);
+        Fill(r.X, r.Y, 2, len, c);
+        Fill(r.X + r.Width - len, r.Y, len, 2, c);
+        Fill(r.X + r.Width - 2, r.Y, 2, len, c);
+        Fill(r.X, r.Y + r.Height - 2, len, 2, c);
+        Fill(r.X, r.Y + r.Height - len, 2, len, c);
+        Fill(r.X + r.Width - len, r.Y + r.Height - 2, len, 2, c);
+        Fill(r.X + r.Width - 2, r.Y + r.Height - len, 2, len, c);
+    }
+
     private static void DrawSelector()
     {
-        Type(IndexTitles[ActiveLoreTab], 38, 173, 31, Ivory, Typeface.SerifBold);
-        Type($"Записи   {FirstVisibleArchiveEntry + 1}–{Math.Min(EntryCount, FirstVisibleArchiveEntry + VisibleRows)} из {EntryCount}",
-             39, 218, 14, Quiet);
+        Color darkInk = new(12, 18, 23, 255);
+        Color darkSub = new(42, 54, 62, 255);
+        Type("КАРТОТЕКА // УЗЕЛ 01", 38, 152, 13, Phosphor, Typeface.InterfaceBold);
+        Type(IndexTitles[ActiveLoreTab].ToUpperInvariant(), 38, 172, 31, Ivory, Typeface.SerifBold);
+        string countBadge = $"ЛИСТ {FirstVisibleArchiveEntry + 1:00}–{Math.Min(EntryCount, FirstVisibleArchiveEntry + VisibleRows):00} ИЗ {EntryCount:00}";
+        Type(countBadge, 39, 218, 14, Quiet, Typeface.InterfaceBold);
+
+        Raylib.DrawRectangleRec(Selector, new Color(9, 16, 22, 215));
+        Raylib.DrawRectangleLinesEx(Selector, 1f, new Color(84, 108, 110, 165));
+
         Rectangle clip = ArchiveScreen(Selector);
         Raylib.BeginScissorMode((int)clip.X, (int)clip.Y, (int)Math.Ceiling(clip.Width), (int)Math.Ceiling(clip.Height));
         for (int i = 0; i < EntryCount; i++)
@@ -103,30 +122,46 @@ public static partial class LoreAndMenusUI
             if (r.Y + r.Height <= Selector.Y || r.Y >= Selector.Y + Selector.Height) continue;
             bool selected = i == SelectedArchiveEntry;
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveRowBounds(i));
-            if (selected || hover)
-                Raylib.DrawRectangleGradientH((int)r.X, (int)r.Y, (int)r.Width, (int)r.Height - 1,
-                    selected ? new Color(101, 85, 50, 196) : new Color(69, 87, 86, 130), new Color(26, 39, 38, 0));
-            Fill(r.X, r.Y + r.Height - 1, r.Width, 1, new Color(141, 159, 148, 59));
-            if (selected) Fill(r.X, r.Y + 11, 3, r.Height - 22, Phosphor);
-            Type(EntryName(i), r.X + 17, r.Y + 14, 21, selected ? Phosphor : Ivory, Typeface.InterfaceBold);
-            Type(EntryContext(i), r.X + 18, r.Y + 46, 15, selected ? Ivory : Quiet);
+            if (selected)
+            {
+                Fill(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2, Phosphor);
+            }
+            else if (hover)
+            {
+                Fill(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2, new Color(24, 38, 46, 230));
+            }
+            Fill(r.X, r.Y + r.Height - 1, r.Width, 1, new Color(118, 142, 140, 75));
+            string prefix = selected ? $"{i + 1:00} ▶  " : $"{i + 1:00}    ";
+            Type(prefix + EntryName(i), r.X + 14, r.Y + 14, 20, selected ? darkInk : Ivory, Typeface.InterfaceBold);
+            Type(EntryContext(i), r.X + 14, r.Y + 46, 15, selected ? darkSub : Quiet);
         }
         Raylib.EndScissorMode();
+        DrawCornerTicks(Selector, Phosphor, 8f);
     }
 
     private static float RoleLine(string speaker, string words, float y, Color accent, bool compact = false)
     {
-        const int x = 822, width = 378;
-        y = Paragraph(speaker, x, y, width, 14, 18, accent, Typeface.InterfaceBold) + 6;
-        return Paragraph(words, x, y, width, compact ? 17 : 18, compact ? 21 : 24, Ivory) + 15;
+        const int x = 816, width = 390;
+        Color darkInk = new(11, 16, 21, 255);
+        string tagText = speaker.ToUpperInvariant();
+        Font tagFont = GameFonts.Get(Typeface.InterfaceBold, 13);
+        float tagW = Math.Min(width, GameFonts.Measure(tagFont, tagText, 13).X + 16);
+        Fill(x, y, tagW, 21, accent);
+        Type(tagText, x + 8, y + 3, 13, darkInk, Typeface.InterfaceBold);
+        y += 28;
+        return Paragraph(words, x, y, width, compact ? 16 : 17, compact ? 21 : 23, Ivory) + 16;
     }
 
     private static void DrawReading()
     {
         int i = SelectedArchiveEntry;
-        const int x = 822, width = 378;
-        Fill(790, 147, 452, 502, new Color(10, 18, 23, 218));
-        Fill(790, 165, 3, 63, Phosphor);
+        const int x = 816, width = 390;
+        Color darkInk = new(12, 18, 23, 255);
+        Rectangle card = new(790, 147, 452, 502);
+        Fill(card.X, card.Y, card.Width, card.Height, new Color(9, 16, 22, 236));
+        Raylib.DrawRectangleLinesEx(card, 1f, new Color(92, 118, 120, 185));
+        DrawCornerTicks(card, Phosphor, 10f);
+
         string section, title, status;
         switch (ActiveLoreTab)
         {
@@ -135,11 +170,15 @@ public static partial class LoreAndMenusUI
             case 2: section = "Бестиарий этажа"; title = i == 4 ? "Захват лифта" : BestiaryNames[i]; status = BestiaryPosts[i]; break;
             default: section = "Словарь цеха"; title = EntryName(i); status = "Записано со слов напарника"; break;
         }
-        Type(section.ToUpperInvariant(), x, 176, 13, Phosphor, Typeface.InterfaceBold);
-        float y = Paragraph(title, x - 1, 202, width, 34, 40, Ivory, Typeface.SerifBold) + 12;
-        y = Paragraph(status, x, y, width, 14, 19, Silver) + 19;
-        Fill(x, y, width, 1, new Color(118, 148, 148, 103));
-        y += 21;
+
+        Rectangle headerStrip = new(x, 162, width, 24);
+        Fill(headerStrip.X, headerStrip.Y, headerStrip.Width, headerStrip.Height, Phosphor);
+        Type($"ДЕЛО №{i + 1:00}  //  {section.ToUpperInvariant()}", x + 10, 166, 13, darkInk, Typeface.InterfaceBold);
+
+        float y = Paragraph(title.ToUpperInvariant(), x, 198, width, 30, 35, Ivory, Typeface.SerifBold) + 8;
+        y = Paragraph(status, x, y, width, 14, 19, Silver) + 14;
+        Fill(x, y, width, 1, new Color(118, 148, 148, 120));
+        y += 18;
         if (ActiveLoreTab == 0)
         {
             var m = _leakedChats[i];
@@ -251,17 +290,24 @@ public static partial class LoreAndMenusUI
         Raylib.DrawRectangleGradientH(0, 118, 450, 545, new Color(5, 15, 19, 232), new Color(5, 15, 19, 0));
         DrawStageAtmosphere();
         Raylib.DrawRectangleGradientV(0, 0, ArchiveWidth, 148, new Color(6, 16, 22, 247), new Color(6, 16, 22, 110));
-        Type("Архив башни", 38, 15, 35, Ivory, Typeface.SerifBold);
-        Type("Закрыть [N]", 1139, 29, 15, Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveCloseBounds) ? Phosphor : Silver);
-        Fill(38, 118, 1204, 1, new Color(159, 182, 178, 72));
+        Color darkInk = new(12, 18, 23, 255);
+        Type("АРХИВ БАШНИ // CLOUD ENTROPIC", 38, 16, 33, Ivory, Typeface.SerifBold);
+        bool closeHover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveCloseBounds);
+        Fill(LoreClose.X, LoreClose.Y, LoreClose.Width, LoreClose.Height, closeHover ? Phosphor : new Color(18, 28, 36, 225));
+        Raylib.DrawRectangleLinesEx(LoreClose, 1f, Phosphor);
+        Type("ЗАКРЫТЬ [N]", LoreClose.X + 10, LoreClose.Y + 11, 14, closeHover ? darkInk : Ivory, Typeface.InterfaceBold);
+        Fill(38, 122, 1204, 1, new Color(159, 182, 178, 85));
         for (int i = 0; i < ArchiveTabs.Length; i++)
         {
             Rectangle r = LoreTab(i);
             bool active = i == ActiveLoreTab;
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveTabBounds(i));
-            Type($"[{i + 1}]", r.X, r.Y + 13, 15, active ? Phosphor : Quiet);
-            Type(ArchiveTabs[i], r.X + 34, r.Y + 12, 16, active || hover ? Ivory : Silver, Typeface.InterfaceBold);
-            if (active) Fill(r.X, 116, r.Width - 14, 3, Phosphor);
+            Rectangle tabBox = new(r.X, r.Y + 4, r.Width - 10, 38);
+            Fill(tabBox.X, tabBox.Y, tabBox.Width, tabBox.Height,
+                active ? Phosphor : (hover ? new Color(28, 42, 52, 235) : new Color(14, 23, 30, 215)));
+            Raylib.DrawRectangleLinesEx(tabBox, 1f, active ? Ivory : new Color(84, 108, 110, 155));
+            Type($"[{i + 1}]", tabBox.X + 12, tabBox.Y + 10, 15, active ? darkInk : Phosphor, Typeface.InterfaceBold);
+            Type(ArchiveTabs[i], tabBox.X + 44, tabBox.Y + 10, 15, active ? darkInk : (hover ? Ivory : Silver), Typeface.InterfaceBold);
         }
         DrawSelector();
         Raylib.DrawTexturePro(_exhibitTexture.Texture, new(0, 0, _exhibitTexture.Texture.Width, -_exhibitTexture.Texture.Height),
