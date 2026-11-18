@@ -1606,12 +1606,13 @@ public sealed class SkyscraperFloor1World
         Camera3D camera,
         WeaponAndCombatView weaponSystem,
         Action<int, string>? onGrantMoney,
-        out string combatFeedback)
+        out string combatFeedback,
+        Vector3? shotDirection = null)
     {
         combatFeedback = "";
         weaponSystem.BallisticWorld=this;
         Vector3 origin = camera.Position;
-        Vector3 forward = Vector3.Normalize(camera.Target - camera.Position);
+        Vector3 forward = shotDirection ?? Vector3.Normalize(camera.Target - camera.Position);
 
         float maxRange = weaponSystem.CurrentWeapon switch
         {
@@ -1662,7 +1663,7 @@ public sealed class SkyscraperFloor1World
                         hitEnemy: true,
                         damageDealt: 0,
                         isCritical: true,
-                        customHitLabel: "В РАБОТУ! +$20/СЕК!");
+                        customHitLabel: "В РАБОТУ! +$20/СЕК!", shotDirection: forward);
 
                     combatFeedback = $"ВОСПИТАТЕЛЬНЫЙ ЛЕЩ! {desk.CoderName} закрыл Twitter и снова пашет на Галере (+$20/сек)!";
                     return true;
@@ -1682,7 +1683,7 @@ public sealed class SkyscraperFloor1World
                 ElevatorBoss.HitFlashTimer = 0.16f;
 
                 AudioMusicSystem.PlayHitmarker();
-                weaponSystem.TriggerWeaponAttack(camera, hitPt, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: bossCenter);
+                weaponSystem.TriggerWeaponAttack(camera, hitPt, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: bossCenter, shotDirection: forward);
 
                 if (ElevatorBoss.Hp <= 0f)
                 {
@@ -1759,7 +1760,7 @@ public sealed class SkyscraperFloor1World
             }
 
             AudioMusicSystem.PlayHitmarker();
-            weaponSystem.TriggerWeaponAttack(camera, bestHitPoint, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: target.CombatCenter);
+            weaponSystem.TriggerWeaponAttack(camera, bestHitPoint, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: target.CombatCenter, shotDirection: forward);
 
             if (target.Hp <= 0f)
             {
@@ -1789,7 +1790,7 @@ public sealed class SkyscraperFloor1World
         }
 
         // 4. Missed enemy - still fire weapon visuals into world geometry
-        weaponSystem.TriggerWeaponAttack(camera, surfaceDistance <= maxRange ? origin+forward*surfaceDistance : null, hitEnemy: false);
+        weaponSystem.TriggerWeaponAttack(camera, surfaceDistance <= maxRange ? origin+forward*surfaceDistance : null, hitEnemy: false, shotDirection: forward);
         return false;
     }
 

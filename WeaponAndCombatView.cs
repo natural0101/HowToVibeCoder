@@ -137,10 +137,29 @@ public class WeaponAndCombatView
     private bool _lowStance;
     internal float WalkWeight => _walkWeight;
     internal void SetStance(float stride,bool crouched) { _stridePhase=stride; _lowStance=crouched; }
+    private float sprintWeight, dashWeight, airLift, strafeBank, crouchWeight, landing, landingSpeed;
+    internal void UpdateMotion(float dt, bool isSprinting, bool isGrounded, float verticalVel,
+        float landingImpact, bool isDashing, float strafeTilt)
+    {
+        float follow=1-MathF.Exp(-12*dt);
+        sprintWeight=Lerp(sprintWeight,isSprinting && isGrounded ? 1 : 0,follow);
+        dashWeight=Lerp(dashWeight,isDashing ? 1 : 0,follow);
+        strafeBank=Lerp(strafeBank,strafeTilt,follow);
+        crouchWeight=Lerp(crouchWeight,_lowStance ? 1 : 0,follow);
+        airLift=Lerp(airLift,isGrounded ? 0 : Math.Clamp(-verticalVel/8,-1,1),follow);
+        landingSpeed+=Math.Clamp(landingImpact/8,0,1)*2.4f;
+        // Analytic underdamped spring, independent of simulation rate.
+        float decay=MathF.Exp(-13*dt), a=19*dt;
+        float velocity=(landingSpeed+13*landing)/19;
+        float next=landing*MathF.Cos(a)+velocity*MathF.Sin(a);
+        landingSpeed=decay*(19*(velocity*MathF.Cos(a)-landing*MathF.Sin(a))-13*next);
+        landing=next*decay;
+    }
     internal int Capacity => CurrentWeapon switch { WeaponType.MicroUzi=>32, WeaponType.SawedOff=>2, _=>0 };
     internal int Ammo => CurrentWeapon switch { WeaponType.MicroUzi=>_uziRounds, WeaponType.SawedOff=>_shells, _=>-1 };
+    internal float ClosingImpulse => CurrentWeapon==WeaponType.SawedOff ? Beat(ReloadProgress,.89f,.095f) : 0;
     internal bool Reloading => _reloadTime > 0;
-    private float ReloadDuration => CurrentWeapon==WeaponType.MicroUzi ? 1.25f : 1.35f;
+    private float ReloadDuration => CurrentWeapon==WeaponType.MicroUzi ? 1.35f : 1.45f;
     internal float ReloadProgress => Reloading ? 1-_reloadTime/ReloadDuration : 0;
     internal void UseRound()
     {
@@ -161,23 +180,29 @@ public class WeaponAndCombatView
         float before=ReloadProgress;
         _reloadTime=Math.Max(0,_reloadTime-dt);
         float after=1-_reloadTime/ReloadDuration;
-        if (before<.28f && after>=.28f && CurrentWeapon==WeaponType.SawedOff)
+        if (before<.18f && after>=.18f && CurrentWeapon==WeaponType.SawedOff)
         {
-            Vector3 f=Vector3.Normalize(camera.Target-camera.Position);
-            Vector3 right=Vector3.Normalize(Vector3.Cross(f,Vector3.UnitY));
-            for (int i=0;i<_spentHulls;i++)
-                BrassShells.Add(new() {
-                    Position=camera.Position+f*.52f+right*.16f-Vector3.UnitY*.12f,
-                    Velocity=right*(1.4f+i*.6f)+Vector3.UnitY*(1.8f+i*.2f)-f*.6f,
+            var gun=GunAssembly(BaseOffset());
+            var toWorld=gun.Pose*GunToWorld(camera);
+            for(int i=0;i<_spentHulls;i++)
+            {
+                var (entry,axis)=Chamber(gun.Receiver,BarrelAngle(after),i+_shells);
+                Vector3 worldEntry=Vector3.Transform(entry,toWorld);
+                Vector3 kick=Vector3.Normalize(Vector3.TransformNormal(-axis,toWorld));
+                BrassShells.Add(new() { Position=worldEntry,Velocity=kick*.65f+Vector3.Normalize(Vector3.Cross(camera.Target-camera.Position,camera.Up))*(2.4f+i*.35f)+Vector3.UnitY*1.75f,
                     AngularVelocity=new(300,510,270),Life=2.6f,MaxLife=2.6f,IsShotgunShell=true });
+                Puff(worldEntry,kick*.16f+Vector3.UnitY*.14f,.012f,.078f,.32f,new Color(175,161,147,105));
+            }
             _spentHulls=0;
         }
-        if (before<.70f && after>=.70f) AudioMusicSystem.PlayActionClack(CurrentWeapon==WeaponType.MicroUzi ? 1.6f : 1.15f);
+        bool uzi=CurrentWeapon==WeaponType.MicroUzi;
+        float seat=uzi ? .56f : .57f, close=uzi ? .81f : .89f;
+        if(before<seat && after>=seat) AudioMusicSystem.PlayActionClack(uzi ? 1.6f : 1.15f);
+        if(before<close && after>=close) AudioMusicSystem.PlayActionClack(uzi ? 1.05f : .67f);
         if (_reloadTime==0)
         {
             if (CurrentWeapon==WeaponType.MicroUzi) _uziRounds=32;
             else _shells=2;
-            AudioMusicSystem.PlayActionClack(CurrentWeapon==WeaponType.MicroUzi ? 1.05f : .63f);
         }
     }
 
@@ -732,7 +757,7 @@ public class WeaponAndCombatView
     }
 
     private const float ViewModelFov=54;
-    private float ViewRoll => (-12*Ease(EquipTransition)+_lookLag.X*13)*MathF.PI/180;
+    private float ViewRoll => (-19*Ease(EquipTransition)+_lookLag.X*24-5.5f*strafeBank+4*crouchWeight+20*sprintWeight+12*dashWeight)*MathF.PI/180;
 
     private void AimBore(Camera3D camera,Vector3 target)
     {
@@ -866,11 +891,17 @@ public class WeaponAndCombatView
 
     private static void DrawCasing(Vector3 basePos,Vector3 axis,bool hull)
     {
-        float r=hull ? .0076f : .0042f;
+        float r=hull ? .0126f : .0042f;
         Vector3 cap=basePos+axis*(hull ? .010f : .0035f);
         var brass=new Color(172,134,68,255);
         VisualEngine3D.Rod(basePos,cap,r*1.07f,r*1.07f,10,brass,Finish.Bronze);
-        Vector3 lip=cap+axis*(hull ? .034f : .0115f);
+        if(hull)
+        {
+            Vector3 primer=basePos-axis*.0008f;
+            VisualEngine3D.Rod(primer,basePos,r*.36f,r*.36f,12,new(93,74,48,255),Finish.Bronze);
+            VisualEngine3D.Rod(primer-axis*.0003f,primer,r*.24f,r*.24f,12,new(189,163,112,255),Finish.Bronze);
+        }
+        Vector3 lip=cap+axis*(hull ? .042f : .0115f);
         VisualEngine3D.Rod(cap,lip,r,r,10,hull ? new(132,28,24,255) : brass,hull ? Finish.Paint : Finish.Bronze);
         VisualEngine3D.Rod(lip,lip+axis*.0005f,r*.78f,r*.78f,10,new(49,40,32,255));
     }
@@ -909,7 +940,7 @@ public class WeaponAndCombatView
 
         // Render 3D First-Person ViewModel
         Raylib.BeginMode3D(vmCam);
-        VisualEngine3D.Hands(InspectLift(InspectPhase));
+        VisualEngine3D.Hands();
         if (_flash>0)
         {
             VisualEngine3D.FlashLight(Vector3.Transform(GunAssembly(baseOffset).Tip,GunToView),FlashStrength);
@@ -1067,13 +1098,14 @@ public class WeaponAndCombatView
     // =========================================================================
     private Vector3 BaseOffset()
     {
-        float bobX = MathF.Sin(_stridePhase)*.018f*_walkWeight + .0032f*MathF.Sin(_animClock*1.7f);
-        float bobY = -.016f*MathF.Cos(_stridePhase*2)*_walkWeight + .0042f*MathF.Sin(_animClock*2.1f)
-                     + (_lowStance ? -.025f : 0);
-        float equip = Ease(EquipTransition);
-        float equipDropY = -.10f*equip;
-
-        return new(bobX-_lookLag.X*.12f, bobY+equipDropY+.024f+_lookLag.Y*.10f, -.035f*equip);
+        float stride=_walkWeight*(1-.65f*crouchWeight);
+        float swing=.016f+.022f*sprintWeight;
+        float bobX=MathF.Sin(_stridePhase)*swing*stride+.0024f*MathF.Sin(_animClock*1.7f);
+        float bobY=-MathF.Cos(_stridePhase*2)*swing*.70f*stride+.0032f*MathF.Sin(_animClock*2.1f);
+        float equip=Ease(EquipTransition), settle=MathF.Sin(EquipTransition*MathF.Tau)*.013f;
+        return new(bobX-_lookLag.X*.23f-.082f*sprintWeight-.031f*dashWeight+.048f*equip,
+            .024f+bobY-.143f*equip+settle+.026f*airLift-landing-.076f*sprintWeight-.041f*dashWeight-.014f*crouchWeight+_lookLag.Y*.19f,
+            -.074f*equip-.04f*sprintWeight-.025f*dashWeight-.55f*landing);
 
     }
 
@@ -1091,8 +1123,10 @@ public class WeaponAndCombatView
         float spring=uzi ? 52 : 19;
         float climb=climbTime*spring*MathF.Exp(1-climbTime*spring)*Ease(phase/.20f)*steady;
         float t=ReloadProgress;
-        float tilt=Ease(t/(uzi ? .20f : .26f))*Ease((1-t)/(uzi ? .23f : .20f));
-        Vector3 offset=baseOffset+new Vector3(uzi ? .035f : 0,0,-(uzi ? .038f : .09f)*push);
+        float tilt=Ease(t/.18f)*Ease((1-t)/.16f);
+        float impact=uzi ? Beat(t,.56f,.065f) : Beat(t,.89f,.076f);
+        Vector3 offset=baseOffset+new Vector3((uzi ? .035f : 0)-tilt*.032f,
+            tilt*(uzi ? .124f : .033f)+impact*.014f,-(uzi ? .043f : .090f)*push+tilt*.024f);
         Vector3 pivot=offset+(uzi ? new Vector3(.18f,-.193f,.6665f) : new Vector3(.18f,-.17f,.60f));
         Vector3 receiver=offset+(uzi ? new Vector3(.18f,-.10f,.68f) : new Vector3(.18f,-.12f,.66f));
         Vector3 muzzle=MuzzleOffset;
@@ -1100,54 +1134,142 @@ public class WeaponAndCombatView
         var aim=Quaternion.Slerp(Quaternion.Identity,_boreAim,Ease(phase/(uzi ? .55f : .76f)));
         var pose=Matrix4x4.CreateTranslation(-boreBase)*Matrix4x4.CreateFromQuaternion(aim)
             * Matrix4x4.CreateTranslation(boreBase-pivot)
-            * Matrix4x4.CreateRotationX(uzi ? -.075f*climb-.19f*tilt : -.23f*climb-.16f*tilt)
-            * Matrix4x4.CreateRotationZ(_roll*climb+tilt*(uzi ? .50f : .14f))
-            * Matrix4x4.CreateRotationY(uzi ? -.28f : -.12f)
+            * Matrix4x4.CreateRotationX(uzi ? -.095f*climb-.16f*tilt-.055f*impact : -.23f*climb-.12f*tilt-.075f*impact)
+            * Matrix4x4.CreateRotationZ(_roll*climb+tilt*(uzi ? .56f : .28f)+impact*.028f)
+            * Matrix4x4.CreateRotationY((uzi ? -.28f : -.27f)-tilt*.31f-.32f*sprintWeight)
             * Matrix4x4.CreateTranslation(pivot)*GetInspectTransform(uzi ? 3 : 4,InspectPhase);
         return (offset,pose,receiver,Vector3.Transform(receiver+muzzle,pose));
     }
 
+    private static float Ramp(float t,float start,float end) => Ease((t-start)/(end-start));
+
+    private static float Beat(float t,float start,float duration)
+    {
+        float phase=Math.Clamp((t-start)/duration,0,1);
+        return MathF.Sin(phase*MathF.PI)*MathF.Exp(-2.5f*phase);
+    }
+
+    // Carry a point inside the authored finger curl to its animated socket.
+    private static Matrix4x4 HandAt(Vector3 socket,Vector3 target,Quaternion rotation,Matrix4x4 pose) =>
+        Matrix4x4.CreateTranslation(-socket)*Matrix4x4.CreateFromQuaternion(rotation)
+        *Matrix4x4.CreateTranslation(target)*pose;
+
     private void DrawMicroUziViewModel3D(Vector3 baseOffset)
     {
         var (assembly,pose,receiverCenter,_)=GunAssembly(baseOffset);
-        float reload=ReloadProgress;
-        float drop=.24f*Ease((reload-.15f)/.19f)*Ease((.72f-reload)/.19f);
-        VisualEngine3D.ArmAssembly(false, assembly+new Vector3(.035f,-.57f,-.12f)*drop, "fps_hands_uzi", pose);
-        VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_uzi", pose);
-        VisualEngine3D.PoseReloadPart(true,drop);
+        float t=ReloadProgress;
+        float take=Ramp(t,0,.105f), pull=Ramp(t,.105f,.24f), seat=Ramp(t,.26f,.56f);
+        float reach=Ramp(t,.585f,.705f), recover=Ramp(t,.83f,1);
+        float rack=Ramp(t,.705f,.785f)*(1-Ramp(t,.797f,.827f));
+        // Exchange at the bottom of the frame, then seat the fresh magazine.
+        Vector3 travel=new Vector3(-.055f,-.42f,-.074f)*(pull-seat)
+            +new Vector3(-.035f,0,-.019f)*MathF.Sin(seat*MathF.PI);
+        Vector3 socket=assembly+new Vector3(.183f,-.127f,.84f);
+        Vector3 well=receiverCenter+new Vector3(0,-.187f,-.01425f);
+        float pullBack=Ramp(t,.705f,.785f)*(1-Ramp(t,.83f,.94f));
+        Vector3 knob=receiverCenter+new Vector3(0,.043f,.02625f-.059f*pullBack);
+        Vector3 hand=Vector3.Lerp(socket,well,take)+travel;
+        hand=Vector3.Lerp(hand,knob,reach);
+        // Approach the top around the outside of the receiver.
+        hand+=new Vector3(-.096f,.049f,-.036f)*MathF.Sin(reach*MathF.PI);
+        hand=Vector3.Lerp(hand,socket,recover)+new Vector3(-.048f,.055f,0)*MathF.Sin(recover*MathF.PI);
+        float grip=take*(1-reach), pinch=reach*(1-recover);
+        Quaternion orientation=Quaternion.Slerp(Quaternion.CreateFromYawPitchRoll(-.23f*grip,-.88f*grip,0),
+            Quaternion.CreateFromYawPitchRoll(.96f,.70f,.08f),pinch);
+        Vector3 pinchSocket=assembly+new Vector3(.174f,-.102f,.852f);
+        Vector3 fingerSocket=Vector3.Lerp(socket,pinchSocket,pinch);
+        VisualEngine3D.ArmAssembly(false,assembly,"fps_hands_uzi",HandAt(fingerSocket,hand,orientation,pose),
+            grip*.21f+pinch*.48f-.14f*MathF.Sin(take*MathF.PI)+.035f*UziRecoilPhase*(1-take));
+        VisualEngine3D.ArmAssembly(true,assembly,"fps_hands_uzi",pose,UziRecoilPhase*.075f);
+        if(t>.105f && t<.56f)
+        {
+            // The upper length normally lives inside the opaque grip. Draw it
+            // with the same rigid transform, including the folded spine.
+            var magazinePose=Matrix4x4.CreateTranslation(well+travel)*pose;
+            VisualEngine3D.MagazineInsert(magazinePose,t>=.25f);
+        }
+        // The magazine receives exactly the same socket translation in model coordinates.
+        VisualEngine3D.PoseReloadPart(true,travel, rack*.059f+.031f*UziBoltOffset);
         VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,180,.75f,
             SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose);
-        VisualEngine3D.PoseReloadPart(true,0);
+        VisualEngine3D.PoseReloadPart(true,Vector3.Zero,0);
     }
 
-    // =========================================================================
-    // SLOT 4: ОБРЕЗ ДВУСТВОЛКИ / СЕКРЕТНЫЙ ЧАТ-ГАН (`SawedOff` / `ChatGun`)
-    // =========================================================================
+    private static float BarrelAngle(float t) => .84f*Ramp(t,.015f,.20f)*(1-Ramp(t,.78f,.89f));
+
+    private static (Vector3 Entry,Vector3 Axis) Chamber(Vector3 receiver,float angle,int index)
+    {
+        var turn=Matrix4x4.CreateRotationX(angle);
+        Vector3 hinge=receiver+new Vector3(0,-.013f,.127f);
+        Vector3 mouth=receiver+new Vector3(index==0 ? -.0175f : .0175f,.024f,.092f);
+        return (hinge+Vector3.TransformNormal(mouth-hinge,turn),Vector3.TransformNormal(Vector3.UnitZ,turn));
+    }
+
     private void DrawSawedOffViewModel3D(Vector3 baseOffset, bool isChatGun)
     {
         var (assembly,pose,gripTop,_)=GunAssembly(baseOffset);
-        float reload=ReloadProgress;
-        float breakBarrelTilt=Ease(reload/.26f)*Ease((1-reload)/.20f);
-        float barrelAngle=.68f*breakBarrelTilt;
-        VisualEngine3D.ArmAssembly(false, assembly+new Vector3(0,-.055f,-.038f)*breakBarrelTilt, "fps_hands_shotgun", pose);
-        VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_shotgun", pose);
-        Color shotgunTint = isChatGun ? new Color(150,255,215,255)
-            : (SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White);
-        VisualEngine3D.PoseReloadPart(false,barrelAngle);
+        float t=ReloadProgress, angle=BarrelAngle(t);
+        var (entry,axis)=Chamber(gripTop,angle,0);
+        int count=2-_shells;
+        float fetch=Ramp(t,.115f,.295f), carry=Ramp(t,.295f,.46f);
+        float push1=Ramp(t,.46f,.57f), push2=Ramp(t,.585f,.68f);
+        float returnGrip=Ramp(t,.685f,.79f);
+        Vector3 socket=assembly+new Vector3(.184f,-.140f,.852f);
+        Vector3 hinge=gripTop+new Vector3(0,-.013f,.127f);
+        Vector3 support=hinge+Vector3.TransformNormal(socket-hinge,Matrix4x4.CreateRotationX(angle));
+        Vector3 pocket=assembly+new Vector3(-.135f,-.420f,.49f);
+        // Stagger the brass heads so the first cartridge bottoms before the second.
+        Vector3 center=entry+Vector3.UnitX*(count==1 ? .035f : .0175f);
+        float push=count==1 ? .071f*Ramp(t,.46f,.63f) : .040f*push1+.031f*push2;
+        Vector3 approach=center-axis*(.072f-push);
+        Vector3 cradle=Vector3.Lerp(Vector3.Lerp(support,pocket,fetch),approach,carry);
+        cradle+=new Vector3(-.061f,.028f,-.038f)*MathF.Sin(carry*MathF.PI);
+        // The heel stays behind the brass heads during insertion.
+        Vector3 palm=cradle+axis*(.018f*fetch);
+        palm=Vector3.Lerp(palm,support,returnGrip)
+            +new Vector3(-.083f,-.053f,0)*MathF.Sin(returnGrip*MathF.PI);
+        Quaternion onForend=Quaternion.CreateFromAxisAngle(Vector3.UnitX,angle);
+        Quaternion carrying=Quaternion.CreateFromYawPitchRoll(1.02f,-.22f,.22f);
+        Quaternion orientation=Quaternion.Slerp(onForend,carrying,fetch*(1-returnGrip));
+        Vector3 pinchSocket=assembly+new Vector3(.182f,-.108f,.878f);
+        Vector3 fingerSocket=Vector3.Lerp(socket,pinchSocket,fetch*(1-returnGrip));
+        var handFrame=HandAt(fingerSocket,palm,orientation,pose);
+        VisualEngine3D.ArmAssembly(false,assembly,"fps_hands_shotgun",handFrame,
+            .28f*fetch*(1-returnGrip)-.16f*MathF.Sin(fetch*MathF.PI)+.045f*ShotgunKickPhase*(1-fetch));
+        VisualEngine3D.ArmAssembly(true,assembly,"fps_hands_shotgun",pose,ShotgunKickPhase*.08f);
+        Color shotgunTint=isChatGun ? new Color(150,255,215,255)
+            : (SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White);
+        VisualEngine3D.PoseReloadPart(false,Vector3.Zero,angle);
         VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, 180, 1, shotgunTint, assemblyTransform: pose);
-
-        VisualEngine3D.PoseReloadPart(false,0);
-        Vector3 chamberLocalDir=new(0f,-MathF.Sin(barrelAngle),MathF.Cos(barrelAngle));
-        Vector3 barrelDir=Vector3.TransformNormal(chamberLocalDir,pose);
-
-        if (reload>.35f && reload<.81f)
+        VisualEngine3D.PoseReloadPart(false,Vector3.Zero,0);
+        if(angle>.05f)
         {
-            for(int i=0;i<2-_shells;i++)
+            for(int i=0;i<2;i++)
             {
-                float insert=Ease((reload-.39f-.08f*i)/.20f);
-                Vector3 breechEntry=gripTop+new Vector3(i==0 ? -.0175f : .0175f,.022f,.098f);
-                Vector3 plug=breechEntry-chamberLocalDir*((1-insert)*.044f+.010f);
-                DrawCasing(Vector3.Transform(plug,pose),barrelDir,hull: true);
+                var (mouth,dir)=Chamber(gripTop,angle,i);
+                var at=Vector3.Transform(mouth-dir*.001f,pose);
+                var forward=Vector3.TransformNormal(dir,pose);
+                VisualEngine3D.Rod(at-forward*.0007f,at,.0149f,.0149f,24,new(37,32,28,255));
+                if(i<_shells) DrawCasing(at-forward*.0012f,forward,true);
+            }
+        }
+        if(t>=.295f && t<.90f)
+        {
+            for(int i=0;i<count;i++)
+            {
+                int chamber=2-count+i;
+                var (mouth,_)=Chamber(gripTop,angle,chamber);
+                Vector3 offset=Vector3.UnitX*((chamber==0 ? -.0175f : .0175f)-(count==1 ? .0175f : 0));
+                // Local cartridge offsets ride with the hand on the approach.
+                Vector3 stagger=i==0 && count==2 ? axis*.031f : Vector3.Zero;
+                float seatTime=count==1 ? .63f : i==0 ? .57f : .68f;
+                bool seated=t>=seatTime;
+                Quaternion gripInverse=Quaternion.Conjugate(carrying);
+                Vector3 shellInHand=pinchSocket+Vector3.Transform(offset+stagger-axis*.018f,gripInverse);
+                Vector3 shellBase=seated ? Vector3.Transform(mouth-axis*.0024f,pose) : Vector3.Transform(shellInHand,handFrame);
+                Vector3 shellAxis=seated ? Vector3.TransformNormal(axis,pose)
+                    : Vector3.TransformNormal(Vector3.Transform(axis,gripInverse),handFrame);
+                DrawCasing(shellBase,shellAxis,true);
             }
         }
     }
@@ -1257,48 +1379,74 @@ internal static unsafe partial class VisualEngine3D
     private sealed class ReloadMesh
     {
         public Mesh Mesh;
-        public int[] Moving;
+        public readonly List<int> Moving=new(), Slider=new();
         public Vector3[] Positions, Normals, Animated, Rotated;
     }
-    private static readonly Dictionary<bool,List<ReloadMesh>> reloadMeshes=new();
-    private static readonly HashSet<bool> posedWeapons=new();
 
-    internal static void PoseReloadPart(bool magazine,float amount)
+    // Imported GLBs use material primitives. Classify entire welded triangle
+    // islands once so a receiver face cannot stretch across the opening breech.
+    private static ReloadMesh MovingIslands(Mesh mesh,bool magazine)
     {
-        if (amount==0 && !posedWeapons.Remove(magazine)) return;
-        if (!reloadMeshes.TryGetValue(magazine,out var parts))
+        var pos=new ReadOnlySpan<Vector3>((Vector3*)mesh.Vertices,mesh.VertexCount).ToArray();
+        var normals=new ReadOnlySpan<Vector3>((Vector3*)mesh.Normals,mesh.VertexCount).ToArray();
+        var part=new ReloadMesh {Mesh=mesh,Positions=pos,Normals=normals,Animated=(Vector3[])pos.Clone(),Rotated=(Vector3[])normals.Clone()};
+        int[] parent=Enumerable.Range(0,pos.Length).ToArray();
+        int Root(int i)
+        {
+            while(i!=parent[i]) { parent[i]=parent[parent[i]]; i=parent[i]; }
+            return i;
+        }
+        Dictionary<Vector3,int> weld=new();
+        for(int i=0;i<pos.Length;i++)
+            if(weld.TryGetValue(pos[i],out int other)) parent[i]=other; else weld.Add(pos[i],i);
+        for(int t=0;t<mesh.TriangleCount*3;t+=3)
+        {
+            int Vertex(int j) => mesh.Indices==null ? j : mesh.Indices[j];
+            int a=Root(Vertex(t)), b=Root(Vertex(t+1)), c=Root(Vertex(t+2));
+            parent[b]=parent[c]=a;
+        }
+        foreach(var island in Enumerable.Range(0,pos.Length).GroupBy(Root))
+        {
+            Vector3 lo=pos[island.First()], hi=lo;
+            foreach(int i in island) {lo=Vector3.Min(lo,pos[i]); hi=Vector3.Max(hi,pos[i]);}
+            if(magazine ? lo.Y<-.232f && hi.Y<-.200f : lo.Z<-.100f)
+                part.Moving.AddRange(island);
+            if(magazine && lo.Y>.044f && lo.Z>-.060f && hi.Z<-.012f)
+                part.Slider.AddRange(island);
+        }
+        return part;
+    }
+
+    private static readonly Dictionary<bool,List<ReloadMesh>> reloadMeshes=new();
+    private static readonly Dictionary<bool,(Vector3 Travel,float Amount)> lastPartPose=new();
+    internal static void PoseReloadPart(bool magazine,Vector3 travel,float amount)
+    {
+        if(lastPartPose.GetValueOrDefault(magazine)==(travel,amount)) return;
+        if(!reloadMeshes.TryGetValue(magazine,out var parts))
         {
             var model=imports[magazine ? "weapon_uzi_90s" : "weapon_shotgun_90s"];
             reloadMeshes[magazine]=parts=new();
             for(int m=0;m<model.MeshCount;m++)
             {
-                Mesh mesh=model.Meshes[m];
-                var positions=new ReadOnlySpan<Vector3>((Vector3*)mesh.Vertices,mesh.VertexCount).ToArray();
-                var normals=new ReadOnlySpan<Vector3>((Vector3*)mesh.Normals,mesh.VertexCount).ToArray();
-                var moving=new List<int>();
-                for(int i=0;i<positions.Length;i++)
-                {
-                    Vector3 v=positions[i];
-                    // The exposed steel magazine is narrower than the polymer grip.
-                    bool moves=magazine ? m<2 && v.Y<-.202f && Math.Abs(v.X)<=.0221f && Math.Abs(v.Z-.019f)<=.0281f
-                        : v.Z<-.090f;
-                    if(moves) moving.Add(i);
-                }
-                if(moving.Count>0) parts.Add(new() { Mesh=mesh,Moving=moving.ToArray(),Positions=positions,
-                    Normals=normals,Animated=(Vector3[])positions.Clone(),Rotated=(Vector3[])normals.Clone() });
+                var part=MovingIslands(model.Meshes[m],magazine);
+                if(part.Moving.Count+part.Slider.Count>0) parts.Add(part);
             }
+            if(parts.Sum(p=>p.Moving.Count)==0 || magazine && parts.Sum(p=>p.Slider.Count)==0)
+                throw new InvalidDataException("Missing animated weapon geometry");
         }
-        if(amount!=0) posedWeapons.Add(magazine);
-        Vector3 hinge=new(0,.006f,-.078f);
+        lastPartPose[magazine]=(travel,amount);
+        Vector3 hinge=new(0,-.013f,-.127f);
         var tilt=Quaternion.CreateFromAxisAngle(Vector3.UnitX,-amount);
+        Vector3 magLocal=new Vector3(-travel.X,travel.Y,-travel.Z)/.75f;
         foreach(var part in parts)
         {
             foreach(int i in part.Moving)
             {
                 Vector3 rest=part.Positions[i];
-                part.Animated[i]=magazine ? rest-Vector3.UnitY*amount : hinge+Vector3.Transform(rest-hinge,tilt);
+                part.Animated[i]=magazine ? rest+magLocal : hinge+Vector3.Transform(rest-hinge,tilt);
                 if(!magazine) part.Rotated[i]=Vector3.Transform(part.Normals[i],tilt);
             }
+            foreach(int i in part.Slider) part.Animated[i]=part.Positions[i]+Vector3.UnitZ*(amount/.75f);
             fixed(Vector3* p=part.Animated)
                 Raylib.UpdateMeshBuffer(part.Mesh,0,p,part.Animated.Length*sizeof(Vector3),0);
             if(!magazine)

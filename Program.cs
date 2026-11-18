@@ -255,7 +255,7 @@ public static partial class Program
     {
         float bob = _isGrounded ? .022f*MathF.Sin(_walkBobPhase*2)*_weapons.WalkWeight : 0;
         Vector3 eyePos = _playerPos + Vector3.UnitY*(bob-_landDip);
-        float pitch = _playerPitch+_recoilPitch+_shake*MathF.Sin(_shake*720);
+        float pitch = _playerPitch+_recoilPitch+.013f*_weapons.ClosingImpulse+_shake*MathF.Sin(_shake*720);
         float yaw = _playerYaw+_recoilYaw+_shake*MathF.Cos(_shake*860);
         Vector3 forward = new(MathF.Sin(yaw)*MathF.Cos(pitch),MathF.Sin(pitch),MathF.Cos(yaw)*MathF.Cos(pitch));
 
@@ -263,7 +263,7 @@ public static partial class Program
         {
             Position = eyePos,
             Target = eyePos + forward,
-            Up = Vector3.UnitY,
+            Up = Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromAxisAngle(forward,.015f*_weapons.ClosingImpulse)),
             FovY = Math.Clamp(LoreAndMenusUI.CameraFov, 60f, 100f)+_fovKick,
             Projection = CameraProjection.Perspective
         };
@@ -368,6 +368,7 @@ public static partial class Program
 
     private static void MovePlayer(float dt, Vector3 move, Vector3 facing, bool jump, bool sprint, bool dash)
     {
+        float landingImpact=0;
         float feet = Math.Max(0,_playerPos.Y-_eyeHeight);
         _eyeHeight += ((_isCrouching ? 1.16f : 1.72f)-_eyeHeight)*(1-MathF.Exp(-15*dt));
         _jumpBufferTimer = jump ? .12f : Math.Max(0,_jumpBufferTimer-dt);
@@ -412,6 +413,7 @@ public static partial class Program
             {
                 if (!_isGrounded && _playerVelY < -2)
                 {
+                    landingImpact=-_playerVelY;
                     _landDip=Math.Min(.135f,-_playerVelY*.014f);
                     AudioMusicSystem.PlayLanding();
                 }
@@ -422,6 +424,9 @@ public static partial class Program
         }
         _landDip*=MathF.Exp(-12*dt);
         _playerPos.Y=feet+_eyeHeight;
+        _weapons.SetStance(_walkBobPhase,_isCrouching);
+        _weapons.UpdateMotion(dt,_sprinting,_isGrounded,_playerVelY,landingImpact,burst>0,
+            Vector3.Dot(move,new Vector3(-facing.Z,0,facing.X)));
     }
 
     private static void UpdateTrigger(float dt,bool held,bool pressed,bool reload,bool moving)
@@ -870,13 +875,44 @@ public static partial class Program
         }
         void Key(KeyboardKey key,bool down) => Input(down ? 2u : 1u,(int)key);
         void Mouse(bool down) => Input(down ? 6u : 5u,0);
-        void Tick(int frames=1)
+        string? frameDir=Environment.GetEnvironmentVariable("VIBECODER_VIEWMODEL_FRAMES");
+        if(!string.IsNullOrEmpty(frameDir)) Directory.CreateDirectory(frameDir);
+        var frameCounts=new Dictionary<string,int>();
+        void Tick(int frames=1,string? sequence=null)
         {
             for(int i=0;i<frames;i++)
             {
                 UpdateFrame(dt,ref exit);
+                if(sequence!=null && !string.IsNullOrEmpty(frameDir))
+                {
+                    int frame=frameCounts.GetValueOrDefault(sequence);
+                    frameCounts[sequence]=frame+1;
+                    if(frame%2==0)
+                    {
+                        DrawFrame(showHud:false);
+                        Image img=Raylib.LoadImageFromScreen();
+                        Raylib.ImageResize(ref img,960,540);
+                        string file=Path.Combine(frameDir,$"{sequence}_{frame/2:D3}.png");
+                        if(!Raylib.ExportImage(img,file)) throw new IOException(file);
+                        Raylib.UnloadImage(img);
+                    }
+                }
                 Raylib.PollInputEvents();
             }
+        }
+
+        if(!string.IsNullOrEmpty(frameDir))
+        {
+            ResetNewGameFloor();
+            _playerPos=new(24,1.72f,17);
+            Key(KeyboardKey.Four,true); Tick(1,"move"); Key(KeyboardKey.Four,false); Tick(22,"move");
+            Key(KeyboardKey.W,true); Key(KeyboardKey.LeftShift,true); Tick(33,"move");
+            Key(KeyboardKey.Space,true); Tick(1,"move"); Key(KeyboardKey.Space,false);
+            Key(KeyboardKey.LeftShift,false); Key(KeyboardKey.W,false); Tick(56,"move");
+            Key(KeyboardKey.D,true); Tick(16,"move"); Key(KeyboardKey.D,false);
+            Key(KeyboardKey.LeftControl,true); Tick(19,"move"); Key(KeyboardKey.LeftControl,false); Tick(16,"move");
+            Key(KeyboardKey.Q,true); Tick(1,"move"); Key(KeyboardKey.Q,false); Tick(17,"move");
+            Mouse(true); Tick(1,"move"); Mouse(false); Tick(32,"move");
         }
 
         ResetNewGameFloor();
@@ -932,20 +968,20 @@ public static partial class Program
         int burst=32-_weapons.Ammo;
         Require(burst==12,"held LMB burst: "+burst);
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false);
-        Tick(32); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
-        capture("reload_uzi.png"); Tick(45); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
+        Tick(40,"uzi"); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
+        capture("reload_uzi.png"); Tick(45,"uzi"); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
         Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false);
         Mouse(true); Tick(); Mouse(false); Tick(27); Require(_weapons.Ammo==1,"shotgun first shell");
         Mouse(true); Tick(); Mouse(false); Require(_weapons.Ammo==0 && _weapons.Reloading,"shotgun auto reload");
-        Tick(40); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
-        capture("reload_shotgun.png"); Tick(43); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
+        Tick(43,"shotgun"); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
+        capture("reload_shotgun.png"); Tick(47,"shotgun"); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
         Mouse(true); Tick(); Mouse(false); Tick();
-        Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(83);
+        Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(89);
         Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
         Key(KeyboardKey.Three,true); Tick(); Key(KeyboardKey.Three,false);
         Mouse(true); Tick(156); Mouse(false);
         Require(_weapons.Ammo==0 && _weapons.Reloading,"Uzi empty auto reload");
-        Tick(78); Require(_weapons.Ammo==32,"empty Uzi refill");
+        Tick(83); Require(_weapons.Ammo==32,"empty Uzi refill");
         Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 20->32; shotgun 2->1->0->2, two ejected hulls");
 
         ResetNewGameFloor();
@@ -1070,7 +1106,7 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
 
-        CheckFpsGameplay(name=>CaptureShot(name));
+        CheckFpsGameplay(name=>{ _hudStatusTimer=0; CaptureShot(name); });
 
         // 1. 01_office_hub_hr_tarot.png - Central White Shark Reception opposite the Elevator: HR Tarot Veronika with crystal ball & candles, Belt in crimson jacket hands
         ResetNewGameFloor();
@@ -1228,7 +1264,7 @@ public static partial class Program
         UpdateTrigger(.018f,false,false,false,false);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
-        CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(575,214,590,420));
+        CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(605,350,520,370));
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]
         LoreAndMenusUI.IsLoreOpen = true;

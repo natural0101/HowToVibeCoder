@@ -14,11 +14,12 @@ internal static unsafe partial class VisualEngine3D
     private static readonly Dictionary<string, ((int Start, int Count) Left, (int Start, int Count) Right)> armGroups = new();
     private static readonly Dictionary<(string Asset, bool Right), Vector3> armWrists = new();
     private static readonly Dictionary<(string Asset, bool Right), Vector3> sleeveEnds = new();
-    private static int sleeveAxisLoc,sleevePullLoc,wristLoc;
-    private static float inspectLift;
+    private static int sleeveAxisLoc,sleevePullLoc,wristLoc,handSocketLoc,gripLoc;
     private static readonly HashSet<int> partnerPropMeshes = new();
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
+    private static readonly Dictionary<(string Asset,int Mesh),int> handSurfaces=new();
+    private static int handSurfaceLoc;
     private static int firstPersonLoc, muzzleLoc, flashLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc;
     private static Finish? activeFinish;
@@ -35,27 +36,42 @@ internal static unsafe partial class VisualEngine3D
         uniform mat4 mvp, matModel;
         uniform float taper;
         uniform float beltTension;
-        uniform vec3 sleeveAxis,sleevePull,wrist;
+        uniform vec3 sleeveAxis,sleevePull,wrist,handSocket;
+        uniform float gripAmount;
         uniform int firstPerson;
         out vec3 pos, norm;
         out vec2 localXZ;
         out vec2 uv;
         void main() {
             vec3 p = vertexPosition;
-            float armAlong=dot(p-wrist,sleeveAxis);
-            p+=sleevePull*smoothstep(.18,.96,armAlong);
+            vec3 n = vertexNormal;
+            // Only jacket rings carry this UV channel. Rotate each complete section
+            // toward its shoulder, preserving its radius and the rigid wrist opening.
+            if (vertexTexCoord.x>1.99 && dot(sleevePull,sleevePull)>.0001) {
+                float t=clamp(vertexTexCoord.y,0.,1.);
+                vec3 a=normalize(sleeveAxis), b=normalize(sleevePull);
+                vec4 target=normalize(vec4(cross(a,b),max(.00001,1.+dot(a,b))));
+                vec4 q=normalize(mix(vec4(0.,0.,0.,1.),target,smoothstep(.08,.42,t)));
+                vec3 v=p-wrist-sleeveAxis*t;
+                p+=2.*cross(q.xyz,cross(q.xyz,v)+q.w*v);
+                p+=(sleevePull-sleeveAxis)*t*smoothstep(.08,.42,t);
+                n+=2.*cross(q.xyz,cross(q.xyz,n)+q.w*n);
+            }
+            if(gripAmount!=0.) {
+                float flex=smoothstep(.040,.092,length(p-wrist))*(1.-smoothstep(.052,.091,length(p-handSocket)));
+                p.xy-=gripAmount*flex*(p.xy-handSocket.xy);
+            }
             if(beltTension>0.) {
                 float span=smoothstep(-.36,-.04,p.x);
                 p.x+=.014*beltTension*(2.*span-1.);
                 p.y+=.024*beltTension*4.*span*(1.-span);
             }
             p.xz *= 1.0 + p.y*taper;
-            vec3 n = vertexNormal;
             n.y -= taper * dot(vertexPosition.xz,n.xz);
             pos = (matModel * vec4(p,1)).xyz;
             norm = normalize(transpose(inverse(mat3(matModel))) * n);
             uv = vertexTexCoord; localXZ = vertexPosition.xz;
-            tint = batch == 1 ? vertexColor : vec4(1.);
+            tint = batch == 1 || firstPerson==1 ? vertexColor : vec4(1.);
             gl_Position = mvp * vec4(p,1);
             // Reserve the nearest tenth for the viewmodel, retaining depth
             // precision between the closely spaced fingers and grip surfaces.
@@ -75,7 +91,7 @@ internal static unsafe partial class VisualEngine3D
         uniform float power, clock, flashStrength;
         uniform vec3 muzzle;
         uniform int firstPerson;
-        uniform int finish;
+        uniform int finish,handSurface;
         out vec4 color;
         vec3 point(vec3 at, vec3 tint, vec3 n, vec3 v, float gloss) {
             vec3 d=at-pos;
@@ -164,7 +180,27 @@ internal static unsafe partial class VisualEngine3D
                 float sky=.5+.5*n.y;
                 float bounce=.5+.5*dot(n,normalize(vec3(.75,.16,.5)));
                 vec3 value=pigment*(vec3(.42,.46,.52)+sky*.19+bounce*.14+sun*vec3(.58,.50,.40));
-                if(firstPerson==1) value+=muzzleLight(n,v)*(.14+.65*pigment);
+                if(firstPerson==1) {
+                    if(handSurface==1) {
+                        pigment=tex.rgb*tint.rgb;
+
+                        float wrap=max(0.,dot(n,key)*.65+.35);
+                        value=pigment*(vec3(.41,.36,.34)+sky*.15+wrap*vec3(.55,.49,.45));
+                        value*=vec3(1.035,1.,.99);
+                        value+=vec3(.085,.032,.019)*pow(1.-abs(dot(n,v)),2.)*wrap;
+                        value+=vec3(.050,.035,.027)*pow(max(0.,dot(n,normalize(key+v))),19.);
+                    } else if(handSurface==3) {
+                        vec2 thread=uv*vec2(235.,540.);
+                        float twill=sin(6.283*(thread.x+thread.y));
+                        float resolve=1.-smoothstep(.16,.60,fwidth(thread.x+thread.y));
+                        value*=.94+.042*twill*resolve;
+                        value+=vec3(.034,.016,.024)*pow(1.-abs(dot(n,v)),3.);
+                    } else if(handSurface==2) {
+                        float glint=pow(max(0.,dot(n,normalize(key+v))),25.);
+                        value+=vec3(.31,.29,.24)*glint;
+                    }
+                    value+=muzzleLight(n,v)*(.14+.65*pigment);
+                }
                 color=vec4(mix(value,vec3(.68,.79,.92),1.-exp(-.000055*dist*dist)),ink.a);
                 return;
             }
@@ -225,11 +261,13 @@ internal static unsafe partial class VisualEngine3D
         if (shader.Id == 0 || shader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
+        handSurfaceLoc=Loc("handSurface");
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
         flashLoc = Loc("flashStrength");
         beltTensionLoc = Loc("beltTension");
         sleeveAxisLoc=Loc("sleeveAxis"); sleevePullLoc=Loc("sleevePull"); wristLoc=Loc("wrist");
+        handSocketLoc=Loc("handSocket"); gripLoc=Loc("gripAmount");
         batchLoc = Loc("batch"); clockLoc = Loc("clock");
         eyeLoc = Loc("eye"); finishLoc = Loc("finish"); taperLoc = Loc("taper");
         laptopLoc = Loc("laptop"); tarotLoc = Loc("tarot"); northLoc = Loc("northBeacon");
@@ -278,6 +316,12 @@ internal static unsafe partial class VisualEngine3D
                 }
                 continue;
             }
+            int primitiveIndex=index;
+            foreach(var prim in mesh.GetProperty("primitives").EnumerateArray())
+            {
+                string material=json.RootElement.GetProperty("materials")[prim.GetProperty("material").GetInt32()].GetProperty("name").GetString();
+                handSurfaces[(asset,primitiveIndex++)]=material=="fps_skin" ? 1 : material is "steel" or "gold" ? 2 : material=="crimson" ? 3 : 0;
+            }
             if (asset != "fps_hands_cs2")
             {
                 var wrist = mesh.GetProperty("extras").GetProperty("wrist");
@@ -300,7 +344,7 @@ internal static unsafe partial class VisualEngine3D
         if (asset.StartsWith("fps_hands_", StringComparison.Ordinal)) armGroups.Add(asset, (leftArm, rightArm));
     }
 
-    public static void Arm(bool right, Vector3 wrist, string handAsset = "fps_hands_cs2", Matrix4x4? assemblyTransform = null)
+    public static void Arm(bool right, Vector3 wrist, string handAsset = "fps_hands_cs2", Matrix4x4? assemblyTransform = null,float grip=0)
     {
         // The existing prop camera uses a mirrored X axis; the anatomy already
         // faces the view direction. Undo that mirror for anatomical handedness.
@@ -313,29 +357,59 @@ internal static unsafe partial class VisualEngine3D
         Matrix4x4 transform = Matrix4x4.CreateTranslation(offset) * Matrix4x4.CreateScale(-1,1,1);
         if (assemblyTransform.HasValue) transform *= assemblyTransform.Value;
         Surface(Finish.Anatomy,0);
-        bool pull=inspectLift>0 && sleeveEnds.ContainsKey((handAsset,right));
+        bool pull=sleeveEnds.ContainsKey((handAsset,right));
         if(pull)
         {
             Vector3 end=sleeveEnds[(handAsset,right)], axis=end-bind;
             // Keep the cuff on the authored wrist. The far end of the sleeve
             // follows an offscreen elbow while the hand turns with the prop.
-            Vector3 anchor=new(right ? .52f : -.52f,-.47f,.25f);
+            Vector3 anchor=new(right ? .55f : -.49f,-.48f,.15f);
             Matrix4x4.Invert(transform,out var inverse);
-            Vector3 delta=(Vector3.Transform(anchor,inverse)-end)*inspectLift;
+            Vector3 target=Vector3.Transform(anchor,inverse)-bind;
             Raylib.SetShaderValue(shader,wristLoc,bind,ShaderUniformDataType.Vec3);
-            Raylib.SetShaderValue(shader,sleeveAxisLoc,axis/axis.LengthSquared(),ShaderUniformDataType.Vec3);
-            Raylib.SetShaderValue(shader,sleevePullLoc,delta,ShaderUniformDataType.Vec3);
+            Raylib.SetShaderValue(shader,sleeveAxisLoc,axis,ShaderUniformDataType.Vec3);
+            Raylib.SetShaderValue(shader,sleevePullLoc,target,ShaderUniformDataType.Vec3);
+        }
+        if(grip!=0)
+        {
+            Vector3 socket=right ? handAsset=="fps_hands_uzi" ? new(-.18f,-.19f,.67f) : new(-.18f,-.17f,.61f)
+                                 : handAsset=="fps_hands_uzi" ? new(-.183f,-.127f,.84f) : new(-.181f,-.127f,.858f);
+            Raylib.SetShaderValue(shader,handSocketLoc,socket,ShaderUniformDataType.Vec3);
+            Raylib.SetShaderValue(shader,gripLoc,grip,ShaderUniformDataType.Float);
         }
         for (int i=range.Start; i<range.Start+range.Count; i++)
+        {
+            Raylib.SetShaderValue(shader,handSurfaceLoc,handSurfaces[(handAsset,i)],ShaderUniformDataType.Int);
             Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
+        }
+        Raylib.SetShaderValue(shader,handSurfaceLoc,0,ShaderUniformDataType.Int);
+        if(grip!=0) Raylib.SetShaderValue(shader,gripLoc,0f,ShaderUniformDataType.Float);
         if(pull) Raylib.SetShaderValue(shader,sleevePullLoc,Vector3.Zero,ShaderUniformDataType.Vec3);
     }
 
     // Keep the authored contacts while moving/rotating an entire weapon assembly.
-    public static void ArmAssembly(bool right, Vector3 offset, string handAsset, Matrix4x4? transform = null)
+    public static void ArmAssembly(bool right, Vector3 offset, string handAsset, Matrix4x4? transform = null,float grip=0)
     {
         Vector3 bind = armWrists[(handAsset,right)];
-        Arm(right,new Vector3(-bind.X,bind.Y,bind.Z)+offset,handAsset,transform);
+        Arm(right,new Vector3(-bind.X,bind.Y,bind.Z)+offset,handAsset,transform,grip);
+    }
+
+    internal static void MagazineInsert(Matrix4x4 socket,bool fresh)
+    {
+        Surface(Finish.Imported,0);
+        var material=bevel.Materials[0];
+        void Stamping(Vector3 center,Vector3 size,Color color)
+        {
+            var matrix=Matrix4x4.CreateScale(size)*Matrix4x4.CreateTranslation(center)*socket;
+            material.Maps[0].Color=color;
+            Raylib.DrawMesh(bevel.Meshes[0],material,Matrix4x4.Transpose(matrix));
+        }
+        var old=material.Maps[0];
+        material.Maps[0].Texture=maps[(int)Finish.Imported];
+        Stamping(new(0,.055f,0),new(.024f,.087f,.032f),new(40,47,53,255));
+        Stamping(new(0,.055f,-.016f),new(.014f,.083f,.0025f),new(58,62,66,255));
+        if(fresh) Stamping(new(0,.099f,0),new(.014f,.006f,.023f),new(178,139,76,255));
+        material.Maps[0]=old;
     }
 
     private static Model ModelFor(Mesh mesh)
@@ -434,9 +508,8 @@ internal static unsafe partial class VisualEngine3D
         Raylib.SetShaderValue(shader,flashLoc,strength,ShaderUniformDataType.Float);
     }
 
-    public static void Hands(float lift=0)
+    public static void Hands()
     {
-        inspectLift=lift;
         Raylib.SetShaderValue(shader,flashLoc,0f,ShaderUniformDataType.Float);
         Raylib.SetShaderValue(shader,firstPersonLoc,1,ShaderUniformDataType.Int);
         Vector3 distant=new(50,50,50);
@@ -691,6 +764,9 @@ internal static unsafe partial class VisualEngine3D
         armGroups.Clear();
         armWrists.Clear();
         sleeveEnds.Clear();
+        handSurfaces.Clear();
+        lastPartPose.Clear();
+        reloadMeshes.Clear();
         foreach(var group in architecture) Raylib.UnloadModel(group.Model);
         architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);

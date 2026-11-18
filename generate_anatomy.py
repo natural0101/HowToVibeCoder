@@ -16,6 +16,8 @@ V = Vector
 DATA = Path(os.environ["APPDATA"]) / "Blender Foundation/Blender/5.1/extensions/blender_org/mpfb/data"
 OUT = Path(__file__).resolve().parent / "assets/models"
 BODY = []
+BODY_UV = {}
+TEXCOORDS = []
 REST = []
 LANDMARKS = {}
 group = ""
@@ -25,12 +27,15 @@ for line in (DATA / "3dobjs/base.obj").read_text().splitlines():
         continue
     if fields[0] == "v":
         REST.append(V(tuple(float(value) * .1 for value in fields[1:4])))
+    elif fields[0] == "vt":
+        TEXCOORDS.append(tuple(map(float,fields[1:3])))
     elif fields[0] == "g":
         group = fields[1]
     elif fields[0] == "f" and (group == "body" or group.startswith("joint-")):
         face = tuple(int(c.split("/")[0]) - 1 for c in fields[1:])
         if group == "body":
             BODY.append(face)
+            BODY_UV[face]=[TEXCOORDS[int(c.split("/")[1])-1] for c in fields[1:]]
         else:
             LANDMARKS.setdefault(group, set()).update(face)
 
@@ -56,7 +61,17 @@ PALETTE = dict(skin="cc9d87", lip="9d574e", ivory="ebe5d5", iris="414334",
     laptop="929fa9", display="202f40", cyan="77c5be", wax="e7c59d",
     flame="fec45a", orb="9f87be", card="ddc49d", ink="53364a")
 MATS = {}
-PALETTE.update(titanium="303a49",jointmetal="586879",neon="ff145f")
+PALETTE.update(fps_skin="ffffff",nail="cf9b8b",steel="8c9599",button="452a32",dial="1e3035",titanium="303a49",jointmetal="586879",neon="ff145f")
+
+
+def hand_uv(uv):
+    # Cropped UV islands from jartur69's CC0 skin in MakeHuman skins02.
+    # Source and crop coordinates are recorded next to the texture.
+    x,y=uv[0]*2048,(1-uv[1])*2048
+    if y>1024: x,y=x-734,y-1638
+    elif x<1024: x,y=x-12+840,y-279
+    else: x,y=x-1467+840,y-279+160
+    return x/928,1-y/400
 
 
 def mat(key):
@@ -76,6 +91,11 @@ def mat(key):
         if key=="neon":
             shader.inputs["Emission Color"].default_value=m.diffuse_color
             shader.inputs["Emission Strength"].default_value=2.5
+        if key=="fps_skin":
+            image=bpy.data.images.load(str(OUT.parent/"external_cc0/fps_skin/hands.jpg"),check_existing=True)
+            tex=m.node_tree.nodes.new("ShaderNodeTexImage")
+            tex.image=image
+            m.node_tree.links.new(tex.outputs["Color"],shader.inputs["Base Color"])
         MATS[key] = m
     return MATS[key]
 
@@ -176,6 +196,9 @@ def keyed_grip(kind, side):
         "lowerarm_"+side: (joint("elbow"), elbow, Quaternion(key["forearm"]).to_matrix() @ stretch),
         "hand_"+side: (joint("hand"), wrist, Quaternion(key["hand"]).to_matrix()),
     }
+    if kind=="fps_uzi" and side=="l":
+        org,pos,rotation=transforms["hand_l"]
+        transforms["hand_l"]=org,pos+V((.007,-.004,0)),rotation
     signet = None
     for d, name in enumerate(DIGITS, 1):
         root, *rotations = key["digits"][name]
@@ -188,6 +211,51 @@ def keyed_grip(kind, side):
             if name == "ring" and k == 1:
                 signet = (pos + delta*.42, delta.normalized())
             pos = pos + delta
+    if kind in ("fps_shotgun","fps_uzi") and side == "r":
+        # Reuse the wrapped MPFB finger chain from the tape grip. The upper
+        # side of that contact frame becomes the near face of the walnut.
+        tape,_=contact_pose("fps_solder","r")
+        old=V((-.18,-.15,.62))
+        micro=kind=="fps_uzi"
+        center=V((-.18,-.197,.6665)) if micro else V((-.18,-.177,.600))
+        tilt=Quaternion(V((1,0,0)),math.radians(-90 if micro else -48)).to_matrix()
+        for bone,(origin,pos,rotation) in tape.items():
+            if bone.startswith(("upperarm","lowerarm","thumb","index")): continue
+            rel=pos-old
+            radial=V((rel.x,rel.y,0))
+            if radial.length: rel+=radial.normalized()*(.014 if micro else .005)
+            transforms[bone]=origin,center+tilt@rel,tilt@rotation
+        # Let the thumb oppose the fingers over the back of the tang.
+        pos=V((-.238,-.189,.647)) if micro else V((-.237,-.180,.602))
+        thumb_path=((-.227,-.167,.643),(-.201,-.154,.631),(-.18,-.151,.633)) if micro else (
+            (-.227,-.156,.600),(-.204,-.137,.597),(-.181,-.133,.605))
+        parent=transforms["hand_r"][2]
+        for k, target in enumerate(thumb_path,1):
+            bone=f"thumb_{k:02}_r"
+            origin=joint(f"finger-1-{k}")
+            delta=joint(f"finger-1-{k+1}")-origin
+            rotation=(parent@delta).rotation_difference((V(target)-pos).normalized()).to_matrix()@parent
+            transforms[bone]=origin,pos.copy(),rotation
+            pos+=rotation@delta
+            parent=rotation
+    def aim_digit(digit,shift,tip_offset):
+        root=transforms[f"{digit}_01_{side}"][1]
+        origin,pos,rot=transforms[f"{digit}_03_{side}"]
+        index=DIGITS.index(digit)+1
+        tip=pos+rot@(joint(f"finger-{index}-4")-origin)
+        turn=(tip-root).rotation_difference(tip+V(tip_offset)-root-V(shift)).to_matrix()
+        for k in range(1,4):
+            name=f"{digit}_{k:02}_{side}"
+            origin,pos,rot=transforms[name]
+            transforms[name]=origin,root+V(shift)+turn@(pos-root),turn@rot
+    if kind=="fps_shotgun" and side=="r":
+        aim_digit("index",(0,0,0),(.009,0,0))
+    if side=="l" and kind=="fps_shotgun":
+        aim_digit("pinky",(.006,0,0),(.015,.001,.002))
+    if side=="l" and kind=="fps_uzi":
+        aim_digit("pinky",(.018,.002,.007),(.029,.008,.012))
+        aim_digit("middle",(.009,0,-.003),(.018,.005,-.008))
+        aim_digit("index",(0,0,0),(.002,.005,-.006))
     return transforms, signet
 
 
@@ -411,6 +479,185 @@ def lower_pose(kind):
     return transforms
 
 
+def walnut_fit(p):
+    # The soft pads flatten against the oval sections of the authored wooden grip.
+    # This is a positional correction in arm space, applied before AO and nails.
+    profiles=((-0.104,.098,.025,.022),(-.092,.090,.023,.021),(-.079,.080,.024,.023),
+              (-.064,.068,.022,.021),(-.050,.057,.023,.023),(-.036,.044,.021,.021),
+              (-.020,.027,.021,.024),(-.004,.005,.024,.027),(.008,-.020,.026,.029))
+    h=p.y+.12
+    for (a,za,xa,ra),(b,zb,xb,rb) in zip(profiles,profiles[1:]):
+        if a<=h<=b:
+            t=(h-a)/(b-a)
+            z=.66-(za+(zb-za)*t)
+            rx=(xa+(xb-xa)*t)*.96+.0038
+            rz=ra+(rb-ra)*t+.0045
+            x,d=p.x+.18,p.z-z
+            r=math.hypot(x/rx,d/rz)
+            if 0<r<1:
+                return V((-.18+x/r,p.y,z+d/r))
+            break
+    return p
+
+
+def polymer_fit(p):
+    if not -.269<p.y<-.127: return p
+    x,z=p.x+.18,p.z-.6665
+    corner=.006
+    # Offset of the rounded polymer panels, including their shallow rear spine.
+    hx,hz=.0234,.0286
+    cx=max(-hx+corner,min(hx-corner,x))
+    cz=max(-hz+corner,min(hz-corner,z))
+    dx,dz=x-cx,z-cz
+    length=math.hypot(dx,dz)
+    if 0<length<corner:
+        x,z=cx+corner*dx/length,cz+corner*dz/length
+    elif length==0:
+        if hx-abs(x)<hz-abs(z): x=math.copysign(hx,x)
+        else: z=math.copysign(hz,z)
+    if -.201<p.y<-.130 and z<0 and abs(x)<.014:
+        z=min(z,-.033+.004*(abs(x)/.014)**4)
+    return V((x-.18,p.y,z+.6665))
+
+
+def fitted_sleeve(side, transforms):
+    origin, wrist, hand = transforms["hand_"+side]
+    elbow = transforms["lowerarm_"+side][1]
+    backwards = (hand @ (JOINT[side+"-elbow"]-origin)).normalized()
+    # Start perpendicular to the wrist, then bend the cloth around the forearm.
+    direction = (elbow-wrist).normalized()
+    length = max(.44,(elbow-wrist).length+.12)
+    end = wrist+direction*length
+    lateral = hand @ (JOINT[side+"-finger-2-1"]-JOINT[side+"-finger-5-1"])
+    def section(d):
+        bend = math.exp(-d/.075)
+        center = wrist+d*(direction+(backwards-direction)*bend)
+        tangent = direction+(backwards-direction)*bend*(1-d/.075)
+        basis = frame(tangent,lateral)
+        return center,basis.col[1],basis.col[2]
+    def shell(name, profile, material, cloth=False):
+        verts,faces=[],[]
+        n=40
+        for d,rx,ry in profile:
+            c,u,v=section(d)
+            for j in range(n):
+                a=j*math.tau/n
+                dr=0
+                if cloth:
+                    fold=d+.015*math.sin(a+.45)
+                    dr=.022*math.cos(5*a+7*d)+.015*math.sin(3*a-21*d)
+                    dr+=.073*math.exp(-((fold-.107)/.012)**2)-.046*math.exp(-((fold-.123)/.011)**2)
+                    dr+=.052*math.exp(-((fold-.228)/.022)**2)*math.sin(a-.4)
+                verts.append(c+(u*(rx*math.cos(a))+v*(ry*math.sin(a)))*(1+dr))
+        for k in range(len(profile)-1):
+            for j in range(n):
+                a=k*n+j; b=k*n+(j+1)%n
+                faces.append((a,b,b+n,a+n))
+        faces.extend((tuple(reversed(range(n))),tuple(range(len(verts)-n,len(verts)))))
+        obj=mesh(name,verts,faces,material)
+        if cloth:
+            uv=obj.data.uv_layers.new(name="ViewModel")
+            for loop in obj.data.loops:
+                uv.data[loop.index].uv=(2+(loop.vertex_index%n)/n,1-profile[loop.vertex_index//n][0]/length)
+        return obj
+    cuff=.033 if side=="l" else .024
+    shell("Double folded poplin",[(.008,.034,.026),(.010,.0365,.028),(.013,.037,.0285),
+        (cuff+.012,.039,.031)],"ivory")
+    shell("Tailored jacket",[(cuff,.039,.032),(cuff+.002,.043,.035),(cuff+.006,.044,.036),
+        (.069,.045,.037),(.091,.046,.038),(.105,.046,.039),(.116,.047,.040),(.129,.047,.041),(.141,.048,.042),(.154,.048,.042),(.175,.050,.044),
+        (.24,.056,.050),(.29,.059,.052),(.34,.064,.055),(length,.074,.064)],"crimson",True)
+    # A recessed sleeve vent and three dark horn buttons, on the camera-facing panel.
+    def trim(d,radius):
+        c,u,v=section(d)
+        front=V((0,.55,-1))
+        n=(u*front.dot(u)+v*front.dot(v)).normalized()
+        return c+n*radius,n
+    wire("Sleeve vent",[trim(d,r)[0] for d,r in ((cuff+.002,.037),(.062,.039),(.093,.041),(.12,.044))],.0009,"lapel")
+    for d in (.058,.073,.088):
+        at,n=trim(d,.040)
+        oval("Horn button",at,(.0045,.0038,.0045),"button")
+        oval("Button thread",at+n*.0032,(.0014,.001,.0012),"lapel")
+    if side=="l":
+        shell("Watch bracelet",[(.001,.034,.027),(.003,.036,.028),(.015,.037,.029),(.017,.035,.027)],"steel")
+        c,u,v=section(.008)
+        top=V((0,1,-.55))
+        n=(u*top.dot(u)+v*top.dot(v)).normalized()
+        axis=backwards.cross(n).normalized()
+        across=n.cross(axis).normalized()
+        at=c+n*.029
+        def dial(name,r,h,depth,key):
+            verts=[at+n*(h+k*depth)+r*(axis*math.cos(a*math.tau/36)+across*math.sin(a*math.tau/36))
+                   for k in (0,1) for a in range(36)]
+            faces=[(i,(i+1)%36,(i+1)%36+36,i+36) for i in range(36)]
+            return mesh(name,verts,faces+[tuple(range(36)),tuple(range(36,72))],key)
+        dial("Chamfered case",.018,0,.005,"steel")
+        dial("Brass bezel",.017,.004,.002,"gold")
+        dial("Enamel dial",.0147,.006,.0006,"dial")
+        face=at+n*.0069
+        for j in range(12):
+            ray=axis*math.cos(math.tau*j/12)+across*math.sin(math.tau*j/12)
+            wire("Index",[face+ray*.0118,face+ray*.0137],.00055,"gold")
+        for vec in (.008*across-.002*axis,.011*axis+.002*across):
+            wire("Watch hand",[face,face+vec],.0008,"ivory")
+    # Vent stitching and buttons must follow the same section as their cloth.
+    bpy.context.view_layer.update()
+    for obj in bpy.context.scene.objects:
+        if not obj.name.startswith(("Horn button","Button thread","Sleeve vent")): continue
+        if obj.data.uv_layers.get("ViewModel"): continue
+        for layer in list(obj.data.uv_layers): obj.data.uv_layers.remove(layer)
+        uv=obj.data.uv_layers.new(name="ViewModel")
+        centers=[V(xyz(section(i*.001)[0])) for i in range(18,143)]
+        for loop in obj.data.loops:
+            pos=obj.matrix_world@obj.data.vertices[loop.vertex_index].co
+            d=(18+min(range(len(centers)),key=lambda j:(centers[j]-pos).length_squared))*.001
+            uv.data[loop.index].uv=(2,1-d/length)
+    return end
+
+
+def skin_detail(obj, transforms, side):
+    # Bake short-range AO and circulation into the deforming surface. Neighbouring
+    # knuckles and the finger webs cast soft contact shadows even in bright rooms.
+    obj.data.update()
+    verts=obj.data.vertices
+    tree=BVHTree.FromPolygons([v.co for v in verts],[tuple(f.vertices) for f in obj.data.polygons])
+    joints=[V(xyz(transforms[f"{d}_{k:02}_{side}"][1])) for d in DIGITS for k in (1,2,3)]
+    colors=obj.data.color_attributes.new(name="Skin tones",type="BYTE_COLOR",domain="POINT")
+    for v in verts:
+        n=v.normal.normalized()
+        basis=frame(n, (1,0,0) if abs(n.x)<.85 else (0,1,0))
+        ao=0
+        for j in range(10):
+            a=j*2.39996
+            ray=(n*.48+basis.col[1]*math.cos(a)+basis.col[2]*math.sin(a)).normalized()
+            hit=tree.ray_cast(v.co+n*.00025,ray,.022)[3]
+            if hit is not None: ao+=(1-hit/.022)/10
+        rosy=math.exp(-min((v.co-p).length_squared for p in joints)/.00016)
+        shade=1-.64*ao
+        colors.data[v.index].color=(shade,shade*(1-.14*rosy),shade*(1-.17*rosy),1)
+    # Nail plates follow the distal bone's dorsal surface, including its roll.
+    org=JOINT[side+"-hand"]
+    away=(JOINT[side+"-finger-3-1"]-org).cross(JOINT[side+"-finger-2-1"]-JOINT[side+"-finger-5-1"]).normalized()
+    if side=="l": away.negate()
+    for i,d in enumerate(DIGITS,1):
+        origin,pos,rot=transforms[f"{d}_03_{side}"]
+        delta=rot@(JOINT[f"{side}-finger-{i}-4"]-origin)
+        along=delta.normalized()
+        dorsal=rot@away
+        dorsal=(dorsal-along*dorsal.dot(along)).normalized()
+        across=along.cross(dorsal).normalized()
+        verts2=[]; faces=[]
+        # Slightly domed, trimmed squoval nail with a narrower cuticle.
+        for row,width in ((.38,.62),(.44,.92),(.57,1),(.70,1),(.78,.85),(.81,.63)):
+            for col in (-1,-.5,0,.5,1):
+                mid=pos+delta*row+across*(.0049*width*col*(1.19 if i==1 else .85 if i==5 else 1))
+                hit=tree.ray_cast(V(xyz(mid)),V(xyz(dorsal)),.014)[0]
+                if hit is None: break
+                verts2.append(V((hit.x,hit.z,-hit.y))+dorsal*.00032)
+        if len(verts2)==30:
+            faces=[(j,j+1,j+6,j+5) for j in range(25) if j%5!=4]
+            mesh("Nail plate",verts2,faces,"nail")
+
+
 def human(kind):
     fps = kind.startswith("fps")
     transforms = lower_pose(kind) if kind in ("coder_seated","boss") else {}
@@ -420,21 +667,23 @@ def human(kind):
         arm, rings[side] = pose(kind,side)
         transforms.update(arm)
     pieces = {}
+    tailored=kind.startswith("fps_")
     for side in (("l","r") if fps else ("body",)):
+        objects_before=set(bpy.context.scene.objects)
         faces = BODY
         if fps:
             sign = 1 if side=="l" else -1
             elbow, wrist = JOINT[side+"-elbow"], JOINT[side+"-hand"]
             axis = (wrist-elbow).normalized()
             faces = [f for f in BODY if all(sign*REST[i].x>.25 and REST[i].y>.90 and
-                     (REST[i]-elbow).dot(axis)>.001 for i in f)]
+                     (REST[i]-elbow).dot(axis)>( (wrist-elbow).length-.060 if tailored else .001) for i in f)]
         ids = sorted({i for face in faces for i in face})
         lookup = {old:i for i,old in enumerate(ids)}
         pts = []
         for i in ids:
             p = REST[i].copy()
             b = max(WEIGHTS[i],key=lambda a:a[1])[0] if WEIGHTS[i] else ""
-            if b.startswith(("upperarm","lowerarm")):
+            if not tailored and b.startswith(("upperarm","lowerarm")):
                 # Broad tailored sleeve, tapering sharply at the shirt cuff.
                 s = b[-1]
                 a,c = (JOINT[s+"-elbow"],JOINT[s+"-hand"]) if b.startswith("lower") else (JOINT[s+"-shoulder"],JOINT[s+"-elbow"])
@@ -450,6 +699,8 @@ def human(kind):
             out = V()
             total = 0
             for bone, w in WEIGHTS[i]:
+                if tailored and bone.startswith(("upperarm","lowerarm","clavicle")):
+                    bone="hand_"+side
                 if fps and bone.startswith(("upperarm","clavicle")):
                     bone="lowerarm_"+side
                 if bone in transforms:
@@ -465,6 +716,12 @@ def human(kind):
                 total+=w
             pts.append(out/total if total else p)
         obj=mesh("MPFB "+side,pts,[tuple(lookup[i] for i in f) for f in faces],"skin")
+        if tailored:
+            obj.data.materials[0]=mat("fps_skin")
+            uv=obj.data.uv_layers.new(name="ViewModel")
+            for poly,face in zip(obj.data.polygons,faces):
+                for loop,coord in zip(poly.loop_indices,BODY_UV[face]):
+                    uv.data[loop].uv=hand_uv(coord)
         slots={"skin":0}
         for poly,face in zip(obj.data.polygons,faces):
             p=sum((REST[i] for i in face),V())/len(face)
@@ -481,6 +738,7 @@ def human(kind):
             elif p.y<1.388: key=coat
             elif p.y>1.574+.030*min(1,max(-1,(p.z-.06)/.09)): key="hair"
             else: key="skin"
+            if tailored: key="skin"
             if kind=="boss": key="titanium" if key!="skin" else "jointmetal"
             if key not in slots:
                 slots[key]=len(obj.data.materials)
@@ -493,6 +751,37 @@ def human(kind):
             sub=obj.modifiers.new("Smooth anatomical contours","SUBSURF")
             sub.levels=1
             bpy.ops.object.modifier_apply(modifier=sub.name)
+            if tailored:
+                # Keep skin just inside the rigid cuff, with no bare forearm protruding.
+                org,w,rotation=transforms["hand_"+side]
+                axis=rotation@(org-JOINT[side+"-elbow"]).normalized()
+                bm=bmesh.new(); bm.from_mesh(obj.data)
+                # Trim only proximal skin; the curl of a digit may cross this plane.
+                plane=V(xyz(w-axis*.021))
+                normal=V(xyz(axis))
+                region=[f for f in bm.faces if all((v.co-V(xyz(w))).length<.081 for v in f.verts)]
+                edges={e for f in region for e in f.edges}
+                geom=region+list(edges)+list({v for e in edges for v in e.verts})
+                bmesh.ops.bisect_plane(bm,geom=geom,plane_co=plane,plane_no=normal,clear_inner=True)
+                bm.to_mesh(obj.data); bm.free()
+                for poly in obj.data.polygons: poly.use_smooth=True
+                if kind in ("fps_shotgun","fps_uzi") and side=="r":
+                    fit=walnut_fit if kind=="fps_shotgun" else polymer_fit
+                    for vertex in obj.data.vertices:
+                        x,y,z=vertex.co
+                        vertex.co=xyz(fit(V((x,z,-y))))
+                skin_detail(obj,transforms,side)
+                sleeve_end=fitted_sleeve(side,transforms)
+                extras=set(bpy.context.scene.objects)-objects_before-{obj}
+                # Primitive UVs are reserved for authored sleeve weights in the FPS shader.
+                for part in extras:
+                    if not part.data.uv_layers.get("ViewModel"):
+                        for layer in list(part.data.uv_layers): part.data.uv_layers.remove(layer)
+                    attr=part.data.color_attributes.new(name="Skin tones",type="BYTE_COLOR",domain="POINT")
+                    for datum in attr.data: datum.color=(1,1,1,1)
+                pieces[side]=join([obj]+sorted(extras,key=lambda o:o.name),"MPFB "+side)
+                pieces[side].data["sleeveEnd"]=list(sleeve_end)
+                continue
             fore=transforms["lowerarm_"+side]
             start=fore[1]
             end=transforms["hand_"+side][1]
@@ -545,9 +834,18 @@ def human(kind):
             outward=pos-V((-.18,-.15,pos.z))
             outward.z=-outward.length
         outward=(outward-axis*outward.dot(axis)).normalized()
+        if kind in ("fps_shotgun","fps_uzi"):
+            facing=V((.22,.40,-1))
+            outward=(facing-axis*facing.dot(axis)).normalized()
         top=surface(outward)
-        oval("Signet setting",top,(.003,.004,.004),"gold")
-        oval("Onyx stone",top+outward*.0015,(.002,.003,.003),"onyx")
+        oval("Signet setting",top,(.005,.004,.006),"gold")
+        oval("Onyx stone",top+outward*.0017,(.0034,.0029,.0043),"onyx")
+        if tailored:
+            for part in bpy.context.scene.objects:
+                if part in pieces.values(): continue
+                for layer in list(part.data.uv_layers): part.data.uv_layers.remove(layer)
+                attr=part.data.color_attributes.new(name="Skin tones",type="BYTE_COLOR",domain="POINT")
+                for datum in attr.data: datum.color=(1,1,1,1)
     return pieces
 
 
@@ -758,7 +1056,7 @@ def export(kind, filename):
     MATS.clear()
     pieces=human(kind)
     if kind.startswith("fps"):
-        join([o for o in bpy.context.scene.objects if o!=pieces["l"]],"Right")
+        join([pieces["r"]]+[o for o in bpy.context.scene.objects if o not in pieces.values()],"Right")
         pieces["l"].name=pieces["l"].data.name="Left"
     elif kind=="boss":
         boss_armor()
@@ -831,7 +1129,7 @@ def export(kind, filename):
             arm=contact_pose(kind,side)[0]
             wrist=arm["hand_"+side][1]
             elbow=arm["lowerarm_"+side][1]
-            sleeve_end=elbow+(wrist-elbow).normalized()*.042
+            sleeve_end=V(obj.data["sleeveEnd"])
             if kind=="fps_solder" and side=="r":
                 for vertex in obj.data.vertices:
                     x,y,z=vertex.co
@@ -851,7 +1149,8 @@ def export(kind, filename):
             for poly in obj.data.polygons: poly.use_smooth=True
         assert all(math.isfinite(c) for v in obj.data.vertices for c in v.co)
     bpy.ops.export_scene.gltf(filepath=str(OUT/(filename+".glb")),export_format="GLB",
-        export_normals=True,export_texcoords=False,export_animations=False,export_cameras=False,export_lights=False,export_extras=True)
+        export_vertex_color="ACTIVE" if kind.startswith("fps_") else "MATERIAL",
+        export_normals=True,export_texcoords=kind.startswith("fps_"),export_animations=False,export_cameras=False,export_lights=False,export_extras=True)
     print("STAGE4",filename,len(BODY),"source body faces")
 
 
@@ -1033,7 +1332,7 @@ def game_prop():
     bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces))
     bm.to_mesh(gun.data);bm.free();gun.data.update()
     bpy.ops.export_scene.gltf(filepath=str(OUT/"weapon_uzi_90s.glb"),export_format="GLB",
-        export_texcoords=False,export_animations=False)
+        export_texcoords=kind.startswith("fps_"),export_animations=False)
 
 
 if __name__ == "__main__":
