@@ -9,7 +9,8 @@ from pathlib import Path
 
 import bpy
 import bmesh
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Vector, Quaternion
+from mathutils.bvhtree import BVHTree
 
 V = Vector
 DATA = Path(os.environ["APPDATA"]) / "Blender Foundation/Blender/5.1/extensions/blender_org/mpfb/data"
@@ -55,6 +56,7 @@ PALETTE = dict(skin="cc9d87", lip="9d574e", ivory="ebe5d5", iris="414334",
     laptop="929fa9", display="202f40", cyan="77c5be", wax="e7c59d",
     flame="fec45a", orb="9f87be", card="ddc49d", ink="53364a")
 MATS = {}
+PALETTE.update(titanium="303a49",jointmetal="586879",neon="ff145f")
 
 
 def mat(key):
@@ -66,6 +68,12 @@ def mat(key):
         shader = m.node_tree.nodes.get("Principled BSDF")
         shader.inputs["Base Color"].default_value = m.diffuse_color
         shader.inputs["Roughness"].default_value = .34 if key in ("gold","glass","orb","onyx") else .81
+        if key in ("titanium","jointmetal"):
+            shader.inputs["Metallic"].default_value=.8
+            shader.inputs["Roughness"].default_value=.32
+        if key=="neon":
+            shader.inputs["Emission Color"].default_value=m.diffuse_color
+            shader.inputs["Emission Strength"].default_value=2.5
         MATS[key] = m
     return MATS[key]
 
@@ -146,7 +154,68 @@ def frame(forward, across):
     return Matrix((f,a,f.cross(a))).transposed()
 
 
+# Contact frames in the same metre-space as the four runtime weapon assemblies.
+# X is mirrored once by VisualEngine3D.Arm, as for the original MPFB arms.
+def grip_frame(kind, side):
+    right=side=="r"
+    if kind=="fps_belt":
+        if right:
+            return V((-.18,-.141,.62)),V((1,0,0)),V((0,-1,0)),V((0,0,1)),.019,.030
+        # Left fingers close on the OUTER crossbar, leaving the tongue visible.
+        return V((.230,-.15,.72)),V((0,0,-1)),V((1,0,0)),V((0,1,0)),.013,.013
+    if kind=="fps_solder":
+        c=V((-.18,-.15,.62) if right else (.16,-.15,.70))
+        return c,V((0,0,1 if right else -1)),V((-1 if right else 1,0,0)),V((0,1,0)),.026 if right else .034,.026 if right else .034
+    if kind=="fps_uzi":
+        c=V((-.18,-.193,.6665) if right else (-.18,-.115,.786))
+        if right: return c,V((0,1,0)),V((-1,0,0)),V((0,0,1)),.031,.036
+        return c,V((0,0,-1)),V((0,-1,0)),V((1,0,0)),.030,.025
+    c=V((-.18,-.17,.60) if right else (-.18,-.124,.865))
+    if right: return c,V((0,.79,.61)).normalized(),V((-1,0,0)),V((0,-.61,.79)).normalized(),.034,.034
+    return c,V((0,0,-1)),V((0,-1,0)),V((1,0,0)),.029,.037
+
+
+def contact_pose(kind, side):
+    j=lambda key: JOINT[side+"-"+key]
+    c,axis,radial,tangent,rx,ry=grip_frame(kind,side)
+    wrist=j("hand"); mid=j("finger-3-1")
+    hand=frame(tangent,axis)@frame(mid-wrist,j("finger-2-1")-j("finger-5-1")).transposed()
+    knuckle=c+radial*rx
+    dest_wrist=knuckle-hand@(mid-wrist)
+    dest_elbow=dest_wrist+V((-.12 if side=="r" else .15,-.19,-.28))
+    transforms={}
+    def segment(name,a,b,p,q):
+        src=b-a; dst=q-p; u=src.normalized()
+        stretch=Matrix.Identity(3)+Matrix([list(u*u[n]) for n in range(3)])*(dst.length/src.length-1)
+        transforms[name+"_"+side]=(a,p,src.rotation_difference(dst).to_matrix()@stretch)
+    segment("upperarm",j("shoulder"),j("elbow"),dest_elbow-V((0,0,.2)),dest_elbow)
+    segment("lowerarm",j("elbow"),wrist,dest_elbow,dest_wrist)
+    transforms["hand_"+side]=(wrist,dest_wrist,hand)
+    signet=None
+    for d,name in enumerate(DIGITS,1):
+        chain=[j(f"finger-{d}-{k}") for k in range(1,5)]
+        start=dest_wrist+hand@(chain[0]-wrist)
+        spread=(start-c).dot(axis)
+        points=[start]
+        if d==1:
+            # Opposed thumb crosses the upper side of the grip, not its centre.
+            for k in range(1,4):
+                angle=-.35-k*.43
+                points.append(c+axis*(.041-k*.006)+radial*(rx*math.cos(angle))+tangent*(ry*math.sin(angle)))
+        else:
+            for k in range(1,4):
+                angle=k*.88
+                points.append(c+axis*spread+radial*(rx*math.cos(angle))+tangent*(ry*math.sin(angle)))
+            if kind=="fps_uzi" and side=="r" and d==2:
+                points[1:]=[V((-.203,-.147,.710)),V((-.190,-.151,.727)),V((-.180,-.158,.731))]
+        for k in range(3):
+            segment(f"{name}_{k+1:02}",chain[k],chain[k+1],points[k],points[k+1])
+            if d==4 and k==0: signet=((points[0]+points[1])*.5,(points[1]-points[0]).normalized())
+    return transforms,signet
+
+
 def pose(kind, side):
+    if kind.startswith("fps_"): return contact_pose(kind,side)
     sign = 1 if side=="l" else -1
     j = lambda key: JOINT[side+"-"+key]
     shoulder, elbow, wrist = [j(k) for k in ("shoulder","elbow","hand")]
@@ -156,6 +225,11 @@ def pose(kind, side):
     elif kind=="partner":
         dest_elbow = V((sign*.235,1.09,.12))
         dest_wrist = V((-.018,1.245,.36) if sign==1 else (-.122,1.21,.235))
+    elif kind=="coder_seated":
+        dest_elbow, dest_wrist = V((sign*.22,.815,.23)), V((sign*.12,.825,.49))
+    elif kind=="boss":
+        dest_elbow = V((sign*.36,1.08,.12 if sign==1 else -.04))
+        dest_wrist = V((sign*.30,1.04,.43 if sign==1 else .27))
     elif kind=="coder":
         dest_elbow, dest_wrist = V((sign*.245,1.04,.102)),V((sign*.196,1.03,.313))
     else:
@@ -170,7 +244,8 @@ def pose(kind, side):
         u = src.normalized()
         stretch = Matrix.Identity(3) + Matrix([list(u*u[n]) for n in range(3)])*(dst.length/src.length-1)
         put(name,a,c,rotation@stretch)
-    limb("upperarm",shoulder,elbow,shoulder,dest_elbow)
+    shoulder_dest = shoulder + seated_shift() if kind=="coder_seated" else shoulder
+    limb("upperarm",shoulder,elbow,shoulder_dest,dest_elbow)
     limb("lowerarm",elbow,wrist,dest_elbow,dest_wrist)
     mid, index, pinky = [j(f"finger-{d}-1") for d in (3,2,5)]
     if kind in ("fps","partner"):
@@ -178,6 +253,8 @@ def pose(kind, side):
         across = (.18,.24,-.95) if sign==1 else (0,.98,.10)
         # Lay the support palm below the prop, its fingers turning around the side.
         if sign==1: direction=(-.52,.20,.80); across=(.75,.0,.65)
+    elif kind=="coder_seated":
+        direction=(0,-.10,1); across=(1,0,0)
     else:
         direction=(-sign*.46,.07,.88) if kind=="coder" else (-sign*.61,-.20,.78)
         across=(sign*.85,.03,.45) if kind=="coder" else (-sign*.75,.02,-.59)
@@ -213,9 +290,160 @@ def pose(kind, side):
     return transforms,signet
 
 
+def seated_shift():
+    return V((0,.615-JOINT["l-upper-leg"].y,0))
+
+
+def lower_pose(kind):
+    """Joint-space sitting / staggered combat stance, never squash the body."""
+    transforms={}
+    if kind=="coder_seated":
+        for entries in WEIGHTS:
+            for bone,_ in entries:
+                transforms[bone]=(V(),seated_shift(),Matrix.Identity(3))
+    for side,sign in (("l",1),("r",-1)):
+        hip,knee,ankle=[JOINT[side+"-"+j] for j in ("upper-leg","knee","ankle")]
+        if kind=="coder_seated":
+            h=hip+seated_shift(); k=V((h.x,h.y,h.z+.40)); a=V((h.x,.105,k.z))
+            assert abs((k-h).normalized().dot((a-k).normalized()))<1e-6
+        else:
+            h=hip; k=V((sign*.23,.49,.13 if sign==1 else -.10))
+            a=V((sign*.30,ankle.y,.22 if sign==1 else -.16))
+        for bone,start,end,dest,target in (("thigh",hip,knee,h,k),("calf",knee,ankle,k,a)):
+            src=end-start; dst=target-dest; u=src.normalized()
+            stretch=Matrix.Identity(3)+Matrix([list(u*u[n]) for n in range(3)])*(dst.length/src.length-1)
+            transforms[bone+"_"+side]=(start,dest,src.rotation_difference(dst).to_matrix()@stretch)
+        for bone in ("foot","ball"):
+            transforms[bone+"_"+side]=(ankle,a,Matrix.Identity(3))
+    return transforms
+
+
+CONTACT_SURFACE = None
+
+
+def weapon_contact_surface(kind):
+    """Read the exported weapon, with precisely the runtime assembly transform."""
+    slot=kind[4:]
+    position={"belt":(.18,-.15,.62),"solder":(.18,-.15,.62),
+              "uzi":(.18,-.10,.68),"shotgun":(.18,-.12,.66)}[slot]
+    before=set(bpy.context.scene.objects)
+    bpy.ops.import_scene.gltf(filepath=str(OUT/f"weapon_{slot}_90s.glb"))
+    imported=set(bpy.context.scene.objects)-before
+    rotation=Matrix.Rotation(math.pi if slot in ("uzi","shotgun") else 0,4,"Z")
+    scale=.75 if slot=="uzi" else 1
+    transform=Matrix.Diagonal((-1,1,1,1))@Matrix.Translation(V(xyz(position)))@rotation@Matrix.Diagonal((scale,scale,scale,1))
+    verts,faces=[],[]
+    for obj in imported:
+        if obj.type!="MESH": continue
+        base=len(verts); matrix=transform@obj.matrix_world
+        verts.extend(matrix@v.co for v in obj.data.vertices)
+        faces.extend(tuple(base+i for i in reversed(p.vertices)) for p in obj.data.polygons)
+    for obj in imported: bpy.data.objects.remove(obj,do_unlink=True)
+    return BVHTree.FromPolygons(verts,faces)
+
+
+def conform_contact(obj,kind,side,tessellate=True):
+    if CONTACT_SURFACE is None: return
+    # Resolve skin against the actual exported surface, not a guessed radius.
+    # Extra tessellation keeps curved finger surfaces outside between joints.
+    bpy.context.view_layer.objects.active=obj
+    if tessellate:
+        sub=obj.modifiers.new("Contact tessellation","SUBSURF"); sub.subdivision_type="SIMPLE"; sub.levels=2
+        bpy.ops.object.modifier_apply(modifier=sub.name)
+    tri=obj.modifiers.new("Contact triangles","TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier=tri.name)
+    ids={i for p in obj.data.polygons if obj.data.materials[p.material_index].name.startswith("skin") for i in p.vertices}
+    centre,axis,_,_,_,_=grip_frame(kind,side)
+    centre=V(xyz(centre)); axis=V(xyz(axis))
+    # Cast inward from outside each grip cross-section. Unlike closest-point
+    # projection this cannot send adjacent finger vertices to opposite faces.
+    for i in ids:
+        vertex=obj.data.vertices[i]
+        axial=axis*(vertex.co-centre).dot(axis)
+        origin=centre+axial
+        radial=vertex.co-origin
+        if radial.length<.00001: continue
+        direction=radial.normalized()
+        required=0
+        for axial_delta in (-.006,0,.006):
+            for angle in (-.10,0,.10):
+                ray=Quaternion(axis,angle)@direction
+                ray_origin=origin+axis*axial_delta
+                hit,normal,face,distance=CONTACT_SURFACE.ray_cast(ray_origin+ray*.16,-ray,.16)
+                if hit is not None: required=max(required,(hit-ray_origin).length+.0015)
+        if radial.length<required: vertex.co=origin+direction*required
+    # Check actual triangle edges after tessellation; clear the remaining corners.
+    skin_faces=[p for p in obj.data.polygons if all(i in ids for i in p.vertices)]
+    for iteration in range(32):
+        crossing=set()
+        corrections={}
+        skin_tree=BVHTree.FromPolygons([v.co for v in obj.data.vertices],[tuple(p.vertices) for p in skin_faces])
+        overlap_faces={a for a,b in skin_tree.overlap(CONTACT_SURFACE)}
+        for face_index in overlap_faces:
+            face=skin_faces[face_index]
+            indices=list(face.vertices)
+            resolved=False
+            for ia,ib in zip(indices,indices[1:]+indices[:1]):
+                a,b=obj.data.vertices[ia].co,obj.data.vertices[ib].co
+                delta=b-a
+                if delta.length<1e-8: continue
+                hit,normal,_,distance=CONTACT_SURFACE.ray_cast(a,delta.normalized(),delta.length)
+                if hit is not None and distance>1e-7:
+                    resolved=True
+                    crossing.update(indices)
+                    depth=min((obj.data.vertices[i].co-hit).dot(normal) for i in indices)
+                    amount=min(.004,max(.0005,.0008-depth))
+                    for i in indices:
+                        corrections.setdefault(i,[]).append(normal*amount)
+                    break
+            if not resolved:
+                midpoint=sum((obj.data.vertices[i].co for i in indices),V())/len(indices)
+                nearest,normal,_,_=CONTACT_SURFACE.find_nearest(midpoint)
+                depth=min((obj.data.vertices[i].co-nearest).dot(normal) for i in indices)
+                amount=min(.004,max(.0005,.0008-depth))
+                crossing.update(indices)
+                for i in indices: corrections.setdefault(i,[]).append(normal*amount)
+        if not crossing: break
+        for i in crossing:
+            obj.data.vertices[i].co+=sum(corrections[i],V())/len(corrections[i])
+    print("CONTACT",kind,side,"remaining crossing vertices",len(crossing))
+    assert not crossing, f"Unresolved contact: {kind} {side}"
+    for polygon in obj.data.polygons: polygon.use_smooth=True
+    obj.data.update()
+
+
+def fuse_skin(obj):
+    """Union folded MPFB skin surfaces; retain sleeve and cuff material boundaries."""
+    faces=[p for p in obj.data.polygons if obj.data.materials[p.material_index].name.startswith("skin")]
+    ids=sorted({i for p in faces for i in p.vertices}); lookup={i:n for n,i in enumerate(ids)}
+    data=bpy.data.meshes.new("Continuous grip skin")
+    data.from_pydata([obj.data.vertices[i].co for i in ids],[],[tuple(lookup[i] for i in p.vertices) for p in faces])
+    skin=bpy.data.objects.new("Continuous grip skin",data); bpy.context.collection.objects.link(skin)
+    skin.data.materials.append(mat("skin"))
+    skin.data.update()
+    solid=bmesh.new(); solid.from_mesh(skin.data)
+    bmesh.ops.holes_fill(solid,edges=[e for e in solid.edges if e.is_boundary],sides=0)
+    bmesh.ops.recalc_face_normals(solid,faces=list(solid.faces))
+    solid.to_mesh(skin.data); solid.free(); skin.data.update()
+    bm=bmesh.new(); bm.from_mesh(obj.data)
+    remove=[f for f in bm.faces if obj.data.materials[f.material_index].name.startswith("skin")]
+    bmesh.ops.delete(bm,geom=remove,context="FACES")
+    bm.to_mesh(obj.data); bm.free()
+    bpy.context.view_layer.objects.active=skin
+    remesh=skin.modifiers.new("Solid anatomical skin","REMESH"); remesh.mode="VOXEL"; remesh.voxel_size=.0014; remesh.use_smooth_shade=True
+    bpy.ops.object.modifier_apply(modifier=remesh.name)
+    dec=skin.modifiers.new("Grip surface budget","DECIMATE"); dec.ratio=.45
+    bpy.ops.object.modifier_apply(modifier=dec.name)
+    result=join([obj,skin],obj.name)
+    result.data.validate(clean_customdata=True)
+    result.data.update()
+    return result
+
+
 def human(kind):
-    fps = kind=="fps"
-    transforms = {}
+    fps = kind.startswith("fps")
+    transforms = lower_pose(kind) if kind in ("coder_seated","boss") else {}
+    wardrobe = "coder" if kind=="coder_seated" else ("partner" if kind=="boss" else kind)
     rings = {}
     for side in ("l","r"):
         arm, rings[side] = pose(kind,side)
@@ -265,14 +493,15 @@ def human(kind):
             wrist=JOINT[sidekey+"-hand"]
             fore=(wrist-JOINT[sidekey+"-elbow"]).normalized()
             along=(p-wrist).dot(fore)
-            coat={"seer":"silk","partner":"crimson","coder":"blue","fps":"crimson"}[kind]
+            coat={"seer":"silk","partner":"crimson","coder":"blue","fps":"crimson"}["fps" if fps else wardrobe]
             if arm:
-                key= "skin" if along>-.004 else ("ivory" if along>-.031 and kind in ("partner","fps") else coat)
-            elif p.y<.115: key="sole" if p.y<.033 else ("navy" if kind=="coder" else "coal")
-            elif p.y<.927: key="plum" if kind=="seer" else ("denim" if kind=="coder" else "coal")
+                key= "skin" if along>-.004 else ("ivory" if along>-.031 and (kind=="partner" or fps) else coat)
+            elif p.y<.115: key="sole" if p.y<.033 else ("navy" if wardrobe=="coder" else "coal")
+            elif p.y<.927: key="plum" if kind=="seer" else ("denim" if wardrobe=="coder" else "coal")
             elif p.y<1.388: key=coat
             elif p.y>1.574+.030*min(1,max(-1,(p.z-.06)/.09)): key="hair"
             else: key="skin"
+            if kind=="boss": key="titanium" if key!="skin" else "jointmetal"
             if key not in slots:
                 slots[key]=len(obj.data.materials)
                 obj.data.materials.append(mat(key))
@@ -308,6 +537,10 @@ def human(kind):
             bmesh.ops.triangulate(bm,faces=list(bm.faces))
             bm.to_mesh(obj.data)
             bm.free()
+        if kind.startswith("fps_") and not (kind=="fps_solder" and side=="l"):
+            conform_contact(obj,kind,side)
+            obj=fuse_skin(obj)
+            conform_contact(obj,kind,side,tessellate=False)
         pieces[side]=obj
     if fps:
         pos,axis=rings["r"]
@@ -464,13 +697,121 @@ def join(objects, name):
     return obj
 
 
+def solder_spool(pieces):
+    global CONTACT_SURFACE
+    before=set(bpy.context.scene.objects)
+    PALETTE.update(solder="bbc4cc",spool="385977",label="eee7ce")
+    c=V((.16,-.15,.70))
+    for z in (-.052,.052):
+        wire("Spool flange",[c+V((.037*math.cos(i*math.tau/40),.037*math.sin(i*math.tau/40),z)) for i in range(40)],.004,"spool",True)
+    for z in (-.052,.052):
+        for angle in range(6):
+            a=angle*math.tau/6
+            wire("Spool spoke",[c+V((0,0,z)),c+V((.034*math.cos(a),.034*math.sin(a),z))],.002,"spool")
+    for z in range(42):
+        wire("POS61 tin winding",[c+V((.025*math.cos(i*math.tau/32),.025*math.sin(i*math.tau/32),-.047+z*.0023)) for i in range(32)],.0013,"solder",True)
+    wire("Silver solder tail",[c+V((-.025,0,0)),c+V((-.060,.012,.01)),c+V((-.10,.04,.04)),c+V((-.15,.035,.10))],.0013,"solder")
+    box("POS61 label",c+V((0,0,-.055)),(.045,.027,.002),"label",.002)
+    bpy.ops.object.text_add(location=xyz(c+V((.020,-.005,-.057))))
+    label=bpy.context.object; label.data.body="ПОС-61"; label.data.size=.011
+    label.rotation_euler=(math.pi/2,0,0); label.scale.x=-1; label.data.extrude=.0001
+    label.data.materials.append(mat("ink")); bpy.ops.object.convert(target="MESH")
+    bpy.context.view_layer.update()
+    vertices,faces=[],[]
+    for obj in set(bpy.context.scene.objects)-before:
+        if obj.type!="MESH" or obj.name.startswith(("Silver solder tail","POS61 label","Text")): continue
+        base=len(vertices)
+        vertices.extend(obj.matrix_world@v.co for v in obj.data.vertices)
+        faces.extend(tuple(base+i for i in p.vertices) for p in obj.data.polygons)
+    CONTACT_SURFACE=BVHTree.FromPolygons(vertices,faces)
+    conform_contact(pieces["l"],"fps_solder","l")
+    pieces["l"]=fuse_skin(pieces["l"])
+    conform_contact(pieces["l"],"fps_solder","l",tessellate=False)
+    pieces["l"]=join([pieces["l"]]+list(set(bpy.context.scene.objects)-before),"Left")
+
+
+def boss_armor():
+    """Fitted curved exoskeleton over the full deformed MPFB human surface."""
+    loft("Thoracic titanium cuirass",[(.94,.18,.15,.03),(1.07,.20,.165,.04),
+        (1.24,.265,.18,.03),(1.36,.24,.14,.025),(1.40,.10,.09,.025)],"titanium")
+    for side,sign in (("l",1),("r",-1)):
+        transforms,_=pose("boss",side)
+        legs=lower_pose("boss")
+        for bone,joint,end,radius in (("upperarm","shoulder","elbow",.105),
+                ("lowerarm","elbow","hand",.115),("thigh","upper-leg","knee",.115),
+                ("calf","knee","ankle",.09)):
+            org,dest,rot=(transforms if bone in ("upperarm","lowerarm") else legs)[bone+"_"+side]
+            target=dest+rot@(JOINT[side+"-"+end]-org)
+            obj=oval("Articulated "+bone+" plate",(dest+target)/2,(radius,(target-dest).length*.43,radius),"titanium")
+            obj.rotation_mode="QUATERNION"
+            obj.rotation_quaternion=V((0,0,1)).rotation_difference(V(xyz(target-dest)))
+            oval("Exoskeleton joint",dest,(radius*.87,)*3,"jointmetal")
+        wrist=transforms["hand_"+side][1]
+        oval("Manipulator gauntlet",wrist+V((0,0,.04)),(.095,.074,.12),"jointmetal")
+        for n in range(4):
+            wire("Manipulator finger",[wrist+V((sign*(n-1.5)*.034,0,.10)),
+                wrist+V((sign*(n-1.5)*.034,-.025,.18)),
+                wrist+V((sign*(n-1.5)*.034,-.075,.20))],.015,"titanium")
+        # Turbine axis faces forward. Concentric rings and individual fan blades.
+        c=V((sign*.30,1.40,-.015))
+        oval("Shoulder turbine housing",c,(.16,.15,.19),"titanium")
+        for z,r in ((.16,.12),(.18,.097)):
+            wire("Turbine intake rim",[c+V((r*math.cos(i*math.tau/32),r*math.sin(i*math.tau/32),z)) for i in range(32)],.012,"jointmetal",True)
+        for i in range(8):
+            angle=i*math.tau/8
+            wire("Server cooling fin",[c+V((.04*math.cos(angle),.04*math.sin(angle),.18)),
+                c+V((.10*math.cos(angle+.3),.10*math.sin(angle+.3),.18))],.007,"neon")
+        for h in (1.06,1.12,1.18):
+            wire("Rib cooling channel",[(sign*.08,h,.209),(sign*.18,h+.025,.18)],.009,"neon")
+        a=legs["foot_"+side][1]
+        oval("Armored boot",a+V((0,-.025,.07)),(.085,.075,.17),"titanium")
+    oval("Cranial armor",(0,1.565,.047),(.104,.126,.12),"titanium")
+    wire("Crimson cyber visor",[(-.092,1.56,.13),(-.055,1.555,.164),
+        (0,1.549,.177),(.055,1.555,.164),(.092,1.56,.13)],.020,"neon")
+    oval("Reactor armored socket",(0,1.24,.202),(.092,.105,.035),"jointmetal")
+    wire("Reactor luminous ring",[(.065*math.cos(i*math.tau/32),1.24+.065*math.sin(i*math.tau/32),.239)
+        for i in range(32)],.009,"neon",True)
+    oval("Reactor core",(0,1.24,.24),(.035,.047,.012),"neon")
+
+
 def export(kind, filename):
+    global CONTACT_SURFACE
     bpy.ops.wm.read_factory_settings(use_empty=True)
     MATS.clear()
+    CONTACT_SURFACE=weapon_contact_surface(kind) if kind.startswith("fps_") else None
     pieces=human(kind)
-    if kind=="fps":
+    if kind.startswith("fps"):
+        if kind=="fps_solder":
+            solder_spool(pieces)
         join([o for o in bpy.context.scene.objects if o!=pieces["l"]],"Right")
         pieces["l"].name=pieces["l"].data.name="Left"
+    elif kind=="boss":
+        boss_armor()
+        body=join(list(bpy.context.scene.objects),filename)
+        body.scale=(1.35,)*3
+        bpy.context.view_layer.objects.active=body; body.select_set(True)
+        bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+        body["source"]="MPFB 3dobjs/base.obj"
+        body["anatomical_scale"]=1.35
+    elif kind=="coder_seated":
+        before=set(bpy.context.scene.objects)
+        clothing("coder")
+        for obj in set(bpy.context.scene.objects)-before:
+            obj.location+=V(xyz(seated_shift()))
+        before=set(bpy.context.scene.objects)
+        footwear("coder")
+        legs=lower_pose(kind)
+        for obj in set(bpy.context.scene.objects)-before:
+            if obj.name.startswith("Trouser leg"):
+                bpy.data.objects.remove(obj,do_unlink=True)
+                continue
+            # Shoe meshes have world-space vertices; select the matching ankle.
+            centre=sum((obj.matrix_world@v.co for v in obj.data.vertices),V())/len(obj.data.vertices)
+            side="l" if centre.x>0 else "r"
+            org,dest,_=legs["foot_"+side]
+            obj.location+=V(xyz(dest-org))
+        body=join(list(bpy.context.scene.objects),filename)
+        body["pose"]="Hip and knee 90 degrees; hands on workstation keyboard; no laptop"
     else:
         clothing(kind)
         footwear(kind)
@@ -481,15 +822,22 @@ def export(kind, filename):
             bpy.ops.import_scene.gltf(filepath=str(OUT/"weapon_uzi_90s.glb"))
             props=list(bpy.context.selected_objects)
             gun=join([o for o in props if o.type=="MESH"],"Micro SMG")
+            # Runtime hideProp identifies the three weapon material groups by name.
+            for material in gun.data.materials:
+                if material.name=="MachinedSteel": material.name="Gold90s"
             gun.location=xyz((-.095,1.308,.325))
             gun.rotation_euler.z=math.pi
             gun.scale=(.57,)*3
         join(list(bpy.context.scene.objects),filename)
+    if kind.startswith("fps_"):
+        for obj in bpy.context.scene.objects:
+            side="l" if obj.name=="Left" else "r"
+            obj.data["wrist"]=list(contact_pose(kind,side)[0]["hand_"+side][1])
     for obj in bpy.context.scene.objects:
         assert obj.type=="MESH" and len(obj.data.polygons)>0
         assert all(math.isfinite(c) for v in obj.data.vertices for c in v.co)
     bpy.ops.export_scene.gltf(filepath=str(OUT/(filename+".glb")),export_format="GLB",
-        export_texcoords=False,export_animations=False,export_cameras=False,export_lights=False)
+        export_texcoords=False,export_animations=False,export_cameras=False,export_lights=False,export_extras=True)
     print("STAGE4",filename,len(BODY),"source body faces")
 
 
@@ -498,40 +846,100 @@ def game_prop():
     # the existing viewmodel expects the front of this prop along glTF -Z.
     bpy.ops.wm.read_factory_settings(use_empty=True)
     MATS.clear()
-    metal, trim, polymer = "GunMetal","Gold90s","PolymerGrip"
-    PALETTE.update(GunMetal="58616b",Gold90s="aa8652",PolymerGrip="39434d")
-    def detail(label,p,size,key,bevel=.003):
-        return box(label,p,size,key,bevel)
-    detail("Upper housing",(0,.017,.014),(.084,.082,.306),metal,.010)
-    detail("Lower casing",(0,-.035,-.030),(.076,.037,.184),polymer,.007)
-    detail("Breech cover",(0,.063,.008),(.066,.013,.23),polymer)
-    detail("Rear cap",(0,.014,.163),(.078,.077,.013),polymer)
-    detail("Grip",(0,-.124,.018),(.057,.217,.070),polymer,.009)
-    detail("Heel",(0,-.232,.019),(.061,.017,.073),metal)
-    for i in range(4):
-        detail("Grip rib",(0,-.081-i*.032,.018),(.059,.007,.073),metal,.002)
-    detail("Guard",(0,-.091,-.055),(.012,.013,.087),metal)
-    detail("Guard nose",(0,-.068,-.099),(.012,.049,.013),metal)
-    detail("Fore-end",(0,-.020,-.141),(.085,.075,.151),polymer,.014)
-    for i in range(5):
-        detail("Cast rib",(0,-.020,-.096-i*.025),(.091,.080,.009),metal,.003)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16,radius=.019,depth=.109,
-        location=xyz((0,.018,-.254)),rotation=(math.pi/2,0,0))
-    finish(bpy.context.object,"Muzzle",metal)
-    detail("Front hood",(0,.066,-.177),(.052,.016,.023),polymer)
-    for x in (-.023,.023):
-        detail("Sight wing",(x,.082,-.177),(.009,.035,.026),metal)
-        detail("Rear notch",(x,.081,.127),(.011,.041,.032),metal)
-    for x in (-.043,.043):
-        detail("Inset port",(x,.017,.013),(.004,.031,.086),polymer,.001)
-        detail("Port trim",(x,.030,.01),(.005,.004,.078),trim,.001)
+    metal, trim, polymer = "GunMetal", "MachinedSteel", "PolymerGrip"
+    PALETTE.update(GunMetal="414c58", MachinedSteel="78838c", PolymerGrip="252b32")
+    def detail(label, p, size, key, bevel=.003):
+        obj = box(label, p, size, key)
+        bpy.context.view_layer.objects.active = obj
+        mod = obj.modifiers.new("Stamped rounded edges", "BEVEL")
+        mod.width, mod.segments = bevel, 5
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+        return obj
+    def cut(obj, p, size):
+        cutter = box("Vent cutter", p, size, metal, .003)
+        bpy.context.view_layer.objects.active = obj
+        mod = obj.modifiers.new("Through ventilation window", "BOOLEAN")
+        mod.operation, mod.object = 'DIFFERENCE', cutter
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+        bpy.data.objects.remove(cutter, do_unlink=True)
+    def tube(label, z, length, radius, key):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=48, radius=radius, depth=length,
+            location=xyz((0,.018,z)), rotation=(math.pi/2,0,0))
+        obj = finish(bpy.context.object,label,key)
+        for face in obj.data.polygons: face.use_smooth = len(face.vertices)==4
+        return obj
+    receiver=detail("Slim stamped receiver",(0,.007,.014),(.038,.046,.296),metal,.006)
+    # Sloping rear face and a true semicircular cover running along the barrel.
+    for v in receiver.data.vertices:
+        if v.co.y < -.10: v.co.y += max(0,v.co.z)*.45
+    arc=[(.019*math.cos(i*math.pi/24),.029+.019*math.sin(i*math.pi/24)) for i in range(25)]
+    pts=[(x,y,z) for z in (-.128,.143) for x,y in arc]
+    faces=[(i,i+1,26+i,25+i) for i in range(24)]
+    faces += [tuple(reversed(range(25))),tuple(range(25,50)),(0,25,49,24)]
+    cover=mesh("Half round bolt cover",pts,faces,metal)
+    for face in cover.data.polygons[:24]: face.use_smooth=True
+    button=tube("Round recoil spring button",.159,.007,.007,trim)
+    detail("Lower receiver",(0,-.025,.010),(.035,.025,.190),metal,.007)
+    # Keep the original grip volume and origin used by fps_hands_uzi.
+    detail("Rounded grip",(0,-.124,.018),(.057,.217,.070),polymer,.016)
+    detail("Magazine floor plate",(0,-.232,.019),(.060,.014,.072),metal,.005)
+    for side in (-1,1):
+        for i in range(9):
+            detail("Grip checkering",(side*.028,-.065-i*.016,.020),(.002,.003,.043),trim,.001)
+    guard=[(0,-.040,-.035),(0,-.046,-.088),(0,-.057,-.102),
+           (0,-.084,-.102),(0,-.097,-.088),(0,-.097,-.025)]
+    wire("Rounded trigger guard",guard,.004,metal)
+    wire("Curved trigger",[(0,-.046,-.048),(0,-.064,-.065),(0,-.078,-.060)],.003,trim)
+    # Hollow rounded sheet-metal shroud with real side and top ventilation holes.
+    shroud=detail("Perforated barrel shroud",(0,.018,-.173),(.038,.050,.115),metal,.010)
+    cut(shroud,(0,.018,-.173),(.028,.036,.140))
+    for z in (-.140,-.169,-.198):
+        cut(shroud,(0,.018,z),(.100,.023,.015))
+        cut(shroud,(0,.043,z),(.019,.022,.015))
+    detail("Ribbed forearm",(0,-.014,-.164),(.036,.018,.100),polymer,.007)
+    for z in (-.125,-.139,-.153,-.167,-.181,-.195):
+        detail("Forearm raised rib",(0,-.021,z),(.039,.006,.004),metal,.002)
+    tube("Inner barrel",-.200,.140,.012,polymer)
+    comp=tube("Cylindrical muzzle compensator",-.280,.060,.018,trim)
+    # Open bore, plus transverse compensator ports.
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32,radius=.009,depth=.080,
+        location=xyz((0,.018,-.280)),rotation=(math.pi/2,0,0))
+    bore=bpy.context.object
+    bpy.context.view_layer.objects.active=comp
+    mod=comp.modifiers.new("Open muzzle bore","BOOLEAN"); mod.object=bore; mod.operation='DIFFERENCE'
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    bpy.data.objects.remove(bore,do_unlink=True)
+    for z in (-.268,-.291): cut(comp,(0,.031,z),(.060,.012,.006))
+    # Folding steel stock hugs the right side instead of protruding into the hands.
+    for y in (.036,-.014):
+        wire("Folded stock rail",[(.024,y,.146),(.033,y,.112),(.033,y,-.115)],.0035,metal)
+    wire("Stock shoulder loop",[(.033,.036,-.115),(.037,.030,-.143),
+        (.037,-.010,-.143),(.033,-.014,-.115)],.004,polymer)
+    detail("Stock hinge",(.024,.010,.135),(.010,.038,.025),trim,.005)
+    for z in (-.180,.120):
+        wire("Protected sight",[(-.019,.024,z),(-.019,.046,z),
+            (0,.052,z),(.019,.046,z),(.019,.024,z)],.0035,metal)
+    detail("Front sight post",(0,.038,-.180),(.004,.018,.004),trim,.001)
+    detail("Side charging stem",(-.025,.030,-.030),(.020,.007,.009),trim,.003)
+    detail("Side charging handle",(-.035,.030,-.030),(.010,.013,.021),polymer,.005)
+    cut(receiver,(.019,.015,.015),(.008,.019,.060))
+    detail("Dark ejection cavity",(.014,.015,.015),(.002,.018,.059),polymer,.002)
+    detail("Ejection bolt edge",(.016,.015,.040),(.002,.014,.006),trim,.001)
     join(list(bpy.context.scene.objects),"SMG")
     bpy.ops.export_scene.gltf(filepath=str(OUT/"weapon_uzi_90s.glb"),export_format="GLB",
         export_texcoords=False,export_animations=False)
 
 
 game_prop()
-for kind, filename in [("coder","char_vibe_coder"),("partner","char_partner_90s"),
-                       ("seer","char_hr_veronika"),("fps","fps_hands_cs2")]:
-    export(kind,filename)
+for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
+                       ("coder","char_vibe_coder"),("partner","char_partner_90s"),
+                       ("seer","char_hr_veronika"),("fps","fps_hands_cs2"),
+                       ("fps_belt","fps_hands_belt"),("fps_solder","fps_hands_solder"),
+                       ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
+    if "--workshop6" in __import__("sys").argv:
+        if kind == "partner": export(kind,filename)
+    elif "--workshop5" in __import__("sys").argv:
+        if kind in ("partner","fps_uzi","fps_shotgun"): export(kind,filename)
+    elif "--uzi-only" not in __import__("sys").argv:
+        export(kind,filename)
 

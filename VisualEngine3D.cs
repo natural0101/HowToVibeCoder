@@ -11,7 +11,8 @@ internal static unsafe class VisualEngine3D
     private static Shader shader;
     private static Model box, bevel, plane, tube, sphere;
     private static readonly Dictionary<string, Model> imports = new(StringComparer.OrdinalIgnoreCase);
-    private static (int Start, int Count) leftArm, rightArm;
+    private static readonly Dictionary<string, ((int Start, int Count) Left, (int Start, int Count) Right)> armGroups = new();
+    private static readonly Dictionary<(string Asset, bool Right), Vector3> armWrists = new();
     private static readonly HashSet<int> partnerPropMeshes = new();
     private static int batchLoc, clockLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
@@ -201,7 +202,7 @@ internal static unsafe class VisualEngine3D
             ApplyShaderToModel(model);
             string name = Path.GetFileNameWithoutExtension(path);
             imports.Add(name, model);
-            if (name is "fps_hands_cs2" or "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
+            if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
         }
     }
 
@@ -214,6 +215,7 @@ internal static unsafe class VisualEngine3D
         if (reader.ReadUInt32() != 0x4E4F534A) throw new InvalidDataException(path);
         using var json = JsonDocument.Parse(reader.ReadBytes(length));
         int index = 0;
+        (int Start, int Count) leftArm = default, rightArm = default;
         foreach (var mesh in json.RootElement.GetProperty("meshes").EnumerateArray())
         {
             int count = mesh.GetProperty("primitives").GetArrayLength();
@@ -228,6 +230,12 @@ internal static unsafe class VisualEngine3D
                 }
                 continue;
             }
+            if (asset != "fps_hands_cs2")
+            {
+                var wrist = mesh.GetProperty("extras").GetProperty("wrist");
+                armWrists.Add((asset, mesh.GetProperty("name").GetString() == "Right"),
+                    new Vector3(wrist[0].GetSingle(), wrist[1].GetSingle(), wrist[2].GetSingle()));
+            }
             switch (mesh.GetProperty("name").GetString())
             {
                 case "Left": leftArm = (index,count); break;
@@ -236,22 +244,33 @@ internal static unsafe class VisualEngine3D
             }
             index += count;
         }
-        if (index != meshCount || (asset == "fps_hands_cs2" ? leftArm.Count * rightArm.Count == 0 : partnerPropMeshes.Count != 3))
+        if (index != meshCount || (asset.StartsWith("fps_hands_", StringComparison.Ordinal) ? leftArm.Count * rightArm.Count == 0 : partnerPropMeshes.Count != 3))
             throw new InvalidDataException("Incomplete first-person arm mesh");
+        if (asset.StartsWith("fps_hands_", StringComparison.Ordinal)) armGroups.Add(asset, (leftArm, rightArm));
     }
 
-    public static void Arm(bool right, Vector3 wrist)
+    public static void Arm(bool right, Vector3 wrist, string handAsset = "fps_hands_cs2", Matrix4x4? assemblyTransform = null)
     {
         // The existing prop camera uses a mirrored X axis; the anatomy already
         // faces the view direction. Undo that mirror for anatomical handedness.
         Vector3 bind = right ? new(-.20f,-.22f,.54f) : new(-.085f,-.185f,.68f);
+        if (handAsset != "fps_hands_cs2") bind = armWrists[(handAsset,right)];
         Vector3 offset = new Vector3(-wrist.X,wrist.Y,wrist.Z) - bind;
-        Model model = imports["fps_hands_cs2"];
-        var range = right ? rightArm : leftArm;
+        Model model = imports[handAsset];
+        var groups = armGroups[handAsset];
+        var range = right ? groups.Right : groups.Left;
         Matrix4x4 transform = Matrix4x4.CreateTranslation(offset) * Matrix4x4.CreateScale(-1,1,1);
+        if (assemblyTransform.HasValue) transform *= assemblyTransform.Value;
         Surface(Finish.Anatomy,0);
         for (int i=range.Start; i<range.Start+range.Count; i++)
             Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
+    }
+
+    // Keep the authored contacts while moving/rotating an entire weapon assembly.
+    public static void ArmAssembly(bool right, Vector3 offset, string handAsset, Matrix4x4? transform = null)
+    {
+        Vector3 bind = armWrists[(handAsset,right)];
+        Arm(right,new Vector3(-bind.X,bind.Y,bind.Z)+offset,handAsset,transform);
     }
 
     private static Model ModelFor(Mesh mesh)
@@ -267,11 +286,21 @@ internal static unsafe class VisualEngine3D
     }
 
     public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
-                             Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false)
+                             Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false, Matrix4x4? assemblyTransform = null)
     {
         Model model = imports[name];
         model.Transform = Matrix4x4.CreateRotationX(tilt);
         Surface(name.StartsWith("char_",StringComparison.Ordinal) ? Finish.Anatomy : Finish.Imported, 0);
+        if (assemblyTransform.HasValue)
+        {
+            var transform = Matrix4x4.CreateRotationX(tilt)
+                * Matrix4x4.CreateScale((stretch ?? Vector3.One)*scale)
+                * Matrix4x4.CreateRotationY(yaw*MathF.PI/180)
+                * Matrix4x4.CreateTranslation(position) * assemblyTransform.Value;
+            model.Transform = Matrix4x4.Transpose(transform);
+            Raylib.DrawModelEx(model,Vector3.Zero,Vector3.UnitY,0,Vector3.One,tint ?? Color.White);
+            return;
+        }
         if (hideProp)
         {
             var transform = model.Transform * Matrix4x4.CreateScale((stretch ?? Vector3.One)*scale)
@@ -562,7 +591,8 @@ internal static unsafe class VisualEngine3D
         foreach(Model m in imports.Values) Raylib.UnloadModel(m);
         imports.Clear();
         partnerPropMeshes.Clear();
-        leftArm=rightArm=default;
+        armGroups.Clear();
+        armWrists.Clear();
         foreach(var group in architecture) Raylib.UnloadModel(group.Model);
         architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);

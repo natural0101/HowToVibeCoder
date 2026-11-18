@@ -425,14 +425,16 @@ public static partial class Program
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
 
-        // 2. 2D World-to-screen tags, enemy HP/Anxiety bars, Boss bar
-        _world.DrawWorldLabelsAndIndicators2D(playerCam, _uiFont);
-
-        // 3. First-Person 90s Businessman Hands in Crimson Jacket & Active Weapon ViewModel
-        _weapons.DrawFirstPersonHandsAndWeapon(playerCam, _walkBobPhase, _isCrouching, _uiFont);
-
-        // 4. Tactical Gameplay HUD
-        DrawGameplayHud2D();
+        bool modalOpen = LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
+            || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen
+            || MainMenuAndPauseUI.IsSettingsPanelOpen;
+        if (!modalOpen)
+        {
+            // World tags, combat overlays and the gameplay HUD belong only to gameplay.
+            _world.DrawWorldLabelsAndIndicators2D(playerCam, _uiFont);
+            _weapons.DrawFirstPersonHandsAndWeapon(playerCam, _walkBobPhase, _isCrouching, _uiFont);
+            DrawGameplayHud2D();
+        }
 
         // 5. Modal Windows ([N] Lore, [F8] Audio Mixer, [K] Case Roulette) & [ESC] Pause Overlay
 
@@ -761,7 +763,7 @@ public static partial class Program
         _weapons.SelectSlot(4); // Sawed-Off Shotgun / Chat-Gun
         _world.HasElevatorKey = true;
         _world.TrySummonElevatorBoss(_ => true, out _);
-        _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-6.0f);
+        _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
         _world.ElevatorDoorOpenAmount=.86f;
         _world.ElevatorBoss.Hp = 1480f;
         _world.ElevatorBoss.FacingYaw = 3.14159f; // Facing North toward player in North Boss Arena

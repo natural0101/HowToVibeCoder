@@ -92,8 +92,6 @@ internal sealed class PartnerAvatar
                     foreach(float x in new[]{-.11f,-.08f})
                         Tube(P(x,1.30f,.42f),P(x,1.32f,.73f),.019f,.016f,metal);
                 }
-                if(flash>0) VisualEngine3D.Rod(P(-.095f,1.315f,smg?.55f:.73f),
-                    P(-.095f,1.33f,smg?.65f:.83f),.032f,.002f,8,Color.Orange,Finish.Lamp);
                 break;
         }
     }

@@ -687,6 +687,9 @@ public sealed class SkyscraperFloor1World
         pos = PushOutOfBoxXZ(pos, CentralElevatorCorePos, ElevatorCoreHalfW, ElevatorCoreHalfD, playerRadius);
 
         // Collide with Central MacBook Trap Desk
+        foreach(var bay in InteriorWallBays())
+            pos=PushOutOfBoxXZ(pos,bay.Center,bay.Size.X/2,bay.Size.Z/2,playerRadius);
+
         pos = PushOutOfBoxXZ(pos, CentralMacBookPos, 1.35f, 0.85f, playerRadius);
 
         // Collide with HR Tarot Table & 90s Shop Counter
@@ -1957,6 +1960,7 @@ public sealed class SkyscraperFloor1World
         BuildCurtainWallsAndSkyline(mesh);
         BuildOfficeServices(mesh);
         BuildGlassLift(mesh);
+        BuildInteriorRooms(mesh);
         Color brass=new(189,145,76,255);
         float start=SouthElevatorDoorPos.Z+.15f, end=ArsenalShopPos.Z-.75f;
         float center=(start+end)*.5f;
@@ -2001,6 +2005,73 @@ public sealed class SkyscraperFloor1World
                 }
             }
         }
+    }
+
+    // Shared solid footprint: rendering and player collision use exactly the same wall bays.
+    private static IEnumerable<(Vector3 Center, Vector3 Size)> InteriorWallBays()
+    {
+        yield return (new(0,2.3f,15.6f),new(5.6f,4.6f,.32f));
+        foreach(int side in new[]{-1,1})
+        {
+            // Recessed sidelights leave the existing galley inspection camera clear.
+            yield return (new(side*5.15f,2.3f,16.35f),new(4.7f,4.6f,.16f));
+            // 3.8 m clear portals centred at -11, 5.2 and 14.5 metres.
+            foreach(var span in new[]{(-15.8f,-12.9f),(-9.1f,3.3f),(7.1f,12.6f),(16.4f,20f)})
+                yield return (new(side*9.6f,2.1f,(span.Item1+span.Item2)/2),new(.24f,4.2f,span.Item2-span.Item1));
+            yield return (new(side*13.95f,2.1f,-15.8f),new(12.1f,4.2f,.24f));
+            yield return (new(side*14.8f,2.1f,20),new(10.4f,4.2f,.24f));
+        }
+        yield return (new(0,2.1f,-15.8f),new(8.2f,4.2f,.24f));
+    }
+
+    private static void BuildInteriorRooms(VisualEngine3D.ArchitectureBuilder mesh)
+    {
+        Color stone=new(36,40,49,255), brass=new(184,144,82,255), glass=new(128,164,174,103);
+        foreach(var bay in InteriorWallBays())
+        {
+            Vector3 c=bay.Center,s=bay.Size;
+            bool reception=c.Z>15 && MathF.Abs(c.X)<7.6f;
+            bool alongZ=s.Z>s.X;
+            if(reception && c.X==0)
+            {
+                mesh.Add(c,s,stone,Finish.Slate);
+                for(int i=-12;i<=12;i++)
+                    if(Math.Abs(i)>5)
+                        mesh.Add(new(i*.215f,2.3f,15.39f),new(.032f,4.35f,.055f),brass);
+                mesh.Add(new(0,3.25f,15.36f),new(2.12f,1.78f,.13f),new(24,27,34,255));
+            }
+            else
+            {
+                float h=reception ? .5f : 1.18f;
+                mesh.Add(new(c.X,h/2,c.Z),new(s.X,h,s.Z),stone,Finish.Slate);
+                mesh.Add(new(c.X,(h+s.Y)/2,c.Z),new(s.X,s.Y-h,s.Z),glass,Finish.Glass);
+                foreach(float y in new[]{.08f,h,s.Y-.09f})
+                    mesh.Add(new(c.X,y,c.Z),new(s.X+.035f,.065f,s.Z+.035f),brass);
+                float length=alongZ?s.Z:s.X;
+                int count=(int)MathF.Ceiling(length/1.65f);
+                for(int i=0;i<=count;i++)
+                {
+                    float offset=-length/2+i*length/count;
+                    mesh.Add(c+new Vector3(alongZ?0:offset,0,alongZ?offset:0),new(.065f,s.Y,.065f),brass);
+                }
+            }
+        }
+        void Portal(Vector3 p,bool alongZ)
+        {
+            Vector3 Size(float w,float h,float d)=>alongZ?new(d,h,w):new(w,h,d);
+            foreach(int side in new[]{-1,1})
+                mesh.Add(p+new Vector3(alongZ?0:side*1.99f,1.6f,alongZ?side*1.99f:0),Size(.18f,3.2f,.40f),brass);
+            mesh.Add(p+Vector3.UnitY*3.30f,Size(4.16f,.20f,.40f),stone);
+            mesh.Add(p+Vector3.UnitY*3.80f,Size(3.8f,.80f,.12f),glass,Finish.Glass);
+            mesh.Add(p+Vector3.UnitY*4.16f,Size(4.16f,.08f,.40f),brass);
+        }
+        foreach(int side in new[]{-1,1})
+        {
+            foreach(float z in new[]{-11f,5.2f,14.5f}) Portal(new(side*9.6f,0,z),true);
+            Portal(new(side*6,0,-15.8f),false);
+        }
+        mesh.Add(new(0,4.51f,15.6f),new(15,.18f,.65f),stone);
+        mesh.Add(new(0,4.40f,15.25f),new(14.8f,.035f,.035f),brass,Finish.Lamp);
     }
 
     private static void BuildCurtainWallsAndSkyline(VisualEngine3D.ArchitectureBuilder mesh)
@@ -2117,11 +2188,8 @@ public sealed class SkyscraperFloor1World
         VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.85f,2.85f,24,new Color(77,33,83,255));
         VisualEngine3D.Asset("prop_hr_reception_desk", b, 0f);
         VisualEngine3D.Asset("char_hr_veronika", b+new Vector3(0,.03f,0), 180f);
-        Color brass=new(187,141,76,255);
-        foreach (int side in new[] { -1, 1 })
-            VisualEngine3D.Box(b+new Vector3(side*2.15f,1.85f,1.15f),.065f,3.70f,.065f,brass);
-        VisualEngine3D.Box(b+new Vector3(0,3.72f,1.15f),4.36f,.07f,.07f,brass);
-        VisualEngine3D.Box(b+new Vector3(0,3.15f,1.15f),1.18f,.96f,.045f,Color.White,Finish.Tarot);
+        // The dynamic box retains the inscription's upright UVs; the batched wall uses world UVs.
+        VisualEngine3D.Box(new(0,3.25f,15.28f),1.88f,1.53f,.025f,Color.White,Finish.Tarot);
     }
 
     private void Draw90sArsenalAndShopStand3D()
@@ -2162,18 +2230,12 @@ public sealed class SkyscraperFloor1World
             if (d.IsOccupied)
             {
                 Vector3 cPos = d.ChairPosition;
-                float bob = MathF.Sin(d.TypingPhase)*.015f;
+                // The pelvis stays in contact with the seat while typing.
                 Color hoodie = d.WhackFlashTimer>0 ? Color.Gold : d.HoodieColor;
-                VisualEngine3D.Asset("char_vibe_coder",cPos+new Vector3(0,.035f+bob,-.09f),0,
-                    tint:Raylib.ColorLerp(Color.White,hoodie,.30f),stretch:new(.90f,.78f,.90f));
+                VisualEngine3D.Asset("char_vibe_coder_seated",cPos+new Vector3(0,0,-.10f),180,
+                    tint:Raylib.ColorLerp(Color.White,hoodie,.30f));
 
-                // Overhead Red Warning Diamond if Slacking in Twitter!
-                if (d.IsSlackingInTwitter)
-                {
-                    Vector3 warnPos = cPos + new Vector3(0f, 1.95f + MathF.Sin(_worldClock * 8f) * 0.08f, 0f);
-                    VisualEngine3D.Orb(warnPos, 0.18f, new Color(255, 40, 55, 245));
 
-                }
             }
         }
     }
@@ -2181,30 +2243,10 @@ public sealed class SkyscraperFloor1World
     private void DrawCentralMacBookTrapAndCovers3D()
     {
         Vector3 m = CentralMacBookPos;
-        var baitInfo = GetBaitInfo(SelectedBaitTier);
 
         // 1. Detailed Blender 3D Tactical Trap Desk + Open Aluminum MacBook Pro
         VisualEngine3D.Asset("prop_macbook_trap_desk", m, 0f);
 
-        Vector3 mbBase = m + new Vector3(0f, 0.90f, 0.05f);
-        Vector3 mbScreen = m + new Vector3(0f, 1.12f, 0.23f);
-        Color screenGlow = IsMacBookTrapActive ? baitInfo.NeonColor : new Color(60, 110, 150, 255);
-        VisualEngine3D.Box(mbScreen + new Vector3(0f, 0f, -0.015f), 0.56f, 0.36f, 0.01f, screenGlow, Finish.Screen);
-
-        // 3. Floating 3D Hologram Beacon above the MacBook Trap Desk
-        float holoY = 1.85f + MathF.Sin(MacBookHologramPhase) * 0.14f;
-        Vector3 holoPos = m + new Vector3(0f, holoY, 0.05f);
-        if (IsMacBookTrapActive)
-        {
-            VisualEngine3D.Rod(
-                mbBase,
-                holoPos,
-                0.08f,
-                0.42f,
-                12,
-                new Color(baitInfo.NeonColor.R, baitInfo.NeonColor.G, baitInfo.NeonColor.B, (byte)85));
-        }
-        VisualEngine3D.Box(holoPos, 0.36f, 0.36f, 0.36f, new Color(baitInfo.NeonColor.R, baitInfo.NeonColor.G, baitInfo.NeonColor.B, (byte)(IsMacBookTrapActive ? 225 : 120)));
 
         // 4. Ambush Cover Objects around Central Desk (Each a dedicated 3D Blender model!)
         for (int i = 0; i < AmbushCovers.Count; i++)
@@ -2284,15 +2326,23 @@ public sealed class SkyscraperFloor1World
                         VisualEngine3D.Box(p+Vector3.UnitY*(edge*1.95f),2.13f,.08f,.09f,steel);
                     }
                     VisualEngine3D.Box(p-Vector3.UnitY*.88f,2.1f,.048f,.075f,steel);
-                    VisualEngine3D.Orb(face+new Vector3(leaf*2.46f,4.22f,side*.18f),.14f,
+                    VisualEngine3D.Box(face+new Vector3(leaf*2.46f,4.22f,side*.10f),.055f,.28f,.025f,
                         new Color(255,40+(int)(17*MathF.Sin(WarningBeaconPhase)),49,255),Finish.Lamp);
                 }
             }
             if(glass) continue;
             VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
             Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
-            VisualEngine3D.Rod(button,button+Vector3.UnitY*1.15f,.14f,.10f,10,steel);
-            VisualEngine3D.Orb(button+Vector3.UnitY*1.2f,.12f,HasElevatorKey ? Color.Lime : Color.Gold,Finish.Lamp);
+            VisualEngine3D.Box(button+new Vector3(0,.035f,0),.38f,.07f,.30f,steel);
+            VisualEngine3D.Box(button+new Vector3(0,.60f,0),.23f,1.16f,.18f,steel);
+            // Stepped bevel keeps the inclined control face flush with the steel housing.
+            for(int i=0;i<8;i++)
+                VisualEngine3D.Box(button+new Vector3(0,1.10f+i*.018f,side*(.11f-i*.012f)),
+                    .27f,.019f,.13f,steel);
+            VisualEngine3D.Box(button+new Vector3(0,1.13f,side*.178f),.18f,.13f,.012f,new Color(23,31,38,255));
+            VisualEngine3D.Box(button+new Vector3(0,1.16f,side*.187f),.065f,.019f,.008f,
+                HasElevatorKey ? new Color(96,214,166,255) : new Color(226,176,83,255),Finish.Lamp);
+            VisualEngine3D.Box(button+new Vector3(0,1.105f,side*.187f),.055f,.027f,.008f,steel);
         }
     }
 
@@ -2305,24 +2355,16 @@ public sealed class SkyscraperFloor1World
         Color tint=c.HitFlashTimer>0 ? new Color(255,210,170,255) : Raylib.ColorLerp(Color.White,c.HoodieColor,.36f);
         VisualEngine3D.Asset("char_vibe_coder",c.Position+Vector3.UnitY*bob,
             c.FacingYaw*180/MathF.PI,scale,tint,tilt);
-        if (!c.IsMiniBoss) return;
-        Vector3 crown=c.Position+Vector3.UnitY*(2.20f+.035f*MathF.Sin(_worldClock*3));
-        Color gold=new(255,197,57,255);
-        VisualEngine3D.Rod(crown,crown+Vector3.UnitY*.065f,.22f,.22f,10,gold,Finish.Lamp);
-        for (int i=0;i<5;i++)
-        {
-            float angle=i*MathF.Tau/5+_worldClock;
-            Vector3 tip=crown+new Vector3(.17f*MathF.Cos(angle),.055f,.17f*MathF.Sin(angle));
-            VisualEngine3D.Rod(tip,tip+Vector3.UnitY*.13f,.048f,0,6,gold,Finish.Lamp);
-        }
+
     }
 
     private void DrawEscapedAgentBoss3D()
     {
         var b=ElevatorBoss;
-        Color tint=b.HitFlashTimer>0 ? Color.Gold : b.State==ElevatorBossState.StunnedWallCrash
+        Color tint=b.HitFlashTimer>0 ? new Color(255,225,235,255) : b.State==ElevatorBossState.StunnedWallCrash
             ? new Color(255,166,166,255) : Color.White;
-        VisualEngine3D.Asset("escaped_ai_boss",b.Position,180+b.FacingYaw*180/MathF.PI,tint:tint);
+        // MPFB anatomy faces +Z, matching FacingYaw (the retired robot faced -Z).
+        VisualEngine3D.Asset("escaped_ai_boss",b.Position,b.FacingYaw*180/MathF.PI,scale:1.32f,tint:tint);
     }
 
     private static void DrawFicus(Vector3 p)
@@ -2342,8 +2384,8 @@ public sealed class SkyscraperFloor1World
         for (int i = 0; i < EnemyProjectiles.Count; i++)
         {
             var pr = EnemyProjectiles[i];
-            float s = pr.Radius * 1.45f;
-            VisualEngine3D.Box(pr.Position, s, s, s, pr.PrimaryColor);
+            // Fixed visual envelope: 14 cm diameter, 6 cm thickness. Damage radius is independent.
+            VisualEngine3D.Oval(pr.Position, new Vector3(.07f, .03f, .07f), pr.PrimaryColor);
 
         }
     }
@@ -2468,16 +2510,5 @@ public sealed class SkyscraperFloor1World
         if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
             Plate(ElevatorBoss.Position+Vector3.UnitY*3.4f,"СБЕЖАВШИЙ ИИ-АГЕНТ",
                 ElevatorBoss.Hp/ElevatorBoss.MaxHp,new Color(228,110,105,255));
-        foreach(var p in EnemyProjectiles)
-        {
-            Vector3 head=p.Position+Vector3.UnitY*(p.Radius+.15f);
-            if(Vector3.Dot(head-camera.Position,look)<.1f) continue;
-            float w=GameFonts.Measure(font,p.Label,14).X+12;
-            if(WorldLabelLayout.Place(Raylib.GetWorldToScreen(head,camera),w,22,out var r))
-            {
-                Raylib.DrawRectangleRounded(r,.5f,8,new Color(18,26,34,182));
-                GameFonts.Draw(font,p.Label,new(r.X+6,r.Y+2),14,Color.White);
-            }
-        }
     }
 }

@@ -378,8 +378,8 @@ public class WeaponAndCombatView
                 {
                     BrassShells.Add(new BrassShell3D
                     {
-                        Position = muzzleWorld - forward * 0.22f + right * (0.06f + s * 0.04f),
-                        Velocity = right * (2.0f + s * 0.6f) + up * (2.5f + s * 0.4f) - forward * 0.7f,
+                        Position = muzzleWorld - forward * 0.34f + right * (0.16f + s * 0.025f) - up * 0.10f,
+                        Velocity = right * (2.0f + s * 0.6f) - up * (0.25f + s * 0.15f) + forward * 0.15f,
                         Rotation = new Vector3(NextFloat() * 180f, NextFloat() * 180f, NextFloat() * 180f),
                         AngularVelocity = new Vector3(420f, 510f, 380f),
                         Life = 2.6f,
@@ -675,16 +675,7 @@ public class WeaponAndCombatView
     /// </summary>
     public void DrawWeaponWorldEffects3D(Camera3D camera)
     {
-        // 1. Rising Rosin Smoke & Shotgun Blast Smoke
-        for (int i = 0; i < SmokeParticles.Count; i++)
-        {
-            var p = SmokeParticles[i];
-            float alphaRatio = Math.Clamp(p.Life / p.MaxLife, 0f, 1f);
-            byte alpha = (byte)(p.Tint.A * alphaRatio);
-            Color c = new Color(p.Tint.R, p.Tint.G, p.Tint.B, alpha);
-
-            Raylib.DrawSphere(p.Position, p.Size, c);
-        }
+        // Smoke simulation remains available; opaque smoke geometry is intentionally omitted.
 
         // 2. Whip Slash 3D Arc Ribbons (for Belt attack)
         for (int i = 0; i < WhipSlashes.Count; i++)
@@ -715,16 +706,10 @@ public class WeaponAndCombatView
             float ratio = Math.Clamp(s.Life / s.MaxLife, 0f, 1f);
             Color col = new Color(s.ColorMain.R, s.ColorMain.G, s.ColorMain.B, (byte)(255 * ratio));
 
-            Raylib.DrawLine3D(s.PrevPosition, s.Position, col);
-            Raylib.DrawCube(s.Position, 0.024f * ratio, 0.024f * ratio, 0.024f * ratio, col);
-
-            if (s.IsElectricArc)
+            if (s.Velocity.LengthSquared() > 0.000001f)
             {
-                Vector3 jitter = s.Position + new Vector3(
-                    MathF.Sin(_animClock * 40f + i) * 0.09f,
-                    MathF.Cos(_animClock * 35f + i) * 0.09f,
-                    MathF.Sin(_animClock * 28f - i) * 0.09f);
-                Raylib.DrawLine3D(s.Position, jitter, new Color(100, 245, 255, (int)(230 * ratio)));
+                Vector3 tail = s.Position - Vector3.Normalize(s.Velocity) * 0.035f;
+                Raylib.DrawLine3D(tail, s.Position, col);
             }
         }
 
@@ -734,8 +719,14 @@ public class WeaponAndCombatView
             var tr = BulletTracers[i];
             float ratio = Math.Clamp(tr.Life / tr.MaxLife, 0f, 1f);
             Color c = new Color(tr.TracerColor.R, tr.TracerColor.G, tr.TracerColor.B, (byte)(255 * ratio));
-            Raylib.DrawCylinderEx(tr.Start, tr.End, tr.Thickness * ratio, tr.Thickness * 0.5f * ratio, 6, c);
-            Raylib.DrawLine3D(tr.Start, tr.End, Color.White);
+            Vector3 travel = tr.End - tr.Start;
+            float distance = travel.Length();
+            if (distance > 0.0001f)
+            {
+                Vector3 direction = travel / distance;
+                Vector3 head = Vector3.Lerp(tr.Start, tr.End, 1f - ratio);
+                Raylib.DrawLine3D(head, head + direction * MathF.Min(0.12f, distance), c);
+            }
         }
 
         // 5. Ejected 3D Brass & Shotgun Shells
@@ -753,15 +744,15 @@ public class WeaponAndCombatView
 
             if (b.IsShotgunShell)
             {
-                Vector3 tip = b.Position + dir * 0.055f;
-                Vector3 brassEnd = b.Position - dir * 0.02f;
-                Raylib.DrawCylinderEx(b.Position, tip, 0.016f, 0.016f, 6, new Color(210, 35, 35, (int)a));
-                Raylib.DrawCylinderEx(brassEnd, b.Position, 0.017f, 0.017f, 6, new Color(245, 205, 65, (int)a));
+                Vector3 tip = b.Position + dir * 0.016f;
+                Vector3 brassEnd = b.Position - dir * 0.006f;
+                Raylib.DrawCylinderEx(b.Position, tip, 0.006f, 0.006f, 6, new Color(210, 35, 35, (int)a));
+                Raylib.DrawCylinderEx(brassEnd, b.Position, 0.006f, 0.006f, 6, new Color(245, 205, 65, (int)a));
             }
             else
             {
-                Vector3 tip = b.Position + dir * 0.038f;
-                Raylib.DrawCylinderEx(b.Position, tip, 0.010f, 0.010f, 6, new Color(250, 210, 75, (int)a));
+                Vector3 tip = b.Position + dir * 0.0127f;
+                Raylib.DrawCylinderEx(b.Position, tip, 0.0033f, 0.0033f, 6, new Color(250, 210, 75, (int)a));
             }
         }
     }
@@ -867,20 +858,17 @@ public class WeaponAndCombatView
             }
         }
 
-        // Left supporting hand in crimson sleeve (bracing in lower-left)
-        Vector3 leftWrist = new Vector3(-.105f, -.205f + p*.04f, .68f) + baseOffset;
-        VisualEngine3D.Arm(false,leftWrist);
-
-        // Right striking hand gripping the folded dark-brown leather belt
-        Vector3 rightWrist = new Vector3(0.24f, -0.20f, 0.56f) + baseOffset + swingHandOffset;
-        Vector3 handForward = Vector3.Normalize(new Vector3(-0.18f - swingHandOffset.X * 0.7f, 0.22f, 0.88f));
-        VisualEngine3D.Arm(true,rightWrist);
-
+        // Both contact poses and the strap share one assembly displacement.
+        Vector3 assembly = baseOffset + swingHandOffset;
+        Vector3 pivot = new Vector3(.18f,-.15f,.62f) + assembly;
+        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
+            * Matrix4x4.CreateRotationX(whipExtension*.35f) * Matrix4x4.CreateTranslation(pivot);
+        VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_belt", pose);
+        VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_belt", pose);
+        Vector3 handForward = Vector3.UnitZ;
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        Vector3 beltPos = rightWrist + new Vector3(-0.01f, 0.025f, 0.03f);
-        float beltYaw = MathF.Atan2(handForward.X, handForward.Z) * 180f / MathF.PI;
-        float beltTilt = -0.12f + whipExtension * 0.35f;
-        VisualEngine3D.Asset("weapon_belt_90s", beltPos, beltYaw, 0.94f, tint, beltTilt);
+        Vector3 beltPos = new Vector3(.18f,-.15f,.62f) + assembly;
+        VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose);
 
         // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
         if (p > 0.18f)
@@ -909,60 +897,23 @@ public class WeaponAndCombatView
             0.04f * lunge,
             0.28f * lunge);
 
-        // Left hand holding coiled black power cord / bracing
-        Vector3 leftWrist = new Vector3(-0.18f, -0.25f + lunge * 0.03f, 0.52f) + baseOffset;
-        VisualEngine3D.Arm(false,leftWrist);
-
-        // Right hand lunging the soldering iron forward
-        Vector3 rightWrist = new Vector3(0.22f, -0.21f, 0.54f) + baseOffset + thrustOffset;
-        Vector3 ironDir = Vector3.Normalize(new Vector3(-0.22f + twist * 0.6f, 0.14f + lunge * 0.04f, 0.96f));
-        VisualEngine3D.Arm(true,rightWrist);
-
+        Vector3 leftWrist = new Vector3(-.16f,-.15f,.70f) + baseOffset;
+        VisualEngine3D.ArmAssembly(false, baseOffset, "fps_hands_solder");
+        VisualEngine3D.ArmAssembly(true, baseOffset + thrustOffset, "fps_hands_solder");
+        Vector3 ironDir = Vector3.UnitZ;
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        Vector3 handleBase = rightWrist + new Vector3(-0.01f, 0.028f, 0.02f);
-        float ironYaw = MathF.Atan2(ironDir.X, ironDir.Z) * 180f / MathF.PI;
-        float ironPitch = -MathF.Asin(Math.Clamp(ironDir.Y, -0.9f, 0.9f));
-        VisualEngine3D.Asset("weapon_solder_90s", handleBase, ironYaw, 0.95f, tint, ironPitch);
-
-        // Black power cord dangling from the back of the handle toward the left hand
-        Vector3 cordMid = (handleBase + leftWrist) * 0.5f + new Vector3(0f, -0.07f, 0f);
-        VisualEngine3D.Rod(handleBase - ironDir * 0.10f, cordMid, 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
-        VisualEngine3D.Rod(cordMid, leftWrist + new Vector3(0.03f, 0.02f, 0f), 0.008f, 0.008f, 6, new Color(28, 28, 32, 255));
+        Vector3 handleBase = new Vector3(.18f,-.15f,.62f) + baseOffset + thrustOffset;
+        VisualEngine3D.Asset("weapon_solder_90s", handleBase, 0, 1, tint);
+        // Power cord leaves the pommel; the other hand holds solder, not the cable.
+        Vector3 cordMid = handleBase + new Vector3(.03f,-.16f,-.20f);
+        VisualEngine3D.Rod(handleBase - ironDir * .12f, cordMid, .003f, .003f, 8, new Color(28,28,32,255));
 
         Vector3 tipMid = handleBase + ironDir * 0.39f + new Vector3(0f, 0.012f, 0f);
         Vector3 tipPoint = handleBase + ironDir * 0.45f + new Vector3(0f, 0.016f, 0f);
         float glow = Math.Clamp(SolderHeatGlow + p * 0.35f, 0.5f, 1.0f);
 
-        // Glowing thermal aura around the red-hot copper tip
-        VisualEngine3D.Orb(tipPoint, 0.018f + p * 0.014f, new Color(255, 220, 110, (int)(155 * glow)));
-        VisualEngine3D.Orb(tipMid, 0.026f + p * 0.018f, new Color(255, 110, 25, (int)(95 * glow)));
-
-        // ViewModel rising smoke wisps directly off the tip so the player ALWAYS sees rosin smoke rising from the iron!
-        for (int w = 0; w < 4; w++)
-        {
-            float cycle = (_animClock * 1.4f + w * 0.25f) % 1.0f;
-            Vector3 wispPos = tipPoint + new Vector3(
-                MathF.Sin(_animClock * 4.2f + w * 1.7f) * 0.018f * cycle,
-                cycle * 0.14f,
-                MathF.Cos(_animClock * 3.5f + w) * 0.012f * cycle);
-            byte wispAlpha = (byte)((1f - cycle) * 145f);
-            float wispRadius = 0.008f + cycle * 0.024f;
-            VisualEngine3D.Orb(wispPos, wispRadius, new Color(215, 225, 238, (int)wispAlpha));
-        }
-
-        // When attacking (SolderThrustPhase > 0), render vivid electric arcs & solder sparks erupting off the tip
-        if (p > 0.05f)
-        {
-            for (int a = 0; a < 5; a++)
-            {
-                float ang = _animClock * 35f + a * 1.25f;
-                Vector3 sparkEnd = tipPoint + new Vector3(
-                    MathF.Cos(ang) * 0.065f * p,
-                    MathF.Sin(ang * 1.3f) * 0.065f * p,
-                    0.04f * p);
-                Raylib.DrawLine3D(tipPoint, sparkEnd, (a % 2 == 0) ? new Color(90, 245, 255, 255) : new Color(255, 230, 80, 255));
-            }
-        }
+        // Small heat tint at the copper tip, without smoke balls or electric spokes.
+        VisualEngine3D.Orb(tipPoint, 0.006f, new Color(255, 180, 70, (int)(100 * glow)));
     }
 
     // =========================================================================
@@ -976,36 +927,23 @@ public class WeaponAndCombatView
             0.018f * kick,
             -0.048f * kick);
 
-        // Left supporting hand in crimson sleeve
-        Vector3 leftWrist = new Vector3(.175f, -.136f, .738f) + baseOffset + recoilOffset;
-        VisualEngine3D.Arm(false,leftWrist);
+        Vector3 assembly = baseOffset + recoilOffset + new Vector3(.035f,0,0);
+        Vector3 pivot = new Vector3(.18f,-.193f,.6665f) + assembly;
+        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
+            * Matrix4x4.CreateRotationX(-kick*.05f)
+            * Matrix4x4.CreateRotationY(-.28f) * Matrix4x4.CreateTranslation(pivot);
+        VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_uzi", pose);
+        VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_uzi", pose);
+        Vector3 aimDir = Vector3.UnitZ;
+        Vector3 receiverCenter = new Vector3(.18f,-.10f,.68f) + assembly;
+        VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,180,.75f,
+            SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose);
+        Vector3 barrelTip=Vector3.Transform(receiverCenter+aimDir*(.31f*.75f)+Vector3.UnitY*.006f,pose);
+        aimDir=Vector3.TransformNormal(aimDir,pose);
 
-        // Right firing hand gripping Uzi pistol grip
-        Vector3 rightWrist = new Vector3(.275f, -.155f, .65f) + baseOffset + recoilOffset;
-        Vector3 aimDir = Vector3.Normalize(new Vector3(-0.16f, 0.10f + kick * 0.05f, 0.98f));
-        VisualEngine3D.Arm(true,rightWrist);
-
-        Vector3 receiverCenter=rightWrist+aimDir*.092f+Vector3.UnitY*.068f-Vector3.UnitX*.016f;
-        float yaw=MathF.Atan2(aimDir.X,aimDir.Z)*180/MathF.PI+180;
-        float elevation=MathF.Asin(aimDir.Y);
-        VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,yaw,.62f,
-            SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White,elevation);
-        Vector3 bolt=receiverCenter+Vector3.UnitY*.048f+aimDir*(.028f-UziBoltOffset*.055f);
-        VisualEngine3D.Box(bolt,.026f,.019f,.028f,SkinTintAccent.A>0 ? SkinTintAccent : Color.LightGray);
-        Vector3 barrelTip=receiverCenter+aimDir*(.31f*.62f)+Vector3.UnitY*.006f;
-
-        // 6. Star-shaped 3D Muzzle Flash when firing
         if (kick > 0.15f)
-        {
-            Color flashOuter = new Color(255, 165, 30, (int)(245 * kick));
-            Color flashCore = new Color(255, 250, 190, (int)(255 * kick));
-            float spikeLen = 0.095f * kick;
-
-            VisualEngine3D.Orb(barrelTip + aimDir * 0.02f, 0.032f * kick, flashCore);
-            VisualEngine3D.Rod(barrelTip, barrelTip + aimDir * (0.14f * kick), 0.024f * kick, 0.002f, 6, flashOuter);
-            VisualEngine3D.Rod(barrelTip - new Vector3(spikeLen, 0f, 0f), barrelTip + new Vector3(spikeLen, 0f, 0f), 0.012f * kick, 0.012f * kick, 5, flashOuter);
-            VisualEngine3D.Rod(barrelTip - new Vector3(0f, spikeLen, 0f), barrelTip + new Vector3(0f, spikeLen, 0f), 0.012f * kick, 0.012f * kick, 5, flashOuter);
-        }
+            Raylib.DrawLine3D(barrelTip, barrelTip + aimDir * 0.025f,
+                new Color(255, 225, 160, (int)(210 * kick)));
     }
 
     // =========================================================================
@@ -1036,57 +974,42 @@ public class WeaponAndCombatView
 
         Vector3 kickOffset = new Vector3(0f, kickUp * 0.11f, -kickUp * 0.12f);
 
-        // Right hand on sawed-off walnut grip
-        Vector3 rightWrist = new Vector3(0.18f, -0.23f, 0.52f) + baseOffset + kickOffset;
-        Vector3 gunDir = Vector3.Normalize(new Vector3(-0.18f, 0.10f + kickUp * 0.42f, 0.96f));
+        Vector3 assembly = baseOffset + kickOffset;
+        Vector3 pivot = new Vector3(.18f,-.17f,.60f) + assembly;
+        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
+            * Matrix4x4.CreateRotationX(-kickUp*.65f + breakBarrelTilt*.35f)
+            * Matrix4x4.CreateRotationY(-.12f)
+            * Matrix4x4.CreateTranslation(pivot);
+        Vector3 gripTop = new Vector3(.18f,-.12f,.66f) + assembly;
+        Vector3 barrelDir = Vector3.UnitZ;
+        Vector3 receiverHinge = gripTop + new Vector3(0,.015f,.065f);
+        VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_shotgun", pose);
+        VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_shotgun", pose);
+        Color shotgunTint = isChatGun ? new Color(150,255,215,255)
+            : (SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White);
+        VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, 180, 1, shotgunTint, assemblyTransform: pose);
 
-        Color stockWood = isChatGun
-            ? new Color(235, 185, 35, 255)
-            : (SkinTintPrimary.A > 0 ? SkinTintPrimary : new Color(118, 58, 26, 255));
-        Color receiverMetal = isChatGun ? new Color(40, 48, 62, 255) : new Color(75, 80, 90, 255);
-        Color barrelSteel = isChatGun ? new Color(255, 210, 55, 255) : new Color(56, 60, 68, 255);
-
-        Vector3 gripTop = rightWrist+new Vector3(-.034f,.059f,.085f);
-        Vector3 receiverHinge = gripTop+gunDir*.087f;
-        Vector3 barrelDir = Vector3.Normalize(gunDir - Vector3.UnitY*(breakBarrelTilt*.55f));
-        Vector3 support=receiverHinge+barrelDir*.13f-Vector3.UnitY*.023f;
-        VisualEngine3D.Arm(false,support-new Vector3(.050f,.036f,.078f));
-        VisualEngine3D.Arm(true,rightWrist);
-
-        Color shotgunTint = isChatGun
-            ? new Color(150, 255, 215, 255)
-            : (SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White);
-        float gunYaw = MathF.Atan2(barrelDir.X, barrelDir.Z) * 180f / MathF.PI + 180f;
-        float gunPitch = MathF.Asin(Math.Clamp(barrelDir.Y, -0.9f, 0.9f));
-        VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, gunYaw, 0.96f, shotgunTint, gunPitch);
-
-        Vector3 barrelEnd = receiverHinge + barrelDir * 0.36f;
+        Vector3 barrelEnd = Vector3.Transform(receiverHinge + barrelDir * 0.36f,pose);
+        barrelDir=Vector3.TransformNormal(barrelDir,pose);
+        receiverHinge=Vector3.Transform(receiverHinge,pose);
         Vector3 sideOffset = new Vector3(0.017f, 0f, 0f);
 
-        // When barrels are tilted open in break-action, show glowing red/gold shell rims inside the breech!
+        // When barrels are tilted open in break-action, show small flat brass rims inside the breech.
         if (breakBarrelTilt > 0.12f)
         {
             Color rimCol = isChatGun ? new Color(80, 255, 190, 255) : new Color(255, 210, 50, 255);
-            VisualEngine3D.Orb(receiverHinge - sideOffset + new Vector3(0f, 0.012f, 0.01f), 0.013f, rimCol);
-            VisualEngine3D.Orb(receiverHinge + sideOffset + new Vector3(0f, 0.012f, 0.01f), 0.013f, rimCol);
+            foreach (float side in new[] { -1f, 1f })
+            {
+                Vector3 rim = Vector3.Transform(gripTop + new Vector3(side*.017f,.024f,.095f),pose);
+                Raylib.DrawCylinderEx(rim, rim + barrelDir*.002f, .006f, .006f, 12, rimCol);
+            }
         }
 
-        // Secret Chat-Gun Cyber-Prompt Screen & Neon Rails when UnlockedChatGun is active
-        if (isChatGun)
-        {
-            Vector3 screenPos = receiverHinge + new Vector3(0f, 0.042f, 0.02f);
-            VisualEngine3D.Box(screenPos, 0.068f, 0.032f, 0.012f, new Color(16, 28, 36, 255));
-
-            VisualEngine3D.Orb(barrelEnd, 0.022f, new Color(90, 255, 200, 140));
-        }
-
-        // Twin Muzzle Blast Fireballs on initial shot
         if (kickUp > 0.35f)
         {
-            Color blastCol = isChatGun ? new Color(90, 255, 195, 240) : new Color(255, 175, 40, 240);
-            VisualEngine3D.Orb(barrelEnd - sideOffset + barrelDir * 0.03f, 0.048f * kickUp, blastCol);
-            VisualEngine3D.Orb(barrelEnd + sideOffset + barrelDir * 0.03f, 0.048f * kickUp, blastCol);
-            VisualEngine3D.Orb(barrelEnd + barrelDir * 0.05f, 0.035f * kickUp, Color.White);
+            Color flash = isChatGun ? new Color(90,255,195,180) : new Color(255,205,130,180);
+            Raylib.DrawLine3D(barrelEnd - sideOffset, barrelEnd - sideOffset + barrelDir * .035f, flash);
+            Raylib.DrawLine3D(barrelEnd + sideOffset, barrelEnd + sideOffset + barrelDir * .035f, flash);
         }
     }
 
