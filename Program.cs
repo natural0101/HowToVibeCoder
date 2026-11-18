@@ -525,18 +525,18 @@ public static partial class Program
         {
             string prompt="[E]  "+target;
             float width=Math.Min(sw-24,GameFonts.Measure(_serif,prompt,20).X+24);
-            Rectangle plate=new(cx-width/2,sh-159,width,30);
+            Rectangle plate=new(cx-width/2,cy+24,width,30);
             MainMenuAndPauseUI.Surface(plate,new Color(21,30,40,205),1);
             MainMenuAndPauseUI.Center(_serif,prompt,plate,20,white);
         }
         else if (_hudStatusTimer>0)
-            MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,new(cx-350,sh-159,700,30),18,white);
+            MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,new(cx-350,cy+24,700,30),18,white);
         Raylib.DrawCircle(cx,cy,1.3f,white);
         if (AudioMusicSystem.VoiceTimer>0)
         {
             string line=AudioMusicSystem.ActiveVoiceText;
             float width=Math.Min(sw-24,GameFonts.Measure(_uiFont,line,16).X+22);
-            Rectangle caption=new(cx-width/2,sh-126,width,25);
+            Rectangle caption=new(cx-width/2,cy+66,width,25);
             Raylib.DrawRectangleRounded(caption,.5f,8,new Color(20,27,35,204));
             MainMenuAndPauseUI.Center(_uiFont,line,caption,16,white);
         }

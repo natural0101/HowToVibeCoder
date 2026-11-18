@@ -394,11 +394,16 @@ def build_weapon_belt():
 
     # Origin is the right grip. The other fist is 40 cm to its left.
     # Tilt the broad leather face 40 degrees to the image plane.
-    width=Vector((0,math.cos(math.radians(40)),math.sin(math.radians(40))))
-    normal=Vector((0,math.sin(math.radians(40)),-math.cos(math.radians(40))))
+    width=Vector((0,math.cos(math.radians(40)),-math.sin(math.radians(40))))
+    normal=Vector((0,-math.sin(math.radians(40)),-math.cos(math.radians(40))))
     along=Vector((1,0,0))
     def strap(t):
-        return Vector((-.40*t,-.035*4*t*(1-t),0))
+        return Vector((.09-.58*t,-.032*4*t*(1-t),0))
+    # Trim the existing curve without changing its height/contact at either
+    # hand. The outside finger envelope is +/- .233 m in assembly space.
+    # Return reaches +.251 m; rounded tip reaches -.253 m (18/20 mm beyond it).
+    start_t=(.09-.044)/.58
+    end_t=(.09+.446)/.58
     def ribbon(name,path):
         verts=[]; faces=[]
         for c in path:
@@ -412,18 +417,31 @@ def build_weapon_belt():
         data=bpy.data.meshes.new(name); data.from_pydata(verts,[],faces); data.update()
         obj=bpy.data.objects.new(name,data); bpy.context.collection.objects.link(obj)
         obj.data.materials.append(m_leather)
-    ribbon("Tensioned stitched leather",[strap(i/64) for i in range(65)])
-    # A genuine return fold is pinched inside the right fist.
-    fold=[Vector((-.038+.038*i/12,0,0)) for i in range(13)]
-    fold += [along*(.007*math.sin(math.pi*i/16))-normal*(.007*(1-math.cos(math.pi*i/16))) for i in range(1,17)]
-    fold += [Vector((-.038*i/12,0,0))-normal*.014 for i in range(1,13)]
-    ribbon("Folded leather grip loop",fold)
+    ribbon("Tensioned stitched leather",[strap(start_t+(end_t-start_t)*i/64) for i in range(65)])
+    # Shallow rounded tip, continuous with the full-width leather end.
+    tip=strap(end_t)
+    tip_verts=[]
+    for face in (-1,1):
+        for i in range(25):
+            angle=-math.pi/2+math.pi*i/24
+            tip_verts.append(rl_pos(tip-along*(.007*math.cos(angle))
+                                    +width*(.020*math.sin(angle))+normal*(face*.00275)))
+    tip_faces=[tuple(reversed(range(25))),tuple(range(25,50))]
+    tip_faces += [(i,(i+1)%25,(i+1)%25+25,i+25) for i in range(25)]
+    data=bpy.data.meshes.new("Rounded leather tip"); data.from_pydata(tip_verts,[],tip_faces); data.update()
+    obj=bpy.data.objects.new("Rounded leather tip",data); bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(m_leather)
+    # Continuous return at the end, behind the strap, outside the fingers.
+    fold=[strap(start_t)+along*(.007*math.sin(math.pi*i/24))
+          -normal*(.007*(1-math.cos(math.pi*i/24))) for i in range(25)]
+    fold += [strap(start_t+.01*i/12)-normal*.014 for i in range(1,13)]
+    ribbon("Smooth leather end return",fold)
     for i in range(56):
         for edge in (-1,1):
             for face in (-1,1):
                 offset=width*(edge*.0165)+normal*(face*.0031)
-                add_rod("Saddle stitch",strap((i+.15)/56)+offset,
-                        strap((i+.70)/56)+offset,.00065,.00065,m_stitch,6)
+                add_rod("Saddle stitch",strap(start_t+(end_t-start_t)*(i+.15)/56)+offset,
+                        strap(start_t+(end_t-start_t)*(i+.70)/56)+offset,.00065,.00065,m_stitch,6)
     # Hollow brass eyelets, with a real opening through the leather.
     leather=bpy.data.objects["Tensioned stitched leather"]
     for t in (.23,.35,.47,.59,.71):
@@ -440,7 +458,7 @@ def build_weapon_belt():
             pts=[center+normal*(face*.0032)+along*(.0036*math.cos(i*math.tau/20))+width*(.0036*math.sin(i*math.tau/20)) for i in range(20)]
             for i in range(20): add_rod("Brass eyelet",pts[i],pts[(i+1)%20],.0009,.0009,m_gold,8)
     # Four straight sides and small rounded corners, never a circular ring.
-    center=strap(.92)
+    center=strap(.68)+normal*.007
     buckle=[]
     for x,y,start in ((.023,.019,0),(-.023,.019,90),(-.023,-.019,180),(.023,-.019,270)):
         for i in range(7):
@@ -522,14 +540,8 @@ def build_weapon_shotgun():
     mesh=bpy.data.meshes.new('Walnut wrist 24 segments'); mesh.from_pydata(verts,[],faces); mesh.update()
     grip=bpy.data.objects.new('Continuous walnut grip',mesh); bpy.context.collection.objects.link(grip)
     mesh.materials.append(m_walnut); smooth(grip)
-    m_check=make_mat('Cut walnut checkering',(.23,.095,.035,1),roughness=.7)
-    for side in (-1,1):
-        for j in range(8):
-            y=-.09+j*.006
-            z=.091-(y+.095)*.74
-            for slope in (-1,1):
-                curve('Diamond grip checkering',[(side*.024,y-.004,z-.010),
-                    (side*.025,y,z),(side*.024,y+.004,z+slope*.010)],.00065,m_check)
+    # Keep the walnut silhouette clean: raised checkering curves extended
+    # beyond the taper and appeared as loose splinters in first person.
     smooth(add_sphere('Steel grip heel',(0,-.105,.099),1,m_receiver,scale=(.028,.004,.022),segments=24))
     # Twin rounded fences blend into a tapered action and polished upper tang.
     for side in (-1,1):

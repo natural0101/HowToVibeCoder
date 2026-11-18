@@ -159,8 +159,8 @@ def frame(forward, across):
 def grip_frame(kind, side):
     right=side=="r"
     if kind=="fps_belt":
-        return (V((-.20 if right else .20,-.18,.60)), V((-1 if right else 1,0,0)),
-                V((0,-.62,.78)).normalized(), V((0,.78,.62)).normalized(), .034,.025)
+        return (V((-.20 if right else .20,-.165,.605)), V((-1 if right else 1,0,0)),
+                V((0,.18,.984)).normalized(), V((0,.984,-.18)).normalized(), .026,.022)
     if kind=="fps_solder":
         c=V((-.18,-.15,.62) if right else (.16,-.15,.70))
         return c,V((0,0,1 if right else -1)),V((-1 if right else 1,0,0)),V((0,1,0)),.034 if right else .044,.034 if right else .044
@@ -168,7 +168,7 @@ def grip_frame(kind, side):
         c=V((-.1805,-.193,.6665) if right else (-.18,-.125,.80))
         if right: return c,V((0,1,0)),V((-1,0,0)),V((0,0,1)),.040,.036
         return c,V((0,0,1)),V((0,-1,0)),V((-1,0,0)),.034,.025
-    c=V((-.18,-.15,.625) if right else (-.18,-.125,.85))
+    c=V((-.168,-.15,.625) if right else (-.18,-.125,.85))
     if right: return c,V((0,.79,.61)).normalized(),V((-1,0,0)),V((0,-.61,.79)).normalized(),.042,.034
     return c,V((0,0,1)),V((0,-1,0)),V((-1,0,0)),.040,.037
 
@@ -181,13 +181,26 @@ def contact_pose(kind, side):
     """
     if side=="l" and kind in ("fps_uzi","fps_shotgun"):
         # Reuse the longitudinal under-forearm grip, including its opposed thumb.
-        dest_wrist=V((-.115,-.162,.74) if kind=="fps_uzi" else (-.120,-.168,.77))
+        dest_wrist=V((-.148,-.162,.685) if kind=="fps_uzi" else (-.140,-.155,.77))
         return pose("fps",side,dest_wrist)
     j=lambda key: JOINT[side+"-"+key]
     c,axis,radial,tangent,rx,ry=grip_frame(kind,side)
     wrist=j("hand"); mid=j("finger-3-1")
-    hand=frame(tangent,axis)@frame(mid-wrist,j("finger-2-1")-j("finger-5-1")).transposed()
-    knuckle=c+radial*rx-tangent*.003
+    # MPFB hands are mirrored: orient BOTH rest normals into the palm.
+    palm_sign=1 if side=="l" else -1
+    f_rest=(mid-wrist).normalized()
+    u_rest=(j("finger-2-1")-j("finger-5-1"))*palm_sign
+    a_rest=(u_rest-f_rest*f_rest.dot(u_rest)).normalized()
+    palm_rest=f_rest.cross(a_rest).normalized()
+    rest_frame=Matrix((f_rest,a_rest,palm_rest)).transposed()
+    f_target=tangent.normalized()
+    palm_target=(-radial).normalized()
+    a_target=palm_target.cross(f_target).normalized()
+    target_frame=Matrix((f_target,a_target,palm_target)).transposed()
+    hand=target_frame@rest_frame.transposed()
+    assert abs(hand.determinant()-1)<1e-6
+    assert (hand@palm_rest).dot(palm_target)>.999999
+    knuckle=c+radial*rx+tangent*(.006 if kind=="fps_belt" else -.003)
     dest_wrist=knuckle-hand@(mid-wrist)
     dest_elbow=dest_wrist+V((-.12 if side=="r" else .15,-.19,-.28))
     if kind=="fps_shotgun" and side=="r": dest_elbow=dest_wrist+V((-.10,-.04,-.26))
@@ -205,13 +218,29 @@ def contact_pose(kind, side):
     signet=None
     for d,name in enumerate(DIGITS,1):
         chain=[j(f"finger-{d}-{k}") for k in range(1,5)]
-        pos=dest_wrist+hand@(chain[0]-wrist)
-        # Authored MCP/PIP/DIP flexion. Collision fitting must never flatten a grip.
-        angles=[.88,1.12,.78] if kind=="fps_belt" else (
-            [.72,.98,.65] if side=="l" and kind in ("fps_uzi","fps_shotgun")
-            else [.85,1.10,.75])
+        metacarpal=hand@(chain[0]-wrist)
+        angles=[.85,1.10,.75]
+        cup=roll=spread=total_angle=0
+        if kind=="fps_belt" and d>=2:
+            # Cupping and three joint flexions fitted to the sagging upper seam.
+            belt_flex=(
+                ((.097,.277,1.036,.948),(.250,.552,1.212,1.850),
+                 (.278,.501,1.010,1.850),(.350,.348,.120,1.317)) if side=="r" else
+                ((.337,.320,1.295,1.768),(.226,.747,1.105,1.850),
+                 (.247,.679,.883,1.786),(.357,.481,.120,1.630)))
+            cup,*angles=belt_flex[d-2]
+        if kind=="fps_shotgun" and side=="r" and d>=3:
+            # Each digit meets a different section of the tapered walnut.
+            angles=[.78,1.02,.58]
+            total_angle,spread,roll,cup=(
+                (-.329,-.193,.047,-.293),(-.480,-.162,.157,-.210),
+                (-1.148,.183,-.091,.024))[d-3]
+        if roll:
+            metacarpal=Quaternion(radial,roll)@metacarpal
+        if cup:
+            metacarpal=Quaternion(tangent.cross(-radial).normalized(),cup)@metacarpal
+        pos=dest_wrist+metacarpal
         thumb_direction=(c+axis*.035+radial*.032+tangent*.025-pos).normalized()
-        total_angle=0
         for k in range(3):
             rest=chain[k+1]-chain[k]
             if d==1:
@@ -219,6 +248,13 @@ def contact_pose(kind, side):
                 # Keep a continuous thumb arc instead of turning back toward a
                 # target already passed by the previous phalanx.
                 direction=(thumb_direction-axis*(.12*k)-radial*(.12*k)).normalized()
+                if kind=="fps_belt":
+                    # Keep the thumb alongside its own index-side palm edge.
+                    thumb_arc=(((.330,.837,-.369),(.050,.088,-.994),(-.420,.585,.739))
+                               if side=="r" else
+                               ((.447,.837,-.369),(.167,-.135,-.988),(-.303,.585,.739)))
+                    lateral,lift,depth=thumb_arc[k]
+                    direction=(axis*lateral+V((0,lift,depth))).normalized()
                 rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
             elif d==2 and side=="r" and kind in ("fps_uzi","fps_shotgun"):
                 # Index extends toward the trigger; other fingers retain the grip.
@@ -229,6 +265,10 @@ def contact_pose(kind, side):
             else:
                 total_angle+=angles[k]
                 direction=tangent*math.cos(total_angle)-radial*math.sin(total_angle)
+                if kind=="fps_belt" and side=="r" and d==2:
+                    direction=(direction-axis*.14).normalized()
+                if spread:
+                    direction=direction*math.cos(spread)+axis*math.sin(spread)
                 rot=(hand@rest).rotation_difference(direction).to_matrix()@hand
             transforms[f"{name}_{k+1:02}_"+side]=(chain[k],pos.copy(),rot)
             delta=rot@rest
@@ -445,15 +485,27 @@ def human(kind):
             bm.free()
         pieces[side]=obj
     if fps:
-        pos,axis=rings["r"]
+        # Anchor to the final proximal ring-finger transform, then fit the band
+        # to the skinned surface (joint centres alone omit the skin envelope).
+        origin,start,rotation=transforms["ring_01_r"]
+        delta=rotation@(JOINT["r-finger-4-2"]-JOINT["r-finger-4-1"])
+        pos,axis=start+delta*.5,delta.normalized()
+        rings["r"]=(pos,axis)
         basis=frame(axis,(0,1,0))
-        # Ring is part of the right hand assembly, centred on its ring phalanx.
-        radial=basis.col[1]
-        wire("Gold ring band",[pos+basis.col[1]*math.cos(i*math.tau/24)*.0095+
-             basis.col[2]*math.sin(i*math.tau/24)*.0095 for i in range(24)],.002,"gold",True)
-        outward=V((-1,0,0)); outward=(outward-axis*outward.dot(axis)).normalized()
-        oval("Signet setting",pos+outward*.010,(.004,.007,.008),"gold")
-        oval("Onyx stone",pos+outward*.013,(.002,.005,.006),"onyx")
+        skin=pieces["r"]
+        tree=BVHTree.FromPolygons([v.co for v in skin.data.vertices],
+            [tuple(f.vertices) for f in skin.data.polygons])
+        def surface(direction):
+            hit,_,_,distance=tree.ray_cast(V(xyz(pos)),V(xyz(direction)),.025)
+            assert hit is not None and distance<.018,(kind,"ring outside finger",distance)
+            return pos+direction*(distance+.0003)
+        wire("Gold ring band",[surface(basis.col[1]*math.cos(i*math.tau/32)+
+             basis.col[2]*math.sin(i*math.tau/32)) for i in range(32)],.0012,"gold",True)
+        outward=rotation@V((-1,0,0))
+        outward=(outward-axis*outward.dot(axis)).normalized()
+        top=surface(outward)
+        oval("Signet setting",top,(.003,.004,.004),"gold")
+        oval("Onyx stone",top+outward*.0015,(.002,.003,.003),"onyx")
     return pieces
 
 

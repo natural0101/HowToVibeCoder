@@ -378,8 +378,8 @@ public class WeaponAndCombatView
                 {
                     BrassShells.Add(new BrassShell3D
                     {
-                        Position = muzzleWorld - forward * 0.34f + right * (0.16f + s * 0.025f) - up * 0.10f,
-                        Velocity = right * (2.0f + s * 0.6f) - up * (0.25f + s * 0.15f) + forward * 0.15f,
+                        Position = muzzleWorld - forward * 0.34f + right * (0.16f + s * 0.025f) + up * 0.10f,
+                        Velocity = right * (2.0f + s * 0.6f) + up * (0.65f + s * 0.15f) + forward * 0.15f,
                         Rotation = new Vector3(NextFloat() * 180f, NextFloat() * 180f, NextFloat() * 180f),
                         AngularVelocity = new Vector3(420f, 510f, 380f),
                         Life = 2.6f,
@@ -729,32 +729,7 @@ public class WeaponAndCombatView
             }
         }
 
-        // 5. Ejected 3D Brass & Shotgun Shells
-        for (int i = 0; i < BrassShells.Count; i++)
-        {
-            var b = BrassShells[i];
-            float ratio = Math.Clamp(b.Life / b.MaxLife, 0f, 1f);
-            byte a = (byte)(255 * MathF.Min(1f, ratio * 2f));
-
-            Vector3 dir = new Vector3(
-                MathF.Cos(b.Rotation.X * 0.0174f),
-                MathF.Sin(b.Rotation.Y * 0.0174f) * 0.5f,
-                MathF.Sin(b.Rotation.Z * 0.0174f));
-            dir = Vector3.Normalize(dir);
-
-            if (b.IsShotgunShell)
-            {
-                Vector3 tip = b.Position + dir * 0.016f;
-                Vector3 brassEnd = b.Position - dir * 0.006f;
-                Raylib.DrawCylinderEx(b.Position, tip, 0.006f, 0.006f, 6, new Color(210, 35, 35, (int)a));
-                Raylib.DrawCylinderEx(brassEnd, b.Position, 0.006f, 0.006f, 6, new Color(245, 205, 65, (int)a));
-            }
-            else
-            {
-                Vector3 tip = b.Position + dir * 0.0127f;
-                Raylib.DrawCylinderEx(b.Position, tip, 0.0033f, 0.0033f, 6, new Color(250, 210, 75, (int)a));
-            }
-        }
+        // Ejected shells retain their simulation lifetime but are not rendered.
     }
 
     /// <summary>
@@ -858,25 +833,22 @@ public class WeaponAndCombatView
             }
         }
 
-        // Both contact poses and the strap share one assembly displacement.
         Vector3 assembly = baseOffset + swingHandOffset;
-        Vector3 pivot = new Vector3(.20f,-.18f,.60f) + assembly;
-        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivot)
-            * Matrix4x4.CreateRotationX(whipExtension*.35f) * Matrix4x4.CreateTranslation(pivot);
-        // Authored grips at (+/-.20, -.18, .60) follow the same strap transform.
+        Vector3 beltPos = new Vector3(.18f,-.155f,.592f) + assembly;
+        Matrix4x4 pose = Matrix4x4.CreateTranslation(-beltPos)
+            * Matrix4x4.CreateRotationX(whipExtension*.35f) * Matrix4x4.CreateTranslation(beltPos);
         VisualEngine3D.ArmAssembly(false, assembly, "fps_hands_belt", pose);
         VisualEngine3D.ArmAssembly(true, assembly, "fps_hands_belt", pose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        Vector3 beltPos = new Vector3(.20f,-.18f,.60f) + assembly;
         VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose);
 
         // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
         if (p > 0.18f)
         {
             byte slashAlpha = (byte)(240 * p);
-            // Match strap(.92) in build_weapon_belt, including the assembly swing.
+            // Match strap(.68) in build_weapon_belt, including the assembly swing.
             Vector3 buckleCenter = Vector3.Transform(
-                beltPos + new Vector3(-.40f*.92f, -.035f*4*.92f*.08f, 0), pose);
+                beltPos + new Vector3(.09f-.58f*.68f, -.032f*4*.68f*.32f, 0), pose);
             Vector3 vStart = new Vector3(0.32f * lashSide, 0.22f, 0.72f);
             Vector3 vMid = buckleCenter;
             Vector3 vEnd = new Vector3(-0.36f * lashSide, -0.18f, 0.78f);
