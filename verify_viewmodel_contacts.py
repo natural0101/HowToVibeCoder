@@ -19,6 +19,9 @@ def check_solder_pads(vertices, prop):
     sys.path.insert(0, str(ROOT))
     from generate_anatomy import contact_pose, DIGITS, JOINT, solder_palm_fit
     pose, _ = contact_pose("fps_solder", "r")
+    knuckles = [pose[name + "_01_r"][1] for name in DIGITS[1:]]
+    assert all(a.z > b.z for a, b in zip(knuckles, knuckles[1:])), "Index must face the guard"
+    assert all(p.x < -.18 and p.y > -.15 for p in knuckles), "MCP row must enclose the handle"
     for i, digit in enumerate(DIGITS, 1):
         origin, joint, rotation = pose[digit + "_03_r"]
         center = solder_palm_fit(joint + .65 * (rotation @ (JOINT[f"r-finger-{i}-4"] - origin)))

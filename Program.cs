@@ -652,6 +652,79 @@ public static partial class Program
         Console.WriteLine($"[AUTOTEST] Lift nameplate collision cases passed: {trials}");
     }
 
+    private static unsafe void CheckArchiveControls()
+    {
+        bool exit = false;
+        void Input(uint type, int first, int second = 0)
+        {
+            AutomationEvent e = new() { Type = type };
+            e.Params[0] = first;
+            e.Params[1] = second;
+            Raylib.PlayAutomationEvent(e);
+        }
+        void Frame()
+        {
+            UpdateFrame(1f / 60, ref exit);
+            DrawFrame();
+        }
+        void Key(KeyboardKey key)
+        {
+            Input(2, (int)key);
+            Frame();
+            Input(1, (int)key);
+            Frame();
+        }
+        void ClickAt(int x, int y)
+        {
+            Input(7, x, y);
+            Input(6, (int)MouseButton.Left);
+            Frame();
+            Input(5, (int)MouseButton.Left);
+            Frame();
+        }
+        void Expect(int tab)
+        {
+            if (LoreAndMenusUI.IsLoreOpen != (tab >= 0) ||
+                (tab >= 0 && LoreAndMenusUI.ActiveLoreTab != tab))
+                throw new InvalidDataException($"Archive input failed for tab {tab}");
+        }
+
+        Key(KeyboardKey.N);
+        for (int i = 0; i < 4; i++)
+        {
+            Key(KeyboardKey.One + i);
+            Expect(i);
+        }
+        Key(KeyboardKey.Tab);
+        Expect(0);
+        Input(8, 0, -12);
+        Frame();
+        if (LoreAndMenusUI.LoreScrollOffset is <= 0 or >= 450)
+            throw new InvalidDataException("Archive wheel did not start smooth scrolling");
+        for (int i = 0; i < 48; i++) Frame();
+        if (Math.Abs(LoreAndMenusUI.LoreScrollOffset - 450) > 1)
+            throw new InvalidDataException("Last three archive threads do not fill the viewport");
+        int left = (Raylib.GetScreenWidth() - 940) / 2;
+        int top = (Raylib.GetScreenHeight() - 560) / 2;
+        for (int i = 3; i >= 0; i--)
+        {
+            ClickAt(left + 120, top + 202 + 48 * i);
+            Expect(i);
+            if (LoreAndMenusUI.LoreScrollOffset != 0)
+                throw new InvalidDataException("Archive tab retained another section's offset");
+        }
+        ClickAt(left + 870, top + 34);
+        Expect(-1);
+        Key(KeyboardKey.N);
+        Expect(0);
+        Key(KeyboardKey.Escape);
+        Expect(-1);
+        Key(KeyboardKey.N);
+        Key(KeyboardKey.N);
+        Expect(-1);
+        Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 4-6");
+    }
+
     private static void RunAutomatedScreenshotSuite()
     {
         CheckElevatorNameplates();
@@ -770,7 +843,7 @@ public static partial class Program
                 if(frame==138 && !_weapons.Inspecting)
                     throw new InvalidDataException($"Inspection ended early in slot {slot}");
                 if(slot==2 && frame==97)
-                    CaptureShot("crop_inspect_f.png",detail:new(400,260,690,390),cropOnly:true);
+                    CaptureShot("crop_inspect_f.png",detail:new(400,210,690,440),cropOnly:true);
             }
             if (_weapons.Inspecting) throw new InvalidDataException($"Inspect did not finish in slot {slot}");
         }
@@ -880,6 +953,8 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
         CaptureShot("06_lore_chats_window_n.png");
+        LoreAndMenusUI.IsLoreOpen = false;
+        CheckArchiveControls();
 
         // 7. 07_settings_mixer_and_mods.png (and 07_settings_mixer_and_cases.png) - Settings / Audio Mixer [F8]
         LoreAndMenusUI.IsLoreOpen = false;

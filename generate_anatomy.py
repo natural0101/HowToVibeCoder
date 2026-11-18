@@ -199,7 +199,7 @@ def contact_pose(kind, side):
     if side=="r":
         # Arm mirrors X at draw time: (-X,+Y) puts the knuckles upper right.
         roll=math.radians(135)
-        c=V((-.18,-.15,.615))
+        c=V((-.18,-.15,.62))
         radial,tangent=V((math.cos(roll),math.sin(roll),0)),V((-math.sin(roll),math.cos(roll),0))
     else:
         c,radial,tangent=V((.16,-.15,.70)),V((1,0,0)),V((0,1,0))
@@ -214,21 +214,21 @@ def contact_pose(kind, side):
     f_target=tangent.normalized()
     palm_target=(-radial).normalized()
     if side=="r":
-        # Aim the metacarpals forward from the cuff, with the back facing up.
-        f_target=V((.83,.29,.48)).normalized()
-        dorsal=V((-.28,.96,-.10))
-        palm_target=-(dorsal-f_target*dorsal.dot(f_target)).normalized()
+        # Set the index-to-pinky axis first. Its projection follows the handle,
+        # while the wrist sits below and behind the row of knuckles.
+        f_target=V((.42,.65,.63)).normalized()
+        palm_target=f_target.cross(axis).normalized()
     a_target=palm_target.cross(f_target).normalized()
     target_frame=Matrix((f_target,a_target,palm_target)).transposed()
     hand=target_frame@rest_frame.transposed()
     assert abs(hand.determinant()-1)<1e-6
     assert (hand@palm_rest).dot(palm_target)>.999999
     if side=="r":
-        knuckle=c+radial*.031-tangent*.014
+        knuckle=c+V((-.033,.017,.009))
     else:
         knuckle=c+radial*.044-tangent*.003
     dest_wrist=knuckle-hand@(mid-wrist)
-    dest_elbow=dest_wrist+V((-.21,-.11,-.28) if side=="r" else (.15,-.19,-.28))
+    dest_elbow=dest_wrist+V((-.26,-.09,-.21) if side=="r" else (.15,-.19,-.28))
     transforms={}
     for name,a,b,p,q in [("upperarm",j("shoulder"),j("elbow"),dest_elbow-V((0,0,.2)),dest_elbow),
                          ("lowerarm",j("elbow"),wrist,dest_elbow,dest_wrist)]:
@@ -246,16 +246,12 @@ def contact_pose(kind, side):
         metacarpal=hand@(chain[0]-wrist)
         pos=dest_wrist+metacarpal
         if side=="r" and d==1:
-            pos+=V((.018,-.014,.029))
+            # Oppose the mobile thumb metacarpal before curling its phalanges.
+            pos=c+V((-.046,-.026,.012))
         if side=="r" and d>=2:
-            # Index through little finger: cup around the MCP row, limit its
-            # radius, and stagger the roots along the length of the blue tape.
-            cup_deg,max_radius,along=(
-                (0,.038,-.028),(0,.037,-.007),(15,.038,.013),(18,.037,.039)
-            )[d-2]
-            off=pos-c
-            azimuth=math.atan2(off.y,off.x)-math.radians(cup_deg)
-            radius=min(math.hypot(off.x,off.y),max_radius)
+            along=(.030,.009,-.011,-.031)[d-2]
+            azimuth=math.radians((142,146,143,132)[d-2])
+            radius=(.036,.037,.034,.028)[d-2]
             pos=c+V((radius*math.cos(azimuth),radius*math.sin(azimuth),along))
         thumb_direction=(c+axis*.035+radial*.032+tangent*.025-pos).normalized()
         total_angle=0
@@ -264,13 +260,13 @@ def contact_pose(kind, side):
             rest=chain[k+1]-chain[k]
             if side=="r" and d==1:
                 # Oppose the thumb along the exposed side, aiming at the guard.
-                target=c+V(((-.007,-.034,-.015),(.024,-.017,.003),(.023,.009,.027))[k])
+                target=c+V(((-.024,-.026,.025),(.011,-.018,.036),(.022,.006,.038))[k])
                 direction=(target-pos).normalized()
             elif side=="r":
                 # The transverse chord is fixed by bone length and axial travel.
                 # Solve its sweep so each successive joint wraps under the tape.
-                next_radius=(.028,.024,.020 if d==5 else .022)[k]
-                dz=rest.length*(.10 if d==5 else .28)
+                next_radius=((.024,.021,.019) if d==5 else (.027,.023,.021))[k]
+                dz=-rest.length*.08
                 chord_sq=rest.length_squared-dz*dz
                 cos_sweep=(radius**2+next_radius**2-chord_sq)/(2*radius*next_radius)
                 azimuth-=math.acos(max(-1,min(1,cos_sweep)))
@@ -295,11 +291,13 @@ def contact_pose(kind, side):
 
 
 def solder_palm_fit(p):
-    # Cup the thumb web against the grip on the palm side. The cuff and
-    # fingertips lie outside this small patch of soft tissue.
-    offset=p-V((-.190,-.150,.590))
-    weight=math.exp(-((offset.x/.013)**2+(offset.y/.020)**2+(offset.z/.020)**2))
-    return p-V((.012*weight,0,0))
+    # Flesh conforms to the cylindrical tape. Allow for the chords between
+    # neighbouring skin vertices as well as the raised edge of the tape.
+    x,y=p.x+.18,p.y+.15
+    r=math.hypot(x,y)
+    if .55 < p.z < .684 and 0 < r < .0142:
+        return V((-.18+x*.0142/r,-.15+y*.0142/r,p.z))
+    return p
 
 
 def pose(kind, side, support_wrist=None):
@@ -450,7 +448,13 @@ def human(kind):
                     bone="lowerarm_"+side
                 if bone in transforms:
                     org,dest,rot = transforms[bone]
-                    out+=(dest+rot@(p-org))*w
+                    local=p-org
+                    if kind=="fps_solder" and side=="r" and bone.split("_")[0] in DIGITS:
+                        digit, segment, _ = bone.split("_")
+                        tip = JOINT[f"r-finger-{DIGITS.index(digit)+1}-{int(segment)+1}"]
+                        axis = (tip-org).normalized()
+                        local += (local-axis*local.dot(axis))*.14
+                    out+=(dest+rot@local)*w
                 else: out+=p*w
                 total+=w
             pts.append(out/total if total else p)

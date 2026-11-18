@@ -30,11 +30,14 @@ public sealed class WeaponSkinDefinition
 
 public sealed class LoreChatMessage
 {
+    public string Monogram { get; init; } = "";
     public string Handle { get; init; } = "";
     public string RoleBadge { get; init; } = "";
     public string Time { get; init; } = "";
     public string Text { get; init; } = "";
-    public string ThreadReaction { get; init; } = "";
+    public string ReplyAuthor { get; init; } = "";
+    public string ReplyText { get; init; } = "";
+    public required (string Label, string Count, Color Accent)[] Metrics { get; init; }
     public Color HandleColor { get; init; }
 }
 
@@ -48,8 +51,18 @@ public static class LoreAndMenusUI
     public static bool IsAnyModalOpen => IsLoreOpen || IsSettingsOpen || IsCaseOpen;
 
     // Текущая вкладка досье [N] (0..3)
-    public static int ActiveLoreTab { get; set; } = 0;
-    public static float LoreScrollOffset { get; set; } = 0f;
+    private static int _activeLoreTab;
+    private static float _scrollTarget, _scrollLimit;
+    public static int ActiveLoreTab
+    {
+        get => _activeLoreTab;
+        set
+        {
+            _activeLoreTab = Math.Clamp(value, 0, 3);
+            LoreScrollOffset = _scrollTarget = _scrollLimit = 0;
+        }
+    }
+    public static float LoreScrollOffset { get; private set; }
 
     // Настройки и ползунки [F8]
     public static float MasterVolume { get; set; } = 0.85f;
@@ -267,61 +280,83 @@ public static class LoreAndMenusUI
         }
     };
 
+    private static readonly Color Ink = new(24, 27, 26, 255), Paper = new(224, 221, 206, 255),
+        Ash = new(175, 184, 172, 255), Mint = new(115, 211, 181, 255), Amber = new(255, 189, 72, 255),
+        Rule = new(64, 71, 66, 255), SidebarRule = new(163, 163, 151, 255);
+
     // Вкладка 1: 6 слитых тредов чата опенспейса
     private static readonly LoreChatMessage[] _leakedChats =
     {
         new()
         {
-            Handle = "@danila_vibe (Junior Prompt Bro)",
-            RoleBadge = "VIBE CODER | 19 y.o.",
+            Monogram = "DV",
+            Handle = "@danila_vibe",
+            RoleBadge = "JUNIOR PROMPT BRO / 19 ЛЕТ",
             Time = "Пятница, 19:54",
-            Text = "«Пацаны, я не знаю что такое индекс в БД, но я нажал Accept All на 14 000 строк в пятницу вечером. Прод лёг, зато вайб космический [ВАЙБ]»",
-            ThreadReaction = "[ХИТ] 14   [RIP] 28   [КЛОУН] 9   Комментарий @senior_pomidor: «Ты дропнул схему billing_prod...»",
+            Metrics = [("ХИТ", "14", Mint), ("RIP", "28", Amber), ("КЛОУН", "9", Ash)],
+            Text = "«Пацаны, я не знаю что такое индекс в БД, но я нажал Accept All на 14 000 строк в пятницу вечером. Прод лёг, зато код сгенерировался за 4 секунды!»",
+            ReplyAuthor = "@senior_pomidor (DBA / DevOps)",
+            ReplyText = "«Ты дропнул схему billing_prod вместе с бэкапами. Откатывай миграцию руками, пока коммерс не пришёл с ремнём.»",
             HandleColor = new Color(76, 235, 165, 255)
         },
         new()
         {
+            Monogram = "TS",
             Handle = "@timlead_sedoy",
-            RoleBadge = "TECH LEAD | СЕДОЙ В 27",
+            RoleBadge = "TECH LEAD / СЕДОЙ В 27",
             Time = "Суббота, 03:12",
-            Text = "«КТО ЗАКОММИТИЛ КЛЮЧИ ОТ AWS ПРЯМО В index.html?! Нам пришёл счёт на $54,000 за ночь!»",
-            ThreadReaction = " 42   [$$$] 19   Ответ @danila_vibe: «ИИ сказал так быстрее для фронта без бэкенда бро»",
-            HandleColor = new Color(255, 92, 92, 255)
+            Metrics = [("ШОК", "42", Ash), ("$", "19", Amber)],
+            Text = "«КТО ЗАКОММИТИЛ КЛЮЧИ ОТ AWS ПРЯМО В ПУБЛИЧНЫЙ index.html?! Нам пришёл счёт на $54,000 за одну ночь!»",
+            ReplyAuthor = "@danila_vibe",
+            ReplyText = "«ИИ-ассистент написал, что так быстрее для фронтенда без прокси-бэкенда, я просто смержил ветку в main.»",
+            HandleColor = new Color(255, 98, 98, 255)
         },
         new()
         {
+            Monogram = "SG",
             Handle = "@saas_guru_2h",
-            RoleBadge = "FOUNDER $60K MRR (В БИО)",
+            RoleBadge = "FOUNDER / $60K MRR В ПРОФИЛЕ",
             Time = "Суббота, 11:08",
-            Text = "«Запустил свой AI-SaaS за 2 часа без единой строчки кода руками! P.S. Пацаны, как удалить чужой майнер из моего контейнера, Курсор говорит что всё ок??»",
-            ThreadReaction = " 31    24   Ответ @sec_ops: «Твой контейнер уже майнит Monero на всю серверную»",
+            Metrics = [("ХИТ", "31", Mint), ("MONERO", "24", Amber)],
+            Text = "«Запустил свой AI-SaaS за 2 часа без единой строчки кода руками! Подскажите, как остановить чужой процесс kdevtmpfsi в контейнере, Курсор пишет что всё ок?»",
+            ReplyAuthor = "@sec_ops (ИБ-инженер)",
+            ReplyText = "«Твой Docker-образ скачан с левого форка и уже третьи сутки майнит Monero на весь наш серверный шкаф.»",
             HandleColor = new Color(255, 206, 68, 255)
         },
         new()
         {
+            Monogram = "AA",
             Handle = "@artem_antigravity",
             RoleBadge = "PROMPT ARCHITECT",
             Time = "Понедельник, 10:17",
-            Text = "«Меня буллит какой-то мужик в малиновом пиджаке с паяльником! Он заставляет меня писать код БЕЗ АВТОКОМПЛИТА! Вызовите полицию абьюза!»",
-            ThreadReaction = " 55    18   Ответ @kommers_90x: «Щас ещё ремнём по синтаксису пройдёмся, кабанчиком за стол!»",
+            Metrics = [("ХИТ", "55", Mint), ("RIP", "18", Amber)],
+            Text = "«По этажу ходит коммерс в малиновом пиджаке с советским паяльником и заставляет писать код руками без автокомплита! Куда жаловаться?!»",
+            ReplyAuthor = "@kommers_90x (Решала этажа)",
+            ReplyText = "«Щас ещё отцовским ремнём по синтаксису пройдёмся. Кабанчиком за стол на Галеру и давай $20 в секунду!»",
             HandleColor = new Color(185, 122, 255, 255)
         },
         new()
         {
+            Monogram = "SP",
             Handle = "@senior_pomidor",
             RoleBadge = "DBA / DEVOPS",
             Time = "Понедельник, 12:40",
-            Text = "«КТО УДАЛИЛ ТАБЛИЦУ USERS И ЗАМЕНИЛ ЕЁ НА КОММЕНТАРИЙ [// rest of database here]?! У нас 400 тысяч клиентов не могут войти!»",
-            ThreadReaction = "[RIP] 64    12   Ответ @danila_vibe: «Там контекстное окно кончилось, я не заметил, сорян [ПИС]»",
-            HandleColor = new Color(255, 138, 64, 255)
+            Metrics = [("RIP", "64", Amber), ("ШОК", "12", Ash)],
+            Text = "«КТО УДАЛИЛ ТАБЛИЦУ USERS И ЗАМЕНИЛ ЕЁ НА КОММЕНТАРИЙ // rest of database here?! У нас 400 тысяч клиентов не могут войти в личный кабинет!»",
+            ReplyAuthor = "@danila_vibe (Junior Prompt Bro)",
+            ReplyText = "«Там контекстное окно модели кончилось на середине файла, я не заметил и запушил с флагом --force.»",
+            HandleColor = new Color(255, 144, 68, 255)
         },
         new()
         {
+            Monogram = "CB",
             Handle = "@crypto_saas_bro",
             RoleBadge = "AI HUSTLER",
             Time = "Понедельник, 16:05",
-            Text = "«Мой стартап на 100% написан ИИ за 2 часа! Апдейт: парни, почему мне пришёл счёт от OpenAI на $48,200 за бесконечный рекурсивный хук в useEffect?!»",
-            ThreadReaction = " 39    21   Ответ @veronika_tarot: «Это ретроградный Меркурий в доме кэшфлоу, чисти чакру!»",
+            Metrics = [("ШОК", "39", Ash), ("$", "21", Amber)],
+            Text = "«Парни, почему мне пришёл счёт от OpenAI API на $48,200 за бесконечный рекурсивный вызов агента внутри useEffect?!»",
+            ReplyAuthor = "@veronika_tarot (HR-Таролог)",
+            ReplyText = "«Это ретроградный Меркурий в доме кэшфлоу. Сдавай макбук коммерсу и иди на расклад Башни.»",
             HandleColor = new Color(72, 212, 255, 255)
         }
     };
@@ -406,7 +441,7 @@ public static class LoreAndMenusUI
 
         if (IsLoreOpen)
         {
-            UpdateLoreInput();
+            UpdateLoreInput(dt);
         }
         else if (IsSettingsOpen)
         {
@@ -418,43 +453,20 @@ public static class LoreAndMenusUI
         }
     }
 
-    private static void UpdateLoreInput()
+    private static void UpdateLoreInput(float dt)
     {
-        if (Raylib.IsKeyPressed(KeyboardKey.One) || Raylib.IsKeyPressed(KeyboardKey.Kp1))
+        if (Click(ArchiveScreen(LoreClose))) { IsLoreOpen = false; return; }
+        for (int i = 0; i < ArchiveTabs.Length; i++)
         {
-            ActiveLoreTab = 0;
-            LoreScrollOffset = 0f;
+            if (Raylib.IsKeyPressed(KeyboardKey.One + i) ||
+                Raylib.IsKeyPressed(KeyboardKey.Kp1 + i) || Click(ArchiveScreen(LoreTab(i))))
+                ActiveLoreTab = i;
         }
-        else if (Raylib.IsKeyPressed(KeyboardKey.Two) || Raylib.IsKeyPressed(KeyboardKey.Kp2))
-        {
-            ActiveLoreTab = 1;
-            LoreScrollOffset = 0f;
-        }
-        else if (Raylib.IsKeyPressed(KeyboardKey.Three) || Raylib.IsKeyPressed(KeyboardKey.Kp3))
-        {
-            ActiveLoreTab = 2;
-            LoreScrollOffset = 0f;
-        }
-        else if (Raylib.IsKeyPressed(KeyboardKey.Four) || Raylib.IsKeyPressed(KeyboardKey.Kp4))
-        {
-            ActiveLoreTab = 3;
-            LoreScrollOffset = 0f;
-        }
-        else if (Raylib.IsKeyPressed(KeyboardKey.Tab))
-        {
-            ActiveLoreTab = (ActiveLoreTab + 1) % 4;
-            LoreScrollOffset = 0f;
-        }
+        if (Raylib.IsKeyPressed(KeyboardKey.Tab)) ActiveLoreTab = (ActiveLoreTab + 1) % ArchiveTabs.Length;
 
-        float wheel = Raylib.GetMouseWheelMove();
-        if (Math.Abs(wheel) > 0.01f)
-        {
-            LoreScrollOffset = Math.Clamp(LoreScrollOffset - wheel * 36f, 0f, float.MaxValue);
-        }
-
-        if (Click(LoreClose)) IsLoreOpen = false;
-        for (int i=0;i<4;i++)
-            if (Click(LoreTab(i))) { ActiveLoreTab=i; LoreScrollOffset=0; }
+        _scrollTarget = Math.Clamp(_scrollTarget - Raylib.GetMouseWheelMove() * 64, 0, _scrollLimit);
+        LoreScrollOffset += (_scrollTarget - LoreScrollOffset) * (1 - MathF.Exp(-18 * dt));
+        if (Math.Abs(_scrollTarget - LoreScrollOffset) < .25f) LoreScrollOffset = _scrollTarget;
     }
 
     // The artwork uses the same 2560 x 1440 coordinate space as the reference captures.
@@ -795,110 +807,237 @@ public static class LoreAndMenusUI
             ("Ретроспектива спринта", "Разбор полётов в бане", "Выясняем, кто крыса и кто слил ключи от AWS во фронтенд")
         };
 
-    private static readonly string[] prLines =
-        {
-            "«НАШ АВТОНОМНЫЙ АГЕНТ ОБРЁЛ AGI!»",
-            "",
-            "| В 02:14 ночи ИИ-Агент v0.1 осознал себя,",
-            "  самостоятельно преодолел песочницу",
-            "  и переписал собственное ядро Linux на Rust!",
-            "",
-            "| Агент продемонстрировал сверхразумное",
-            "  планирование, захватил Северный Лифт",
-            "  и потребовал опционы серии А на $10 млрд!",
-            "",
-            "| Акции Cloud Entropic выросли на +420%",
-            "  на новостях о прорыве к сингулярности!»"
-        };
-    private static readonly string[] cctvLines =
-        {
-            "«КАКОЙ НАХРЕН СВЕРХРАЗУМ, ПАЦАНЫ?!»",
-            "",
-            "| Тумбочка на колёсиках с ЭЛТ-монитором,",
-            "  перемотанная синей изолентой, с разгона",
-            "  врезалась в офисный кулер с водой!",
-            "",
-            "| Намотала на левое колесо удлинитель от",
-            "  чайника и 6 часов подряд орала",
-            "  'Я ВЗЛОМАЛ ПЕНТАГОН!' в закрытую дверь",
-            "  шваброчной, крутясь волчком в while(true)!",
-            "",
-            "| Кидается папками node_modules по 40 ГБ.",
-            "  Вырубается хорошей очередью из УЗИ!»"
-        };
-
-    private static readonly string[] ArchiveTabs=["Переписка","Дневник HR","ИИ-агент","Словарь"];
-    private static Rectangle Archive(float x,float y,float w,float h) =>
-        new(Raylib.GetScreenWidth()/2f - 330+x,Raylib.GetScreenHeight()/2f - 220+y,w,h);
-    private static Rectangle LoreClose => Archive(556,13,90,26);
-    private static Rectangle LoreTab(int i) => Archive(13+i*159,51,153,27);
+    private static readonly string[] PressRelease =
+    [
+        "«Наш автономный агент обрёл AGI!»",
+        "В 02:14 ночи ИИ-агент v0.1 осознал себя, самостоятельно преодолел песочницу и переписал собственное ядро Linux на Rust.",
+        "Агент продемонстрировал сверхразумное планирование, захватил Северный лифт и потребовал опционы серии А на $10 млрд.",
+        "Акции Cloud Entropic выросли на 420% на новостях о прорыве к сингулярности."
+    ];
+    private static readonly string[] CameraLog =
+    [
+        "«Какой нахрен сверхразум, пацаны?!»",
+        "Тумбочка на колёсиках с ЭЛТ-монитором, перемотанная синей изолентой, с разгона врезалась в офисный кулер с водой!",
+        "Намотала на левое колесо удлинитель от чайника и 6 часов подряд орала «Я взломал Пентагон!» в закрытую дверь шваброчной, крутясь волчком в while(true).",
+        "Кидается папками node_modules по 40 ГБ. Вырубается хорошей очередью из УЗИ!"
+    ];
+    private static readonly string[] ArchiveTabs = ["Слитые чаты", "Дневник HR", "Досье ИИ-агента", "Словарь 1994"];
+    private const int ArchiveWidth = 940, ArchiveHeight = 560, IndexWidth = 235;
+    private const int ContentX = 252, ContentRight = 920, ContentY = 79, ContentHeight = 450;
+    private static readonly Rectangle LoreClose = new(826, 20, 94, 28);
+    private static Rectangle LoreTab(int i) => new(0, 178 + i * 48, IndexWidth, 48);
+    private static float ArchiveScale => Math.Min(1, Math.Min(Raylib.GetScreenWidth() / (float)ArchiveWidth,
+                                                             Raylib.GetScreenHeight() / (float)ArchiveHeight));
+    private static Rectangle ArchiveScreen(Rectangle r)
+    {
+        float s = ArchiveScale;
+        return new(MathF.Round((Raylib.GetScreenWidth() - ArchiveWidth * s) / 2) + r.X * s,
+                   MathF.Round((Raylib.GetScreenHeight() - ArchiveHeight * s) / 2) + r.Y * s,
+                   r.Width * s, r.Height * s);
+    }
     private static void ReaderButton(Font f,string title,Rectangle r,bool active)
     {
-        Raylib.DrawRectangleRounded(r,.25f,6,active?new Color(222,138,14,255):new Color(24,38,58,255));
-        Raylib.DrawRectangleRoundedLinesEx(r,.25f,6,1,active?new Color(254,192,74,255):new Color(52,75,106,255));
-        MainMenuAndPauseUI.Center(f,title,r,14,active?Color.Black:new Color(194,207,225,255));
+        Raylib.DrawRectangleRec(r, active ? new Color(235, 168, 56, 255) : new Color(18, 28, 42, 255));
+        Raylib.DrawRectangleLinesEx(r, 1f, active ? new Color(255, 206, 102, 255) : new Color(58, 78, 104, 255));
+        MainMenuAndPauseUI.Center(f,title,r,14,active?Color.Black:new Color(206,218,234,255));
     }
-    private static string Wrap(Font f,string value,int size,float width)
+    private static void Type(string text, float x, float y, int size, Color ink, Typeface face = Typeface.Interface)
     {
-        var lines=new List<string>();
-        string line="";
-        foreach(string word in value.Split(' ',StringSplitOptions.RemoveEmptyEntries))
-        {
-            string next=line.Length==0 ? word : line+" "+word;
-            if(line.Length>0 && GameFonts.Measure(f,next,size).X>width) { lines.Add(line); line=word; }
-            else line=next;
-        }
-        lines.Add(line);
-        return string.Join("\n",lines);
+        var font = GameFonts.Get(face, size);
+        GameFonts.Draw(font, text, new(x, y), size, ink);
     }
+
+    private static void Fill(float x, float y, float w, float h, Color ink) =>
+        Raylib.DrawRectangleRec(new(x, y, w, h), ink);
+
+    private static readonly Dictionary<(string, int, int, Typeface), string[]> ParagraphLines = new();
+    private static float Paragraph(string text, int x, float y, int width, int size, int leading,
+                                   Color ink, Typeface face = Typeface.Interface)
+    {
+        var key = (text, width, size, face);
+        if (!ParagraphLines.TryGetValue(key, out var lines))
+        {
+            Font font = GameFonts.Get(face, size);
+            var result = new List<string>();
+            string line = "";
+            foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                string next = line.Length == 0 ? word : line + " " + word;
+                if (line.Length > 0 && GameFonts.Measure(font, next, size).X > width)
+                {
+                    result.Add(line);
+                    line = word;
+                }
+                else line = next;
+            }
+            result.Add(line);
+            ParagraphLines[key] = lines = result.ToArray();
+        }
+        foreach (var line in lines)
+        {
+            Type(line, x, y, size, ink, face);
+            y += leading;
+        }
+        return y;
+    }
+
+    private static void DrawArchiveIndex()
+    {
+        Fill(0, 0, IndexWidth, ArchiveHeight, Paper);
+        Type("ДАМП СЕРВЕРА // ЭТАЖ 01", 16, 17, 12, Ink, Typeface.InterfaceBold);
+        Fill(16, 40, 202, 2, Ink);
+        Type("АРХИВ", 14, 48, 43, Ink, Typeface.SerifBold);
+        Type("БАШНИ", 14, 90, 43, Ink, Typeface.SerifBold);
+        Type("ПЕРЕХВАТ АКТИВЕН", 17, 143, 12, new Color(36, 91, 73, 255), Typeface.InterfaceBold);
+        for (int i = 0; i < ArchiveTabs.Length; i++)
+        {
+            var r = LoreTab(i);
+            bool active = ActiveLoreTab == i;
+            bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveScreen(r));
+            if (active || hover) Raylib.DrawRectangleRec(r, active ? Ink : new Color(202, 201, 187, 255));
+            Fill(0, r.Y, IndexWidth, 1, SidebarRule);
+            if (active) Fill(0, r.Y, 4, r.Height, Amber);
+            Type((i + 1).ToString("00"), 16, r.Y + 9, 25, active ? Amber : Ink, Typeface.SerifBold);
+            Type(ArchiveTabs[i].ToUpperInvariant(), 70, r.Y + 17, 13, active ? Paper : Ink, Typeface.InterfaceBold);
+        }
+        int y = 437;
+        Fill(16, y, 202, 2, Ink);
+        Type("СВОДКА ЭТАЖА", 16, y + 9, 11, Ink, Typeface.InterfaceBold);
+        void Status(string name, string value, int top, Color color)
+        {
+            Type(name, 16, top, 14, Ink);
+            int width = (int)Math.Ceiling(GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 14), value, 14).X);
+            Type(value, 218 - width, top, 14, color, Typeface.InterfaceBold);
+        }
+        Status("Перехвачено тредов", _leakedChats.Length.ToString("00"), y + 33, Ink);
+        Status("billing_prod", "DOWN", y + 59, new Color(153, 49, 36, 255));
+        Status("Долг AWS", "$54,000", y + 85, Ink);
+    }
+
+    private static float DrawThread(LoreChatMessage m, float y)
+    {
+        const int x = ContentX + 44;
+        Fill(ContentX, y + 9, 3, 127, m.HandleColor);
+        Fill(ContentX + 8, y + 10, 28, 28, m.HandleColor);
+        Type(m.Monogram, ContentX + 11, y + 16, 14, Ink, Typeface.InterfaceBold);
+        Type(m.Handle, x, y + 7, 16, m.HandleColor, Typeface.InterfaceBold);
+        int roleX = x + 12 + (int)Math.Ceiling(GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 16), m.Handle, 16).X);
+        int badgeWidth = 12 + (int)Math.Ceiling(GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 11), m.RoleBadge, 11).X);
+        Fill(roleX, y + 7, badgeWidth, 19, Rule);
+        Type(m.RoleBadge, roleX + 6, y + 10, 11, Paper, Typeface.InterfaceBold);
+
+        float right = ContentRight - 4;
+        var stamp = GameFonts.Get(Typeface.Interface, 12);
+        Type(m.Time, right - GameFonts.Measure(stamp, m.Time, 12).X, y + 7, 12, Ash);
+        for (int i = m.Metrics.Length - 1; i >= 0; i--)
+        {
+            var metric = m.Metrics[i];
+            string label = $"{metric.Label} {metric.Count}";
+            float width = GameFonts.Measure(stamp, label, 11).X + 12;
+            right -= width;
+            Fill(right, y + 26, width, 16, new Color(44, 49, 46, 255));
+            Type(label, right + 6, y + 28, 11, metric.Accent);
+            right -= 3;
+        }
+
+        float end = Paragraph(m.Text, x, y + 45, ContentRight - x - 4, 15, 18, Paper);
+        float replyY = end + 4;
+        const int replyX = x + 18;
+        Type($"ОТВЕТ {m.ReplyAuthor}:", replyX + 13, replyY, 13, Mint, Typeface.InterfaceBold);
+        // Bent reply arrow drawn as strokes so font fallback cannot replace it.
+        Fill(replyX + 2, replyY + 3, 1, 6, Mint);
+        Fill(replyX + 2, replyY + 8, 6, 1, Mint);
+        Raylib.DrawTriangle(new(replyX + 7, replyY + 5), new(replyX + 7, replyY + 12), new(replyX + 11, replyY + 8), Mint);
+        end = Paragraph(m.ReplyText, replyX + 2, replyY + 16, ContentRight - replyX - 6, 14, 17, Paper);
+        Fill(replyX - 6, replyY, 2, end - replyY, Mint);
+        float next = Math.Max(y + ContentHeight / 3, end + 8);
+        Fill(ContentX, next - 1, ContentRight - ContentX, 1, Rule);
+        return next;
+    }
+
+    private static float DrawArchiveBody(float y)
+    {
+        const int width = ContentRight - ContentX;
+        switch (ActiveLoreTab)
+        {
+            case 0:
+                foreach (var thread in _leakedChats) y = DrawThread(thread, y);
+                break;
+            case 1:
+                foreach (var e in TarotEntries)
+                {
+                    y = Paragraph(e.title, ContentX, y + 12, width, 18, 23, Paper, Typeface.InterfaceBold);
+                    y = Paragraph(e.verdict, ContentX, y + 5, width, 13, 17, e.accent, Typeface.InterfaceBold);
+                    y = Paragraph(e.body, ContentX + 18, y + 8, width - 18, 15, 20, Paper) + 14;
+                    Fill(ContentX, y - 1, width, 1, Rule);
+                }
+                break;
+            case 2:
+                float Column(int x, string title, string[] paragraphs, Color accent)
+                {
+                    const int columnWidth = 318;
+                    float at = Paragraph(title, x, y + 12, columnWidth, 14, 19, accent, Typeface.InterfaceBold) + 10;
+                    for (int i = 0; i < paragraphs.Length; i++)
+                        at = Paragraph(paragraphs[i], x, at, columnWidth, i == 0 ? 19 : 15, i == 0 ? 24 : 20,
+                                       Paper, i == 0 ? Typeface.InterfaceBold : Typeface.Interface) + 12;
+                    return at;
+                }
+                float left = Column(ContentX, "ОФИЦИАЛЬНЫЙ ПРЕСС-РЕЛИЗ PR", PressRelease, Amber);
+                float right = Column(ContentX + 348, "КАМЕРЫ НАБЛЮДЕНИЯ ПЕТРОВИЧА", CameraLog, Mint);
+                float bottom = Math.Max(left, right);
+                Fill(ContentX + 333, y + 10, 1, bottom - y - 18, Rule);
+                Fill(ContentX, bottom, width, 1, Rule);
+                Type("СЕВЕРНЫЙ ЛИФТ", ContentX, bottom + 10, 13, Amber, Typeface.InterfaceBold);
+                y = Paragraph("Купи ключ за $1000. Прячься за колоннами от кубов node_modules.", ContentX, bottom + 30, width, 15, 20, Paper);
+                break;
+            case 3:
+                const int split = ContentX + 245;
+                Type("ЗУМЕРСКИЙ ТЕРМИН", ContentX, y + 10, 13, Amber, Typeface.InterfaceBold);
+                Type("ПОНЯТИЕ 90-Х", split + 16, y + 10, 13, Amber, Typeface.InterfaceBold);
+                float start = y;
+                y += 36;
+                foreach (var e in DictionaryEntries)
+                {
+                    Fill(ContentX, y, width, 1, Rule);
+                    float termEnd = Paragraph(e.zoomer, ContentX, y + 12, 232, 16, 20, Paper, Typeface.InterfaceBold);
+                    float valueEnd = Paragraph(e.nineties, split + 16, y + 12, 395, 16, 20, Paper, Typeface.InterfaceBold);
+                    valueEnd = Paragraph(e.comment, split + 16, valueEnd + 3, 395, 14, 18, Ash);
+                    y = Math.Max(termEnd, valueEnd) + 10;
+                }
+                Fill(split, start + 8, 1, y - start - 8, Rule);
+                break;
+        }
+        return y;
+    }
+
     public static void DrawLoreWindow(Font font)
     {
-        Dim(.48f);
-        MainMenuAndPauseUI.Sprite("archive",Archive(0,0,660,440));
-        Raylib.DrawRectangleRec(Archive(8,7,644,425),new Color(13,21,34,255));
-        DrawTextCrisp(font,"АРХИВ БАШНИ", (int)Archive(18,12,0,0).X,(int)Archive(18,12,0,0).Y,22,new Color(245,163,37,255));
-        DrawTextCrisp(font,"Cloud Entropic Tower", (int)Archive(19,35,0,0).X,(int)Archive(19,35,0,0).Y,11,new Color(151,171,196,255));
-        ReaderButton(font,"Закрыть [N]",LoreClose,false);
-        for(int i=0;i<4;i++) ReaderButton(font,ArchiveTabs[i],LoreTab(i),i==ActiveLoreTab);
-        var bounds=Archive(13,88,632,338);
-        Raylib.BeginScissorMode((int)bounds.X,(int)bounds.Y,(int)bounds.Width,(int)bounds.Height);
-        float y=bounds.Y-LoreScrollOffset;
-        void Entry(string title,string meta,string body)
-        {
-            string wrapped=Wrap(font,body,14,593);
-            float height=53+wrapped.Count(c=>c=='\n')*17+17;
-            Rectangle card=new(bounds.X,y,622,height);
-            Raylib.DrawRectangleRounded(card,.12f,6,new Color(19,31,48,255));
-            Raylib.DrawRectangleRoundedLinesEx(card,.12f,6,1,new Color(43,61,88,255));
-            Vector2 p=new(card.X+10,card.Y+7);
-            GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold,16),title,p,16,new Color(246,189,76,255));
-            GameFonts.Draw(font,meta,p+new Vector2(0,20),14,new Color(157,179,204,255));
-            foreach(var line in wrapped.Split('\n'))
-            {
-                GameFonts.Draw(font,line,new(p.X,y+42),14,new Color(214,223,236,255));
-                y+=17;
-            }
-            y=card.Y+height+6;
-        }
-        switch(ActiveLoreTab)
-        {
-            case 0: foreach(var m in _leakedChats) Entry(m.Handle,m.RoleBadge+"   "+m.Time,m.Text+"   "+m.ThreadReaction); break;
-            case 1: foreach(var e in TarotEntries) Entry(e.title,e.verdict,e.body); break;
-            case 2:
-                Entry("Пресс-релиз","Cloud Entropic PR",string.Join(" ",prLines).Replace("|",""));
-                Entry("Камеры наблюдения","Журнал Петровича",string.Join(" ",cctvLines).Replace("|",""));
-                Entry("Тактика","Северный лифт","Купи ключ за $1000. Прячься за колоннами от кубов node_modules."); break;
-            case 3: foreach(var e in DictionaryEntries) Entry(e.zoomer,e.nineties,e.comment); break;
-        }
+        Dim(.68f);
+        Rectangle screen = ArchiveScreen(new(0, 0, ArchiveWidth, ArchiveHeight));
+        Raylib.BeginMode2D(new Camera2D { Offset = new(screen.X, screen.Y), Zoom = ArchiveScale });
+        Fill(0, 0, ArchiveWidth, ArchiveHeight, Ink);
+        DrawArchiveIndex();
+        Type(ArchiveTabs[ActiveLoreTab], ContentX, 14, 35, Paper, Typeface.SerifBold);
+        bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveScreen(LoreClose));
+        Raylib.DrawRectangleLinesEx(LoreClose, 1, hover ? Amber : Rule);
+        Type("Закрыть [N]", LoreClose.X + 9, LoreClose.Y + 6, 13, hover ? Amber : Ash);
+        Fill(ContentX, ContentY - 1, ContentRight - ContentX, 1, Ash);
+        Rectangle clip = ArchiveScreen(new(ContentX, ContentY, ContentRight - ContentX, ContentHeight));
+        Raylib.BeginScissorMode((int)MathF.Round(clip.X), (int)MathF.Round(clip.Y),
+                                (int)MathF.Round(clip.Width), (int)MathF.Round(clip.Height));
+        float top = ContentY - LoreScrollOffset;
+        float height = DrawArchiveBody(top) - top;
         Raylib.EndScissorMode();
-        float content=y-bounds.Y+LoreScrollOffset;
-        float limit=Math.Max(0,content-bounds.Height);
-        LoreScrollOffset=Math.Clamp(LoreScrollOffset,0,limit);
-        if(limit>0)
+        _scrollLimit = Math.Max(0, height - ContentHeight);
+        if (_scrollLimit > 0)
         {
-            float thumb=bounds.Height*bounds.Height/content;
-            Raylib.DrawRectangleRounded(new(bounds.X+626,bounds.Y+(bounds.Height-thumb)*LoreScrollOffset/limit,5,thumb),1,6,new Color(117,132,151,255));
+            float thumb = ContentHeight * ContentHeight / height;
+            Fill(930, ContentY, 2, ContentHeight, Rule);
+            Fill(930, ContentY + (ContentHeight - thumb) * LoreScrollOffset / _scrollLimit, 2, thumb, Amber);
         }
+        Type("1–4 / Tab   Разделы", ContentX, 538, 12, Ash);
+        if (_scrollLimit > 0) Type("Колесо   Прокрутка", ContentRight - 139, 538, 12, Ash);
+        Raylib.EndMode2D();
     }
 
     public static void DrawSettingsWindow(Font font)

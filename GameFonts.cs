@@ -12,7 +12,7 @@ internal static class GameFonts
     private static readonly Dictionary<Typeface, string> files = new();
     private static readonly int[] codepoints = Enumerable.Range(32, 95)
         .Concat(Enumerable.Range(0x400, 256))
-        .Concat("№«»—–…→←₽°♥×★▶◀“”‘’".Select(c => (int)c)).Distinct().ToArray();
+        .Concat("№«»—–…→←₽°♥×★▶◀“”‘’·•↳▲▼".Select(c => (int)c)).Distinct().ToArray();
 
     private static string ResolveFontDirectory()
     {

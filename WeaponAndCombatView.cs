@@ -159,7 +159,7 @@ public class WeaponAndCombatView
         (Vector3 travel, Vector3 degrees) = slot switch
         {
             1 => (new Vector3(0,.095f,.045f), new Vector3(-19,8,-8+12*turn)),
-            2 => (new Vector3(-.105f,.062f,-.04f), new Vector3(-9,-27,-42*turn)),
+            2 => (new Vector3(-.105f,.062f,-.04f), new Vector3(-6,-12,-18*turn)),
             // The receiver already has a -16 degree resting yaw.
             3 => (new Vector3(-.135f,.085f,.065f), new Vector3(-9,-22+70*turn,12-23*turn)),
             _ => (new Vector3(-.13f,.09f,.055f), new Vector3(-12+34*turn,-35+8*turn,9+11*turn))
@@ -935,11 +935,11 @@ public class WeaponAndCombatView
             0.04f * lunge,
             0.28f * lunge);
 
-        Vector3 rightAssembly = baseOffset + thrustOffset;
+        Vector3 rightAssembly = baseOffset + thrustOffset + new Vector3(.045f,-.012f,0);
         Vector3 handleBase = new Vector3(.18f,-.15f,.62f) + rightAssembly;
         Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
-            * Matrix4x4.CreateRotationX(-0.14f)
-            * Matrix4x4.CreateRotationY(-0.26f)
+            * Matrix4x4.CreateRotationX(-0.66f)
+            * Matrix4x4.CreateRotationY(-0.68f)
             * Matrix4x4.CreateTranslation(handleBase) * GetInspectTransform(2,InspectPhase);
 
         VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
