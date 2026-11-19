@@ -62,38 +62,39 @@ def build_detail_atlas():
     arr = np.ones((H, W, 4), dtype=np.float32)
     y_idx, x_idx = np.mgrid[0:H, 0:W].astype(np.float32)
 
-    # deterministic multi-seed stochastic micro-grain (100% free of periodic Nyquist moire patches at any angle!)
-    n1 = np.mod(np.sin(x_idx * 12.9898 + y_idx * 78.233) * 43758.5453, 1.0) - 0.5
-    n2 = np.mod(np.sin((x_idx // 2) * 39.346 + (y_idx // 2) * 11.135) * 24634.6345, 1.0) - 0.5
-    n3 = np.mod(np.sin(((x_idx + y_idx) // 2) * 27.1828 + ((x_idx - y_idx) // 2) * 31.4159) * 31415.9265, 1.0) - 0.5
+    rng = np.random.default_rng(20261119)
+    n1 = rng.uniform(-0.5, 0.5, size=(H, W)).astype(np.float32)
+    n2_small = rng.uniform(-0.5, 0.5, size=(H // 2, W // 2)).astype(np.float32)
+    n2 = np.repeat(np.repeat(n2_small, 2, axis=0), 2, axis=1)
+    n3 = 0.5 * (n1 + np.roll(n1, 1, axis=1))
 
     # Quadrant 0 (x < 256, y < 256): Fine French Terry Cotton Knit (blue, navy, ivory)
     q0 = (x_idx < 256) & (y_idx < 256)
-    val0 = 0.968 + 0.016 * n1[q0] + 0.014 * n2[q0]
-    arr[q0, 0] = np.clip(val0, 0.93, 1.0)
-    arr[q0, 1] = np.clip(val0, 0.93, 1.0)
-    arr[q0, 2] = np.clip(val0, 0.93, 1.0)
+    val0 = 0.990 + 0.005 * n1[q0] + 0.004 * n2[q0]
+    arr[q0, 0] = np.clip(val0, 0.980, 1.0)
+    arr[q0, 1] = np.clip(val0, 0.980, 1.0)
+    arr[q0, 2] = np.clip(val0, 0.980, 1.0)
 
     # Quadrant 1 (x >= 256, y < 256): Fine Diagonal Denim Twill (denim, sole, coal)
     q1 = (x_idx >= 256) & (y_idx < 256)
-    val1 = 0.965 + 0.018 * n1[q1] + 0.016 * n3[q1]
-    arr[q1, 0] = np.clip(val1, 0.92, 1.0)
-    arr[q1, 1] = np.clip(val1, 0.92, 1.0)
-    arr[q1, 2] = np.clip(val1, 0.92, 1.0)
+    val1 = 0.989 + 0.006 * n1[q1] + 0.004 * n3[q1]
+    arr[q1, 0] = np.clip(val1, 0.978, 1.0)
+    arr[q1, 1] = np.clip(val1, 0.978, 1.0)
+    arr[q1, 2] = np.clip(val1, 0.978, 1.0)
 
     # Quadrant 2 (x < 256, y >= 256): Subtle Skin & Hair Micro-Grain (skin, hair, iris)
     q2 = (x_idx < 256) & (y_idx >= 256)
-    val2 = 0.976 + 0.015 * n1[q2] + 0.010 * n2[q2]
-    arr[q2, 0] = np.clip(val2, 0.94, 1.0)
-    arr[q2, 1] = np.clip(val2 * 0.996, 0.94, 1.0)
-    arr[q2, 2] = np.clip(val2 * 0.992, 0.94, 1.0)
+    val2 = 0.992 + 0.004 * n1[q2] + 0.003 * n2[q2]
+    arr[q2, 0] = np.clip(val2, 0.984, 1.0)
+    arr[q2, 1] = np.clip(val2 * 0.998, 0.984, 1.0)
+    arr[q2, 2] = np.clip(val2 * 0.996, 0.984, 1.0)
 
     # Quadrant 3 (x >= 256, y >= 256): Fine Anodized Aluminum Micro-Grain (laptop, glass, display, cyan, teal)
     q3 = (x_idx >= 256) & (y_idx >= 256)
-    val3 = 0.978 + 0.014 * n1[q3]
-    arr[q3, 0] = np.clip(val3, 0.95, 1.0)
-    arr[q3, 1] = np.clip(val3, 0.95, 1.0)
-    arr[q3, 2] = np.clip(val3, 0.95, 1.0)
+    val3 = 0.993 + 0.004 * n1[q3]
+    arr[q3, 0] = np.clip(val3, 0.985, 1.0)
+    arr[q3, 1] = np.clip(val3, 0.985, 1.0)
+    arr[q3, 2] = np.clip(val3, 0.985, 1.0)
 
     img = bpy.data.images.new("VibeCoderDetailAtlas", width=W, height=H, alpha=False)
     img.pixels.foreach_set(arr.ravel())
@@ -251,7 +252,22 @@ def build_sculpted_coder_human(ga, kind):
         arm, _ = ga.pose(kind, side)
         transforms.update(arm)
 
-    faces = ga.BODY
+    raw_faces = ga.BODY
+    min_torso_y = 0.945 if kind == "coder_seated" else 0.895
+    faces = []
+    for face in raw_faces:
+        fc = sum((ga.REST[i] for i in face), V()) / len(face)
+        is_arm_face = any(
+            (max(ga.WEIGHTS[i], key=lambda a: a[1])[0] if ga.WEIGHTS[i] else "").startswith(("upperarm", "lowerarm", "hand", "finger"))
+            for i in face
+        )
+        # Remove hidden inner MPFB torso polygons completely covered by SculptedHoodieTorso
+        if not is_arm_face and min_torso_y < fc.y < 1.362 and abs(fc.x) < 0.215:
+            continue
+        # On seated coder, remove inner perineum/pelvis web triangles hanging below the ribbed hem between the thighs
+        if kind == "coder_seated" and 0.725 < fc.y < 0.925 and abs(fc.x) < 0.044:
+            continue
+        faces.append(face)
     ids = sorted({i for face in faces for i in face})
     lookup = {old: i for i, old in enumerate(ids)}
 
@@ -259,7 +275,7 @@ def build_sculpted_coder_human(ga, kind):
     for i in ids:
         p = ga.REST[i].copy()
         b = max(ga.WEIGHTS[i], key=lambda a: a[1])[0] if ga.WEIGHTS[i] else ""
-        arm_vert = abs(p.x) > 0.195 and p.y > 0.90
+        arm_vert = abs(p.x) > 0.205 and p.y > 1.22
 
         if b.startswith(("upperarm", "lowerarm")) or arm_vert:
             s = "l" if p.x > 0 else "r"
@@ -754,6 +770,7 @@ def assign_uvs_and_bake_ao(ga, body, mat_order):
     bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-7)
     bmesh.ops.dissolve_degenerate(bm, edges=list(bm.edges), dist=1e-7)
     bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    bm.normal_update()
     bm.to_mesh(mesh)
     bm.free()
     for poly in mesh.polygons:
@@ -784,13 +801,11 @@ def assign_uvs_and_bake_ao(ga, body, mat_order):
     verts = mesh.vertices
     for poly in mesh.polygons:
         m_name = mat_order[poly.material_index]
-        u_base, v_base, scale = quad_offsets.get(m_name, (0.04, 0.04, 5.0))
+        u_base, v_base, _ = quad_offsets.get(m_name, (0.04, 0.04, 5.0))
         for loop_idx in poly.loop_indices:
             v_co = verts[mesh.loops[loop_idx].vertex_index].co
-            raw_u = (v_co.x + 0.45 * v_co.y) * scale
-            raw_v = (v_co.z + 0.25 * v_co.y) * scale
-            tu = 1.0 - abs((raw_u % 2.0) - 1.0)
-            tv = 1.0 - abs((raw_v % 2.0) - 1.0)
+            tu = min(1.0, max(0.0, (v_co.x + 0.36 + 0.18 * v_co.y) / 0.72))
+            tv = min(1.0, max(0.0, (v_co.z + 0.10 * v_co.y) / 1.72))
             fu = tu * 0.42 + u_base
             fv = tv * 0.42 + v_base
             uv_layer.data[loop_idx].uv = (fu, fv)
@@ -802,47 +817,75 @@ def assign_uvs_and_bake_ao(ga, body, mat_order):
     tree = BVHTree.FromPolygons([v.co for v in verts], [tuple(p.vertices) for p in mesh.polygons])
 
     v_mat = [0] * len(verts)
+    v_norms = [V((0.0, 0.0, 0.0)) for _ in range(len(verts))]
+    v_neighbors = [set() for _ in range(len(verts))]
     for poly in mesh.polygons:
         mi = poly.material_index
-        for vi in poly.vertices:
+        pn = poly.normal * max(1e-6, poly.area)
+        pverts = poly.vertices
+        for vi in pverts:
+            v_norms[vi] += pn
             if mi > v_mat[vi]:
                 v_mat[vi] = mi
+        for a_i in range(len(pverts)):
+            va = pverts[a_i]
+            vb = pverts[(a_i + 1) % len(pverts)]
+            v_neighbors[va].add(vb)
+            v_neighbors[vb].add(va)
 
     golden_angle = 2.39996323
-    rays_local = [
-        (math.cos(j * golden_angle) * math.sqrt((j + 0.5) / 8.0),
-         math.sin(j * golden_angle) * math.sqrt((j + 0.5) / 8.0),
-         math.sqrt(max(0.0, 1.0 - (j + 0.5) / 8.0)))
-        for j in range(8)
-    ]
+    world_rays = []
+    n_sphere = 24
+    for j in range(n_sphere):
+        z_r = 1.0 - 2.0 * (j + 0.5) / n_sphere
+        rad_r = math.sqrt(max(0.0, 1.0 - z_r * z_r))
+        ang_r = j * golden_angle
+        world_rays.append(V((rad_r * math.cos(ang_r), rad_r * math.sin(ang_r), z_r)).normalized())
 
+    shades = [1.0] * len(verts)
     for v in verts:
         m_name = mat_order[v_mat[v.index]]
         if m_name in ("cyan", "display", "teal", "iris"):
-            vcol.data[v.index].color = (1.0, 1.0, 1.0, 1.0)
+            shades[v.index] = 1.0
             continue
-        n = v.normal.normalized()
+        n = v_norms[v.index].normalized()
         if n.length_squared < 0.01:
             n = V((0.0, -1.0, 0.0))
-        up = V((1.0, 0.0, 0.0)) if abs(n.x) < 0.85 else V((0.0, 1.0, 0.0))
-        t1 = (up - n * n.dot(up)).normalized()
-        t2 = n.cross(t1)
-        origin = v.co + n * 0.0015
+        origin = v.co + n * 0.0045
         ao = 0.0
-        max_dist = 0.055
-        for rx, ry, rz in rays_local:
-            ray = (t1 * rx + t2 * ry + n * (rz * 0.85 + 0.25)).normalized()
+        valid_rays = 0
+        max_dist = 0.052
+        for ray in world_rays:
+            nd = ray.dot(n)
+            if nd <= 0.52:
+                continue
+            valid_rays += 1
             hit_dist = tree.ray_cast(origin, ray, max_dist)[3]
-            if hit_dist is not None:
-                ao += (1.0 - hit_dist / max_dist) / 8.0
+            if hit_dist is not None and hit_dist > 0.007:
+                ao += (1.0 - hit_dist / max_dist) * nd
+        if valid_rays > 0:
+            ao /= valid_rays
         h_game = v.co.z
-        v_grad = 0.95 + 0.05 * min(1.0, max(0.0, h_game / 1.55))
-        ao_strength = 0.30 if m_name == "skin" else 0.36
-        shade = max(0.62, min(1.0, v_grad * (1.0 - ao_strength * ao)))
-        if m_name == "skin":
-            vcol.data[v.index].color = (shade, shade * 0.97, shade * 0.95, 1.0)
+        v_grad = 0.96 + 0.04 * min(1.0, max(0.0, h_game / 1.55))
+        ao_strength = 0.24 if m_name == "skin" else 0.28
+        shades[v.index] = max(0.74, min(1.0, v_grad * (1.0 - ao_strength * ao)))
+
+    # 1-pass Laplacian smooth on vertex AO shades so curved limbs never show per-vertex AO blotches
+    for v in verts:
+        vi = v.index
+        m_name = mat_order[v_mat[vi]]
+        if m_name in ("cyan", "display", "teal", "iris"):
+            vcol.data[vi].color = (1.0, 1.0, 1.0, 1.0)
+            continue
+        nbrs = v_neighbors[vi]
+        if nbrs:
+            shade = 0.5 * shades[vi] + 0.5 * (sum(shades[nb] for nb in nbrs) / len(nbrs))
         else:
-            vcol.data[v.index].color = (shade, shade, shade, 1.0)
+            shade = shades[vi]
+        if m_name == "skin":
+            vcol.data[vi].color = (shade, shade * 0.97, shade * 0.95, 1.0)
+        else:
+            vcol.data[vi].color = (shade, shade, shade, 1.0)
 
 
 def patch_exported_glb_materials(glb_path, ga, mat_order):
