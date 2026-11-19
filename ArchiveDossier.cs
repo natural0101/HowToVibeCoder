@@ -10,8 +10,8 @@ public static partial class LoreAndMenusUI
     private const int ArchiveWidth = 1280, ArchiveHeight = 720, RowHeight = 62, VisibleRows = 5;
     private static readonly string[] ArchiveTabs = ["Переписка", "Досье HR", "Коллекция", "Словарь"];
     private static readonly string[] IndexTitles = ["Переписка цеха", "Таро-досье HR", "Картотека", "Словарь 90-х"];
-    private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Кассета 1998"];
-    private static readonly string[] ChatTitles = ["Пятничный деплой", "Стойка B12 и кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело АО Энтропия"];
+    private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Кассета 1998","Агент v0.1"];
+    private static readonly string[] ChatTitles = ["Пятничный деплой", "Стойка B12 и кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело АО Энтропия","Пятидесятый этаж"];
     private static readonly string[] TarotNames = ["Сеньор Алексей", "Джуниор Данила", "Крипто и Митингер"];
     private static readonly string[] TarotCards = ["Аркан XVI: Башня", "Аркан 0: Шут", "Аркан XV: Дьявол"];
     private static int Catches(int i) => Program.Discoveries.GetValueOrDefault(VibeCoderCollection.All[i].Id);
@@ -41,9 +41,10 @@ public static partial class LoreAndMenusUI
     internal static int SelectedArchiveEntry { get; private set; }
     internal static int FirstVisibleArchiveEntry => (int)MathF.Floor((LoreScrollOffset + .01f) / RowHeight);
     internal static float ArchiveScrollLimit => Math.Max(0, EntryCount - VisibleRows) * RowHeight;
+    internal static int UnlockedChats => _leakedChats.Length-(Program.AgentOutcome==AgentVerdict.Released ? 0 : 1);
     private static int EntryCount => ActiveLoreTab switch
     {
-        0 => _leakedChats.Length, 1 => TarotEntries.Length, 2 => VibeCoderCollection.All.Length, _ => DictionaryEntries.Length
+        0 => UnlockedChats, 1 => TarotEntries.Length, 2 => VibeCoderCollection.All.Length, _ => DictionaryEntries.Length
     };
 
     private static Rectangle Row(int index) => new(Selector.X, Selector.Y + index * RowHeight - LoreScrollOffset, Selector.Width, RowHeight);
@@ -56,6 +57,7 @@ public static partial class LoreAndMenusUI
 
     private static void UpdateLoreInput(float dt)
     {
+        if(SelectedArchiveEntry>=EntryCount) SelectArchiveEntry(EntryCount-1);
         if (Click(ArchiveCloseBounds)) { IsLoreOpen = false; return; }
         for (int i = 0; i < ArchiveTabs.Length; i++)
             if (Raylib.IsKeyPressed(KeyboardKey.One + i) || Raylib.IsKeyPressed(KeyboardKey.Kp1 + i) || Click(ArchiveTabBounds(i)))
@@ -84,9 +86,9 @@ public static partial class LoreAndMenusUI
     };
     private static string ExhibitModel => ActiveLoreTab switch
     {
-        0 => SelectedArchiveEntry == 5 ? SolderModel : CoderModel,
+        0 => SelectedArchiveEntry==6 ? AgentModel : SelectedArchiveEntry == 5 ? SolderModel : CoderModel,
         1 => TarotModel,
-        2 => VibeCoderCollection.All[SelectedArchiveEntry].IsFrog ? "prop_bug_frog" : CoderModel,
+        2 => VibeCoderCollection.All[SelectedArchiveEntry].Id=="ai_agent_v01" ? AgentModel : VibeCoderCollection.All[SelectedArchiveEntry].IsFrog ? "prop_bug_frog" : CoderModel,
         _ => SelectedArchiveEntry is 2 or 5 ? SolderModel : PartnerModel
     };
 
@@ -182,9 +184,11 @@ public static partial class LoreAndMenusUI
             _ => ("Обычный", Muted)
         };
         Field("Редкость", rarity, 0, 0, ink);
-        Field("Категория", species.IsFrog ? "Джава-жаба" : "Вайбкодер", 1, 0, Ink);
+        Field("Категория", species.Id=="ai_agent_v01" ? "ИИ-агент" : species.IsFrog ? "Джава-жаба" : "Вайбкодер", 1, 0, Ink);
         Field("Выплата", species.IsFrog ? $"${species.SalePrice}" : $"+${species.BonusPayout}", 0, 1, Ink);
-        Field("Поймано", caught.ToString(), 1, 1, Ink);
+        if(species.Id=="ai_agent_v01" && Program.AgentOutcome!=AgentVerdict.Pending)
+            Field("Решение",Program.AgentOutcome==AgentVerdict.Contained ? "Контейнирован" : "Отпущен",1,1,Ink);
+        else Field("Поймано", caught.ToString(), 1, 1, Ink);
 
         Paragraph(biography, SheetX, SectionHeading("ИЗ ЛИЧНОГО ДЕЛА", bioTop), TextWidth, 22, 27, Ink);
         Paragraph(species.Hint, SheetX, SectionHeading("ТАКТИКА ОТЛОВА", tacticsTop), TextWidth, 21, 25, Ink);
@@ -443,7 +447,7 @@ internal static unsafe partial class VisualEngine3D
                 Material material = model.Materials[model.MeshMaterial[i]];
                 material.Shader = dossierShader;
                 Color original=material.Maps[0].Color;
-                if(species!=null && !hidden) material.Maps[0].Color=species.IsFrog ? Raylib.ColorTint(original,species.HoodieColor) : VisualEngine3D.CoderPigment(model.MeshMaterial[i],species.HoodieColor,species.GlassesColor,original);
+                if(asset!="escaped_ai_boss" && species!=null && !hidden) material.Maps[0].Color=species.IsFrog ? Raylib.ColorTint(original,species.HoodieColor) : VisualEngine3D.CoderPigment(model.MeshMaterial[i],species.HoodieColor,species.GlassesColor,original);
                 Raylib.DrawMesh(model.Meshes[i], material, pose);
                 material.Maps[0].Color=original;
             }

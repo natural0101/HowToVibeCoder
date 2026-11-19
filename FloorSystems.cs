@@ -6,9 +6,9 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum FloorPanel { None, Contracts, Upgrades, Debrief }
+internal enum FloorPanel { None, Contracts, Upgrades, Debrief, Audit, BossFinale }
 internal enum Incident { Printer, Coffee, Bugs, Audit, Ddos, Burnout, Raid, Fire }
-internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager }
+internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2 }
 internal enum StyleAction { Belt, Iron, Uzi, Shotgun, Beam, Parry, Water, Capture }
 internal record Job(string Title, string Objective, int Seconds, int Base);
 internal record Gear(string Title, string Detail, int Price);
@@ -21,7 +21,7 @@ internal sealed class WaterSpill
     public float Wet, Electric;
 }
 
-internal sealed class FloorSystems
+internal sealed partial class FloorSystems
 {
     internal static readonly Job[] Jobs = [
         new("Срочный MVP до обеда","Посадить двоих на Галеру и заработать $450",150,650),
@@ -36,7 +36,11 @@ internal sealed class FloorSystems
         new("Синяя изолента MK2","На 45% сильнее удар по эго. Жало быстрее греется и остывает.",260),
         new("Барабан Узи","50 патронов. Перезарядка на 30% дольше.",320),
         new("Ремень «Директорский»","Цепляет соседние цели. Шире окно отражения, короче оглушение.",250),
-        new("Пейджер Крыши","Один вызов [G] отзывает рейд и снимает 35 внимания СБ.",180)
+        new("Пейджер Крыши","Один вызов [G] отзывает рейд и снимает 35 внимания СБ.",180),
+        new("Канифольный напалм","Поджигает цель. Перегрев B12 ×2, выше риск потерять кадр.",160),
+        new("NDA на копирке","Отлов и подготовка NDA вдвое быстрее. За подпись +6 СБ.",150),
+        new("Печатка Авторитета","Авторитет и страх +30%. Цены арсенала +15%.",210),
+        new("Карманный CO2-баллон","[Q] Облако дыма и −15 ПРОД. Перезарядка 25 с.",190)
     ];
 
     internal static readonly WeaponType[] WeaponOrder = [WeaponType.BareHands, WeaponType.CaptureNet,
@@ -57,7 +61,7 @@ internal sealed class FloorSystems
         var weapon=WeaponOrder[row+1];
         var gear=Weapons[row];
         if(HasWeapon(weapon)) return gear.Title+" уже в арсенале";
-        if(!spend(gear.Price)) return $"Для покупки нужно ${gear.Price}";
+        if(!spend(Price(gear))) return $"Для покупки нужно ${Price(gear)}";
         OwnedWeaponsMask |= 1<<(int)weapon;
         return gear.Title+" в арсенале";
     }
@@ -75,7 +79,7 @@ internal sealed class FloorSystems
     public bool FirstDiscovery;
     public List<string> PendingFrogDiscoveries=new();
 
-    internal void Discover(VibeCoderSpecies species,Action<int,string> grant)
+    internal void Discover(VibeCoderSpecies species,Action<int,string>? grant)
     {
         int previous=DiscoveredSpecies.GetValueOrDefault(species.Id);
         DiscoveredSpecies[species.Id]=previous+1;
@@ -103,7 +107,8 @@ internal sealed class FloorSystems
     public float NoticeTime;
     public int Serial, LastIncident = -1;
     internal float R => .35f*TD+.35f*PT+.30f*SEC;
-    internal float GreedMultiplier => 1+R/100;
+    internal float FearMultiplier => Has(Sidegrade.AuthoritySignet) ? 1.3f : 1;
+    internal float GreedMultiplier => (1+R/100)*(Defiance>0 ? 1.35f : 1);
     internal float FridayMultiplier => Friday>0 ? 2.5f : 1;
     internal int RankIndex => Authority switch { >=100=>4, >=65=>3, >=35=>2, >=14=>1, _=>0 };
     private static readonly string[] Ranks=["Д","В","Б","А","АВТОРИТЕТ"];
@@ -118,9 +123,10 @@ internal sealed class FloorSystems
     {
         static bool Cross(float was,float now) => was<30 && now>=30 || was<60 && now>=60 || was<80 && now>=80;
         float d=TD,p=PT,s=SEC;
-        TD=Math.Clamp(TD+debt,0,100);
-        PT=Math.Clamp(PT+heat,0,100);
-        SEC=Math.Clamp(SEC+security,0,100);
+        float Growth(float change) => change>0 && Verdict==AgentVerdict.Released ? change*.8f : change;
+        TD=Math.Clamp(TD+Growth(debt),0,100);
+        PT=Math.Clamp(PT+Growth(heat),0,100);
+        SEC=Math.Clamp(SEC+Growth(security),0,100);
         if(JobId>=0) Peak=Math.Max(Peak,R);
         if(JobId==1 && SEC>=45) StealthBlown=true;
         if(Cross(d,TD) || Cross(s,SEC) || Cross(p,PT)) AudioMusicSystem.PlayTowerPA();
@@ -139,7 +145,7 @@ internal sealed class FloorSystems
         float efficiency=Repeats switch { 1=>1, 2=>.7f, _=>.5f };
         Variety=same ? efficiency : Math.Min(2.5f,1+.38f*(Recent.Distinct().Count()-1));
         float points=action switch { StyleAction.Capture=>12, StyleAction.Parry or StyleAction.Water=>9, _=>6 };
-        Authority=Math.Clamp(Authority+(same && action!=StyleAction.Capture ? -2 : points*Variety),0,125);
+        Authority=Math.Clamp(Authority+(same && action!=StyleAction.Capture ? -2 : points*Variety*(Has(Sidegrade.AuthoritySignet) ? 1.3f : 1)*(Defiance>0 ? 1.35f : 1)),0,125);
         StyleTime=10;
         return efficiency*(1+.12f*RankIndex);
     }
@@ -159,6 +165,7 @@ internal sealed class FloorSystems
         if(id<0 || id>=Jobs.Length || JobId>=0) return "Сначала закрой текущий заказ";
         if(id==1 && SEC>=45) return "Сначала снизь внимание СБ ниже 45";
         if(id==3 && Friday>0) return "Дождись конца текущего деплоя";
+        if(id==4 && world.ElevatorBoss.IsDefeated) return "Дело по лифту уже завершено";
         JobId=id;
         Remaining=Jobs[id].Seconds;
         Earned=Seated=Captured=StaffValue=0;
@@ -169,7 +176,6 @@ internal sealed class FloorSystems
         if(id==2) world.EnsureCandidate(CoderArchetype.CryptoBro);
         if(id==4 && !world.ElevatorBoss.IsActive)
         {
-            world.ElevatorBoss.IsDefeated=false;
             world.TrySummonElevatorBoss(_=>true,out _);
         }
         return Jobs[id].Objective;
@@ -196,7 +202,7 @@ internal sealed class FloorSystems
         if(id==Sidegrade.Pager && Has(id)) return "Пейджер заряжен. Вызов на [G]";
         if(!Has(id))
         {
-            if(!spend(GearList[index].Price)) return "В общаке не хватает денег";
+            if(!spend(Price(GearList[index]))) return "В общаке не хватает денег";
             Owned |= 1<<index;
         }
         if(id is Sidegrade.Salt or Sidegrade.Negotiator) Shell=Shell==id ? null : id;
@@ -209,7 +215,7 @@ internal sealed class FloorSystems
         if(PagerWait>0) return $"Линия занята ещё {MathF.Ceiling(PagerWait)} с";
         Owned &= ~(1<<(int)Sidegrade.Pager);
         PagerWait=55;
-        Raid=false; Audit=0;
+        Raid=false;
         world.ActiveCoders.RemoveAll(c=>c.RaidGuard && c.State!=CoderAIState.Subdued);
         Risk(security:-35);
         return "Крыша отозвала наряд. СБ -35";
@@ -219,7 +225,7 @@ internal sealed class FloorSystems
     {
         if(Jam>0) return $"Замятие бумаги. Ремонт через {MathF.Ceiling(Jam)} с";
         if(PrinterWait>0) return $"Принтер остывает: {MathF.Ceiling(PrinterWait)} с";
-        PrinterWait=35; Badge=30; Audit=0;
+        PrinterWait=35; Badge=1;
         Risk(security:-20);
         return "Пропуск напечатан. СБ -20";
     }
@@ -233,19 +239,20 @@ internal sealed class FloorSystems
         return "B12 перезапущена. Охлаждение работает";
     }
 
-    internal void Overheat(SkyscraperFloor1World world)
+    internal void Overheat(SkyscraperFloor1World world,float strength=1)
     {
-        Risk(heat:RackHeat<=0 ? 12 : 2);
+        Risk(heat:(RackHeat<=0 ? 12 : 2)*strength);
         RackHeat=18;
         foreach(var c in world.ActiveCoders.Where(c=>Vector3.DistanceSquared(c.Position,world.RackPos)<64 && c.State!=CoderAIState.Subdued))
         {
-            c.Pressure(24,0,20);
+            c.Pressure(24,0,20*FearMultiplier);
             if(c.State!=CoderAIState.Subdued) { c.State=CoderAIState.PanickedFleeing; c.Windup=0; }
         }
     }
 
     internal void RestoreMorale(SkyscraperFloor1World world)
     {
+        Conflict=false; ConflictWait=24;
         WantsCoffee=false;
         foreach(var d in world.GalleyDesks.Where(d=>d.IsOccupied))
         {
@@ -267,7 +274,7 @@ internal sealed class FloorSystems
                 foreach(var d in world.GalleyDesks) if(d.IsOccupied) d.Morale=.65f;
                 break;
             case Incident.Bugs: world.SpawnWave(2); message="Выброс багов. Дежурная смена идёт в зал."; break;
-            case Incident.Audit: Audit=Badge>0 ? 0 : 15; message=Audit>0 ? "Аудит через 15 с. Напечатай пропуск или внеси $180 у приёмной." : "Аудитор принял свежий пропуск."; break;
+            case Incident.Audit: Audit=15; AuditPresented=false; message="Поступило предписание аудита Башни."; break;
             case Incident.Ddos: Ddos=true; message="DDoS: выход Галеры упал вдвое. Перезапусти B12."; break;
             case Incident.Burnout:
                 var worker=world.GalleyDesks.Where(d=>d.IsOccupied).MaxBy(d=>d.Burnout);
@@ -289,7 +296,7 @@ internal sealed class FloorSystems
             FirstDiscovery=true; DiscoveryTime=4;
         }
         NoticeTime=Down(NoticeTime); PrinterWait=Down(PrinterWait); Jam=Down(Jam);
-        Badge=Down(Badge); Coffee=Down(Coffee); PagerWait=Down(PagerWait);
+        Coffee=Down(Coffee); PagerWait=Down(PagerWait);
         for(int i=Puddles.Count-1;i>=0;i--)
         {
             var spill=Puddles[i];
@@ -300,7 +307,9 @@ internal sealed class FloorSystems
         if(!FireIncident) RackHeat=Down(RackHeat);
         StyleTime=Down(StyleTime);
         if(StyleTime==0) { Recent.Clear(); Repeats=0; Variety=1; Authority=Down(Authority); }
-        if(Audit>0 && (Audit=Down(Audit))==0) { Risk(security:22); Announce("Аудит нашёл расхождения. СБ +22"); }
+        if(Audit>0 && !AuditPresented && (Audit=Down(Audit))==0)
+        { Risk(security:22); Announce("Срок ответа истёк. СБ +22"); }
+        TickOffice(dt,world);
         int staff=world.GalleyDesks.Count(d=>d.IsOccupied);
         float rush=JobId>=0 && Remaining<Jobs[JobId].Seconds*.2f ? .17f*dt : 0;
         Risk(debt:rush,heat:dt*((JobId>=0 ? .10f : 0)+(staff>=3 ? .13f : 0)+(RackHeat>0 ? .45f : 0)+(Friday>0 ? .32f : 0)));
@@ -339,6 +348,7 @@ internal sealed class FloorSystems
             CryptoDelivered ? "Крипто-Бро подписал оффер до закрытия торгов." : "Выручка закрыла спринт до конца торгов.",
             "Галера пережила пятничную смену.","Шахта снова под контролем диспетчера."];
         float bonus=(1+.06f*RankIndex)*(JobId==2 ? 1.4f : 1)*(JobId==3 ? 2.5f : FridayMultiplier);
+        if(world.Working(CoderArchetype.ToxicPM)) bonus*=1.2f;
         if(JobId==2 && world.GalleyDesks.Exists(d=>d.IsOccupied && d.Archetype==CoderArchetype.CryptoBro)) bonus*=1.5f;
         int amount=success ? (int)MathF.Round(Jobs[JobId].Base*GreedMultiplier*bonus) : -(350+StaffValue/2);
         Report=new(++Serial,JobId,success,amount,GreedMultiplier,bonus,Captured,Peak,Rank,
@@ -399,6 +409,8 @@ public static partial class Program
         _world.Systems=systems; seenReport=systems.Serial;
         ApplyProgression(state);
         _weapons.Equip(state.ProgressionVersion>=1 ? state.Equipped : (WeaponType)Math.Clamp(data.CurrentWeaponSlot+1,1,4));
+        _world.HasElevatorKey=state.Key; _world.IsFloor2Unlocked=state.Unlocked;
+        _weapons.UnlockedChatGun=state.Unlocked;
         _world.ElevatorBoss=state.Boss; _world.ElevatorDoorOpenAmount=state.Door;
         _world.SelectedBaitTier=state.Bait; _world.IsMacBookTrapActive=state.Trap; _world.TotalCodersSoldToHr=state.Sold;
         _world.ActiveCoders.Clear(); _world.ActiveCoders.AddRange(state.Coders);
@@ -434,6 +446,8 @@ public static partial class Program
         }
         if(index>=0 && index<FloorSystems.Jobs.Length) return Floor.Start(index,_world);
         if(index>=BuyOffset && index<BuyOffset+FloorSystems.GearList.Length) return Floor.Buy(index-BuyOffset,TrySpendCash);
+        if(index>=AuditAction && index<AuditAction+3) return Floor.ResolveAudit(index-AuditAction,_world,TrySpendCash);
+        if(index>=FinaleAction && index<FinaleAction+2) return Floor.ResolveFinale(index-FinaleAction,GrantCash);
         if(index==PagerAction) return Floor.UsePager(_world);
         if(index==BaitAction)
         {
@@ -459,12 +473,13 @@ public static partial class Program
     private static float PanelScale => Math.Min(Raylib.GetScreenWidth()/1280f,Raylib.GetScreenHeight()/720f);
     private static Vector2 PanelOffset => (new Vector2(Raylib.GetScreenWidth(),Raylib.GetScreenHeight())-new Vector2(1280,720)*PanelScale)/2;
     private static Rectangle ArsenalTab(int i) => new(105+i*355,164,350,35);
-    private static Rectangle FloorRowRect(int i) => new(102,204+55*i,1076,51);
+    private static Rectangle FloorRowRect(int i) => sidegrades ? new(102,204+35*i,1076,34) : new(102,204+55*i,1076,51);
 
     private static bool HandleFloorPanel()
     {
         bool Key(KeyboardKey k) => Raylib.IsKeyPressed(k);
-        if(Floor.Report is {} report && report.Serial>seenReport)
+        if(HandleDecision()) return true;
+        if(!Floor.FinalePending && Floor.Report is {} report && report.Serial>seenReport)
         {
             seenReport=report.Serial;
             OpenFloorPanel(FloorPanel.Debrief); return true;
@@ -524,6 +539,7 @@ public static partial class Program
         var font=GameFonts.Get(title ? Typeface.SerifBold : Typeface.Interface,size);
         GameFonts.Draw(font,value,new(x,y),size,color);
     }
+    internal static AgentVerdict AgentOutcome => Floor.Verdict;
     internal static IReadOnlyDictionary<string,int> Discoveries => Floor.DiscoveredSpecies;
 
     internal static void ShadowText(Font font,string text,float x,float y,int size,Color ink)
@@ -563,7 +579,7 @@ public static partial class Program
         int seconds=(int)MathF.Ceiling(Floor.Remaining);
         string objective=Floor.JobId>=0 ? $"{seconds/60}:{seconds%60:00}    {progress}" : progress;
         ShadowText(_uiFont,objective,28,54,16,paper);
-        string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? $"Аудит через {Floor.Audit:F0} с" :
+        string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)
         {
@@ -581,12 +597,13 @@ public static partial class Program
             Raylib.DrawRectangle(right-168,47,(int)(168*Floor.Friday/45),3,hot);
             Right(_uiFont,$"Узел Галеры  {Floor.Defense:F0}%",56,15,paper);
         }
-        else if(_world.GalleyDesks.Exists(d=>d.IsOccupied))
+        else if(_world.GalleyDesks.Exists(d=>d.IsOccupied) || Floor.Verdict==AgentVerdict.Contained)
         {
             int staff=_world.GalleyDesks.Count(d=>d.IsOccupied);
             bool lead=_world.GalleyDesks.Exists(d=>d.IsOccupied && !d.IsSlackingInTwitter && d.Archetype==CoderArchetype.TeamLeadMeeter);
-            Right(_uiFont,$"Галера {staff}/4    ${_world.GalleyDesks.Sum(d=>_world.DeskRate(d,lead)):F0}/с",22,16,paper);
+            Right(_uiFont,$"Галера {staff}/4    ${_world.GalleyDesks.Sum(d=>_world.DeskRate(d,lead))+(Floor.Verdict==AgentVerdict.Contained ? 14 : 0):F0}/с",22,16,paper);
         }
+        DrawBossTelemetry();
         if(Floor.DiscoveryTime<=0) return;
         var species=VibeCoderCollection.All.FirstOrDefault(s=>s.Id==Floor.DiscoveryId);
         if(species==null) return;
@@ -598,7 +615,7 @@ public static partial class Program
         float width = Math.Max(GameFonts.Measure(display, title, 26).X,
             GameFonts.Measure(small, rarity + "    " + note, 15).X) + 36;
         float xToast = (Raylib.GetScreenWidth() - width) / 2;
-        const int top = 18;
+        int top = _world.ElevatorBoss.IsActive ? 96 : 18;
         Raylib.DrawRectangleRec(new(xToast, top, width, 56), new Color(24, 22, 20, (int)(225 * fade)));
         DossierPrint.Text(rarity + "    " + note, xToast + 16, top + 5, 15, Raylib.Fade(amber, fade), Typeface.InterfaceBold);
         DossierPrint.Text(title, xToast + 16, top + 23, 26, Raylib.Fade(DossierPrint.Ivory, fade), Typeface.SerifBold);
@@ -654,7 +671,8 @@ public static partial class Program
         Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), DossierPrint.Studio);
         Raylib.BeginMode2D(new Camera2D { Zoom = PanelScale, Offset = PanelOffset });
         bool shop = floorPanel == FloorPanel.Upgrades;
-        if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
+        if (floorPanel is FloorPanel.Audit or FloorPanel.BossFinale) DrawDecision();
+        else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
         else
         {
             Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
@@ -680,19 +698,19 @@ public static partial class Program
                 {
                     Raylib.DrawRectangleRec(row, DossierPrint.Selected);
                 }
-                else Raylib.DrawLine((int)row.X,(int)row.Y+50,1178,(int)row.Y+50,rule);
+                else Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
                 Color ink=selected ? DossierPrint.Ivory : paper;
                 var gear=shop ? (sidegrades ? FloorSystems.GearList[i] : FloorSystems.Weapons[i]) : null;
                 var job=shop ? null : FloorSystems.Jobs[i];
-                TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+11,21,ink,true);
-                TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+15,16,selected ? paper : quiet);
-                string value=shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i+1]) ? "Куплено" : $"${gear!.Price}") : shop ? Floor.Has((Sidegrade)i) ?
-                    (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${gear!.Price}" : $"{job!.Seconds} с    ${job.Base}";
-                TypeAt(value,1041,row.Y+14,17,ink);
+                TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+(sidegrades ? 4 : 11),sidegrades ? 19 : 21,ink,true);
+                TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+(sidegrades ? 7 : 15),16,selected ? paper : quiet);
+                string value=shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i+1]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
+                    (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${Floor.Price(gear!)}" : $"{job!.Seconds} с    ${job.Base}";
+                TypeAt(value,1041,row.Y+(sidegrades ? 7 : 14),17,ink);
             }
             string hint=shop ? "[B]  Сменить приманку      [G]  Вызвать Крышу" :
                 Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
-            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,550,18,quiet);
+            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,sidegrades ? 566 : 550,18,quiet);
             TypeAt(shop ? "[W/S]  Выбор       [Enter]  Купить / снарядить       [Esc]  На этаж" :
                 "[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж",106,610,19,paper);
         }

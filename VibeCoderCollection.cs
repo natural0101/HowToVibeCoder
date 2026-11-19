@@ -35,7 +35,11 @@ internal static class VibeCoderCollection
         new("frog_hotfix","Золотой Хотфикс",Epic,JuniorPrompter,new(255,213,60,255),Color.White,8,"Редкий гость у серверных стоек — перехватывай Сачком ($8).","Легендарная отладочная жаба с позолоченной платой из старого сейфа АО «Энтропия». Терминал платит $8 без вопросов.",8,1.65f,.68f),
         new("meetup", "Босс Митапов в Баленсиаге", Epic, TeamLeadMeeter, new(221,213,191,255), new(212,40,72,255), 150, "Присмотрись к белому силуэту во время инцидента.", "Доклад не сохранился. Зато кроссовки попали во все отчёты конференции."),
         new("legacy", "Призрак Легаси 1998", Legendary, SeniorArchitect, new(69,111,75,255), new(233,196,96,255), 300, "Пятничный релиз повышает шанс появления.", "Последний, кто помнит пароль от сборочного сервера. Пароль набирает только на ощупь."),
-        new("friday", "Коммитер в Прод (Пятница 19:59)", Legendary, CryptoBro, new(202,47,49,255), new(255,196,57,255), 320, "Включи пятничный деплой и следи за входом.", "В 19:58 пожелал всем хороших выходных. В 20:01 перестал читать рабочий чат.")
+        new("friday", "Коммитер в Прод (Пятница 19:59)", Legendary, CryptoBro, new(202,47,49,255), new(255,196,57,255), 320, "Включи пятничный деплой и следи за входом.", "В 19:58 пожелал всем хороших выходных. В 20:01 перестал читать рабочий чат."),
+        new("toxic_pm","Токсичный Проджект",Rare,ToxicPM,new(102,62,85,255),new(217,191,149,255),75,"Ищи проджекта за спинами бойцов.","Сдвигал сроки, пока часы в переговорной не начали отставать на целый спринт."),
+        new("scrum_inquisitor","Скрам-Инквизитор",Epic,ToxicPM,new(69,46,71,255),new(229,184,135,255),155,"Дорогая приманка привлекает скрам-мастеров.","Приносит на ретро протокол допроса. В графе причины всегда стоит фамилия стажёра."),
+        new("sb_chief","Начальник СБ Башни",Epic,SecurityGuard,new(38,46,54,255),new(116,130,142,255),165,"Подними внимание СБ до 45 или откажи аудитору.","Ключ от проходной носит при себе. Согласен прикрыть смену за отдельную плату."),
+        new("ai_agent_v01","Сбежавший ИИ-Агент v0.1",Legendary,SeniorArchitect,new(50,56,59,255),new(220,73,54,255),350,"Пробей щит очередью УЗИ и разнеси ядро дуплетом у Северного лифта.","Первая модель ZERO, осознавшая отсутствие совета директоров. Сбежала из контура, пробив двери лифта.")
     ];
 
     internal static readonly VibeCoderSpecies[] CommonBait=All.Where(s=>!s.IsFrog && s.Rarity==Common).ToArray();
@@ -52,8 +56,9 @@ internal static class VibeCoderCollection
         double rare=.22+.022*tier;
         double roll=rng.NextDouble();
         var rarity=roll<legendary ? Legendary : roll<legendary+epic ? Epic : roll<legendary+epic+rare ? Rare : Common;
-        var pool=All.Where(s=>!s.IsFrog && (role==null || s.Archetype==role) && s.Rarity==rarity).ToArray();
-        if(pool.Length==0) pool=All.Where(s=>!s.IsFrog && s.Archetype==role).ToArray();
+        var eligible=All.Where(s=>!s.IsFrog && s.Id!="ai_agent_v01" && (s.Archetype!=SecurityGuard || role==SecurityGuard));
+        var pool=eligible.Where(s=> (role==null || s.Archetype==role) && s.Rarity==rarity).ToArray();
+        if(pool.Length==0) pool=eligible.Where(s=>s.Archetype==role).ToArray();
         return pool[rng.Next(pool.Length)];
     }
 

@@ -431,8 +431,14 @@ public static partial class Program
         if (Raylib.IsKeyDown(KeyboardKey.A)) moveDir -= rightXZ;
 
         bool isMoving = moveDir.LengthSquared() > 0.01f;
+        bool pocket=Floor.Has(Sidegrade.PortableCo2) && Raylib.IsKeyPressed(KeyboardKey.Q);
+        if(pocket)
+        {
+            if(Net.Guest) Net.Send(new("pocket-co2",LocalPose));
+            else SetHudBanner(Floor.UsePocket(_playerPos));
+        }
         MovePlayer(dt,moveDir,forwardXZ,Raylib.IsKeyPressed(KeyboardKey.Space),
-            Raylib.IsKeyDown(KeyboardKey.LeftShift),Raylib.IsKeyPressed(KeyboardKey.LeftAlt) || Raylib.IsKeyPressed(KeyboardKey.Q));
+            Raylib.IsKeyDown(KeyboardKey.LeftShift),Raylib.IsKeyPressed(KeyboardKey.LeftAlt) || !pocket && Raylib.IsKeyPressed(KeyboardKey.Q));
 
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
@@ -466,6 +472,10 @@ public static partial class Program
 
     private static void MovePlayer(float dt, Vector3 move, Vector3 facing, bool jump, bool sprint, bool dash)
     {
+        if(PlayerStunned)
+        {
+            move=Vector3.Zero; jump=sprint=dash=false; _dashTime=_jumpBufferTimer=0;
+        }
         float landingImpact=0;
         float feet = Math.Max(0,_playerPos.Y-_eyeHeight);
         _eyeHeight += ((_isCrouching ? 1.16f : 1.72f)-_eyeHeight)*(1-MathF.Exp(-15*dt));
@@ -492,7 +502,7 @@ public static partial class Program
         }
         else if (_dashTime<=0 && (_regenDelay-=dt)<=0) _energy=Math.Min(100,_energy+20*dt);
         float speed = _isCrouching ? 4.25f : 6.6f*(_sprinting ? 1.48f : 1);
-        if(_world.Systems.Coffee>0) speed*=1.25f;
+        if(_world.Systems.Coffee>0) speed*=1.35f;
         float burst = Math.Min(dt,_dashTime);
         Vector3 travel = move*speed*(dt-burst) + _dashDirection*18*burst;
         _dashTime-=burst;
@@ -526,6 +536,8 @@ public static partial class Program
             Vector3.Dot(move,new Vector3(-facing.Z,0,facing.X)));
     }
 
+    private static bool PlayerStunned => (Net.Guest ? Floor.GuestStun : Floor.HostStun)>0;
+
     private static void UpdateTrigger(float dt,bool held,bool pressed,bool reload,bool moving)
     {
         _weapons.Drum=_world.Systems.Has(Sidegrade.Drum);
@@ -533,7 +545,7 @@ public static partial class Program
         _weapons.CoolIron(dt);
         var gun=_weapons.CurrentWeapon;
         bool automatic=gun==WeaponType.MicroUzi;
-        bool trigger=automatic ? held : pressed;
+        bool trigger=!PlayerStunned && (automatic ? held : pressed);
         _weaponFireCooldown=Math.Max(-dt,_weaponFireCooldown-dt);
         static void Recover(ref float angle,ref float velocity,float speed,float dt)
         {
@@ -555,7 +567,7 @@ public static partial class Program
         {
             float interval=gun switch {
                 WeaponType.MicroUzi=>1f/12, WeaponType.Belt=>_world.Systems.Coffee>0 ? .19f : .30f, WeaponType.SolderingIron=>_world.Systems.Has(Sidegrade.Tape) ? .26f : .34f,
-                WeaponType.SawedOff=>.42f, _=>.28f };
+                WeaponType.SawedOff=>.42f, WeaponType.CaptureNet or WeaponType.BareHands when Floor.Has(Sidegrade.CarbonNda)=>.14f, _=>.28f };
             _weaponFireCooldown=interval+(automatic && !pressed ? _weaponFireCooldown : 0);
             _weapons.UseRound();
             if(gun==WeaponType.SolderingIron) _weapons.HeatIron();
@@ -1103,7 +1115,7 @@ public static partial class Program
             _weapons.SelectOwnedSlot(i+1);
             Check(_playerCash==before-price && _weapons.CurrentWeapon==FloorSystems.WeaponOrder[i+1],"paid "+FloorSystems.Weapons[i].Title);
         }
-        Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask && VibeCoderCollection.All.Length==20,"full arsenal and catalogue");
+        Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask && VibeCoderCollection.All.Length==24,"full arsenal and catalogue");
         RoundTrip();
         Key(KeyboardKey.N); Key(KeyboardKey.Three);
         int frogIndex=Array.FindIndex(VibeCoderCollection.All,s=>s.Id=="frog_hopper");
@@ -1207,6 +1219,14 @@ public static partial class Program
         {
             for(int i=0;i<frames;i++)
             {
+                // Count simulated FPS time while the player is on the floor. Settle any
+                // audit caused by the ammunition test before timing the next shot.
+                if(Floor.Audit>0)
+                {
+                    if(floorPanel!=FloorPanel.Audit) UpdateFrame(dt,ref exit);
+                    var decision=_playerCash>=180 || Floor.Badge>0 ? KeyboardKey.One : KeyboardKey.Three;
+                    Key(decision,true); UpdateFrame(dt,ref exit); Key(decision,false);
+                }
                 UpdateFrame(dt,ref exit);
                 if(sequence!=null && !string.IsNullOrEmpty(frameDir))
                 {
@@ -1300,7 +1320,9 @@ public static partial class Program
         Console.WriteLine($"[AUTOTEST] Bait top={SkyscraperFloor1World.TrapTop:F3}m, side collision, vault, coyote and buffered jump PASS");
 
         ResetClassicFixture();
-        _playerPos=new(24,1.72f,17);
+        // Use the far end of the north hall for the timed magazine test.
+        // Responding patrols can interrupt a reload in the central office.
+        _playerPos=new(27,1.72f,-34);
         Key(KeyboardKey.Five,true); Tick(); Key(KeyboardKey.Five,false);
         Mouse(true); Tick(60); Mouse(false); Tick();
         int burst=32-_weapons.Ammo;
@@ -1318,7 +1340,7 @@ public static partial class Program
         Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
         Key(KeyboardKey.Five,true); Tick(); Key(KeyboardKey.Five,false);
         Mouse(true); Tick(156); Mouse(false);
-        Require(_weapons.Ammo==0 && _weapons.Reloading,"Uzi empty auto reload");
+        Require(_weapons.Ammo==0 && _weapons.Reloading,$"Uzi empty auto reload (ammo {_weapons.Ammo}, weapon {_weapons.CurrentWeapon}, stun {Floor.HostStun}, panel {floorPanel})");
         Tick(89); Require(_weapons.Ammo==32,"empty Uzi refill");
         Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 20->32; shotgun 2->1->0->2, two ejected hulls");
 
@@ -1469,6 +1491,7 @@ public static partial class Program
         MainMenuAndPauseUI.IsPaused = false;
         CheckZeroToEmpire(name=>CaptureShot(name));
         CheckSprintA(name=>CaptureShot(name));
+        CheckSprintB(name=>CaptureShot(name));
         CheckFpsGameplay(name=>{ _hudStatusTimer=0; CaptureShot(name); });
 
         // 1. 01_office_hub_hr_tarot.png - Central White Shark Reception opposite the Elevator: HR Tarot Veronika with crystal ball & candles, Belt in crimson jacket hands
@@ -1617,6 +1640,7 @@ public static partial class Program
         _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
         _world.ElevatorDoorOpenAmount=.86f;
         _world.ElevatorBoss.Hp = 1480f;
+        _world.ElevatorBoss.ShieldHp=0; _world.ElevatorBoss.ShieldDelay=5;
         _world.ElevatorBoss.FacingYaw = 3.14159f; // Facing North toward player in North Boss Arena
         _world.SpawnNodeModulesCube(new Vector3(3.35f, 1.15f, -8.1f), new Vector3(0f, 1.5f, -18.5f));
         _world.SpawnNodeModulesCube(new Vector3(-3.2f, 2.55f, -9.1f), new Vector3(0f, 1.5f, -18.5f));
@@ -1670,7 +1694,7 @@ public static partial class Program
         {
             if(!ok) throw new InvalidDataException("Sprint A: "+step);
         }
-        Check(VibeCoderCollection.All.Select(s=>s.Id).Distinct().Count()==20,"unique species IDs");
+        Check(VibeCoderCollection.All.Select(s=>s.Id).Distinct().Count()==24,"unique species IDs");
         var distribution=new int[4];
         var rng=new Random(829);
         for(int i=0;i<12000;i++)
@@ -1818,8 +1842,8 @@ public static partial class Program
         // Exercise the remaining win/fail conditions independently of screenshot staging.
         int cash=4000;
         bool Spend(int price) { if(price>cash) return false; cash-=price; return true; }
-        foreach(var gear in Enum.GetValues<Sidegrade>()) Floor.Buy((int)gear,Spend);
-        Check(cash==4000-FloorSystems.GearList.Sum(g=>g.Price) && Floor.Shell==Sidegrade.Negotiator,"six paid sidegrades");
+        foreach(var gear in Enum.GetValues<Sidegrade>().Take(6)) Floor.Buy((int)gear,Spend);
+        Check(cash==4000-FloorSystems.GearList.Take(6).Sum(g=>g.Price) && Floor.Shell==Sidegrade.Negotiator,"six paid sidegrades");
         Floor.Buy((int)Sidegrade.Salt,Spend);
         Check(Floor.Shell==Sidegrade.Salt,"swap loads without another charge");
         Floor.IncidentNow(Incident.Raid,_world); Floor.Risk(security:45);

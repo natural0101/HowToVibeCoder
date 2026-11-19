@@ -17,7 +17,7 @@ public enum CoderArchetype
     CryptoBro = 1,
     TeamLeadMeeter = 2,
     SaasGuruMiniBoss = 3,
-    SeniorArchitect = 4
+    SeniorArchitect = 4, ToxicPM = 5, SecurityGuard = 6
 }
 
 public enum CoderAIState
@@ -74,12 +74,13 @@ public sealed class VibeCoderEntity
     public float SpeechTimer;
     public int SpawnSide; // -1 = West door, +1 = East door
 
-    public float Composure, Ego, Fear, Greed;
+    public float Composure, Ego, Fear, Greed, Deadline, Ignition;
     public bool JointNda;
     public bool BaitTaken, LaptopLost, RaidGuard, ReleaseAttacker;
     public string Role => Archetype switch {
         CoderArchetype.JuniorPrompter=>"Джуниор-Промптер",CoderArchetype.CryptoBro=>"Крипто-Бро",
-        CoderArchetype.TeamLeadMeeter=>"Тимлид-Митингер",CoderArchetype.SeniorArchitect=>"Сеньор-Архитектор",_=>"Гуру Курсора" };
+        CoderArchetype.TeamLeadMeeter=>"Тимлид-Митингер",CoderArchetype.SeniorArchitect=>"Сеньор-Архитектор",
+        CoderArchetype.ToxicPM=>"Токсичный Проджект",CoderArchetype.SecurityGuard=>"СБ-шник",_=>"Гуру Курсора" };
 
     internal void AssignRole(CoderArchetype role)
     {
@@ -89,6 +90,8 @@ public sealed class VibeCoderEntity
             CoderArchetype.CryptoBro=>(68,65,9,62,new Color(220,155,47,255)),
             CoderArchetype.TeamLeadMeeter=>(96,57,6,22,new Color(77,173,115,255)),
             CoderArchetype.SeniorArchitect=>(90,96,4,12,new Color(154,119,212,255)),
+            CoderArchetype.ToxicPM=>(76,78,5,50,new Color(108,63,83,255)),
+            CoderArchetype.SecurityGuard=>(95,68,2,26,new Color(39,46,58,255)),
             _=>(99,100,0,35,new Color(245,190,25,255)) };
     }
 
@@ -213,6 +216,10 @@ public sealed class EscapedAgentBoss
     public Vector3 Position = new(0f, .16f, -4f);
     public Vector3 Velocity;
     public float FacingYaw;
+    public const float ShieldCapacity=180;
+    public int Phase=1, TapeLine;
+    public float ShieldHp=ShieldCapacity, ShieldDelay, BroadcastTime;
+    public Vector3 ChestCore => Position+new Vector3(MathF.Sin(FacingYaw)*.31f,2.08f,MathF.Cos(FacingYaw)*.31f);
     public float Hp = 2000f;
     public float MaxHp = 2000f;
     public ElevatorBossState State = ElevatorBossState.Inactive;
@@ -466,11 +473,7 @@ public sealed partial class SkyscraperFloor1World
 
         SeedLobby();
         // Reset Boss & Progression
-        ElevatorBoss.IsActive = false;
-        ElevatorBoss.IsDefeated = false;
-        ElevatorBoss.Hp = ElevatorBoss.MaxHp;
-        ElevatorBoss.State = ElevatorBossState.Inactive;
-        ElevatorBoss.Position = CentralElevatorCorePos + Vector3.UnitY*.16f;
+        ElevatorBoss=new() { Position=CentralElevatorCorePos+Vector3.UnitY*.16f };
         ElevatorDoorOpenAmount = 0f;
         IsFloor2Unlocked = false;
         CarriedCoder = null;
@@ -728,6 +731,7 @@ public sealed partial class SkyscraperFloor1World
         }
         Add(DeployPos,.83f,1.14f,.61f);
         Add(TerminalPos,.75f,1.35f,.65f);
+        Add(ExtinguisherPos,.4f,.94f,.4f);
         Add(CoffeePos,.85f,1.39f,.68f);
         foreach (var p in Pillars) Add(p.Center,2*p.HalfWidth,CeilingHeight,2*p.HalfDepth);
         Add(CentralElevatorCorePos,2*ElevatorCoreHalfW,CeilingHeight,2*ElevatorCoreHalfD);
@@ -854,7 +858,7 @@ public sealed partial class SkyscraperFloor1World
             ActiveAmbushCoverName = "Присед [C]";
         }
 
-        IsPlayerInAmbush = nearCover || isCrouching;
+        IsPlayerInAmbush = nearCover || isCrouching || InCloud(playerPos);
     }
 
     // =========================================================================
@@ -907,6 +911,7 @@ public sealed partial class SkyscraperFloor1World
             var species=tier==SubscriptionBaitTier.FreeTier ? VibeCoderCollection.CommonBait[speciesRandom.Next(VibeCoderCollection.CommonBait.Length)] : VibeCoderCollection.Roll(speciesRandom,tier,Systems);
             coder.AssignRole(species.Archetype);
             VibeCoderCollection.Dress(coder,species);
+            if(coder.Archetype==CoderArchetype.ToxicPM) { coder.IsCombatCoder=true; coder.State=CoderAIState.CombatHostile; coder.Aggro=true; }
         }
         Vector3 toMac = CentralMacBookPos - spawnPos;
         coder.FacingYaw = MathF.Atan2(toMac.X, toMac.Z);
@@ -949,6 +954,7 @@ public sealed partial class SkyscraperFloor1World
             HasElevatorKey = true;
         }
 
+        ElevatorBoss=new();
         ElevatorBoss.IsActive = true;
         ElevatorBoss.IsDefeated = false;
         ElevatorBoss.MaxHp = 2000f;
@@ -1019,7 +1025,7 @@ public sealed partial class SkyscraperFloor1World
         }
 
         // 2. Update Active Vibe Coders & SaaS Mini-Boss
-        UpdateVibeCoders(dt, playerPos,guestPosition,onPlayerHitByProjectile,onGuestHit);
+        UpdateVibeCoders(dt, playerPos,guestPosition,onPlayerHitByProjectile,onGuestHit,onPassiveIncomeOrPayout);
 
         // 3. Update Floor 1 Elevator Boss
         UpdateElevatorBoss(dt, Nearest(ElevatorBoss.Position));
@@ -1050,12 +1056,22 @@ public sealed partial class SkyscraperFloor1World
         return passiveEarned;
     }
 
-    private void UpdateVibeCoders(float dt, Vector3 hostPos, Vector3? guestPos, Action<int,string>? hitHost, Action<int>? hitGuest)
+    private void UpdateVibeCoders(float dt, Vector3 hostPos, Vector3? guestPos, Action<int,string>? hitHost, Action<int>? hitGuest,Action<int,string>? pay)
     {
         for (int i = ActiveCoders.Count - 1; i >= 0; i--)
         {
             VibeCoderEntity c = ActiveCoders[i];
             Vector3 playerPos=guestPos is {} guest && Vector3.DistanceSquared(c.Position,guest)<Vector3.DistanceSquared(c.Position,hostPos) ? guest : hostPos;
+
+            c.Deadline=Math.Max(0,c.Deadline-dt);
+            if(c.Ignition>0 && c.Hp>0)
+            {
+                c.Hp-=8*Math.Min(dt,c.Ignition);
+                c.Ignition=Math.Max(0,c.Ignition-dt);
+                if(c.Hp<=0) { KillCoder(c,pay); continue; }
+            }
+            if(c.Hp>0 && c.State!=CoderAIState.Subdued && InCloud(c.Position))
+            { c.Windup=0; c.HitStaggerTimer=.3f; continue; }
 
             if (c.HitFlashTimer > 0f)
                 c.HitFlashTimer = MathF.Max(0f, c.HitFlashTimer - dt);
@@ -1097,8 +1113,9 @@ public sealed partial class SkyscraperFloor1World
             {
                 if (UpdateFighter(c,dt,playerPos))
                 {
-                    if (guestPos == playerPos) hitGuest?.Invoke(6);
-                    else hitHost?.Invoke(6,"Удар ноутбуком");
+                    bool baton=c.Archetype==CoderArchetype.SecurityGuard;
+                    if (guestPos == playerPos) { hitGuest?.Invoke(baton ? 10 : 6); if(baton) Systems.GuestStun=.8f; }
+                    else { hitHost?.Invoke(baton ? 10 : 6,baton ? "Дубинка СБ" : "Удар ноутбуком"); if(baton) Systems.HostStun=.8f; }
                 }
                 continue;
             }
@@ -1252,6 +1269,8 @@ public sealed partial class SkyscraperFloor1World
 
     private bool UpdateFighter(VibeCoderEntity c,float dt,Vector3 eye)
     {
+        if(c.Archetype==CoderArchetype.SecurityGuard && InCloud(eye)) { c.Aggro=false; c.Windup=0; return false; }
+        if(c.Deadline>0) dt*=1.5f;
         if(IsMacBookTrapActive && !c.RaidGuard && !c.ReleaseAttacker && !c.BaitTaken &&
             c.Archetype is CoderArchetype.JuniorPrompter or CoderArchetype.CryptoBro && Vector3.DistanceSquared(c.Position,CentralMacBookPos)<90)
         {
@@ -1285,12 +1304,40 @@ public sealed partial class SkyscraperFloor1World
         if (!c.Aggro) return false;
         c.FacingYaw = MathF.Atan2(dir.X,dir.Z);
         c.StateTimer += dt;
+        if(c.Archetype==CoderArchetype.ToxicPM)
+        {
+            c.AttackCooldown-=dt;
+            if(c.AttackCooldown<=0 && visible)
+            {
+                foreach(var ally in ActiveCoders)
+                    if(ally.State==CoderAIState.CombatHostile && Vector3.DistanceSquared(ally.Position,c.Position)<=81) ally.Deadline=10;
+                Systems.Risk(heat:4); c.AttackCooldown=22;
+            }
+            float pace=dist<6 ? -2.8f : dist>9 ? 2.3f : 0;
+            c.Position=ResolvePlayerCollision(c.Position+dir*dt*pace,.24f);
+            c.WalkCycle+=Math.Abs(pace)*dt*5;
+            return false;
+        }
         if (c.Windup>0)
         {
             c.Windup = Math.Max(0,c.Windup-dt);
-            if (c.Windup>0) return false;
+            if(c.Archetype==CoderArchetype.ToxicPM)
+        {
+            c.AttackCooldown-=dt;
+            if(c.AttackCooldown<=0 && visible)
+            {
+                foreach(var ally in ActiveCoders)
+                    if(ally.State==CoderAIState.CombatHostile && Vector3.DistanceSquared(ally.Position,c.Position)<=81) ally.Deadline=10;
+                Systems.Risk(heat:4); c.AttackCooldown=22;
+            }
+            float pace=dist<6 ? -2.8f : dist>9 ? 2.3f : 0;
+            c.Position=ResolvePlayerCollision(c.Position+dir*dt*pace,.24f);
+            c.WalkCycle+=Math.Abs(pace)*dt*5;
+            return false;
+        }
+        if (c.Windup>0) return false;
             c.AttackCooldown = c.WindingSlap ? 1.4f : 1.85f;
-            if (c.WindingSlap) return !c.LaptopLost && visible && dist<2.8f && Math.Abs(eye.Y-1.4f)<1;
+            if (c.WindingSlap) return (!c.LaptopLost || c.Archetype==CoderArchetype.SecurityGuard) && visible && dist<2.8f && Math.Abs(eye.Y-1.4f)<1;
             EnemyProjectiles.Add(new() {
                 Position=hand, Velocity=Vector3.Normalize(c.ThrowTarget-hand)*12,
                 AngularVelocity=new(180,290,110), Radius=.14f, Life=2, MaxLife=2,
@@ -1303,6 +1350,12 @@ public sealed partial class SkyscraperFloor1World
         bool synced=ActiveCoders.Exists(lead=>lead!=c && lead.Archetype==CoderArchetype.TeamLeadMeeter &&
             lead.State==CoderAIState.CombatHostile && Vector3.DistanceSquared(lead.Position,c.Position)<25);
         c.AttackCooldown -= dt*(synced ? 1.5f : 1);
+        if(c.Archetype==CoderArchetype.SecurityGuard)
+        {
+            if(dist>1.7f) { c.Position=ResolvePlayerCollision(c.Position+dir*4.8f*dt,.24f); c.WalkCycle+=14*dt; }
+            if(visible && dist<2.5f && c.AttackCooldown<=0) { c.WindingSlap=true; c.Windup=.35f; }
+            return false;
+        }
         if (c.AttackCooldown<=0 && visible && dist<=11)
         {
             c.WindingSlap = !c.LaptopLost && dist<2.8f;
@@ -1365,6 +1418,12 @@ public sealed partial class SkyscraperFloor1World
         }
 
         var b = ElevatorBoss;
+        UpdateBossPhase();
+        b.ShieldDelay=Math.Max(0,b.ShieldDelay-dt);
+        if(b.Phase<3 && b.ShieldDelay<=0) b.ShieldHp=Math.Min(EscapedAgentBoss.ShieldCapacity,b.ShieldHp+22*dt);
+        if(b.Phase==2 && Systems.RackSmoke>0 && Vector3.DistanceSquared(b.Position,RackPos)<=25 &&
+            (b.State!=ElevatorBossState.StunnedWallCrash || b.ShieldHp>0)) ShortBoss();
+        if(b.Phase==3 && (b.BroadcastTime-=dt)<=0) BroadcastTape();
         b.WheelSpinPhase += dt * 8f;
         if (b.HitFlashTimer > 0f)
             b.HitFlashTimer = MathF.Max(0f, b.HitFlashTimer - dt);
@@ -1391,7 +1450,7 @@ public sealed partial class SkyscraperFloor1World
 
             case ElevatorBossState.ChargingPlayer:
             {
-                b.Position += b.ChargeDirection * 9.2f * dt;
+                b.Position += b.ChargeDirection * (b.Phase==3 ? 13f : 9.2f) * dt;
                 b.WheelSpinPhase += dt * 18f;
 
                 // Check if boss crashed into any Pillar or Wall!
@@ -1453,7 +1512,7 @@ public sealed partial class SkyscraperFloor1World
                 b.AttackSubTimer -= dt;
                 if (b.AttackSubTimer <= 0f)
                 {
-                    b.AttackSubTimer = 0.75f;
+                    b.AttackSubTimer = b.Phase switch { 3=>.28f,2=>.4f,_=>.75f };
                     SpawnNodeModulesCube(b.Position + new Vector3(0f, 1.9f, 0f), playerPos);
                 }
 
@@ -1471,7 +1530,7 @@ public sealed partial class SkyscraperFloor1World
                 b.AttackSubTimer -= dt;
                 if (b.AttackSubTimer <= 0f)
                 {
-                    b.AttackSubTimer = 0.95f;
+                    b.AttackSubTimer = b.Phase>=2 ? .45f : .95f;
                     SpawnNodeModulesCube(b.Position + new Vector3(0f, 2.0f, 0f), playerPos);
                 }
 
@@ -1506,7 +1565,7 @@ public sealed partial class SkyscraperFloor1World
         EnemyProjectiles.Add(new EnemyProjectile3D
         {
             Position = origin,
-            Velocity = dir * 10.2f,
+            Velocity = dir * (ElevatorBoss.Phase>=2 ? 15f : 10.2f),
             Rotation = Vector3.Zero,
             AngularVelocity = new Vector3(130f, 190f, 150f),
             Radius = 0.68f,
@@ -1593,7 +1652,7 @@ public sealed partial class SkyscraperFloor1World
 
     private int UpdateGalleyDesks(float dt, Action<int, string>? onPassiveIncome)
     {
-        int totalEarnedThisTick = 0;
+        int totalEarnedThisTick = UpdateGalleyRelations(dt,onPassiveIncome);
 
         for (int i = 0; i < GalleyDesks.Count; i++)
         {
@@ -1618,7 +1677,7 @@ public sealed partial class SkyscraperFloor1World
                 {
                     bool supported=GalleyDesks.Exists(d=>d.IsOccupied && d.Archetype==CoderArchetype.TeamLeadMeeter && !d.IsSlackingInTwitter);
                     float load=Systems.Friday>0 ? 1.7f : 1;
-                    desk.Burnout=Math.Min(100,desk.Burnout+dt*load*(supported ? .21f : .48f));
+                    desk.Burnout=Math.Min(100,desk.Burnout+dt*load*.48f*(supported ? .5f : 1)*(Working(CoderArchetype.ToxicPM) ? 1.8f : 1));
                     if(desk.Burnout>=100) { desk.IsSlackingInTwitter=true; continue; }
                     Systems.Risk(debt:desk.TechDebtRate*load*dt);
                     desk.IncomeAccumulator+=DeskRate(desk,supported)*dt;
@@ -1661,7 +1720,7 @@ public sealed partial class SkyscraperFloor1World
 
         if(weaponSystem.CurrentWeapon is WeaponType.BareHands or WeaponType.CaptureNet)
         {
-            combatFeedback=CatchSweep(camera,weaponSystem.CurrentWeapon==WeaponType.CaptureNet);
+            combatFeedback=CatchSweep(camera,weaponSystem.CurrentWeapon==WeaponType.CaptureNet,onGrantMoney);
             weaponSystem.TriggerWeaponAttack(camera,hitEnemy:combatFeedback.Length>0);
             return combatFeedback.Length>0;
         }
@@ -1687,8 +1746,8 @@ public sealed partial class SkyscraperFloor1World
         };
 
         WeaponType tool=weaponSystem.CurrentWeapon;
-        if(tool==WeaponType.MicroUzi) Systems.Risk(security:2.6f);
-        if(tool==WeaponType.SawedOff) Systems.Risk(security:7);
+        if(tool==WeaponType.MicroUzi && !InCloud(origin)) Systems.Risk(security:2.6f);
+        if(tool==WeaponType.SawedOff && !InCloud(origin)) Systems.Risk(security:7);
         if(tool==WeaponType.Belt && TryParry(camera,forward,weaponSystem,out combatFeedback)) return true;
         bool salt=tool==WeaponType.SawedOff && Systems.Shell==Sidegrade.Salt;
         bool negotiator=tool==WeaponType.SawedOff && Systems.Shell==Sidegrade.Negotiator;
@@ -1746,7 +1805,20 @@ public sealed partial class SkyscraperFloor1World
                 if(salt) dmg=(int)(dmg*.45f);
                 if(negotiator) dmg=(int)(dmg*1.4f);
                 Systems.Style((StyleAction)((int)tool-1));
+                UpdateBossPhase();
+                if(ElevatorBoss.Phase==2 && Systems.Puddles.Exists(p=>p.Electric>0 && Vector3.DistanceSquared(p.Position,ElevatorBoss.Position)<=10.24f)) ShortBoss();
+                bool shield=ElevatorBoss.ShieldHp>0;
+                if(shield)
+                {
+                    ElevatorBoss.ShieldHp=Math.Max(0,ElevatorBoss.ShieldHp-(tool==WeaponType.MicroUzi ? 60 : dmg*.35f));
+                    dmg=0;
+                }
+                else if(tool==WeaponType.SawedOff && Vector3.Dot(forward,new(MathF.Sin(ElevatorBoss.FacingYaw),0,MathF.Cos(ElevatorBoss.FacingYaw)))<-.15f &&
+                    TryRaySphereHit(origin,forward,ElevatorBoss.ChestCore,.29f,maxRange,out _,out _))
+                { dmg*=3; isCrit=true; }
+                ElevatorBoss.ShieldDelay=5;
                 ElevatorBoss.Hp = MathF.Max(0f, ElevatorBoss.Hp - dmg);
+                UpdateBossPhase();
                 ElevatorBoss.HitFlashTimer = 0.16f;
 
                 AudioMusicSystem.PlayHitmarker();
@@ -1763,16 +1835,15 @@ public sealed partial class SkyscraperFloor1World
                     ElevatorDoorOpenAmount = 1.0f;
                     weaponSystem.UnlockedChatGun = true;
 
-                    SpawnCashBurst(bossCenter, 24, "$$$ +$1500 БОНУС БОССА!");
-                    Systems.Earned+=1500; Systems.Risk(security:14);
-                    onGrantMoney?.Invoke(1500, "ПОБЕДА НАД ИИ-АГЕНТОМ v0.1");
+                    Systems.FinalePending=true; Systems.ShutdownTime=.8f;
+                    Systems.Discover(VibeCoderCollection.All.Single(s=>s.Id=="ai_agent_v01"),onGrantMoney);
                     AudioMusicSystem.PlayTarotCash();
 
-                    combatFeedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Выпал СЕКРЕТНЫЙ ЧАТ-ГАН + $1500! Лифт на 2-й этаж открыт!";
+                    combatFeedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен. Подпиши акт утилизации.";
                 }
                 else
                 {
-                    combatFeedback = $"ПОПАДАНИЕ ПО ИИ-АГЕНТУ v0.1: -{dmg} ХП (осталось {(int)ElevatorBoss.Hp}/{ElevatorBoss.MaxHp})";
+                    combatFeedback = shield ? $"Файрвол: {ElevatorBoss.ShieldHp:F0}" : $"ПОПАДАНИЕ ПО ИИ-АГЕНТУ v0.1: -{dmg} ХП (осталось {(int)ElevatorBoss.Hp}/{ElevatorBoss.MaxHp})";
                 }
                 return true;
             }
@@ -1817,6 +1888,8 @@ public sealed partial class SkyscraperFloor1World
                 target.AttackCooldown = Math.Max(target.AttackCooldown,.45f);
             }
             float power=Systems.Style((StyleAction)((int)tool-1));
+            if((melee || salt) && Systems.Has(Sidegrade.CarbonNda)) power*=2;
+            float fearPower=power*Systems.FearMultiplier;
             var impulse=new Vector3(forward.X,0,forward.Z);
             target.KnockbackVel=impulse*(melee ? 7 : tool==WeaponType.SawedOff ? 9 : 3.6f);
             if(tool==WeaponType.Belt && Systems.Coffee>0) target.KnockbackVel*=2;
@@ -1824,11 +1897,12 @@ public sealed partial class SkyscraperFloor1World
             target.HitFlashTimer=.18f;
             if(melee || salt)
             {
+                float hpBefore=target.Hp;
                 bool disarm=tool==WeaponType.Belt && !target.LaptopLost;
                 if(disarm) target.LaptopLost=true;
                 if(tool==WeaponType.Belt)
                 {
-                    target.Pressure(28*power,disarm ? 40 : 0,34*power);
+                    target.Pressure(28*power,disarm ? 40 : 0,34*fearPower);
                     if(Systems.Has(Sidegrade.DirectorBelt))
                     {
                         target.HitStaggerTimer=.23f;
@@ -1836,22 +1910,24 @@ public sealed partial class SkyscraperFloor1World
                             if(other!=target && other.Hp>0 && other.State!=CoderAIState.Subdued &&
                                 Vector3.DistanceSquared(other.Position,target.Position)<2.3f &&
                                 Vector3.Dot(other.CombatCenter-origin,forward)>0)
-                                other.Pressure(28*power,0,34*power);
+                                other.Pressure(28*power,0,34*fearPower);
                     }
                 }
-                else if(salt) { target.Pressure(38*power,34*power,48*power); target.StunTimer=1.8f; }
+                else if(salt) { target.Pressure(38*power,34*power,48*fearPower); target.StunTimer=1.8f; }
                 else
                 {
                     float tape=Systems.Has(Sidegrade.Tape) ? 1.45f : 1;
-                    target.Pressure(14*power,32*power*tape,22*power); target.StunTimer=1.5f*tape;
+                    if(Systems.Has(Sidegrade.RosinNapalm)) { target.Hp=Math.Max(0,target.Hp-16); target.Ignition=3; }
+                    target.Pressure(14*power,32*power*tape,22*fearPower); target.StunTimer=1.5f*tape;
                 }
-                combatFeedback=target.State==CoderAIState.Subdued ? "Кандидат сломлен. Подпиши NDA [E]" :
+                if(target.Hp<=0) KillCoder(target,onGrantMoney);
+                combatFeedback=target.Hp<=0 ? "Кандидат выбыл от ожогов. СБ +14" : target.State==CoderAIState.Subdued ? "Кандидат сломлен. Подпиши NDA [E]" :
                     disarm ? "Ноутбук выбит. Эго -40" : $"Выдержка {target.Composure:F0}   Эго {target.Ego:F0}";
-                weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,0,disarm,receiverCenter:target.CombatCenter,shotDirection:forward);
+                weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,(int)Math.Ceiling(hpBefore-target.Hp),disarm,receiverCenter:target.CombatCenter,shotDirection:forward);
             }
             else
             {
-                if(target.Archetype==CoderArchetype.SeniorArchitect && target.Ego>45) dmg=(int)(dmg*.73f);
+                if(target.Archetype==CoderArchetype.SecurityGuard || target.Archetype==CoderArchetype.SeniorArchitect && target.Ego>45) dmg=(int)(dmg*.73f);
                 if(negotiator && !target.IsMiniBoss) dmg=Math.Max(dmg,(int)MathF.Ceiling(target.Hp));
                 target.Hp=Math.Max(0,target.Hp-dmg);
                 weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,dmg,isCrit,receiverCenter:target.CombatCenter,shotDirection:forward);
@@ -2697,6 +2773,16 @@ public sealed partial class SkyscraperFloor1World
             : c.HitStaggerTimer>0 ? -.32f*Math.Min(1,c.HitStaggerTimer*6) : c.State==CoderAIState.Subdued ? -.48f : 0;
         Color tint=c.HitFlashTimer>0 ? Color.White : Raylib.ColorLerp(Color.White,c.HoodieColor,c.IsCombatCoder ? .87f : .36f);
         VisualEngine3D.DrawCoder(c,c.Position+Vector3.UnitY*bob,tilt,tint);
+        if(c.Archetype==CoderArchetype.SecurityGuard)
+        {
+            Vector3 At(float x,float y,float z)=>c.Position+Vector3.Transform(new Vector3(x,y+bob,z),Quaternion.CreateFromAxisAngle(Vector3.UnitY,c.FacingYaw));
+            VisualEngine3D.Oval(At(0,.82f,.02f),new(.23f,.25f,.15f),new(43,52,62,255),Finish.Armor);
+            var tip=At(.23f,c.Windup>0 ? 1.12f : .85f,.38f);
+            VisualEngine3D.Rod(At(.21f,.72f,.13f),tip,.035f,.032f,10,Color.DarkGray);
+            VisualEngine3D.Orb(tip,.035f,new(125,192,214,255),Finish.Lamp);
+        }
+        if(c.Ignition>0 && c.Hp>0)
+            VisualEngine3D.Oval(c.CombatCenter+Vector3.UnitY*.12f,new(.12f,.17f+.04f*MathF.Sin(_worldClock*21),.1f),Color.Orange,Finish.Plasma);
         if(!VisualEngine3D.CastingShadows && c.Rarity!=VibeCoderRarity.Common && c.Hp>0)
         {
             Color ink=VibeCoderCollection.Ink(c.Rarity);
@@ -2734,7 +2820,12 @@ public sealed partial class SkyscraperFloor1World
         Color tint=b.HitFlashTimer>0 ? new Color(255,225,235,255) : b.State==ElevatorBossState.StunnedWallCrash
             ? new Color(255,166,166,255) : Color.White;
         // MPFB anatomy faces +Z, matching FacingYaw (the retired robot faced -Z).
-        VisualEngine3D.Asset("escaped_ai_boss",b.Position,b.FacingYaw*180/MathF.PI,scale:1.32f,tint:tint);
+        if(b.IsDefeated && Systems.Verdict!=AgentVerdict.Pending) return;
+        float shutdown=b.IsDefeated ? Math.Clamp(1-Systems.ShutdownTime/.8f,0,1) : 0;
+        VisualEngine3D.Asset("escaped_ai_boss",b.Position,b.FacingYaw*180/MathF.PI,scale:1.32f,
+            tint:Raylib.ColorLerp(tint,Color.Gray,shutdown),tilt:shutdown*.32f,stretch:new Vector3(1,1-.33f*shutdown,1));
+        if(b.IsActive && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
+            Raylib.DrawSphereWires(b.Position+Vector3.UnitY*1.42f,1.48f,6,12,new Color(115,198,222,95));
     }
 
     private static void DrawFicus(Vector3 p)
@@ -2774,13 +2865,13 @@ public sealed partial class SkyscraperFloor1World
     // =========================================================================
     // 2D WORLD-TO-SCREEN LABELS, HEALTH BARS, ANXIETY BARS & INTERACTION HINTS
     // =========================================================================
-    private enum FocusKind { None, Terminal, Frog, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Cooler, Coffee, Rack, Printer, Deploy }
+    private enum FocusKind { None, Terminal, Frog, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Cooler, Coffee, Rack, Printer, Deploy, Extinguisher }
     private readonly record struct Focus(FocusKind Kind, string Label, int Index);
-    private string PickUp(VibeCoderEntity c,Action<int,string> grant)
+    private string PickUp(VibeCoderEntity c,Action<int,string>? grant)
     {
         if (CarriedCoder != null) return "Сначала отведи пойманного кодера к Веронике или на галеру";
         Systems.Style(StyleAction.Capture);
-        Systems.Risk(security:.5f);
+        Systems.Risk(security:.5f+(Systems.Has(Sidegrade.CarbonNda) ? 6 : 0));
         if(!c.IdentityRevealed && !c.IsMiniBoss)
         {
             // Slots from before the collection had archetypes but no species IDs.
@@ -2791,8 +2882,10 @@ public sealed partial class SkyscraperFloor1World
             Systems.Discover(species,grant);
         }
         c.IdentityRevealed=true;
-        CarriedCoder = c;
         ActiveCoders.Remove(c);
+        if(c.Archetype==CoderArchetype.SecurityGuard)
+        { Systems.Protection=true; return "Начальник СБ прикрывает смену. −1,2 СБ/с"; }
+        CarriedCoder = c;
         AudioMusicSystem.TriggerVoiceLine(
             "КОММЕРС 90-Х",
             $"Поднял кандидата «{c.Name}»! Неси Веронике (HR-Тарологу) за ${c.TarotPayoutValue} или сажай на Галеру!",
@@ -2811,15 +2904,16 @@ public sealed partial class SkyscraperFloor1World
             case FocusKind.Offer:
                 var candidate=ActiveCoders[focus.Index];
                 if(!spend(80)) return "На аванс нужно $80";
+                if(candidate.Archetype==CoderArchetype.SecurityGuard) return PickUp(candidate,grant);
                 candidate.Pressure(24,0,-6,45);
                 return candidate.State==CoderAIState.Subdued ? "Аванс принят. Подпиши NDA [E]" : "Кандидат изучает оффер";
             case FocusKind.Board:
-                if(Systems.Audit>0 && spend(180)) { Systems.Audit=0; Systems.Risk(security:-10); return "Аудит оплачен"; }
-                return Systems.Audit>0 ? "В общаке нужно $180" : "Доска контрактов [J]";
+                return Systems.Audit>0 ? Systems.ResolveAudit(0,this,spend) : "Доска контрактов [J]";
             case FocusKind.Cooler: return Spill(stations[focus.Index].Feet);
             case FocusKind.Coffee:
                 Systems.Coffee=12; Systems.RestoreMorale(this);
                 return "Эспрессо-разнос на 12 секунд";
+            case FocusKind.Extinguisher: return ExtinguishRack();
             case FocusKind.Rack: return Systems.Reboot(grant);
             case FocusKind.Deploy: return Systems.Deploy(this);
             case FocusKind.Printer: return Systems.Print();
@@ -2875,8 +2969,8 @@ public sealed partial class SkyscraperFloor1World
         for(int i=0;i<GalleyDesks.Count;i++)
             Consider(GalleyDesks[i].DeskPosition,.9f*WorkstationScale,3.6f,FocusKind.Desk,CarriedCoder!=null && GalleyDesks[i].IsOccupied ? "Сменить работника Галеры" : "Стол галеры",i);
         for(int i=0;i<ActiveCoders.Count;i++)
-            if(CarriedCoder==null && ActiveCoders[i].Archetype==CoderArchetype.CryptoBro && ActiveCoders[i].State!=CoderAIState.Subdued)
-                Consider(ActiveCoders[i].Position,.82f,2.6f,FocusKind.Offer,"Предложить аванс ($80)",i);
+            if(CarriedCoder==null && ActiveCoders[i].Archetype is (CoderArchetype.CryptoBro or CoderArchetype.SecurityGuard) && ActiveCoders[i].State!=CoderAIState.Subdued)
+                Consider(ActiveCoders[i].Position,.82f,2.6f,FocusKind.Offer,ActiveCoders[i].Archetype==CoderArchetype.SecurityGuard ? "Нанять Крышу ($80)" : "Предложить аванс ($80)",i);
         for(int i=0;i<ActiveCoders.Count;i++)
             if(ActiveCoders[i].Hp>0 && ActiveCoders[i].State==CoderAIState.Subdued)
                 Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,"Подписать NDA",i);
@@ -2950,13 +3044,12 @@ public sealed partial class SkyscraperFloor1World
         foreach(var c in ActiveCoders)
         {
             if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.Hp<=0) continue;
-            Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.IdentityRevealed ? c.Name : c.MysteryTag,
+            Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.Deadline>0 ? $"Дедлайн! {Math.Ceiling(c.Deadline)} с" : c.IdentityRevealed ? c.Name : c.MysteryTag,
                 c.Composure<99 || c.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,c.Position)<56.25f ? c.Composure/100 : -1,
                 VibeCoderCollection.Ink(c.Rarity),true);
         }
-        if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
-            Plate(ElevatorBoss.Position+Vector3.UnitY*3.4f,"СБЕЖАВШИЙ ИИ-АГЕНТ",
-                ElevatorBoss.Hp/ElevatorBoss.MaxHp,new Color(228,110,105,255));
+        if(Systems.Verdict==AgentVerdict.Contained && Vector3.DistanceSquared(camera.Position,GalleyDesks[0].DeskPosition)<36)
+            Plate(GalleyDesks[0].DeskPosition+new Vector3(.74f,1,0),"Узел агента   $14/с",-1,Color.White);
     }
 }
 
@@ -3028,8 +3121,9 @@ public sealed partial class SkyscraperFloor1World
         stations.Clear();
         void Add(FocusKind kind,Vector3 position,float height,string label) => stations.Add(new(kind,position,height,label));
         Add(FocusKind.Cooler,CoolerPos,.9f,"Опрокинуть кулер");
+        Add(FocusKind.Extinguisher,ExtinguisherPos,.65f,"Разрядить огнетушитель у B12");
         Add(FocusKind.Rack,RackPos,1.2f,"Перезапустить стойку B12");
-        Add(FocusKind.Coffee,CoffeePos,1.15f,"Эспрессо-оверклок");
+        Add(FocusKind.Coffee,CoffeePos,1.15f,"Эспрессо-разнос");
         Add(FocusKind.Deploy,DeployPos,1.12f,"DEPLOY В ПЯТНИЦУ (×2.5)");
         Add(FocusKind.Board,HrTarotBoothPos+new Vector3(-1.25f,0,.64f),1.33f,"Доска контрактов");
         foreach(var p in OfficeProps)
@@ -3052,6 +3146,7 @@ public sealed partial class SkyscraperFloor1World
         VibeCoderCollection.Dress(c,species ?? VibeCoderCollection.Roll(speciesRandom,SelectedBaitTier,Systems,role));
         c.TarotPayoutValue=role switch { CoderArchetype.SeniorArchitect=>440,CoderArchetype.TeamLeadMeeter=>280,
             CoderArchetype.CryptoBro=>250,_=>160 };
+        if(role==CoderArchetype.SecurityGuard) { c.LaptopLost=true; c.MaxHp=c.Hp=110; }
         ActiveCoders.Add(c);
         return c;
     }
@@ -3064,11 +3159,11 @@ public sealed partial class SkyscraperFloor1World
 
     internal void SpawnWave(int count,bool raid=false)
     {
-        for(int i=0;i<count && ActiveCoders.Count<22;i++)
+        for(int i=0;i<count && (ActiveCoders.Count<22 || raid && i==0);i++)
         {
             float side=i%2==0 ? 1 : -1;
             Vector3 spawn=Systems.Friday>0 ? new(7+i*1.6f,0,5) : new(side*(11+i),0,6+i);
-            var species=VibeCoderCollection.Roll(speciesRandom,SelectedBaitTier,Systems);
+            var species=VibeCoderCollection.Roll(speciesRandom,SelectedBaitTier,Systems,raid ? CoderArchetype.SecurityGuard : null);
             var c=SpawnFighter(species.Archetype,spawn,species);
             c.Aggro=true; c.RaidGuard=raid; c.ReleaseAttacker=Systems.Friday>0;
             c.SpeechBubble=raid ? "Проверка пропусков!" : "Кто открыл релизную ветку?";
@@ -3080,7 +3175,7 @@ public sealed partial class SkyscraperFloor1World
     {
         if(!desk.IsOccupied || desk.IsSlackingInTwitter || desk.Burnout>=100) return 0;
         float fit=Systems.JobId==2 && desk.Archetype==CoderArchetype.CryptoBro ? 1.5f : 1;
-        return desk.Productivity*desk.Morale*(supported ? 1.12f : 1)*fit*Systems.FridayMultiplier*(Systems.Ddos ? .5f : 1);
+        return desk.Productivity*desk.Morale*(Working(CoderArchetype.ToxicPM) ? 1.2f : 1)*(supported ? 1.12f : 1)*fit*Systems.FridayMultiplier*(Systems.Ddos ? .5f : 1);
     }
 
     private string Spill(Vector3 ground)
@@ -3098,7 +3193,7 @@ public sealed partial class SkyscraperFloor1World
         {
             if(c.Hp<=0 || !Systems.Puddles.Exists(p=>p.Electric>0 && Vector3.DistanceSquared(c.Position,p.Position)<=3.2f*3.2f)) continue;
             // The first shock does psychological damage. Remaining contact holds the stun.
-            if(c.StunTimer<.2f) c.Pressure(42,18,46);
+            if(c.StunTimer<.2f) c.Pressure(42,18,46*Systems.FearMultiplier);
             c.StunTimer=1.8f;
             c.Windup=0;
         }
@@ -3145,12 +3240,16 @@ public sealed partial class SkyscraperFloor1World
             foreach(var station in stations)
             {
                 Vector3 d=hit-station.Feet;
+                if(station.Kind==FocusKind.Coffee && weapon.CurrentWeapon==WeaponType.SolderingIron && d.Y>=0 && d.Y<1.41f && Math.Abs(d.X)<.45f && Math.Abs(d.Z)<.36f)
+                { Systems.Steam=8; feedback="Паровая завеса. СБ потеряла след."; }
+                if(station.Kind==FocusKind.Extinguisher && weapon.CurrentWeapon is (WeaponType.MicroUzi or WeaponType.SawedOff or WeaponType.ChatGun) &&
+                    d.Y>=0 && d.Y<.96f && Math.Abs(d.X)<.22f && Math.Abs(d.Z)<.22f) feedback=ExtinguishRack();
                 if(station.Kind==FocusKind.Cooler && d.Y>=0 && d.Y<=1.6f && Math.Abs(d.X)<.5f && Math.Abs(d.Z)<.5f)
                     feedback=Spill(station.Feet);
                 if(station.Kind==FocusKind.Rack && weapon.CurrentWeapon!=WeaponType.Belt &&
                     d.Y>=0 && d.Y<=2.1f && Math.Abs(d.X)<.47f && Math.Abs(d.Z)<.52f)
                 {
-                    Systems.Overheat(this); feedback="B12 перегрета. Персонал покидает сектор.";
+                    Systems.Overheat(this,weapon.CurrentWeapon==WeaponType.SolderingIron && Systems.Has(Sidegrade.RosinNapalm) ? 2 : 1); feedback="B12 перегрета. Персонал покидает сектор.";
                 }
             }
         }
@@ -3176,10 +3275,15 @@ public sealed partial class SkyscraperFloor1World
         Box(DeployPos+Vector3.UnitY*.98f,.83f,.11f,.61f,brass);
         Color alarm=Systems.Friday>0 && MathF.Sin(_worldClock*9)>0 ? new(255,149,94,255) : new(208,37,29,255);
         VisualEngine3D.Rod(DeployPos+Vector3.UnitY*1.03f,DeployPos+Vector3.UnitY*1.14f,.19f,.17f,20,alarm,Finish.Lamp);
-        Box(CoffeePos+Vector3.UnitY*.45f,.85f,.9f,.68f,steel);
-        Box(CoffeePos+new Vector3(0,1.1f,-.14f),.68f,.45f,.35f,new(128,61,44,255));
-        Box(CoffeePos+Vector3.UnitY*1.35f,.74f,.09f,.63f,brass);
-        DrawCoffee(CoffeePos+new Vector3(0,.91f,.18f));
+        DrawOfficeEffects();
+        if(VisualEngine3D.HasAsset("prop_coffee_machine")) VisualEngine3D.Asset("prop_coffee_machine",CoffeePos);
+        else
+        {
+            Box(CoffeePos+Vector3.UnitY*.45f,.85f,.9f,.68f,steel);
+            Box(CoffeePos+new Vector3(0,1.1f,-.14f),.68f,.45f,.35f,new(128,61,44,255));
+            Box(CoffeePos+Vector3.UnitY*1.35f,.74f,.09f,.63f,brass);
+            DrawCoffee(CoffeePos+new Vector3(0,.91f,.18f));
+        }
         Vector3 board=HrTarotBoothPos+new Vector3(-1.25f,1.32f,.64f);
         Box(board,.73f,.48f,.09f,steel);
         Box(board+Vector3.UnitZ*.055f,.62f,.34f,.025f,new(202,185,146,255));
@@ -3379,7 +3483,7 @@ public sealed partial class SkyscraperFloor1World
     }
     private static float HandAim(BugFrog frog)=>frog.SpeciesId=="frog_syntax" ? .987f : .963f;
 
-    private string CatchSweep(Camera3D camera,bool net)
+    private string CatchSweep(Camera3D camera,bool net,Action<int,string>? grant=null)
     {
         var targets=Frogs.Select(f=>(Frog:f,Aim:CatchAim(camera,f.Feet+Vector3.UnitY*.15f,net ? 3.6f : 2.4f)))
             .Where(t=>t.Aim>(net ? .70f : HandAim(t.Frog))).OrderByDescending(t=>t.Aim).Take(net ? 3 : 1).ToArray();
@@ -3396,6 +3500,7 @@ public sealed partial class SkyscraperFloor1World
                     return "Слишком шустрый — нужен Сачок ($3)";
                 }
             }
+            if(Systems.Has(Sidegrade.CarbonNda)) Systems.Risk(security:6);
             Systems.PocketFrogs.Add(frog.SpeciesId); Frogs.Remove(frog);
         }
         if(!net && targets.Length>0) return $"В садке: {Systems.PocketFrogs.Count}";
@@ -3410,6 +3515,7 @@ public sealed partial class SkyscraperFloor1World
                 return "Пугливый — нужен Сачок ($3)";
             }
             c.State=CoderAIState.Subdued; c.Composure=0;
+            if(CarriedCoder==null && Systems.Has(Sidegrade.CarbonNda)) return PickUp(c,grant);
             return "Стажёр пойман. Подпиши NDA [E]";
         }
         return targets.Length>0 ? $"В садке: {Systems.PocketFrogs.Count}" : "";

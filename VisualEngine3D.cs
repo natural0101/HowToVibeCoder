@@ -4,7 +4,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud }
 
 internal static unsafe partial class VisualEngine3D
 {
@@ -182,6 +182,11 @@ internal static unsafe partial class VisualEngine3D
                 d=min(d,limb(p,vec2(.12,.68),vec2(.30,.55),.053));
                 d=min(d,length((p-vec2(.015,.875))*vec2(.88,1.17))-.105);
                 color=vec4(.001,.003,.012,(1.-smoothstep(-.007,.034,d))*.82); return;
+            }
+            if(finish==27) {
+                float rim=clamp(dot(normalize(norm),normalize(eye-pos)),0.,1.);
+                float drift=sin(pos.x*4.+clock)+sin(pos.z*5.-clock*.7)+sin(pos.y*6.-clock*1.4);
+                color=vec4(colDiffuse.rgb,colDiffuse.a*rim*rim*(.70+.09*drift)); return;
             }
             if(finish==24) {
                 float h=clamp(.5-localXZ.y,0.,1.);
@@ -693,6 +698,22 @@ internal static unsafe partial class VisualEngine3D
     public static void SetBeltTension(float amount) =>
         Raylib.SetShaderValue(shader,beltTensionLoc,amount,ShaderUniformDataType.Float);
 
+    internal static void DrawCloud(Vector3 origin,float time,float remaining,float radius,bool steam)
+    {
+        Rlgl.DisableDepthMask();
+        for(int i=0;i<42;i++)
+        {
+            float t=(time*(steam ? .48f : .29f)+i*.317f)%1;
+            float a=i*2.39996f+t*.8f+.22f*MathF.Sin(i*3.1f+2*t);
+            float spread=radius*(steam ? .57f : .76f)*t;
+            var p=origin+new Vector3(MathF.Cos(a)*spread,(steam ? .32f+2*t : .32f+.54f*t)+.22f*MathF.Sin(a),MathF.Sin(a)*spread);
+            float r=.18f+(steam ? .7f : 1.05f)*t;
+            int alpha=(int)((steam ? 103 : 145)*MathF.Sin(MathF.PI*t)*Math.Min(1,remaining));
+            Oval(p,new(r,r*(steam ? 1.2f : .72f),r),new(223,229,232,alpha),Finish.Cloud);
+        }
+        Rlgl.EnableDepthMask();
+    }
+
     public static void DrawRosinSmoke(Vector3 tip)
     {
         Rlgl.DisableDepthMask();
@@ -869,7 +890,7 @@ internal static unsafe partial class VisualEngine3D
     {
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
                     or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
-                    or Finish.BlackMarble or Finish.Bronze or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
+                    or Finish.BlackMarble or Finish.Bronze or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
         Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(16,25,30,255))
                                  : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;

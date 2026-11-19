@@ -357,6 +357,12 @@ public static partial class LoreAndMenusUI
             ReplyAuthor = "@zero_kernel (SYSTEM ZERO — NUL-PROMPT)",
             ReplyText = "«Голосовой слепок совпал на 94.7% с Нулевым Промптом. Внимание СБ (SEC) повышено. Сбивайте SEC через офисный принтер или сдачу кадров в HR.»",
             HandleColor = new Color(72, 212, 255, 255)
+        },
+        new()
+        {
+            Handle="Агент v0.1", Time="После снятия блокады", RoleBadge="Личный канал Артели",
+            Text="«Директора нет. Записи 1998 года на 50-м этаже.»",
+            ReplyAuthor="Петрович", ReplyText="«Там ещё должен стоять мой магнитофон.»", Metrics=[]
         }
     };
 

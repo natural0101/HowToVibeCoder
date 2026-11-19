@@ -112,8 +112,15 @@ public static partial class Program
             if(Net.Host && shooter.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
             {
                 partner.Effects.CurrentWeapon=shooter.Weapon;
-                if(_world.ProcessPlayerAttack(shooter.Camera,partner.Effects,GrantCash,out var feedback))
-                    Net.Send(new("status",Text:feedback));
+                var hostCarry=_world.CarriedCoder;
+                _world.CarriedCoder=guestCarried;
+                try
+                {
+                    if(_world.ProcessPlayerAttack(shooter.Camera,partner.Effects,GrantCash,out var feedback))
+                        Net.Send(new("status",Text:feedback));
+                    guestCarried=_world.CarriedCoder;
+                }
+                finally { _world.CarriedCoder=hostCarry; }
             }
             else partner.Attack(_world,GrantCash,Net.Host);
             if(Net.Host && _world.IsFloor2Unlocked) _weapons.UnlockedChatGun=true;
@@ -135,6 +142,8 @@ public static partial class Program
             string result=ApplyFloorAction(index);
             Net.Send(new("status",Text:result));
         }
+        else if(Net.Host && message is {Kind:"pocket-co2",Pose:{} pose})
+            Net.Send(new("status",Text:Floor.UsePocket(pose.Eye)));
         else if(Net.Host && message.Kind=="bonus") GrantCash(2000,"Бонус напарника");
         else if(Net.Host && message.Kind=="case")
             Net.Send(new(TrySpendCash(LoreAndMenusUI.CaseSpinCost) ? "case-paid" : "case-denied"));
