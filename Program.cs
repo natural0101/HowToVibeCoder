@@ -38,6 +38,7 @@ public static partial class Program
     private static SkyscraperFloor1World _menuFloor = null!;
     private static float _menuTime;
 
+    private static int? fixtureSeed;
     private static float _energy = 100;
     private static Font _serif;
     private static float _weaponFireCooldown = 0f;
@@ -53,6 +54,8 @@ public static partial class Program
         bool silent = args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
+        bool localPair=coopSmoke && !HasFlag("--host") && !HasFlag("--join");
+        fixtureSeed=autoTest || coopSmoke || gripTest ? 6 : null;
         if (HasFlag("--regenerate-music"))
         {
             AudioMusicSystem.EnsureMusicFiles(Path.Combine(Environment.CurrentDirectory, "assets", "sounds"), force: true);
@@ -73,9 +76,10 @@ public static partial class Program
         CombatSprites.Load();
 
         AudioMusicSystem.Initialize(silent);
-        _world = new SkyscraperFloor1World();
+        if(silent && Raylib.IsAudioDeviceReady()) Raylib.SetMasterVolume(0f);
+        _world = new SkyscraperFloor1World(fixtureSeed);
         _menuFloor = new SkyscraperFloor1World { Partner = new PartnerAvatar(), ElevatorDoorOpenAmount = .62f };
-        _menuFloor.Partner.Move(new(new(-1.82f,1.72f,10.62f),-1.72f,0,WeaponType.MicroUzi));
+        _menuFloor.Partner.Move(new(new(-26.2f,1.72f,5.5f),1.26f,0,WeaponType.MicroUzi));
         _weapons = new WeaponAndCombatView();
 
         WireUpSystems();
@@ -86,12 +90,28 @@ public static partial class Program
             MainMenuAndPauseUI.OpenJoinPanel();
             Net.Join(join+1<args.Length ? args[join+1] : "127.0.0.1");
         }
-        else if(args.Contains("--host")) MainMenuAndPauseUI.StartNewOrResumeFloor();
+        else if(localPair || args.Contains("--host")) MainMenuAndPauseUI.StartNewOrResumeFloor();
 
         if (coopSmoke)
         {
-            RunCoopSmoke(join>=0);
-            CheckCoopEscort(join>=0);
+            if(localPair && !Net.Host) throw new IOException(Net.Status);
+            using var guest=localPair ? System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                Environment.ProcessPath!,"--coop-smoke --join 127.0.0.1") { UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true }) : null;
+            var guestLog=guest?.StandardOutput.ReadToEndAsync();
+            try
+            {
+                RunCoopSmoke(join>=0);
+                CheckCoopEscort(join>=0);
+                if(guest!=null)
+                {
+                    if(!guest.WaitForExit(10000)) throw new TimeoutException("Guest did not finish.");
+                    var output=guestLog!.GetAwaiter().GetResult();
+                    foreach(string line in output.Split('\n'))
+                        if(line.StartsWith("COOP PASS guest")) Console.WriteLine(line.TrimEnd());
+                    if(guest.ExitCode!=0 || !output.Contains("COOP PASS guest")) throw new IOException("Guest smoke failed.");
+                }
+            }
+            finally { if(guest is { HasExited:false }) guest.Kill(); }
         }
         else if (autoTest || gripTest) RunAutomatedScreenshotSuite();
         else
@@ -252,7 +272,7 @@ public static partial class Program
     {
         floorPanel=FloorPanel.None; seenReport=0;
         bot=awaitingSpawn=pendingCase=false; guestCarried=peerEscort=null; guestHp=100;
-        _world = new SkyscraperFloor1World();
+        _world = new SkyscraperFloor1World(fixtureSeed);
         AudioMusicSystem.VoiceTimer = 0;
         _playerPos = new Vector3(0f, 1.72f, 12.2f);
         _playerYaw = MathF.PI;
@@ -584,6 +604,23 @@ public static partial class Program
         }
     }
 
+    // The viewmodel owns this private overlay. Access its existing drawing routine
+    // separately so its text is composited at display resolution.
+    [System.Runtime.CompilerServices.UnsafeAccessor(System.Runtime.CompilerServices.UnsafeAccessorKind.Method,Name="DrawCombatFloatingTextsAndHitmarker2D")]
+    private static extern void DrawCombatOverlay(WeaponAndCombatView weapons,Camera3D camera,Font font);
+
+    private static void BeginLitWorld(SkyscraperFloor1World world,Camera3D camera)
+    {
+        if(VisualEngine3D.BeginShadowPass(new(camera.Position.X,3,camera.Position.Z)))
+        {
+            world.DrawWorld3D(camera);
+            VisualEngine3D.EndShadowPass();
+        }
+        VisualEngine3D.BeginScene();
+        Raylib.BeginMode3D(camera);
+        world.DrawWorld3D(camera);
+    }
+
     private static void DrawFrame(bool showHud=true)
     {
         Raylib.BeginDrawing();
@@ -591,13 +628,13 @@ public static partial class Program
 
         if (MainMenuAndPauseUI.IsInMainMenu)
         {
-            // Dolly between the reception and the glass lift without ticking gameplay.
+            // Track the west-facing curtain wall without ticking gameplay.
             float shotTime = _menuTime % 28f;
             float travel = .5f - .5f*MathF.Cos(MathF.Min(shotTime,18f)*MathF.PI/18f);
             Camera3D menuCam = new()
             {
-                Position = Vector3.Lerp(new(-5.6f,1.68f,7.8f),new(-7.2f,2.45f,6.8f),travel),
-                Target = Vector3.Lerp(new(-.5f,1.52f,10.8f),new(.2f,1.75f,-4.8f),travel),
+                Position = Vector3.Lerp(new(-21.4f,1.45f,6.9f),new(-23.1f,2.1f,9.3f),travel),
+                Target = Vector3.Lerp(new(-32f,2.30f,2.9f),new(-35f,2.9f,-1.8f),travel),
                 Up = Vector3.UnitY, FovY = 48
             };
             if (shotTime >= 20f)
@@ -607,9 +644,9 @@ public static partial class Program
                 menuCam.Position = new(7f+track,8.2f,-34.5f);
                 menuCam.Target = new(-9f+track,5.5f,-66f);
             }
-            Raylib.BeginMode3D(menuCam);
-            _menuFloor.DrawWorld3D(menuCam);
+            BeginLitWorld(_menuFloor,menuCam);
             Raylib.EndMode3D();
+            VisualEngine3D.Composite();
             MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
             LoreAndMenusUI.Draw(_uiFont);
             Raylib.EndDrawing();
@@ -619,8 +656,7 @@ public static partial class Program
         Camera3D playerCam = BuildPlayerCamera();
 
         // 1. 3D Skyscraper World + Entities + Combat Particles
-        Raylib.BeginMode3D(playerCam);
-        _world.DrawWorld3D(playerCam);
+        BeginLitWorld(_world,playerCam);
         _world.Partner?.Effects.DrawWeaponWorldEffects3D(playerCam);
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
@@ -628,12 +664,14 @@ public static partial class Program
         bool modalOpen = floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
             || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen
             || MainMenuAndPauseUI.IsSettingsPanelOpen;
-        if (!modalOpen)
+        if(!modalOpen)
+            _weapons.DrawFirstPersonHandsAndWeapon(playerCam,_walkBobPhase,_isCrouching,_uiFont,showCombatText:false);
+        VisualEngine3D.Composite();
+        if(!modalOpen && showHud)
         {
-            // World tags, combat overlays and the gameplay HUD belong only to gameplay.
-            if(showHud) _world.DrawWorldLabelsAndIndicators2D(playerCam, _uiFont);
-            _weapons.DrawFirstPersonHandsAndWeapon(playerCam, _walkBobPhase, _isCrouching, _uiFont, showCombatText:showHud);
-            if(showHud) DrawGameplayHud2D();
+            _world.DrawWorldLabelsAndIndicators2D(playerCam,_uiFont);
+            DrawCombatOverlay(_weapons,playerCam,_uiFont);
+            DrawGameplayHud2D();
         }
 
         // 5. Modal Windows ([N] Lore, [F8] Audio Mixer, [K] Case Roulette) & [ESC] Pause Overlay
@@ -702,7 +740,7 @@ public static partial class Program
         string target=CoopEscort(camera,false,apply:false) ?? _world.FocusPrompt(camera);
         if(target.Length>0)
         {
-            string prompt="[E]  "+target;
+            string prompt=target=="Подписать NDA" ? target+" [E]" : "[E]  "+target;
             float width=GameFonts.Measure(_serif,prompt,19).X;
             GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
         }
@@ -720,7 +758,7 @@ public static partial class Program
             Raylib.DrawLineEx(a,a+axis*5,1.4f,white);
         }
         if(_weapons.CurrentWeapon==WeaponType.SolderingIron && _weapons.IronLockout>0)
-            HudLine("Жало остывает",cx-56,cy+54,amber);
+            ShadowText(_uiFont,"Жало остывает",cx-56,cy+54,16,amber);
         if (_weapons.Capacity>0)
         {
             string rounds=_weapons.Reloading ? $"ПЕРЕЗАРЯДКА  {_weapons.ReloadProgress:0%}" : $"{_weapons.Ammo} / {_weapons.Capacity}";
@@ -1213,6 +1251,17 @@ public static partial class Program
         MainMenuAndPauseUI.IsSettingsPanelOpen = false;
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         CaptureShot("00_main_menu_classic.png");
+        try
+        {
+            Raylib.SetWindowSize(961,643); Raylib.PollInputEvents();
+            DrawFrame();
+            if(!VisualEngine3D.MatchesViewport(961,643)) throw new InvalidDataException("HDR resize failed");
+        }
+        finally
+        {
+            Raylib.SetWindowSize(ScreenWidth,ScreenHeight); Raylib.PollInputEvents();
+            DrawFrame();
+        }
 
         // Switch into active 3D gameplay
         MainMenuAndPauseUI.IsInMainMenu = false;
@@ -1417,6 +1466,13 @@ public static partial class Program
         {
             if(!ok) throw new InvalidDataException("Sprint A: "+step);
         }
+        Check(VibeCoderCollection.All.Select(s=>s.Id).Distinct().Count()==16,"unique species IDs");
+        var distribution=new int[4];
+        var rng=new Random(829);
+        for(int i=0;i<12000;i++)
+            distribution[(int)VibeCoderCollection.Roll(rng,SubscriptionBaitTier.FreeTier,Floor).Rarity]++;
+        Check(Math.Abs(distribution[1]/12000f-.22f)<.015f && Math.Abs(distribution[2]/12000f-.10f)<.015f &&
+            Math.Abs(distribution[3]/12000f-.04f)<.01f,"baseline rarity weights");
         bool exit=false;
         void Key(KeyboardKey key)
         {
@@ -1485,17 +1541,69 @@ public static partial class Program
         Strike(WeaponType.SolderingIron,water);
         Check(Floor.Puddles.Single().Electric==6 && crypto.StunTimer>0 && crypto.Fear>=45,"solder conducts through water");
         var junior2=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
+        var rare=VibeCoderCollection.All.Single(s=>s.Id=="smoothie");
+        junior2.AssignRole(rare.Archetype);
+        VibeCoderCollection.Dress(junior2,rare);
         junior2.Position=cooler+new Vector3(.1f,0,1.15f);
         _world.UpdateWorld(1f/60,_playerPos,false,null,null);
         Check(junior2.State==CoderAIState.Subdued && junior2.Hp>0,"puddle breaks coder on entry");
-        At(cooler+new Vector3(2.6f,1.72f,4.1f),cooler+new Vector3(.05f,.65f,0));
+        At(cooler+new Vector3(3.85f,1.52f,2.8f),cooler+new Vector3(.05f,.83f,.1f));
         _weapons.UpdateWeapons(.25f,BuildPlayerCamera());
         _hudStatusTimer=AudioMusicSystem.VoiceTimer=0;
+        Floor.DiscoveryTime=0;
+        Check(VisualEngine3D.HdrAndShadowsReady,"native FP16 scene and 2048 shadow FBO");
+        Check(!junior2.IdentityRevealed && junior2.MysteryTag.StartsWith("★ ???"),"blind rare hunt");
         capture("09_sprint_a_systems.png");
+        VisualEngine3D.VerifyLightingBuffers();
+        int catches=Floor.DiscoveredSpecies.GetValueOrDefault(rare.Id),wallet=_playerCash;
         Use(junior2.Position,.45f);
+        Check(catches==0,"fixture must discover a new rare species");
+        Check(junior2.IdentityRevealed && junior2.Name==rare.Name &&
+            Floor.DiscoveredSpecies[rare.Id]==catches+1 && _playerCash==wallet+(catches==0 ? rare.BonusPayout : 0),"rare capture and premium");
+        Check(Floor.FirstDiscovery && Floor.DiscoveryId==rare.Id && Floor.DiscoveryTime==4,"first discovery reveal");
+        Floor.Tick(.45f,_world,null);
+        _hudStatusTimer=AudioMusicSystem.VoiceTimer=0;
+        capture("10_collection_discovery.png");
         var desk2=_world.GalleyDesks[1];
         Use(desk2.DeskPosition,.9f*SkyscraperFloor1World.WorkstationScale);
-        Check(Floor.Seated==2,"second desk receives recruit");
+        Check(Floor.Seated==2 && desk2.CoderName==rare.Name,"second desk receives recruit");
+        var data=MainMenuAndPauseUI.CaptureCurrentGameState!();
+        string slot=Path.GetTempFileName();
+        var activeWorld=_world;
+        try
+        {
+            File.WriteAllText(slot,System.Text.Json.JsonSerializer.Serialize(data));
+            WriteFloorSave(data,slot,pendingShift!);
+            _world=new SkyscraperFloor1World();
+            RestoreFloorSave(data,slot);
+            Check(Floor.DiscoveredSpecies[rare.Id]==catches+1,"rare catch survives slot load");
+            Key(KeyboardKey.N); Key(KeyboardKey.Three);
+            int index=Array.IndexOf(VibeCoderCollection.All,rare);
+            for(int i=0;i<index;i++) Key(KeyboardKey.Down);
+            for(int i=0;i<45;i++) UpdateFrame(1f/60,ref exit);
+            Check(LoreAndMenusUI.ActiveLoreTab==2 && LoreAndMenusUI.SelectedArchiveEntry==index &&
+                LoreAndMenusUI.CollectionEntry(index)==rare.Name && LoreAndMenusUI.CollectionEntry(15).StartsWith("???"),"archive unlocked and locked identities");
+            capture("10_collection.png");
+            Key(KeyboardKey.Down);
+            for(int i=0;i<45;i++) UpdateFrame(1f/60,ref exit);
+            Check(LoreAndMenusUI.CollectionEntry(index+1).StartsWith("???"),"selected locked dossier");
+            capture("11_collection_locked.png");
+            Key(KeyboardKey.N);
+            var repeat=_world.SpawnFighter(rare.Archetype,new(25,0,20),rare);
+            repeat.State=CoderAIState.Subdued;
+            int afterDiscovery=_playerCash;
+            Use(repeat.Position,.45f);
+            Check(_world.CarriedCoder==repeat && Floor.DiscoveredSpecies[rare.Id]==2 && _playerCash==afterDiscovery &&
+                !Floor.FirstDiscovery,"repeat rare increments without another discovery premium");
+            Use(_world.HrTarotBoothPos,1.6f);
+            Check(_world.LastTarotVerdictText.Contains(rare.Name),"HR receipt preserves discovered name");
+            Console.WriteLine("[AUTOTEST] PASS collection: rarity distribution, blind NDA, first and repeat catches, save/load, HR, galley, archive");
+        }
+        finally
+        {
+            _world=activeWorld; _playerCash=data.Cash; pendingFloorSave=null; pendingShift=null;
+            File.Delete(slot);
+        }
         for(int i=0;i<600 && Floor.JobId>=0;i++) TickFloor(1f/60);
         Check(Floor.Report is { Success:true, Job:0, Captured:2 } && Floor.Earned>=450,"MVP settlement");
         UpdateFrame(1f/60,ref exit); Check(floorPanel==FloorPanel.Debrief,"automatic debrief");

@@ -1173,6 +1173,14 @@ def export(kind, filename):
         import runpy
         runpy.run_path(str(Path(__file__).resolve().parent / "assets/external_cc0/office/build_escaped_ai_boss.py"), run_name="__main__")
         return
+    if kind in ("coder", "coder_seated"):
+        import sys
+        office_dir = str(Path(__file__).resolve().parent / "assets/external_cc0/office")
+        if office_dir not in sys.path:
+            sys.path.insert(0, office_dir)
+        import build_vibe_coders
+        build_vibe_coders.export_vibe_coder(sys.modules[__name__], kind, filename)
+        return
     bpy.ops.wm.read_factory_settings(use_empty=True)
     MATS.clear()
     pieces=human(kind)
@@ -1460,7 +1468,7 @@ def game_prop():
 
 
 if __name__ == "__main__":
-    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv:
+    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv:
         game_prop()
     for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
                            ("coder","char_vibe_coder"),("partner","char_partner_90s"),
@@ -1469,6 +1477,8 @@ if __name__ == "__main__":
                            ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
         if "--solder-only" in __import__("sys").argv:
             if kind == "fps_solder": export(kind,filename)
+        elif "--coders-only" in __import__("sys").argv:
+            if kind in ("coder","coder_seated"): export(kind,filename)
         elif "--weapons-and-hands" in __import__("sys").argv:
             if kind == "partner" or kind.startswith("fps"): export(kind,filename)
         elif "--hands-only" in __import__("sys").argv:

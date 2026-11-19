@@ -122,45 +122,9 @@ def finalize_and_export(filename, preserve_smoothing=False):
 # 1. PROP: OFFICE WATER COOLER (prop_water_cooler.glb)
 # ==============================================================================
 def build_water_cooler():
-    clear_scene()
-    m_body = make_mat("CoolerBody", (0.91, 0.94, 0.97, 1), roughness=0.32)
-    m_side = make_mat("CoolerSide", (0.74, 0.79, 0.86, 1), roughness=0.38)
-    m_recess = make_mat("CoolerRecess", (0.14, 0.18, 0.24, 1), roughness=0.28)
-    m_grill = make_mat("CoolerGrill", (0.28, 0.34, 0.42, 1), metallic=0.6, roughness=0.3)
-    m_bottle = make_mat("WaterBottle", (0.16, 0.64, 0.98, 1), roughness=0.14)
-    m_water = make_mat("WaterInner", (0.06, 0.46, 0.88, 1), roughness=0.1)
-    m_tap_hot = make_mat("TapHot", (0.95, 0.18, 0.22, 1), roughness=0.25)
-    m_tap_cold = make_mat("TapCold", (0.12, 0.56, 0.98, 1), roughness=0.25)
-    m_cup = make_mat("CupWhite", (0.96, 0.97, 0.99, 1), roughness=0.35)
-
-    add_box("Base", (0, 0.52, 0), (0.46, 1.04, 0.46), m_body, bevel=0.025)
-    add_box("SideTrimL", (-0.232, 0.52, 0), (0.016, 0.96, 0.36), m_side)
-    add_box("SideTrimR", (0.232, 0.52, 0), (0.016, 0.96, 0.36), m_side)
-    add_box("LowerDoor", (0, 0.28, 0.232), (0.38, 0.44, 0.02), m_side, bevel=0.008)
-    add_box("Recess", (0, 0.76, 0.21), (0.30, 0.28, 0.06), m_recess)
-    add_box("DripTray", (0, 0.62, 0.24), (0.32, 0.04, 0.09), m_grill, bevel=0.006)
-
-    # Hot & cold spigots on front (+Z)
-    add_rod("TapHot", (-0.065, 0.84, 0.19), (-0.065, 0.84, 0.25), 0.016, 0.014, m_tap_hot, 10)
-    add_box("LeverHot", (-0.065, 0.86, 0.255), (0.035, 0.014, 0.028), m_tap_hot)
-    add_rod("TapCold", (0.065, 0.84, 0.19), (0.065, 0.84, 0.25), 0.016, 0.014, m_tap_cold, 10)
-    add_box("LeverCold", (0.065, 0.86, 0.255), (0.035, 0.014, 0.028), m_tap_cold)
-
-    # Top collar & 19L polycarbonate water jug with molded ribs
-    add_vcyl("Collar", (0, 1.06, 0), 0.15, 0.05, m_side, vertices=18)
-    add_vcyl("Neck", (0, 1.12, 0), 0.068, 0.10, m_bottle, vertices=16)
-    add_vcyl("BottleBody", (0, 1.38, 0), 0.19, 0.44, m_bottle, vertices=20)
-    add_vcyl("WaterCore", (0, 1.35, 0), 0.172, 0.36, m_water, vertices=18)
-    for ry in [1.22, 1.34, 1.46]:
-        add_vcyl(f"Rib_{ry}", (0, ry, 0), 0.20, 0.028, m_bottle, vertices=20)
-    add_rod("BottleCrown", (0, 1.60, 0), (0, 1.68, 0), 0.19, 0.11, m_bottle, 20)
-    add_vcyl("BottleCap", (0, 1.69, 0), 0.09, 0.025, m_water, vertices=14)
-
-    # Side cup dispenser tube
-    add_vcyl("CupTube", (0.265, 0.78, 0.10), 0.044, 0.34, m_cup, vertices=14)
-    add_box("CupBracket", (0.235, 0.78, 0.10), (0.05, 0.04, 0.04), m_grill)
-
-    finalize_and_export("prop_water_cooler.glb")
+    import runpy
+    mod = runpy.run_path(str(ASSETS / "external_cc0/office/build_hero_office_props.py"))
+    mod["build_prop_water_cooler"]()
 
 # ==============================================================================
 # 2. PROP: VENDING MACHINE (prop_vending_machine.glb)
@@ -293,72 +257,17 @@ def build_trash_bin():
 # 7. PROP: SERVER RACK 42U (prop_server_rack.glb)
 # ==============================================================================
 def build_server_rack():
-    clear_scene()
-    m_frame = make_mat("RackFrame", (0.12, 0.14, 0.18, 1), metallic=0.55, roughness=0.35)
-    m_blade = make_mat("RackBlade", (0.20, 0.24, 0.30, 1), metallic=0.6, roughness=0.3)
-    m_led_g = make_mat("LedGreen", (0.15, 0.96, 0.45, 1), roughness=0.1)
-    m_led_c = make_mat("LedCyan", (0.12, 0.82, 0.98, 1), roughness=0.1)
-    m_led_a = make_mat("LedAmber", (0.98, 0.68, 0.15, 1), roughness=0.1)
-
-    add_box("Cabinet", (0, 1.15, 0), (0.94, 2.30, 0.86), m_frame, bevel=0.02)
-    for face in [-1, 1]:
-        fz = face * 0.425
-        for u in range(8):
-            uy = 0.28 + u * 0.24
-            add_box(f"Blade_{face}_{u}", (0, uy, fz), (0.82, 0.18, 0.03), m_blade, bevel=0.005)
-            led_mat = m_led_g if u % 3 == 0 else (m_led_c if u % 3 == 1 else m_led_a)
-            add_box(f"LedStrip_{face}_{u}", (-0.24, uy, face * 0.442), (0.24, 0.03, 0.012), led_mat)
-            add_box(f"HandleL_{face}_{u}", (-0.39, uy, face * 0.445), (0.02, 0.12, 0.025), m_led_c)
-            add_box(f"HandleR_{face}_{u}", (0.39, uy, face * 0.445), (0.02, 0.12, 0.025), m_led_c)
-
-    finalize_and_export("prop_server_rack.glb")
+    import runpy
+    mod = runpy.run_path(str(Path(__file__).resolve().parent / "build_landmark_props.py"))
+    mod["build_server_rack"]()
 
 # ==============================================================================
 # 8. PROP: WHITE SHARK CENTRAL HR RECEPTION DESK (prop_hr_reception_desk.glb)
 # ==============================================================================
 def build_hr_reception_desk():
-    clear_scene()
-    marble = make_mat("Reception_ObsidianMarble", (.055,.065,.085,1), metallic=.18, roughness=.23)
-    plum = make_mat("Reception_VelvetPlum", (.19,.055,.23,1), roughness=.88)
-    brass = make_mat("Reception_BrushedBrass", (.65,.43,.17,1), metallic=.85, roughness=.24)
-    black = make_mat("Terminal_Graphite", (.018,.023,.031,1), metallic=.55, roughness=.3)
-    screen = make_mat("Terminal_Display", (.035,.20,.24,1), roughness=.32)
-    vein = make_mat("Marble_MineralVein", (.22,.24,.27,1), metallic=.2, roughness=.3)
-
-    # Continuous elliptical shell, open at the rear for staff access.
-    # Four closed surfaces per segment, shared vertices; no separate box wings.
-    def arc(name, rx, rz, thickness, low, high, material):
-        vertices=[]; faces=[]; n=64
-        for i in range(n+1):
-            t=math.pi*i/n
-            for rxx,rzz,y in [(rx,rz,low),(rx,rz,high),(rx-thickness,rz-thickness,low),(rx-thickness,rz-thickness,high)]:
-                vertices.append(rl_pos((rxx*math.cos(t),y,.3-rzz*math.sin(t))))
-        for i in range(n):
-            k=i*4; j=k+4
-            faces.extend([(k,j,j+1,k+1),(k+2,k+3,j+3,j+2),(k+1,j+1,j+3,k+3),(k,k+2,j+2,j)])
-        faces.extend([(0,1,3,2),(n*4,n*4+2,n*4+3,n*4+1)])
-        mesh=bpy.data.meshes.new(name); mesh.from_pydata(vertices,[],faces); mesh.update()
-        obj=bpy.data.objects.new(name,mesh); bpy.context.collection.objects.link(obj); mesh.materials.append(material)
-        for f in mesh.polygons: f.use_smooth=True
-        return obj
-    arc("Continuous_Marble_U_Shell",2.48,1.72,.28,.12,.84,marble)
-    arc("Continuous_Velvet_Inlay",2.491,1.731,.012,.24,.70,plum)
-    arc("Floating_Marble_Counter",2.57,1.81,.53,.84,.92,marble)
-    for y in [.18,.23,.71,.825]: arc("Continuous_Brass_Reveal",2.50,1.74,.018,y,y+.018,brass)
-    arc("Recessed_Dark_Plinth",2.36,1.60,.22,.035,.13,black)
-    # Fine radial brass seams follow the real curved front.
-    for i in range(1,24):
-        t=math.pi*i/24
-        add_rod("Inlay_Brass_Seam",(2.50*math.cos(t),.25,.3-1.74*math.sin(t)),(2.50*math.cos(t),.69,.3-1.74*math.sin(t)),.006,.006,brass,vertices=6)
-    for side in [-1,1]:
-        x=side*2.12
-        add_box("Terminal_Foot",(x,.94,-.22),(.32,.025,.22),black,bevel=.012)
-        add_rod("Inclined_Metal_Stand",(x,.95,-.22),(x,1.14,-.30),.025,.021,brass)
-        add_box("Thin_Terminal",(x,1.29,-.31),(.52,.32,.028),black,rot=(-.15,0,0),bevel=.012)
-        add_box("Terminal_Screen",(x,1.29,-.328),(.47,.27,.006),screen,rot=(-.15,0,0),bevel=.004)
-        for row in range(4):
-            add_box("Terminal_UI_Row",(x,1.22+row*.038,-.351),(.31-row*.04,.007,.003),brass)
-    finalize_and_export("prop_hr_reception_desk.glb")
+    import runpy
+    mod = runpy.run_path(str(Path(__file__).resolve().parent / "build_landmark_props.py"))
+    mod["build_hr_reception_desk"]()
 
 # ==============================================================================
 # 9. PROP: ESCAPED AI AGENT BOSS (escaped_ai_boss.glb)

@@ -4,7 +4,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma }
 
 internal static unsafe partial class VisualEngine3D
 {
@@ -93,14 +93,67 @@ internal static unsafe partial class VisualEngine3D
         in vec2 uv;
         in vec4 tint;
         uniform sampler2D texture0;
-        uniform vec4 colDiffuse;
+        uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
         uniform float power, clock, flashStrength;
         uniform vec3 muzzle;
         uniform int firstPerson;
         uniform int finish,handSurface;
         uniform vec2 weaponFinish;
+        uniform sampler2D shadowMap;
+        uniform mat4 lightVP;
+        uniform vec3 puddleLight;
+        uniform float puddlePower, puddleElectric;
+        uniform int shadows;
+        const vec3 sunDir=vec3(-.76825,.21412,-.60323);
         out vec4 color;
+        float sunlight(vec3 n) {
+            if(firstPerson==1 || shadows==0) return 1.;
+            vec4 light=lightVP*vec4(pos,1.);
+            vec3 q=light.xyz/light.w*.5+.5;
+            if(any(lessThan(q,vec3(.001))) || any(greaterThan(q,vec3(.999)))) return 1.;
+            float bias=max(.0008,.0032*(1.-dot(n,sunDir)));
+            float visibility=0.;
+            for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++)
+                visibility+=step(q.z-bias,texture(shadowMap,q.xy+vec2(x,y)/2048.).r);
+            return visibility/9.;
+        }
+        float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float noise(vec2 p) {
+            vec2 i=floor(p), u=fract(p); u=u*u*(3.-2.*u);
+            return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+1.),u.x),u.y);
+        }
+        float fbm(vec2 p) { return noise(p)*.55+noise(p*2.13)*.3+noise(p*4.61)*.15; }
+        vec3 skyline(vec3 r) {
+            float h=max(r.y,0.);
+            float s=max(dot(r,sunDir),0.);
+            vec3 horizon=mix(vec3(.50,.215,.24),vec3(1.45,.48,.125),pow(s,5.));
+            vec3 sky=mix(horizon,vec3(.095,.145,.34),smoothstep(.023,.42,h));
+            vec2 air=r.xz/max(.06,r.y+.11);
+            float cloud=fbm(air*vec2(1.25,5.1)+vec2(.4,2.));
+            float cirrus=smoothstep(.46,.71,cloud)*smoothstep(.01,.12,h)*(1.-smoothstep(.31,.63,h));
+            sky=mix(sky,vec3(.55,.265,.285)+vec3(.43,.16,.02)*pow(s,12.),cirrus*.48);
+            sky=mix(sky,vec3(.035,.065,.20),smoothstep(.28,.88,h));
+            return sky+vec3(1.4,.57,.16)*pow(s,42.)+vec3(3.5,2.3,1.25)*smoothstep(.99955,.99990,s);
+        }
+        vec3 reflectionBands(vec3 r) {
+            vec2 wallDistance=(sign(r.xz)*38.-pos.xz)/(sign(r.xz+vec2(1e-8))*max(abs(r.xz),vec2(.001)));
+            float wall=min(wallDistance.x,wallDistance.y);
+            float ceiling=11.2/max(.015,r.y);
+            vec2 hit=pos.xz+r.xz*ceiling;
+            vec2 strip=abs(mod(hit+3.,6.)-3.);
+            vec2 aa=clamp(fwidth(hit),vec2(.07),vec2(3.));
+            vec2 footprint=1.-smoothstep(vec2(.93,.18)-aa,vec2(1.18,.35)+aa,strip);
+            float active=step(.64,hash(floor((hit+3.)/6.)));
+            float lamps=footprint.x*footprint.y*active*exp(-.016*ceiling);
+            vec3 ceilingColor=mix(vec3(.60,.76,1.),vec3(1.25,.80,.42),step(3.,mod(hit.x,12.)))*lamps;
+            vec3 intersect=pos+r*wall;
+            float u=wallDistance.x<wallDistance.y ? intersect.z : intersect.x;
+            float mullion=abs(fract(u/4.5+.5)-.5)*4.5;
+            float frame=mix(.28,1.,smoothstep(.025,.16+min(fwidth(u),.5),mullion));
+            vec3 window=mix(vec3(.13,.18,.26),vec3(.92,.39,.16),pow(max(dot(r,sunDir),0.),4.));
+            return mix(ceilingColor,window*frame,1.-smoothstep(9.8,11.3,intersect.y));
+        }
         vec3 point(vec3 at, vec3 tint, vec3 n, vec3 v, float gloss) {
             vec3 d=at-pos;
             float r=dot(d,d);
@@ -154,15 +207,12 @@ internal static unsafe partial class VisualEngine3D
             }
             vec4 ink=colDiffuse*tint;
             vec3 base=tex.rgb*ink.rgb;
+            bool leather=finish==6 || (finish==17 && colSpecular.a>.49 && colSpecular.a<.51);
+            vec3 emission=(finish==17 || finish==21) ? colSpecular.rgb*tex.rgb : vec3(0.);
             float dist=length(eye-pos);
             if(finish==13) {
                 vec3 ray=normalize(pos-eye);
-                float altitude=smoothstep(-16.,84.,pos.y);
-                vec3 sky=mix(vec3(.78,.89,.99),vec3(.26,.58,.95),altitude);
-                vec3 sunDir=normalize(vec3(-.55,.36,-.42));
-                float sunAmt=max(0.,dot(ray,sunDir));
-                sky+=vec3(1.,.92,.68)*pow(sunAmt,18.)*.55 + vec3(1.,.98,.88)*smoothstep(.9965,.9992,sunAmt)*1.6;
-                color=vec4(sky,1.); return;
+                color=vec4(skyline(ray),1.); return;
             }
             if(finish==12) {
                 vec2 wall=vec2(abs(n.x)>.6 ? pos.z : pos.x,pos.y);
@@ -172,16 +222,54 @@ internal static unsafe partial class VisualEngine3D
                 vec2 pane=1.-smoothstep(vec2(.32,.24)-aa,vec2(.32,.24)+aa,a);
                 float seed=dot(floor(pos.xz*.02),vec2(37.,71.));
                 float occupancy=fract(sin(dot(id,vec2(12.9898,78.233))+seed)*4375.5453);
-                float sunHit=max(.25,dot(n,normalize(vec3(-.55,.52,-.42))));
-                vec3 concrete=mix(vec3(.62,.68,.76),vec3(.78,.82,.88),sunHit);
-                vec3 glassPane=mix(vec3(.32,.56,.82),vec3(.88,.95,1.),occupancy*.55 + sunHit*.35);
-                vec3 facade=mix(concrete,glassPane,pane.x*pane.y*step(abs(n.y),.5));
-                color=vec4(mix(facade,vec3(.74,.86,.98),smoothstep(55.,165.,dist)*.58),1.); return;
+                float sunHit=max(0.,dot(n,sunDir));
+                vec3 paneColor=mix(vec3(.033,.062,.105),vec3(.38,.17,.072),sunHit);
+                paneColor+=skyline(reflect(-v,n))*.12;
+                float room=hash(floor(id/vec2(3.,1.))+seed);
+                float lights=smoothstep(.76,.86,room)*smoothstep(.35,.65,occupancy);
+                paneColor+=mix(vec3(1.75,.80,.29),vec3(.48,1.22,1.54),step(.92,room))*lights;
+                vec3 facade=mix(vec3(.055,.075,.11),paneColor,pane.x*pane.y*step(abs(n.y),.5));
+                color=vec4(mix(facade,vec3(.46,.29,.27),smoothstep(48.,165.,dist)*.46),1.); return;
+            }
+            if(finish==26) { color=vec4(vec3(1.2,2.2,3.)*ink.rgb,ink.a); return; }
+            if(finish==25) {
+                vec2 p=localXZ*2.;
+                float radius=length(p), angle=atan(p.y,p.x);
+                // A broad spill, two runnels and drops pinned to the tile beside it.
+                vec2 q=p+vec2(.075*sin(6.*p.y),.075*sin(5.*p.x+1.2));
+                float basin=.72-length((q-vec2(-.12,.04))*vec2(.98,1.23));
+                float runnel=.36-length((q-vec2(.43,-.19))*vec2(.86,1.60));
+                float lip=.29-length((q-vec2(-.36,.44))*vec2(1.06,.86));
+                float drops=max(.078-length((p-vec2(.56,.42))*vec2(.85,1.4)),
+                                .045-length(p-vec2(.65,.48)));
+                float inside=max(max(basin,runnel),max(lip,drops))+.105*(fbm(p*6.1)-.52);
+                if(inside<0.) discard;
+                float wave=cos(radius*52.-clock*3.6)*exp(-radius*1.7);
+                float ring=pow(max(wave,0.),3.);
+                vec3 wn=normalize(vec3(.026*wave*cos(angle),1.,.026*wave*sin(angle)));
+                vec3 r=reflect(-v,wn);
+                float fres=.12+.88*pow(1.-abs(dot(v,wn)),4.);
+                vec3 wet=vec3(.025,.043,.055)+reflectionBands(r)*(.16+fres*.94);
+                float rim=exp(-inside*140.)*smoothstep(.14,.74,fbm(p*13.));
+                wet+=vec3(.42,.51,.52)*rim+vec3(.035,.065,.083)*ring;
+                float frame=floor(clock*13.);
+                float lightning=0.;
+                for(int i=0;i<3;i++) {
+                    float a=float(i)*2.1+.45*sin(frame*.78+float(i));
+                    vec2 q=mat2(cos(a),-sin(a),sin(a),cos(a))*p;
+                    float bend=.25*(noise(vec2(q.x*9.,frame+i))-.5)+.075*(noise(vec2(q.x*36.,frame))-.5);
+                    float d=abs(q.y-bend-.09*sin(q.x*8.+float(i)));
+                    float branch=abs(q.y-bend*.60-.16*sin(q.x*9.+float(i))-.15*(q.x-.32));
+                    lightning+=(exp(-d/max(.002,fwidth(q.y)*.72))+
+                        .54*exp(-branch/max(.0015,fwidth(q.y)*.58))*smoothstep(.20,.44,q.x))*smoothstep(-.12,.19,q.x);
+                }
+                wet+=vec3(1.8,3.1,4.)*lightning*puddleElectric;
+                color=vec4(wet,smoothstep(0.,max(.005,fwidth(inside)),inside)*(.52+.37*fres+.10*min(lightning,1.))); return;
             }
             if(finish==14) {
                 float edge=pow(1.-abs(dot(n,v)),3.);
                 float glint=pow(max(0.,dot(reflect(-v,n),normalize(vec3(-.55,.72,-.42)))),16.);
-                color=vec4(mix(ink.rgb,vec3(.92,.97,1.),glint),ink.a+edge*.09+glint*.18); return;
+                color=vec4(mix(ink.rgb*.55,vec3(.90,.70,.51),glint),ink.a*.63+edge*.025+glint*.12); return;
             }
             if(finish==21) {
                 // Imported MPFB swatches are linear glTF factors. Convert once
@@ -191,41 +279,67 @@ internal static unsafe partial class VisualEngine3D
                 float sun=max(0.,dot(n,key));
                 float sky=.5+.5*n.y;
                 float bounce=.5+.5*dot(n,normalize(vec3(.75,.16,.5)));
-                vec3 value=pigment*(vec3(.42,.46,.52)+sky*.19+bounce*.14+sun*vec3(.58,.50,.40));
+                if(firstPerson==0) pigment=mix(base,pigment,.40);
+                vec3 value=pigment*(vec3(.23,.27,.35)+sky*.12+bounce*.10+max(0.,dot(n,sunDir))*sunlight(n)*vec3(1.48,1.02,.64));
+                if(firstPerson==0) {
+                    float weave=sin(uv.x*480.)*cos(uv.y*380.)*(1.-smoothstep(.2,1.,fwidth(uv.x)*480.));
+                    value*=1.+.035*weave;
+                    value+=vec3(.09,.14,.18)*pow(1.-abs(dot(n,v)),3.);
+                    value+=point(puddleLight,vec3(.06,.55,.76)*puddlePower,n,v,28.)*(pigment*.66+.038);
+                }
                 if(firstPerson==1) {
+                    value=pigment*(vec3(.42,.46,.52)+sky*.19+bounce*.14+sun*vec3(.58,.50,.40));
                     if(handSurface==1) {
                         pigment=tex.rgb*tint.rgb;
 
                         float wrap=max(0.,dot(n,key)*.65+.35);
-                        value=pigment*(vec3(.41,.36,.34)+sky*.15+wrap*vec3(.55,.49,.45));
-                        value*=vec3(1.035,1.,.99);
+                        value=pigment*(vec3(.36,.31,.29)+sky*.14+wrap*vec3(.52,.46,.42));
+                        value*=vec3(.96,.92,.90);
                         value+=vec3(.085,.032,.019)*pow(1.-abs(dot(n,v)),2.)*wrap;
-                        value+=vec3(.050,.035,.027)*pow(max(0.,dot(n,normalize(key+v))),19.);
+                        value+=vec3(.045,.032,.024)*pow(max(0.,dot(n,normalize(key+v))),19.);
                     } else if(handSurface==3) {
+                        vec3 wool=mix(base,pigment,.28);
+                        value=wool*(vec3(.34,.36,.42)+sky*.15+bounce*.12+sun*vec3(.56,.48,.40));
                         vec2 thread=uv*vec2(235.,540.);
                         float twill=sin(6.283*(thread.x+thread.y));
                         float resolve=1.-smoothstep(.16,.60,fwidth(thread.x+thread.y));
                         value*=.94+.042*twill*resolve;
-                        value+=vec3(.034,.016,.024)*pow(1.-abs(dot(n,v)),3.);
+                        value+=vec3(.048,.012,.018)*pow(1.-abs(dot(n,v)),3.);
                     } else if(handSurface==2) {
                         float glint=pow(max(0.,dot(n,normalize(key+v))),25.);
                         value+=vec3(.31,.29,.24)*glint;
                     }
                     value+=muzzleLight(n,v)*(.14+.65*pigment);
                 }
-                color=vec4(mix(value,vec3(.68,.79,.92),1.-exp(-.000055*dist*dist)),ink.a);
+                color=vec4(mix(value+emission*1.65,vec3(.26,.23,.28),1.-exp(-.000055*dist*dist)),ink.a);
                 return;
             }
             if(finish==17) base=pow(base,vec3(.78));
             if(finish==18) base*=.93+.07*cos(pos.z*133.)*cos(pos.x*107.);
-            vec3 key=normalize(vec3(-.55,.72,-.42));
-            float gloss=finish==1 ? mix(22.,85.,tex.r) : (finish==2 ? 44. : 24.);
+            if(finish==1 || leather || finish==18 || finish==11 || finish==2) {
+                vec3 t=abs(n.y)>.7 ? vec3(1,0,0) : normalize(cross(vec3(0,1,0),n));
+                vec3 b=cross(n,t);
+                vec2 p=vec2(dot(pos,t),dot(pos,b));
+                float freq=finish==18 ? 148. : leather ? 105. : finish==2 ? 80. : 56.;
+                float resolve=1.-smoothstep(.3,2.8,length(fwidth(p))*freq);
+                vec2 slope=.035*resolve*vec2(sin(p.x*freq),cos(p.y*freq+sin(p.x*freq)));
+                if(finish==1) {
+                    vec2 tile=fract(p*.72)-.5;
+                    float tileDetail=1.-smoothstep(.009,.053,length(fwidth(p)));
+                    slope=sign(tile)*smoothstep(vec2(.474),vec2(.493),abs(tile))*.041*tileDetail;
+                    slope+=.0029*cos(p*vec2(4.,8.)+sin(p.y*3.))*tileDetail;
+                }
+                n=normalize(n+t*slope.x+b*slope.y);
+            }
+            vec3 key=sunDir;
+            float shadow=sunlight(n);
+            float gloss=finish==1 ? 65. : (finish==2 ? 44. : 24.);
             bool weapon=firstPerson==1 && finish==17 && weaponFinish.y>0.;
             if(weapon) gloss=mix(96.,18.,weaponFinish.y);
-            vec3 light=vec3(.50,.53,.58)+vec3(.96,.89,.74)*max(0.,dot(n,key));
-            // Window mullions cast warm bright sunbeams across the office floor.
-            float shaft=smoothstep(.28,.94,cos(dot(pos.xz,vec2(.61,-.37)) + pos.y*.7));
-            light+=shaft*vec3(.34,.29,.20)*max(0.,dot(n,key));
+            float ao=mix(1.,mix(.68,1.,smoothstep(0.,.42,pos.y)),1.-abs(n.y));
+            vec3 light=mix(vec3(.16,.12,.10),vec3(.18,.25,.36),.5+.5*n.y)*ao;
+            light+=vec3(1.48,1.02,.64)*max(0.,dot(n,key))*shadow;
+            if(firstPerson==0) light+=point(puddleLight,vec3(.08,1.12,1.55)*puddlePower,n,v,gloss);
             light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
             light+=point(tarot,vec3(1.6,.85,.38)*(.94+.06*sin(clock*8.)),n,v,gloss);
             light+=point(tarot+vec3(.55,-.30,.18),vec3(.42,.18,.82),n,v,gloss);
@@ -235,7 +349,13 @@ internal static unsafe partial class VisualEngine3D
             if(firstPerson==1) light=max(light,vec3(.68,.64,.66));
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
-            lit+=vec3(.32,.29,.22)*pow(max(0.,dot(n,normalize(v+key))),gloss)*(.18+tex.r);
+            float nh=max(0.,dot(n,normalize(v+key))),nv=max(.01,dot(n,v));
+            float rough=finish==1 ? .32 : finish==2 || finish==23 ? .32 : .53;
+            float a2=pow(rough,4.), denom=nh*nh*(a2-1.)+1.;
+            float D=a2/(3.14159*denom*denom+.0001);
+            vec3 F0=finish==23 ? base*.72 : vec3(.04);
+            vec3 F=F0+(1.-F0)*pow(1.-max(0.,dot(v,normalize(v+key))),5.);
+            lit+=vec3(1.48,1.02,.64)*F*min(3.,D)*max(0.,dot(n,key))*shadow/(.45+nv);
             if(weapon) {
                 // Broad overhead softbox across curved barrels and a softer satin lobe on wood.
                 vec3 r=reflect(-v,n);
@@ -251,27 +371,20 @@ internal static unsafe partial class VisualEngine3D
             if(finish==23) {
                 vec3 r=reflect(-v,n);
                 float band=.5+.5*sin(r.y*13.+r.x*3.);
-                lit=base*(.63+.57*band+.24*max(0.,dot(n,key)))+vec3(.17,.12,.07)*pow(band,8.);
+                lit=base*(.26+.30*band+.65*max(0.,dot(n,key))*shadow)+vec3(.21,.14,.07)*pow(band,8.);
             }
             if(finish==1) {
-                // Reflect the rows of overhead luminaires and sunlight across the polished stone.
-                vec3 refl=reflect(-v,n);
-                vec2 hit=pos.xz+refl.xz*(11.2/max(.06,refl.y));
-                vec2 cell=abs(mod(hit+3.,6.)-3.);
-                float strip=exp(-cell.x*cell.x*1.1-cell.y*cell.y*6.);
-                lit+=vec3(.16,.20,.26)*strip*(.14+fres*.4)*tex.r;
-                vec2 pool=mod(pos.xz+3.,6.)-3.;
-                lit+=vec3(.025,.028,.032)*exp(-dot(pool,pool)*.32);
+                lit=lit*.76+reflectionBands(reflect(-v,n))*(.025+.34*fres);
+                lit+=point(puddleLight,vec3(.07,.85,1.3)*puddlePower,n,v,54.)*(.08+fres*.22);
             }
-            if(finish==7 || finish==15 || finish==16) lit=base*1.18;
-            if(finish==20) {
-                lit=base*1.08;
-            }
-            if(finish==4 || finish==3) lit+=base*max(tex.g,tex.r)*.65;
+            if(finish==7 || finish==15 || finish==16 || finish==20) lit=base*1.62;
+            if(finish==4) lit=base*(.44+1.40*max(tex.g,tex.r));
+            if(finish==3) lit+=base*max(tex.g,tex.r)*.65;
             if(finish==10) lit=base;
             if(firstPerson==1) lit+=muzzleLight(n,v)*(.26+base);
+            lit+=emission*1.65;
             float fog=1.-exp(-.000055*dist*dist);
-            color=vec4(mix(lit,vec3(.68,.79,.92),fog),ink.a);
+            color=vec4(mix(lit,vec3(.26,.23,.28),fog),ink.a);
         }
         """;
 
@@ -292,6 +405,7 @@ internal static unsafe partial class VisualEngine3D
         eyeLoc = Loc("eye"); finishLoc = Loc("finish"); taperLoc = Loc("taper");
         laptopLoc = Loc("laptop"); tarotLoc = Loc("tarot"); northLoc = Loc("northBeacon");
         southLoc = Loc("southBeacon"); powerLoc = Loc("power");
+        InitLightingPipeline();
         box = ModelFor(Raylib.GenMeshCube(1,1,1));
         bevel = ModelFor(RoundedBox());
         plane = ModelFor(Raylib.GenMeshPlane(1,1,1,1));
@@ -306,9 +420,35 @@ internal static unsafe partial class VisualEngine3D
             if (model.MeshCount == 0 || model.MaterialCount < 2)
                 throw new InvalidDataException($"Invalid Blender model: {path}");
             ApplyShaderToModel(model);
+            ReadMaterialLighting(path,model);
             string name = Path.GetFileNameWithoutExtension(path);
             imports.Add(name, model);
             if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
+        }
+    }
+
+    // Raylib exposes the authored base textures. Pack glTF emission and the
+    // leather response into the unused specular colour, leaving roughness intact.
+    private static void ReadMaterialLighting(string path,Model model)
+    {
+        using var reader=new BinaryReader(File.OpenRead(path));
+        reader.BaseStream.Position=12;
+        int bytes=reader.ReadInt32();
+        if(reader.ReadUInt32()!=0x4E4F534A) throw new InvalidDataException(path);
+        using var json=JsonDocument.Parse(reader.ReadBytes(bytes));
+        if(!json.RootElement.TryGetProperty("materials",out var materials)) return;
+        int i=1;
+        foreach(var material in materials.EnumerateArray())
+        {
+            if(i>=model.MaterialCount) break;
+            string name=material.TryGetProperty("name",out var n) ? n.GetString() ?? "" : "";
+            Vector3 glow=Vector3.Zero;
+            if(material.TryGetProperty("emissiveFactor",out var e))
+                glow=new(e[0].GetSingle(),e[1].GetSingle(),e[2].GetSingle());
+            if(name.Equals("display",StringComparison.OrdinalIgnoreCase) && glow==Vector3.Zero) glow=new(.25f,.66f,.78f);
+            if(name.Contains("nichrome",StringComparison.OrdinalIgnoreCase)) glow=new(1,.48f,.15f);
+            int leather=name.Contains("Leather",StringComparison.OrdinalIgnoreCase) ? 128 : 0;
+            model.Materials[i++].Maps[1].Color=new Color((int)(255*glow.X),(int)(255*glow.Y),(int)(255*glow.Z),leather);
         }
     }
 
@@ -446,13 +586,25 @@ internal static unsafe partial class VisualEngine3D
 
     private static void ApplyShaderToModel(Model model)
     {
-        for (int m = 0; m < model.MaterialCount; m++) model.Materials[m].Shader = shader;
+        for (int m = 0; m < model.MaterialCount; m++)
+        {
+            model.Materials[m].Shader=shader;
+            model.Materials[m].Maps[1].Color=Color.Blank;
+            if(shadowTarget.Id!=0) model.Materials[m].Maps[1].Texture=shadowTarget.Depth;
+        }
     }
 
     public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
                              Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false, Matrix4x4? assemblyTransform = null)
     {
         Model model = imports[name];
+        if(CastingShadows)
+        {
+            var pose=Matrix4x4.CreateRotationX(tilt)*Matrix4x4.CreateScale((stretch ?? Vector3.One)*scale)*
+                Matrix4x4.CreateRotationY(yaw*MathF.PI/180)*Matrix4x4.CreateTranslation(position);
+            DrawDepth(model,pose*(assemblyTransform ?? Matrix4x4.Identity),hideProp);
+            return;
+        }
         model.Transform = Matrix4x4.CreateRotationX(tilt);
         Surface(name.StartsWith("char_",StringComparison.Ordinal) ? Finish.Anatomy : Finish.Imported, 0);
         if (assemblyTransform.HasValue)
@@ -525,6 +677,9 @@ internal static unsafe partial class VisualEngine3D
 
     public static void World(Camera3D cam, SkyscraperFloor1World world)
     {
+        var nearest=world.Systems.Puddles.Where(p=>p.Electric>0).MinBy(p=>Vector3.DistanceSquared(p.Position,cam.Position));
+        Raylib.SetShaderValue(shader,puddlePosLoc,(nearest?.Position ?? Vector3.Zero)+Vector3.UnitY*.42f,ShaderUniformDataType.Vec3);
+        Raylib.SetShaderValue(shader,puddlePowerLoc,nearest==null ? 0f : 1.28f+.23f*MathF.Sin((float)Raylib.GetTime()*37),ShaderUniformDataType.Float);
         Raylib.SetShaderValue(shader,firstPersonLoc,0,ShaderUniformDataType.Int);
         Raylib.SetShaderValue(shader,clockLoc,(float)Raylib.GetTime(),ShaderUniformDataType.Float);
         View(cam.Position,world.CentralMacBookPos+new Vector3(0,1.6f,.35f),
@@ -566,6 +721,14 @@ internal static unsafe partial class VisualEngine3D
 
     private static void Draw(Model m, Vector3 p, Vector3 scale, Color tint, Finish f, Vector3 axis, float angle=0,float taper=0)
     {
+        if(CastingShadows)
+        {
+            if(f is Finish.Glass or Finish.Contact or Finish.CharacterShadow or Finish.RosinSmoke or Finish.WaterPuddle or Finish.Plasma) return;
+            if(taper!=0) Raylib.SetShaderValue(shadowShader,depthTaper,taper,ShaderUniformDataType.Float);
+            DrawDepth(m,Matrix4x4.CreateScale(scale)*Matrix4x4.CreateFromAxisAngle(axis,angle*MathF.PI/180)*Matrix4x4.CreateTranslation(p));
+            if(taper!=0) Raylib.SetShaderValue(shadowShader,depthTaper,0f,ShaderUniformDataType.Float);
+            return;
+        }
         Surface(f,taper);
         m.Materials[0].Maps[0].Texture=maps[(int)f];
         Raylib.DrawModelEx(m,p,axis,angle,scale,tint);
@@ -608,6 +771,7 @@ internal static unsafe partial class VisualEngine3D
 
     public static void DrawCharacterDirectionalShadow(Vector3 pos, float height, float radius)
     {
+        if(shadowTarget.Id!=0) return;
         Vector3 direction = Vector3.Normalize(new Vector3(.65f, 0, .45f));
         float length = height * 1.7f;
         Vector3 middle = new Vector3(pos.X, Math.Max(.043f, pos.Y + .012f), pos.Z) + direction * (length * .48f);
@@ -673,6 +837,13 @@ internal static unsafe partial class VisualEngine3D
             build(builder);
             builder.Upload();
         }
+        if(CastingShadows)
+        {
+            foreach(var group in architecture)
+                if(group.Finish is not (Finish.Sky or Finish.Facade or Finish.Glass or Finish.Billboard))
+                    DrawDepth(group.Model,Matrix4x4.Identity);
+            return;
+        }
         Raylib.SetShaderValue(shader,batchLoc,1,ShaderUniformDataType.Int);
         if (glass) Rlgl.DisableDepthMask();
         foreach (var group in architecture)
@@ -696,7 +867,7 @@ internal static unsafe partial class VisualEngine3D
     {
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
                     or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
-                    or Finish.BlackMarble or Finish.Bronze or Finish.RosinSmoke ? 1 : 512;
+                    or Finish.BlackMarble or Finish.Bronze or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
         Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(16,25,30,255))
                                  : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
@@ -812,6 +983,293 @@ internal static unsafe partial class VisualEngine3D
         architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);
         foreach(Texture2D t in maps) Raylib.UnloadTexture(t);
+        UnloadLightingPipeline();
         Raylib.UnloadShader(shader);
+    }
+}
+
+internal static unsafe partial class VisualEngine3D
+{
+    private const int ShadowSize=2048;
+    private static readonly Vector3 SunDirection=Vector3.Normalize(new(-.76825f,.21412f,-.60323f));
+    private static Shader shadowShader,bloomExtractShader,bloomBlurShader,compositeShader;
+    private static RenderTexture2D shadowTarget,sceneRt,bloomRtA,bloomRtB;
+    private static Material depthMaterial;
+    private static int worldVp,shadowVp,depthTaper,blurStep,bloomSampler,puddlePosLoc,puddlePowerLoc,puddleElectricLoc;
+    internal static bool CastingShadows { get; private set; }
+    internal static bool MatchesViewport(int w,int h) =>
+        sceneRt.Texture.Width==w && sceneRt.Texture.Height==h && bloomRtA.Texture.Width==w/2 &&
+        bloomRtA.Texture.Height==h/2 && bloomRtB.Texture.Width==w/2 && bloomRtB.Texture.Height==h/2;
+    internal static bool HdrAndShadowsReady => shadowTarget.Id!=0 && sceneRt.Texture.Format==PixelFormat.UncompressedR16G16B16A16;
+
+    [System.Runtime.InteropServices.DllImport("opengl32.dll")]
+    private static extern void glDrawBuffer(uint mode);
+    [System.Runtime.InteropServices.DllImport("opengl32.dll")]
+    private static extern void glReadBuffer(uint mode);
+
+    private static Shader Compile(string vertex,string fragment)
+    {
+        var pass=Raylib.LoadShaderFromMemory(vertex,fragment);
+        if(pass.Id==0 || pass.Id==Rlgl.GetShaderIdDefault()) throw new InvalidOperationException("Lighting shader failed to compile.");
+        return pass;
+    }
+
+    private static void InitLightingPipeline()
+    {
+        shadowShader=Compile("""
+            #version 330
+            in vec3 vertexPosition;
+            uniform mat4 lightVP,matModel;
+            uniform float taper;
+            void main() {
+                vec3 p=vertexPosition; p.xz*=1.+p.y*taper;
+                gl_Position=lightVP*matModel*vec4(p,1.);
+            }
+            ""","""
+            #version 330
+            void main() { }
+            """);
+        shadowVp=Raylib.GetShaderLocation(shadowShader,"lightVP");
+        depthTaper=Raylib.GetShaderLocation(shadowShader,"taper");
+        worldVp=Raylib.GetShaderLocation(shader,"lightVP");
+        puddlePosLoc=Raylib.GetShaderLocation(shader,"puddleLight");
+        puddlePowerLoc=Raylib.GetShaderLocation(shader,"puddlePower");
+        puddleElectricLoc=Raylib.GetShaderLocation(shader,"puddleElectric");
+        shadowTarget.Id=Rlgl.LoadFramebuffer();
+        if(shadowTarget.Id!=0)
+        {
+            shadowTarget.Texture.Width=shadowTarget.Texture.Height=ShadowSize;
+            shadowTarget.Depth.Id=Rlgl.LoadTextureDepth(ShadowSize,ShadowSize,false);
+            Rlgl.FramebufferAttach(shadowTarget.Id,shadowTarget.Depth.Id,FramebufferAttachType.Depth,FramebufferAttachTextureType.Texture2D,0);
+            Rlgl.EnableFramebuffer(shadowTarget.Id);
+            if(OperatingSystem.IsWindows()) { glDrawBuffer(0); glReadBuffer(0); }
+            if(shadowTarget.Depth.Id==0 || !Rlgl.FramebufferComplete(shadowTarget.Id))
+            {
+                Rlgl.UnloadFramebuffer(shadowTarget.Id);
+                shadowTarget=default;
+            }
+            Rlgl.DisableFramebuffer();
+        }
+        if(shadowTarget.Id==0) Console.WriteLine("[RENDER] Depth target unavailable, using contact shadows.");
+        shader.Locs[(int)ShaderLocationIndex.MapMetalness]=Raylib.GetShaderLocation(shader,"shadowMap");
+        Raylib.SetShaderValue(shader,Raylib.GetShaderLocation(shader,"shadows"),shadowTarget.Id==0 ? 0 : 1,ShaderUniformDataType.Int);
+        depthMaterial=Raylib.LoadMaterialDefault();
+        depthMaterial.Shader=shadowShader;
+        const string header="#version 330\nin vec2 fragTexCoord; uniform sampler2D texture0; out vec4 color;\n";
+        bloomExtractShader=Compile(null,header+"""
+            void main() {
+                vec3 rgb=texture(texture0,fragTexCoord).rgb;
+                float l=dot(rgb,vec3(.2126,.7152,.0722));
+                // Preserve saturated neon whose luminance is lower than its HDR radiance.
+                l=max(l,.66*max(rgb.r,max(rgb.g,rgb.b)));
+                float knee=clamp(l-.70,0.,.36);
+                float amount=max(knee*knee/.72,l-.88);
+                color=vec4(rgb*amount/max(.001,l),1.);
+            }
+            """);
+        bloomBlurShader=Compile(null,header+"""
+            uniform vec2 axis;
+            void main() {
+                vec3 sum=texture(texture0,fragTexCoord).rgb*.227027;
+                const float w[4]=float[4](.194595,.121622,.054054,.016216);
+                for(int i=1;i<=4;i++) {
+                    vec2 d=axis*float(i);
+                    sum+=(texture(texture0,fragTexCoord+d).rgb+texture(texture0,fragTexCoord-d).rgb)*w[i-1];
+                }
+                color=vec4(sum,1.);
+            }
+            """);
+        compositeShader=Compile(null,header+"""
+            uniform sampler2D bloom;
+            void main() {
+                vec2 uv=fragTexCoord, px=1./vec2(textureSize(texture0,0));
+                vec3 source=texture(texture0,uv).rgb;
+                const vec3 luma=vec3(.2126,.7152,.0722);
+                float nw=dot(texture(texture0,uv-px).rgb,luma), ne=dot(texture(texture0,uv+vec2(px.x,-px.y)).rgb,luma);
+                float sw=dot(texture(texture0,uv+vec2(-px.x,px.y)).rgb,luma), se=dot(texture(texture0,uv+px).rgb,luma);
+                float lo=min(min(nw,ne),min(sw,se)), hi=max(max(nw,ne),max(sw,se));
+                if(hi-lo>max(.045,hi*.13)) {
+                    vec2 dir=vec2(sw+se-nw-ne,nw+sw-ne-se);
+                    dir=clamp(dir/(min(abs(dir.x),abs(dir.y))+max(.012,(lo+hi)*.035)),vec2(-5.),vec2(5.))*px;
+                    vec3 edge=.5*(texture(texture0,uv+dir*.22).rgb+texture(texture0,uv-dir*.22).rgb);
+                    source=mix(source,edge,.72);
+                }
+                vec3 x=max(vec3(0.),source+.42*texture(bloom,uv).rgb);
+                float l=dot(x,vec3(.2126,.7152,.0722));
+                x*=mix(vec3(.97,1.,1.035),vec3(1.035,1.,.97),smoothstep(.18,1.15,l));
+                x=(x*(2.51*x+.03))/(x*(2.43*x+.59)+.14);
+                vec2 p=fragTexCoord-.5;
+                x*=1.-.13*smoothstep(.06,.52,dot(p,p));
+                color=vec4(pow(clamp(x,0.,1.),vec3(.84)),1.);
+            }
+            """);
+        blurStep=Raylib.GetShaderLocation(bloomBlurShader,"axis");
+        bloomSampler=Raylib.GetShaderLocation(compositeShader,"bloom");
+    }
+
+    internal static bool BeginShadowPass(Vector3 focusCenter)
+    {
+        if(shadowTarget.Id==0) return false;
+        Vector3 side=Vector3.Normalize(Vector3.Cross(Vector3.UnitY,SunDirection));
+        Vector3 up=Vector3.Cross(SunDirection,side);
+        // Fit the complete 76 m floor on the sun's horizontal axis. The vertical
+        // axis retains the 68 m span. Follow the focus only inside the spare margin.
+        Vector3 floorHalf=new(SkyscraperFloor1World.HalfWidth,SkyscraperFloor1World.CeilingHeight*.5f,SkyscraperFloor1World.HalfDepth);
+        Vector3 floorCenter=Vector3.UnitY*floorHalf.Y;
+        float spanX=MathF.Max(34,Vector3.Dot(Vector3.Abs(side),floorHalf)+.35f);
+        float marginY=34-Vector3.Dot(Vector3.Abs(up),floorHalf)-.25f;
+        focusCenter=floorCenter+up*Math.Clamp(Vector3.Dot(focusCenter-floorCenter,up),-marginY,marginY);
+        float texel=68f/ShadowSize;
+        float Snap(float n)=>MathF.Round(n/texel)*texel-n;
+        focusCenter+=side*Snap(Vector3.Dot(focusCenter,side))+up*Snap(Vector3.Dot(focusCenter,up));
+        var view=Matrix4x4.CreateLookAt(focusCenter+SunDirection*90,focusCenter,Vector3.UnitY);
+        // OpenGL clip depth is -1..1; System.Numerics' default orthographic depth is 0..1.
+        Matrix4x4 projection=Matrix4x4.Identity;
+        projection.M11=1f/spanX; projection.M22=1f/34;
+        projection.M33=-2f/179; projection.M43=-181f/179;
+        var lightVP=Matrix4x4.Transpose(view*projection);
+        Raylib.SetShaderValueMatrix(shadowShader,shadowVp,lightVP);
+        Raylib.SetShaderValueMatrix(shader,worldVp,lightVP);
+        Raylib.BeginTextureMode(shadowTarget);
+        Raylib.ClearBackground(Color.White);
+        Rlgl.EnableDepthTest();
+        CastingShadows=true;
+        return true;
+    }
+
+    private static void DrawDepth(Model model,Matrix4x4 pose,bool hideProp=false,bool droppedLaptop=false)
+    {
+        var transform=Matrix4x4.Transpose(pose);
+        for(int i=0;i<model.MeshCount;i++)
+            if(!(hideProp && partnerPropMeshes.Contains(i)) && !(droppedLaptop && model.MeshMaterial[i]>=11))
+                Raylib.DrawMesh(model.Meshes[i],depthMaterial,transform);
+    }
+
+    internal static void EndShadowPass()
+    {
+        CastingShadows=false;
+        Rlgl.DisableDepthTest();
+        Raylib.EndTextureMode();
+    }
+
+    private static RenderTexture2D HdrTarget(int w,int h,bool depth)
+    {
+        RenderTexture2D target=new() { Id=Rlgl.LoadFramebuffer() };
+        if(target.Id==0) throw new InvalidOperationException("Could not allocate HDR framebuffer.");
+        target.Texture=new Texture2D { Id=Rlgl.LoadTexture(null,w,h,PixelFormat.UncompressedR16G16B16A16,1),
+            Width=w,Height=h,Format=PixelFormat.UncompressedR16G16B16A16,Mipmaps=1 };
+        Rlgl.FramebufferAttach(target.Id,target.Texture.Id,FramebufferAttachType.ColorChannel0,FramebufferAttachTextureType.Texture2D,0);
+        if(depth)
+        {
+            target.Depth.Id=Rlgl.LoadTextureDepth(w,h,true);
+            Rlgl.FramebufferAttach(target.Id,target.Depth.Id,FramebufferAttachType.Depth,FramebufferAttachTextureType.Renderbuffer,0);
+        }
+        if(target.Texture.Id==0 || depth && target.Depth.Id==0 || !Rlgl.FramebufferComplete(target.Id))
+        {
+            Raylib.UnloadRenderTexture(target);
+            throw new InvalidOperationException("Incomplete HDR framebuffer.");
+        }
+        Raylib.SetTextureFilter(target.Texture,TextureFilter.Bilinear);
+        Raylib.SetTextureWrap(target.Texture,TextureWrap.Clamp);
+        return target;
+    }
+
+    internal static void BeginScene()
+    {
+        int w=Math.Max(1,Raylib.GetScreenWidth()),h=Math.Max(1,Raylib.GetScreenHeight());
+        if(sceneRt.Texture.Width!=w || sceneRt.Texture.Height!=h)
+        {
+            ReleaseScene();
+            sceneRt=HdrTarget(w,h,true);
+            bloomRtA=HdrTarget(Math.Max(1,w/2),Math.Max(1,h/2),false);
+            bloomRtB=HdrTarget(bloomRtA.Texture.Width,bloomRtA.Texture.Height,false);
+        }
+        Raylib.BeginTextureMode(sceneRt);
+        Raylib.ClearBackground(new Color(30,33,57,255));
+    }
+
+    private static void Blit(Texture2D source,int width,int height)
+    {
+        Raylib.DrawTexturePro(source,new(0,0,source.Width,-source.Height),new(0,0,width,height),Vector2.Zero,0,Color.White);
+    }
+
+    private static void BloomPass(Texture2D source,RenderTexture2D target,Shader pass)
+    {
+        Raylib.BeginTextureMode(target);
+        Raylib.BeginShaderMode(pass);
+        Blit(source,target.Texture.Width,target.Texture.Height);
+        Raylib.EndShaderMode();
+        Raylib.EndTextureMode();
+    }
+
+    internal static void Composite()
+    {
+        Raylib.EndTextureMode();
+        BloomPass(sceneRt.Texture,bloomRtA,bloomExtractShader);
+        Raylib.SetShaderValue(bloomBlurShader,blurStep,new Vector2(1.65f/bloomRtA.Texture.Width,0),ShaderUniformDataType.Vec2);
+        BloomPass(bloomRtA.Texture,bloomRtB,bloomBlurShader);
+        Raylib.SetShaderValue(bloomBlurShader,blurStep,new Vector2(0,1.65f/bloomRtB.Texture.Height),ShaderUniformDataType.Vec2);
+        BloomPass(bloomRtB.Texture,bloomRtA,bloomBlurShader);
+        Raylib.BeginShaderMode(compositeShader);
+        Raylib.SetShaderValueTexture(compositeShader,bloomSampler,bloomRtA.Texture);
+        Blit(sceneRt.Texture,Raylib.GetScreenWidth(),Raylib.GetScreenHeight());
+        Raylib.EndShaderMode();
+    }
+
+    internal static void Water(Vector3 center,float electric)
+    {
+        Raylib.SetShaderValue(shader,puddleElectricLoc,electric,ShaderUniformDataType.Float);
+        Rlgl.DisableDepthMask();
+        Draw(plane,center,new(5.2f,1,5.2f),Color.White,Finish.WaterPuddle,Vector3.UnitY);
+        Rlgl.EnableDepthMask();
+    }
+
+    [System.Runtime.InteropServices.DllImport("opengl32.dll")]
+    private static extern void glReadPixels(int x,int y,int w,int h,uint format,uint type,float* data);
+
+    internal static void VerifyLightingBuffers()
+    {
+        if(!HdrAndShadowsReady) throw new InvalidDataException("Expected FP16 and a depth shadow texture.");
+        // Read real GPU pixels. A translated occluder must clear the same light-space texel.
+        float Depth(float offset)
+        {
+            BeginShadowPass(Vector3.Zero);
+            Box(new(offset,0,0),3,3,3,Color.White);
+            float depth;
+            glReadPixels(ShadowSize/2,ShadowSize/2,1,1,0x1902,0x1406,&depth);
+            EndShadowPass();
+            return depth;
+        }
+        float blocked=Depth(0),clear=Depth(12);
+        float Peak(RenderTexture2D buffer)
+        {
+            Rlgl.EnableFramebuffer(buffer.Id);
+            var rgb=new float[buffer.Texture.Width*buffer.Texture.Height*3];
+            fixed(float* dst=rgb) glReadPixels(0,0,buffer.Texture.Width,buffer.Texture.Height,0x1907,0x1406,dst);
+            Rlgl.DisableFramebuffer();
+            return rgb.Max();
+        }
+        float scene=Peak(sceneRt),bloom=Peak(bloomRtA);
+        if(blocked<=0 || blocked>=.99f || clear<=.999f || scene<=1 || bloom<=.01f)
+            throw new InvalidDataException($"GPU lighting readback failed: {blocked} {clear} {scene} {bloom}");
+        Console.WriteLine($"[AUTOTEST] PASS rendering: moving shadow depth {blocked:F3} -> {clear:F3}, FP16 peak {scene:F2}, blurred bloom {bloom:F2}");
+    }
+
+    private static void ReleaseScene()
+    {
+        foreach(var target in new[]{sceneRt,bloomRtA,bloomRtB})
+            if(target.Id!=0) Raylib.UnloadRenderTexture(target);
+        sceneRt=bloomRtA=bloomRtB=default;
+    }
+
+    private static void UnloadLightingPipeline()
+    {
+        ReleaseScene();
+        if(shadowTarget.Id!=0) Rlgl.UnloadFramebuffer(shadowTarget.Id);
+        // UnloadMaterial also owns its custom shader.
+        Raylib.UnloadMaterial(depthMaterial);
+        Raylib.UnloadShader(compositeShader);
+        Raylib.UnloadShader(bloomBlurShader);
+        Raylib.UnloadShader(bloomExtractShader);
     }
 }

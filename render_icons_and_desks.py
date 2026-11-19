@@ -73,54 +73,10 @@ def finalize_and_export(filename):
     print("Exported:", out_path, os.path.getsize(out_path))
 
 def build_macbook_trap_desk():
-    clear_scene()
-    walnut=make_mat("Smoked_Walnut",(.16,.075,.035,1),roughness=.38)
-    grain=make_mat("Walnut_Grain",(.085,.037,.017,1),roughness=.44)
-    titanium=make_mat("Matte_Titanium",(.22,.25,.28,1),metallic=.78,roughness=.44)
-    alu=make_mat("MacBook_Aluminum",(.60,.65,.70,1),metallic=.83,roughness=.27)
-    black=make_mat("MacBook_Keyboard",(.012,.016,.022,1),roughness=.48)
-    display=make_mat("MacBook_Display",(.018,.065,.09,1),roughness=.25)
-    white=make_mat("Logo_Glow",(.78,.87,.92,1),roughness=.3)
-    bsdf=white.node_tree.nodes.get("Principled BSDF")
-    bsdf.inputs['Emission Color'].default_value=(.5,.65,.8,1)
-    bsdf.inputs['Emission Strength'].default_value=.45
-    add_box("Thin_Walnut_Slab",(0,.88,0),(2.48,.12,1.44),walnut,bevel=.035)
-    add_box("Titanium_Underframe",(0,.795,0),(2.20,.045,1.20),titanium,bevel=.018)
-    for side in [-1,1]:
-        add_box("Splayed_Titanium_Blade",(side*.87,.40,0),(.115,.78,.97),titanium,rot=(0,0,side*-.24),bevel=.025)
-        add_box("Recessed_Foot",(side*.96,.035,0),(.34,.055,1.04),black,bevel=.02)
-    for i in range(23):
-        add_box("Walnut_Fine_Grain",(math.sin(i*4)*.13,.941,-.66+i*.057),(2.10+(i%3)*.08,.001,.003+(i%2)*.002),grain)
-    add_box("MacBook_Unibody",(0,.968,.02),(.68,.035,.46),alu,bevel=.012)
-    add_box("Keyboard_Recess",(0,.988,-.045),(.57,.005,.205),black,bevel=.007)
-    for row in range(5):
-        for col in range(12):
-            add_box("Individual_Key",(-.254+col*.046, .994,-.124+row*.036),(.037,.005,.027),titanium,bevel=.003)
-    add_box("Spacebar",(0,.996,.046),(.22,.005,.02),black,bevel=.003)
-    add_box("Trackpad_Reveal",(0,.988,.155),(.25,.002,.12),titanium,bevel=.008)
-    add_box("Trackpad",(0,.990,.155),(.238,.002,.108),alu,bevel=.007)
-    for side in [-1,1]:
-        for i in range(18):
-            add_box("Speaker_Slot",(side*.31,.989,-.13+i*.011),(.019,.002,.003),black)
-        for i in range(2):
-            add_box("USB_C_Port",(side*.341,.969,-.12+i*.07),(.002,.01,.026),black,bevel=.003)
-    # Lid tilted away from keyboard. Local coordinates keep display and logo on opposite faces.
-    angle=.15
-    def lid_part(name,x,y,depth,w,h,d,mat,bevel=0):
-        pos=(x,.995+y*math.cos(angle)-depth*math.sin(angle),.245+y*math.sin(angle)+depth*math.cos(angle))
-        return add_box(name,pos,(w,h,d),mat,rot=(angle,0,0),bevel=bevel)
-    lid_part("Slim_Aluminum_Lid",0,.215,0,.68,.43,.016,alu,.009)
-    lid_part("Black_Display_Bezel",0,.215,-.010,.652,.40,.003,black,.006)
-    lid_part("Inset_Dark_Display",0,.215,-.013,.62,.366,.002,display,.004)
-    for row in range(7): lid_part("Editor_Line",-.06,.10+row*.031,-.015,.33-row%3*.06,.004,.001,titanium)
-    lid_part("Camera_Notch",0,.398,-.015,.065,.019,.002,black)
-    # Small bitten-apple silhouette on rear, not a luminous rectangle.
-    points=[(-.002,.037),(-.018,.046),(-.038,.038),(-.047,.018),(-.045,-.008),(-.030,-.036),(-.014,-.041),(0,-.034),(.015,-.041),(.031,-.026),(.040,-.008),(.026,.002),(.023,.016),(.034,.028),(.022,.043),(.008,.045)]
-    verts=[rl_pos((x, .995+(.235+y)*math.cos(angle)-.011*math.sin(angle),.245+(.235+y)*math.sin(angle)+.011*math.cos(angle))) for x,y in points]
-    mesh=bpy.data.meshes.new("Apple_Logo"); mesh.from_pydata(verts,[],[tuple(range(len(verts)))]); mesh.materials.append(white)
-    obj=bpy.data.objects.new("Small_Rear_Apple_Logo",mesh); bpy.context.collection.objects.link(obj)
-    lid_part("Logo_Leaf",.010,.291,.011,.012,.021,.001,white,.005)
-    finalize_and_export("prop_macbook_trap_desk.glb")
+    import runpy
+    from pathlib import Path
+    mod = runpy.run_path(str(Path(__file__).resolve().parent / "build_landmark_props.py"))
+    mod["build_macbook_trap_desk"]()
 
 def build_arsenal_counter():
     clear_scene()

@@ -7,14 +7,14 @@ namespace HowToVibeCoder;
 public static partial class LoreAndMenusUI
 {
     private const int ArchiveWidth = 1280, ArchiveHeight = 720, RowHeight = 86, VisibleRows = 3;
-    private static readonly string[] ArchiveTabs = ["ПЕРЕПИСКА ЦЕХА", "ТАРО-ДОСЬЕ HR", "БЕСТИАРИЙ ЭТАЖА", "СЛОВАРЬ 90-Х"];
-    private static readonly string[] IndexTitles = ["Перехваты", "Расклады", "Фигуранты", "Понятия"];
+    private static readonly string[] ArchiveTabs = ["ПЕРЕПИСКА ЦЕХА", "ТАРО-ДОСЬЕ HR", "КОЛЛЕКЦИЯ", "СЛОВАРЬ 90-Х"];
+    private static readonly string[] IndexTitles = ["Перехваты", "Расклады", "Коллекция", "Понятия"];
     private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Кассета 1998"];
     private static readonly string[] ChatTitles = ["Пятничный деплой", "Стойка B12 и Кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело АО Энтропия"];
     private static readonly string[] TarotNames = ["Сеньор Алексей", "Джуниор Данила", "Крипто и Митингер"];
     private static readonly string[] TarotCards = ["Аркан XVI: Башня", "Аркан 0: Шут", "Аркан XV: Дьявол"];
-    private static readonly string[] BestiaryNames = ["Сбежавший ИИ-агент", "Архитектор и Джун", "Вероника (Оракул)", "Братан и Кассеты", "Крипто и Митингер"];
-    private static readonly string[] BestiaryPosts = ["Северный лифт // Побег из ZERO", "Опенспейс // Эго vs Страх", "Приёмная HR // Prediction API", "Напарник // Архив АО Энтропия", "Опенспейс // Жадность и Дейлики"];
+    private static int Catches(int i) => Program.Discoveries.GetValueOrDefault(VibeCoderCollection.All[i].Id);
+    internal static string CollectionEntry(int i) => Catches(i)>0 ? VibeCoderCollection.All[i].Name : "??? — НЕ ПОЙМАН";
     private const string CoderModel = "char_vibe_coder", TarotModel = "char_hr_veronika",
                          AgentModel = "escaped_ai_boss", PartnerModel = "char_partner_90s", SolderModel = "weapon_solder_90s";
     private static readonly Color Phosphor = new(239, 198, 110, 255), Ivory = new(241, 239, 224, 255),
@@ -44,7 +44,7 @@ public static partial class LoreAndMenusUI
     internal static float ArchiveScrollLimit => Math.Max(0, EntryCount - VisibleRows) * RowHeight;
     private static int EntryCount => ActiveLoreTab switch
     {
-        0 => _leakedChats.Length, 1 => TarotEntries.Length, 2 => BestiaryNames.Length, _ => DictionaryEntries.Length
+        0 => _leakedChats.Length, 1 => TarotEntries.Length, 2 => VibeCoderCollection.All.Length, _ => DictionaryEntries.Length
     };
 
     private static Rectangle Row(int index) => new(Selector.X, Selector.Y + index * RowHeight - LoreScrollOffset, Selector.Width, RowHeight);
@@ -77,17 +77,17 @@ public static partial class LoreAndMenusUI
 
     private static string EntryName(int i) => ActiveLoreTab switch
     {
-        0 => ChatNames[i], 1 => TarotNames[i], 2 => BestiaryNames[i], _ => DictionaryEntries[i].zoomer.Split(" (")[0]
+        0 => ChatNames[i], 1 => TarotNames[i], 2 => CollectionEntry(i), _ => DictionaryEntries[i].zoomer.Split(" (")[0]
     };
     private static string EntryContext(int i) => ActiveLoreTab switch
     {
-        0 => ChatTitles[i], 1 => TarotCards[i], 2 => BestiaryPosts[i], _ => "Из словаря цеха"
+        0 => ChatTitles[i], 1 => TarotCards[i], 2 => VibeCoderCollection.Tag(VibeCoderCollection.All[i].Rarity), _ => "Из словаря цеха"
     };
     private static string ExhibitModel => ActiveLoreTab switch
     {
         0 => SelectedArchiveEntry == 5 ? SolderModel : CoderModel,
         1 => TarotModel,
-        2 => SelectedArchiveEntry switch { 1 or 4 => CoderModel, 2 => TarotModel, 3 => PartnerModel, _ => AgentModel },
+        2 => CoderModel,
         _ => SelectedArchiveEntry is 2 or 5 ? SolderModel : PartnerModel
     };
 
@@ -110,7 +110,7 @@ public static partial class LoreAndMenusUI
         Type("КАРТОТЕКА // УЗЕЛ 01", 38, 152, 13, Phosphor, Typeface.InterfaceBold);
         Type(IndexTitles[ActiveLoreTab].ToUpperInvariant(), 38, 172, 31, Ivory, Typeface.SerifBold);
         string countBadge = $"ЛИСТ {FirstVisibleArchiveEntry + 1:00}–{Math.Min(EntryCount, FirstVisibleArchiveEntry + VisibleRows):00} ИЗ {EntryCount:00}";
-        Type(countBadge, 39, 218, 14, Quiet, Typeface.InterfaceBold);
+        Type(ActiveLoreTab==2 ? $"ОТКРЫТО: {Program.Discoveries.Count} / {EntryCount}" : countBadge, 39, 218, 14, Quiet, Typeface.InterfaceBold);
 
         Raylib.DrawRectangleRec(Selector, new Color(9, 16, 22, 215));
         Raylib.DrawRectangleLinesEx(Selector, 1f, new Color(84, 108, 110, 165));
@@ -133,7 +133,10 @@ public static partial class LoreAndMenusUI
             }
             Fill(r.X, r.Y + r.Height - 1, r.Width, 1, new Color(118, 142, 140, 75));
             string prefix = selected ? $"{i + 1:00} ▶  " : $"{i + 1:00}    ";
-            Type(prefix + EntryName(i), r.X + 14, r.Y + 14, 20, selected ? darkInk : Ivory, Typeface.InterfaceBold);
+            string rowName=prefix+EntryName(i);
+            int rowSize=20;
+            while(rowSize>12 && GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold,rowSize),rowName,rowSize).X>r.Width-28) rowSize--;
+            Type(rowName, r.X + 14, r.Y + 14, rowSize, selected ? darkInk : Ivory, Typeface.InterfaceBold);
             Type(EntryContext(i), r.X + 14, r.Y + 46, 15, selected ? darkSub : Quiet);
         }
         Raylib.EndScissorMode();
@@ -168,12 +171,13 @@ public static partial class LoreAndMenusUI
         {
             case 0: section = _leakedChats[i].Time; title = ChatTitles[i]; status = _leakedChats[i].RoleBadge; break;
             case 1: section = "ТЕРМИНАЛ ZERO // PREDICTION API"; title = TarotCards[i]; status = TarotEntries[i].title; break;
-            case 2: section = "ДОСЬЕ РАЗВЕДКИ // УЗЕЛ 01"; title = BestiaryNames[i]; status = BestiaryPosts[i]; break;
+            case 2: section=EntryContext(i); title=CollectionEntry(i);
+                status=Catches(i)>0 ? $"Поймано: {Catches(i)}    Премия за открытие +${VibeCoderCollection.All[i].BonusPayout}" : "Личность неизвестна"; break;
             default: section = "СЛОВАРЬ АО ЭНТРОПИЯ // 1998–2026"; title = EntryName(i); status = "Оперативный перевод понятий цеха"; break;
         }
 
         Rectangle headerStrip = new(x, 162, width, 24);
-        Fill(headerStrip.X, headerStrip.Y, headerStrip.Width, headerStrip.Height, Phosphor);
+        Fill(headerStrip.X, headerStrip.Y, headerStrip.Width, headerStrip.Height, ActiveLoreTab==2 ? VibeCoderCollection.Ink(VibeCoderCollection.All[i].Rarity) : Phosphor);
         Type($"ДЕЛО №{i + 1:00}  //  {section.ToUpperInvariant()}", x + 10, 166, 13, darkInk, Typeface.InterfaceBold);
 
         float y = Paragraph(title.ToUpperInvariant(), x, 198, width, 30, 35, Ivory, Typeface.SerifBold) + 8;
@@ -193,32 +197,8 @@ public static partial class LoreAndMenusUI
         }
         else if (ActiveLoreTab == 2)
         {
-            if (i == 0)
-            {
-                y = RoleLine("Реестр контура ZERO", PressRelease[0] + " " + PressRelease[1] + " " + PressRelease[3], y, Phosphor, compact: true);
-                RoleLine("Петрович, перехват у лифта", CameraLog[0] + " " + CameraLog[1] + " " + CameraLog[3], y, Patina, compact: true);
-            }
-            else if (i == 1)
-            {
-                var m = _leakedChats[4];
-                y = RoleLine(m.Handle, m.Text, y, m.HandleColor, compact: true);
-                RoleLine(m.ReplyAuthor, m.ReplyText, y, Patina, compact: true);
-            }
-            else if (i == 2)
-            {
-                y = RoleLine("Вероника, скрытый терминал HR", "«Карты Таро — это просто интерфейс для отвода глаз. Мой стол подключён напрямую к prediction API системы ZERO: я заранее вижу, кто обрушит Прод, а кого выгоднее обналичить или посадить на Галеру.»", y, Patina, compact: true);
-                RoleLine("Сводка для Коммерса", "«Приноси пойманных кадров в будку Таро: плачу живыми деньгами из фонда ZERO и подчищаю логи камер, сбивая Внимание СБ (SEC)!»", y, Phosphor, compact: true);
-            }
-            else if (i == 3)
-            {
-                y = RoleLine("Братан, закрытый канал рации", "«Малиновый, прости — это я в 99-м отдал инвестору коробку с аудиокассетами АО „Энтропия“ в счёт долга за склад. Кто ж знал, что они обучат на твоём голосе систему ZERO!»", y, Phosphor, compact: true);
-                RoleLine("Коммерс (Legacy Stakeholder)", "«Потом сочтёмся. Сейчас держим этаж: ты прикрываешь с Узи у кнопки пятничного деплоя x2.5, а я паяльником беру стойку B12 и кулер!»", y, Patina, compact: true);
-            }
-            else
-            {
-                y = RoleLine("Психопрофиль: Крипто-Бро", "«Быстрый и наглый. Ломается только через Жадность (Greed): включайте дорогую приманку на Макбуке или бейте током через пролитый кулер + паяльник 220В.»", y, Phosphor, compact: true);
-                RoleLine("Психопрофиль: Тимлид-Митингер", "«Собирает дейлики и вешает щит на всю пачку. Врывайтесь под Эспрессо-разносом из кофемашины или отбивайте их баг-снаряды кожаным ремнём!»", y, Patina, compact: true);
-            }
+            var species=VibeCoderCollection.All[i];
+            RoleLine(Catches(i)>0 ? "Из личного дела" : "Наводка",Catches(i)>0 ? species.Bio : species.Hint,y,VibeCoderCollection.Ink(species.Rarity));
         }
         else
         {
@@ -246,7 +226,7 @@ public static partial class LoreAndMenusUI
         Raylib.BeginTextureMode(_exhibitTexture);
         Raylib.ClearBackground(Color.Blank);
         Raylib.BeginMode3D(dossierCam);
-        VisualEngine3D.DrawArchiveModel(model, scale, yaw, tool, dossierCam.Position);
+        VisualEngine3D.DrawArchiveModel(model, scale, yaw, tool, dossierCam.Position,ActiveLoreTab==2 ? VibeCoderCollection.All[SelectedArchiveEntry] : null, ActiveLoreTab==2 && Catches(SelectedArchiveEntry)==0);
         Raylib.EndMode3D();
         Raylib.EndTextureMode();
     }
@@ -344,7 +324,7 @@ internal static unsafe partial class VisualEngine3D
 
     // The exhibit borrows each loaded mesh and its material maps. The stage shader
     // is applied to a value copy so the world keeps its current lighting pass.
-    internal static void DrawArchiveModel(string asset, float scale, float yaw, bool tool, Vector3 eye)
+    internal static void DrawArchiveModel(string asset, float scale, float yaw, bool tool, Vector3 eye,VibeCoderSpecies? species=null,bool hidden=false)
     {
         if (dossierShader.Id == 0)
         {
@@ -373,6 +353,7 @@ internal static unsafe partial class VisualEngine3D
                 void main() {
                     vec4 swatch = texture(texture0,uv) * colDiffuse;
                     vec3 n = normalize(normalWS), v = normalize(eye-posWS);
+                    if(surface==3) { color=vec4(vec3(.029,.050,.063)+vec3(.07,.13,.14)*pow(1.-abs(dot(n,v)),3.),1.); return; }
                     if (surface != 0) {
                         vec3 key = normalize(vec3(-.65,.80,.65));
                         float edge = max(0.,dot(n,normalize(vec3(.32,.65,-.70))));
@@ -415,7 +396,7 @@ internal static unsafe partial class VisualEngine3D
         StageBand(.67f, -.102f, .052f, 1);
         StageBand(.704f, -.050f, .009f, 2);
         StageBand(.70f, -.041f, .041f, 1);
-        Raylib.SetShaderValue(dossierShader, dossierSurface, 0, ShaderUniformDataType.Int);
+        Raylib.SetShaderValue(dossierShader, dossierSurface, hidden ? 3 : 0, ShaderUniformDataType.Int);
         Matrix4x4 transform = tool ?
             Matrix4x4.CreateRotationX(-1.22f) * Matrix4x4.CreateRotationZ(-.48f) : Matrix4x4.Identity;
         transform *= Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationY(yaw * MathF.PI / 180)
@@ -430,7 +411,10 @@ internal static unsafe partial class VisualEngine3D
                 if (hideHolsteredProp && partnerPropMeshes.Contains(i)) continue;
                 Material material = model.Materials[model.MeshMaterial[i]];
                 material.Shader = dossierShader;
+                Color original=material.Maps[0].Color;
+                if(species!=null && !hidden) material.Maps[0].Color=VisualEngine3D.CoderPigment(model.MeshMaterial[i],species.HoodieColor,species.GlassesColor,original);
                 Raylib.DrawMesh(model.Meshes[i], material, pose);
+                material.Maps[0].Color=original;
             }
         }
         DrawParts(asset, transform, partner);

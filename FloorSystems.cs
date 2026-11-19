@@ -46,6 +46,24 @@ internal sealed class FloorSystems
     public float PrinterWait, Jam, Audit, Coffee, Badge, RackHeat, PagerWait;
     public bool Ddos, Raid, WantsCoffee, FireIncident;
     public List<WaterSpill> Puddles=new();
+    public Dictionary<string,int> DiscoveredSpecies = new();
+    public string DiscoveryId = "";
+    public float DiscoveryTime;
+    public bool FirstDiscovery;
+
+    internal void Discover(VibeCoderSpecies species,Action<int,string> grant)
+    {
+        int previous=DiscoveredSpecies.GetValueOrDefault(species.Id);
+        DiscoveredSpecies[species.Id]=previous+1;
+        if(previous==0) grant?.Invoke(species.BonusPayout,"Открытие вида");
+        if(previous==0 || species.Rarity!=VibeCoderRarity.Common)
+        {
+            DiscoveryId=species.Id;
+            FirstDiscovery=previous==0;
+            DiscoveryTime=4;
+        }
+    }
+
     public int Owned;
     public Sidegrade? Shell;
     public float Authority, StyleTime, Variety = 1;
@@ -235,7 +253,7 @@ internal sealed class FloorSystems
     internal void Tick(float dt,SkyscraperFloor1World world,Action<int,string>? pay)
     {
         float Down(float t) => Math.Max(0,t-dt);
-        NoticeTime=Down(NoticeTime); PrinterWait=Down(PrinterWait); Jam=Down(Jam);
+        DiscoveryTime=Down(DiscoveryTime); NoticeTime=Down(NoticeTime); PrinterWait=Down(PrinterWait); Jam=Down(Jam);
         Badge=Down(Badge); Coffee=Down(Coffee); PagerWait=Down(PagerWait);
         for(int i=Puddles.Count-1;i>=0;i--)
         {
@@ -448,53 +466,81 @@ public static partial class Program
         var font=GameFonts.Get(title ? Typeface.SerifBold : Typeface.Interface,size);
         GameFonts.Draw(font,value,new(x,y),size,color);
     }
+    internal static IReadOnlyDictionary<string,int> Discoveries => Floor.DiscoveredSpecies;
+
+    internal static void ShadowText(Font font,string text,float x,float y,int size,Color ink)
+    {
+        Font face=GameFonts.At(font,size);
+        Vector2 pos=new(MathF.Round(x),MathF.Round(y));
+        float spacing=size<=16 ? .5f : 0;
+        Raylib.DrawTextEx(face,text,pos+new Vector2(1.5f),size,spacing,new Color(8,12,16,(int)(190*ink.A/255f)));
+        Raylib.DrawTextEx(face,text,pos,size,spacing,ink);
+    }
+
     private static void DrawFloorTelemetry()
     {
-        int x=24;
-        void Gauge(string name,float value,Color ink)
+        int x=28, right=Raylib.GetScreenWidth()-28;
+        var small=GameFonts.Get(Typeface.InterfaceBold,13);
+        var display=GameFonts.Get(Typeface.SerifBold,28);
+        Color mist=new(220,232,229,255), track=new(188,207,209,85), coral=new(255,115,91,255);
+        void Gauge(string label,float value)
         {
-            Raylib.DrawRectangle(x,18,84,29,new Color(18,24,26,220));
-            TypeAt(name,x+7,20,15,paper,true); TypeAt($"{(int)value:00}",x+55,20,16,paper);
-            Raylib.DrawRectangle(x,45,84,2,rule);
-            Raylib.DrawRectangle(x,45,(int)(.84f*value),2,ink); x+=89;
+            Color ink=value>=75 ? coral : value>=50 ? amber : mist;
+            ShadowText(small,label,x,22,13,mist);
+            string number=$"{(int)value:00}";
+            ShadowText(_uiFont,number,x+52-GameFonts.Measure(_uiFont,number,15).X,20,15,ink);
+            Raylib.DrawRectangle(x,43,52,3,track);
+            Raylib.DrawRectangle(x,43,(int)MathF.Ceiling(52*value/100),3,ink);
+            x+=75;
         }
-        Gauge("ТД",Floor.TD,amber); Gauge("ПРОД",Floor.PT,new(238,132,91,255)); Gauge("СБ",Floor.SEC,new(125,180,182,255));
+        Gauge("ТД",Floor.TD); Gauge("ПРОД",Floor.PT); Gauge("СБ",Floor.SEC);
         if(Floor.StyleTime>0)
         {
-            string badge=Floor.RankIndex==4 ? $"АВТОРИТЕТ  ×{Floor.Variety:0.0}" : $"{Floor.Rank}   АВТОРИТЕТ  ×{Floor.Variety:0.0}";
-            int width=18+(int)GameFonts.Measure(_serif,badge,16).X;
-            Raylib.DrawRectangle(x,18,width,29,amber);
-            TypeAt(badge,x+8,21,16,carbon,true);
+            Color ink=Raylib.Fade(amber,Math.Min(1,Floor.StyleTime));
+            ShadowText(display,Floor.RankIndex==4 ? "S" : Floor.Rank,x,13,28,ink);
+            Raylib.DrawLine(x+31,23,x+31,42,ink);
+            ShadowText(small,FormattableString.Invariant($"АВТОРИТЕТ  ×{Floor.Variety:0.0}"),x+40,25,13,ink);
         }
-        string objective=Floor.JobId>=0 ? $"{TimeSpan.FromSeconds(Math.Ceiling(Floor.Remaining)):m\\:ss}    {Floor.Progress}" : Floor.Progress;
-        HudLine(objective,24,52,paper);
-        if(Floor.NoticeTime>0) HudLine(Floor.Notice,24,82,amber);
-        else if(Floor.Audit>0) HudLine($"Аудит через {Floor.Audit:F0} с",24,82,amber);
-        else if(Floor.Ddos || Floor.FireIncident) HudLine("Сбой B12. Перезапусти стойку",24,82,amber);
-        else if(Floor.Coffee>0) HudLine($"Эспрессо-разнос   {Floor.Coffee:F0} с",24,82,amber);
-        int right=Raylib.GetScreenWidth()-228;
+        string progress=Floor.JobId==0 ? $"Галера {Floor.Seated}/2    ${Floor.Earned} / $450" : Floor.Progress;
+        int seconds=(int)MathF.Ceiling(Floor.Remaining);
+        string objective=Floor.JobId>=0 ? $"{seconds/60}:{seconds%60:00}    {progress}" : progress;
+        ShadowText(_uiFont,objective,28,54,16,paper);
+        string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? $"Аудит через {Floor.Audit:F0} с" :
+            Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
+        if(notice.Length>0)
+        {
+            Raylib.DrawRectanglePro(new(31,88,5,5),new(2.5f),45,amber);
+            ShadowText(_uiFont,notice,42,78,15,amber);
+        }
+        void Right(Font font,string value,int y,int size,Color ink) =>
+            ShadowText(font,value,right-GameFonts.Measure(font,value,size).X,y,size,ink);
         if(Floor.Friday>0)
         {
-            Color hot=MathF.Sin(Floor.Friday*8)>0 ? new(161,51,41,255) : new(111,43,38,255);
-            Raylib.DrawRectangle(right,18,204,32,hot);
-            TypeAt($"ПЯТНИЦА   ×2.5     {Math.Ceiling(Floor.Friday):00} с",right+9,21,19,paper,true);
-            HudLine($"Узел Галеры   {Floor.Defense:F0}%",right,54,paper);
+            var hot=Raylib.ColorLerp(coral,new(255,182,151,255),.24f+.23f*MathF.Sin(Floor.Friday*5));
+            ShadowText(GameFonts.Get(Typeface.SerifBold,19),"ПЯТНИЦА ×2.5",right-168,19,19,hot);
+            Right(display,$"{Math.Ceiling(Floor.Friday):00}с",12,28,paper);
+            Raylib.DrawRectangle(right-168,47,168,3,track);
+            Raylib.DrawRectangle(right-168,47,(int)(168*Floor.Friday/45),3,hot);
+            Right(_uiFont,$"Узел Галеры  {Floor.Defense:F0}%",56,15,paper);
         }
-        else
+        else if(_world.GalleyDesks.Exists(d=>d.IsOccupied))
         {
-            var desks=_world.GalleyDesks;
-            int staff=desks.Count(d=>d.IsOccupied);
-            if(staff>0)
-            {
-                bool lead=desks.Exists(d=>d.IsOccupied && !d.IsSlackingInTwitter && d.Archetype==CoderArchetype.TeamLeadMeeter);
-                HudLine($"Галера {staff}/4    ${desks.Sum(d=>_world.DeskRate(d,lead)):F0}/с",right,18,paper);
-            }
+            int staff=_world.GalleyDesks.Count(d=>d.IsOccupied);
+            bool lead=_world.GalleyDesks.Exists(d=>d.IsOccupied && !d.IsSlackingInTwitter && d.Archetype==CoderArchetype.TeamLeadMeeter);
+            Right(_uiFont,$"Галера {staff}/4    ${_world.GalleyDesks.Sum(d=>_world.DeskRate(d,lead)):F0}/с",22,16,paper);
         }
-    }
-    private static void HudLine(string value,int x,int y,Color ink)
-    {
-        int width=(int)GameFonts.Measure(_uiFont,value,16).X+17;
-        Raylib.DrawRectangle(x,y,width,25,new Color(17,23,26,210)); TypeAt(value,x+8,y+3,16,ink);
+        if(Floor.DiscoveryTime<=0) return;
+        var species=VibeCoderCollection.All.FirstOrDefault(s=>s.Id==Floor.DiscoveryId);
+        if(species==null) return;
+        float fade=Math.Clamp(Math.Min((4-Floor.DiscoveryTime)*5,Floor.DiscoveryTime*2),0,1);
+        float center=Raylib.GetScreenWidth()*.5f, y=(center<525 ? 115 : 34)+(1-fade)*6;
+        Color accent=Raylib.Fade(VibeCoderCollection.Ink(species.Rarity),fade);
+        void Center(Font font,string line,float top,int size,Color color) =>
+            ShadowText(font,line,center-GameFonts.Measure(font,line,size).X*.5f,top,size,color);
+        Raylib.DrawLineEx(new(center-38,y-7),new(center+38,y-7),1,accent);
+        Center(small,(Floor.FirstDiscovery ? "НОВЫЙ В КОЛЛЕКЦИИ" : "ПОВТОРНЫЙ ЗАХВАТ")+"    "+VibeCoderCollection.Tag(species.Rarity),y,13,accent);
+        Center(display,species.Name,y+18,25,Raylib.Fade(paper,fade));
+        Center(small,$"{Discoveries.Count} / {VibeCoderCollection.All.Length}"+(Floor.FirstDiscovery ? $"    +${species.BonusPayout}" : ""),y+50,14,accent);
     }
 
     private static void DrawFloorPanel()
