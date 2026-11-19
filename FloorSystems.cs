@@ -518,7 +518,7 @@ public static partial class Program
     }
     private static FloorPanel floorPanel;
     private static bool sidegrades;
-    private static int floorRow, firstShopRow, seenReport;
+    private static int floorRow, seenReport;
     private static string panelMessage="";
     private static readonly Color paper=new(234,227,201,255), amber=new(232,192,110,255),
         quiet=DossierPrint.Quiet, rule=DossierPrint.Stone;
@@ -535,7 +535,7 @@ public static partial class Program
             FloorSystems.SpeakCoaching(FloorSystems.ShopGreeting);
             nextShopGreeting=Raylib.GetTime()+15;
         }
-        floorPanel=panel; floorRow=firstShopRow=0; sidegrades=false; panelMessage="";
+        floorPanel=panel; floorRow=0; sidegrades=false; panelMessage="";
         if(panel==FloorPanel.None) Raylib.DisableCursor();
         else Raylib.EnableCursor();
     }
@@ -558,11 +558,11 @@ public static partial class Program
             var weapon=FloorSystems.WeaponOrder[index-WeaponBuyOffset];
             bool owned=Floor.HasWeapon(weapon);
             var result=Floor.BuyWeapon(index-WeaponBuyOffset,TrySpendCash);
-            if(!owned && Floor.HasWeapon(weapon))
+            if(Floor.HasWeapon(weapon))
             {
                 if(guestBuyer)
                 {
-                    Net.Send(new("floor",Floor:CaptureFloor()));
+                    if(!owned) Net.Send(new("floor",Floor:CaptureFloor()));
                     Net.Send(new("equip-purchase",Text:weapon.ToString()));
                 }
                 else _weapons.Equip(weapon);
@@ -603,10 +603,13 @@ public static partial class Program
 
     private static float PanelScale => Math.Min(Raylib.GetScreenWidth()/1280f,Raylib.GetScreenHeight()/720f);
     private static Vector2 PanelOffset => (new Vector2(Raylib.GetScreenWidth(),Raylib.GetScreenHeight())-new Vector2(1280,720)*PanelScale)/2;
-    private static Rectangle ArsenalTab(int i) => new(105+i*302,164,302,35);
-    private static Rectangle FloorRowRect(int i) => sidegrades ? new(102,204+35*(i-firstShopRow),654,34) : new(102,204+55*i,floorPanel==FloorPanel.Upgrades ? 654 : 1076,51);
-
-    private const int VisibleUpgradeRows=10;
+    private static Rectangle ArsenalTab(int i) => i==0 ? new(458,32,176,52) : new(642,32,186,52);
+    private static Rectangle FloorRowRect(int i)
+    {
+        if(floorPanel!=FloorPanel.Upgrades) return new(102,204+55*i,1076,51);
+        int y=sidegrades ? 150 : 152, height=sidegrades ? 70 : 144;
+        return new(788+202*(i%2),y+(i/2)*(height+(sidegrades ? 8 : 12)),190,height);
+    }
 
     private static bool HandleFloorPanel()
     {
@@ -637,37 +640,39 @@ public static partial class Program
         if(shop)
         {
             bool next=sidegrades;
-            if(Key(KeyboardKey.Tab) || Key(KeyboardKey.Left) || Key(KeyboardKey.Right)) next=!next;
+            if(Key(KeyboardKey.Tab)) next=!next;
             if(Key(KeyboardKey.One)) next=false;
             if(Key(KeyboardKey.Two)) next=true;
             Vector2 p=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
             for(int tab=0;tab<2;tab++)
                 if(Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(p,ArsenalTab(tab))) next=tab==1;
-            if(next!=sidegrades) { sidegrades=next; floorRow=firstShopRow=0; panelMessage=""; }
+            if(next!=sidegrades) { sidegrades=next; floorRow=0; panelMessage=""; }
         }
         if(shop && Key(KeyboardKey.B)) panelMessage=FloorAction(BaitAction);
         if(shop && Key(KeyboardKey.G)) panelMessage=FloorAction(PagerAction);
         if(!shop && Key(KeyboardKey.R) && Floor.JobId>=0) panelMessage=FloorAction(RollbackAction);
         int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
-        if(Key(KeyboardKey.Down) || Key(KeyboardKey.S)) floorRow=(floorRow+1)%count;
-        if(Key(KeyboardKey.Up) || Key(KeyboardKey.W)) floorRow=(floorRow+count-1)%count;
-        if(shop && sidegrades)
-        {
-            int wheel=Math.Sign(Raylib.GetMouseWheelMove());
-            if(wheel!=0)
-            {
-                firstShopRow=Math.Clamp(firstShopRow-wheel,0,Math.Max(0,count-VisibleUpgradeRows));
-                floorRow=Math.Clamp(floorRow,firstShopRow,firstShopRow+VisibleUpgradeRows-1);
-            }
-            firstShopRow=Math.Clamp(firstShopRow,Math.Max(0,floorRow-VisibleUpgradeRows+1),floorRow);
-        }
+        int previousRow=floorRow;
+        int column=floorRow%2;
+        int rows=shop ? (count+1-column)/2 : count;
+        int stride=shop ? 2 : 1;
+        if(Key(KeyboardKey.Down) || Key(KeyboardKey.S)) floorRow=(floorRow+stride)%(rows*stride);
+        if(Key(KeyboardKey.Up) || Key(KeyboardKey.W)) floorRow=(floorRow+rows*stride-stride)%(rows*stride);
+        if(shop && (Key(KeyboardKey.Left) || Key(KeyboardKey.A))) floorRow-=column;
+        if(shop && (Key(KeyboardKey.Right) || Key(KeyboardKey.D))) floorRow=Math.Min(count-1,floorRow+1-column);
+        if(previousRow!=floorRow) panelMessage="";
         Vector2 mouse=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
-        for(int i=firstShopRow;i<count && (!sidegrades || i<firstShopRow+VisibleUpgradeRows);i++)
+        bool click=Raylib.IsMouseButtonPressed(MouseButton.Left);
+        if(shop && click && Raylib.CheckCollisionPointRec(mouse,ShopPurchase)) confirm=true;
+        for(int i=0;i<count;i++)
         {
             if(!shop && Key(KeyboardKey.One+i)) floorRow=i;
-            bool click=Raylib.IsMouseButtonPressed(MouseButton.Left);
             if(Raylib.CheckCollisionPointRec(mouse,FloorRowRect(i)) && (click || shop && Raylib.GetMouseDelta()!=Vector2.Zero))
-            { floorRow=i; confirm|=click; }
+            {
+                confirm|=click && (!shop || i==floorRow);
+                if(floorRow!=i) panelMessage="";
+                floorRow=i;
+            }
         }
         if(confirm)
         {
@@ -825,80 +830,37 @@ public static partial class Program
     }
 
     private static readonly string[] UpgradeModels=["weapon_shotgun_90s","weapon_shotgun_90s","weapon_solder_90s",
-        "weapon_uzi_90s","weapon_belt_90s","prop_bug_terminal","weapon_solder_90s","prop_xerox_printer",
-        "prop_hr_reception_desk","prop_extinguisher","weapon_belt_90s"];
-
-    private static void DrawShopCard(Texture2D preview)
-    {
-        Gear item=sidegrades ? FloorSystems.GearList[floorRow] : FloorSystems.Arsenal[floorRow];
-        bool owned=sidegrades ? Floor.Has((Sidegrade)floorRow) : item==FloorSystems.ElevatorKeycard ?
-            _world.HasElevatorKey : Floor.HasWeapon(FloorSystems.WeaponOrder[floorRow]);
-        Raylib.DrawRectangle(788,164,416,420,new(39,37,41,255));
-        Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),new(788,164,416,244),Vector2.Zero,0,Color.White);
-        TypeAt(item.Title,808,425,22,paper,true);
-        int y=464;
-        foreach(var line in LoreAndMenusUI.Wrap(item.Detail,372,17))
-        { TypeAt(line,808,y,17,quiet); y+=21; }
-        TypeAt($"${Floor.Price(item)}",808,549,20,paper);
-        TypeAt(owned ? "В арсенале" : "[Enter] Купить",997,549,19,paper);
-    }
+        "weapon_uzi_90s","weapon_belt_90s","pager","weapon_solder_90s","prop_xerox_printer",
+        "signet","prop_extinguisher","weapon_belt_90s"];
 
     private static void DrawFloorPanel()
     {
-        Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), DossierPrint.Studio);
-        bool shop = floorPanel == FloorPanel.Upgrades;
-        Texture2D preview=default;
-        if(shop)
-        {
-            string model=sidegrades ? UpgradeModels[floorRow] :
-                floorRow<FloorSystems.WeaponModels.Length ? FloorSystems.WeaponModels[floorRow] : "keycard";
-            preview=LoreAndMenusUI.RenderShopExhibit(model,65+(float)((Raylib.GetTime()-shopOpenedAt)*19%360),PanelScale*2);
-        }
-        Raylib.BeginMode2D(new Camera2D { Zoom = PanelScale, Offset = PanelOffset });
+        if(floorPanel==FloorPanel.Upgrades) { DrawBriefcase(); return; }
+        Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),DossierPrint.Studio);
+        Raylib.BeginMode2D(new Camera2D { Zoom=PanelScale, Offset=PanelOffset });
         if (floorPanel is FloorPanel.Audit or FloorPanel.BossFinale) DrawDecision();
         else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
         else
         {
             Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
-            TypeAt(shop ? "Арсенал Вероники" : "Доска контрактов", 102, 66, 43, DossierPrint.Ivory, true);
-            TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01", 970, 87, 15, quiet);
-            string info=shop ? $"Общак  ${_playerCash}     /     Приманка: {SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier).Name}" :
-                Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Floor.Progress : "Срок отсчитывается с момента подписи";
-            TypeAt(info,105,shop ? 133 : 149,shop ? 18 : 22,paper);
-            if(shop)
-                for(int tab=0;tab<2;tab++)
-                {
-                    var tabRect=ArsenalTab(tab);
-                    var activeTab = sidegrades==(tab==1);
-                    bool hovered=Raylib.CheckCollisionPointRec((Raylib.GetMousePosition()-PanelOffset)/PanelScale,tabRect);
-                    TypeAt(tab==0 ? "[1] ОРУЖИЕ И ДОСТУП" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab || hovered ? Color.White : quiet, activeTab);
-                }
-            int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
-            for(int i=firstShopRow;i<count && (!sidegrades || i<firstShopRow+VisibleUpgradeRows);i++)
+            TypeAt("Доска контрактов",102,66,43,DossierPrint.Ivory,true);
+            TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01",970,87,15,quiet);
+            TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Floor.Progress : "Срок отсчитывается с момента подписи",105,149,22,paper);
+            for(int i=0;i<FloorSystems.Jobs.Length;i++)
             {
+                var job=FloorSystems.Jobs[i];
                 Rectangle row=FloorRowRect(i);
                 bool selected=i==floorRow;
-                if(selected)
-                {
-                    Raylib.DrawRectangleRec(row, DossierPrint.Selected);
-                }
-                else if(!shop) Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
                 Color ink=selected ? Color.White : paper;
-                var gear=shop ? (sidegrades ? FloorSystems.GearList[i] : FloorSystems.Arsenal[i]) : null;
-                var job=shop ? null : FloorSystems.Jobs[i];
-                TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+(sidegrades ? 4 : 11),sidegrades ? 19 : 21,ink,true);
-                if(!shop) TypeAt(job!.Objective,row.X+342,row.Y+(sidegrades ? 7 : 15),16,selected ? paper : quiet);
-                string value=gear==FloorSystems.ElevatorKeycard ? (_world.HasElevatorKey ? "Получена" : $"${gear.Price}") : shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
-                    (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${Floor.Price(gear!)}" : $"{job!.Seconds} с    ${job.Base}";
-                TypeAt(value,shop ? 630 : 1041,row.Y+(sidegrades ? 7 : 14),17,ink);
+                if(selected) Raylib.DrawRectangleRec(row,DossierPrint.Selected);
+                else Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
+                TypeAt(job.Title,row.X+12,row.Y+11,21,ink,true);
+                TypeAt(job.Objective,row.X+342,row.Y+15,16,selected ? paper : quiet);
+                TypeAt($"{job.Seconds} с    ${job.Base}",1041,row.Y+14,17,ink);
             }
-            if(shop) DrawShopCard(preview);
-            string hint=shop ? "[B]  Сменить приманку      [G]  Вызвать Крышу" :
-                Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
-            bool greeting=shop && AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveClipId=="vo_veronika_shop_open";
-            TypeAt(panelMessage.Length>0 ? panelMessage : greeting ? FloorSystems.ShopGreeting : hint,106,shop ? 585 : 550,18,quiet);
-            TypeAt(shop ? "[W/S]  Выбор       [Enter]  Купить / снарядить       [Esc]  На этаж" :
-                "[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж",106,610,19,paper);
+            string hint=Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
+            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,550,18,quiet);
+            TypeAt("[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж",106,610,19,paper);
         }
         Raylib.EndMode2D();
     }

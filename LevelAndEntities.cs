@@ -2842,7 +2842,7 @@ public sealed partial class SkyscraperFloor1World
     }
 
     private static readonly string[] VeronikaModules=["prop_veronika_tarot_table","char_hr_veronika_body",
-        "char_hr_veronika_head","char_hr_veronika_head_blink","char_hr_veronika_hands"];
+        "char_hr_veronika_head","char_hr_veronika_head_blink"];
     private float _veronikaHeadYaw,_veronikaHeadPitch,_rackOpen,_blinkUntil,_nextBlink=3.8f;
     private int _blinkIndex;
     private bool _doubleBlink;
@@ -2870,7 +2870,8 @@ public sealed partial class SkyscraperFloor1World
         Vector3 b = HrTarotBoothPos;
         VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.85f,2.85f,24,new Color(77,33,83,255));
         Vector3 origin=b+new Vector3(0,.03f,0);
-        if (VeronikaModules.All(VisualEngine3D.HasAsset))
+        bool arms=VisualEngine3D.HasAsset("char_hr_veronika_arm_l") && VisualEngine3D.HasAsset("char_hr_veronika_arm_r");
+        if (VeronikaModules.All(VisualEngine3D.HasAsset) && (arms || VisualEngine3D.HasAsset("char_hr_veronika_hands")))
         {
             bool talking=AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeakerType==(int)SpeakerVoiceType.VeronikaTarot;
             float t=_worldClock, breath=MathF.Sin(t*1.9f)*.008f;
@@ -2880,9 +2881,24 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.AssetOriented(VeronikaModules[blink ? 3 : 2],origin+new Vector3(0,1.415f+breath,-.045f),
                 180+_veronikaHeadYaw,_veronikaHeadPitch+(talking ? 3.5f*MathF.Sin(t*8.5f) : 0),talking ? 3*MathF.Sin(t*3.2f) : 0);
             bool reading=talking || TarotVerdictTimer>0;
-            Vector3 hands=new(.028f*MathF.Sin(t*1.6f),1.310f+breath+.018f*MathF.Sin(t*3.2f)+(reading ? .025f : 0),
-                -.320f+.016f*MathF.Cos(t*1.6f));
-            VisualEngine3D.AssetOriented(VeronikaModules[4],origin+hands,180,0,reading ? 4*MathF.Sin(t*2) : 0);
+            if(arms)
+            {
+                void Arm(string model,float x,float phase)
+                {
+                    float gesture=reading ? 1f : .4f;
+                    Vector3 pivot=origin+new Vector3(-x,1.298f+breath,-.032f);
+                    VisualEngine3D.AssetOriented(model,pivot,180,3.5f*gesture*MathF.Sin(t*1.9f+phase),
+                        2.5f*gesture*MathF.Sin(t*1.45f+phase));
+                }
+                Arm("char_hr_veronika_arm_l",.138f,0);
+                Arm("char_hr_veronika_arm_r",-.138f,2.1f);
+            }
+            else
+            {
+                Vector3 hands=new(.028f*MathF.Sin(t*1.6f),1.310f+breath+.018f*MathF.Sin(t*3.2f)+(reading ? .025f : 0),
+                    -.320f+.016f*MathF.Cos(t*1.6f));
+                VisualEngine3D.AssetOriented("char_hr_veronika_hands",origin+hands,180,0,reading ? 4*MathF.Sin(t*2) : 0);
+            }
         }
         else
         {
@@ -3702,7 +3718,7 @@ public sealed partial class SkyscraperFloor1World
         Add(FocusKind.Rack,RackPos,1.2f,"Перезапустить стойку B12");
         Add(FocusKind.Coffee,CoffeePos,1.15f,"Эспрессо-разнос");
         Add(FocusKind.Deploy,DeployPos,1.12f,"DEPLOY В ПЯТНИЦУ (×2.5)");
-        Add(FocusKind.Board,HrTarotBoothPos+new Vector3(-1.25f,0,.64f),1.33f,"Доска контрактов");
+        Add(FocusKind.Board,ContractBoardFeet,1.35f,"Доска контрактов");
         foreach(var p in OfficeProps)
         {
             if(p.Kind==OfficePropKind.WaterCooler) Add(FocusKind.Cooler,p.Position,.9f,"Опрокинуть кулер");
@@ -3860,6 +3876,8 @@ public sealed partial class SkyscraperFloor1World
         LootElevatorKey(c);
     }
 
+    internal Vector3 ContractBoardFeet => HrTarotBoothPos+new Vector3(-3.35f,0,1.45f);
+
     private void DrawStations()
     {
         Color steel=new(62,71,76,255), brass=new(166,128,68,255);
@@ -3877,7 +3895,7 @@ public sealed partial class SkyscraperFloor1World
             Box(CoffeePos+Vector3.UnitY*1.35f,.74f,.09f,.63f,brass);
             DrawCoffee(CoffeePos+new Vector3(0,.91f,.18f));
         }
-        Vector3 board=HrTarotBoothPos+new Vector3(-1.25f,1.32f,.64f);
+        Vector3 board=ContractBoardFeet+Vector3.UnitY*1.35f;
         Box(board,.73f,.48f,.09f,steel);
         Box(board+Vector3.UnitZ*.055f,.62f,.34f,.025f,new(202,185,146,255));
         for(int i=0;i<3;i++) Box(board+new Vector3(-.07f,.08f-.08f*i,.074f),.35f,.016f,.01f,steel);

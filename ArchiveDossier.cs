@@ -263,11 +263,11 @@ public static partial class LoreAndMenusUI
 
     internal static Texture2D RenderShopExhibit(string model,float yaw,float density)
     {
-        EnsureExhibitTarget(Math.Max(1,(int)(416*density)),Math.Max(1,(int)(244*density)));
-        Camera3D cam=new() { Position=new(0,1.26f,3),Target=new(0,.55f,0),Up=Vector3.UnitY,
-            FovY=1.48f,Projection=CameraProjection.Orthographic };
+        EnsureExhibitTarget(Math.Max(1,(int)(588*density)),Math.Max(1,(int)(254*density)));
+        Camera3D cam=new() { Position=new(0,.92f,3),Target=new(0,.64f,0),Up=Vector3.UnitY,
+            FovY=1f,Projection=CameraProjection.Orthographic };
         Raylib.BeginTextureMode(_exhibitTexture);
-        Raylib.ClearBackground(new(35,33,37,255));
+        Raylib.ClearBackground(Color.Blank);
         Raylib.BeginMode3D(cam);
         VisualEngine3D.DrawArchiveModel(model,1,yaw,false,cam.Position,shop:true);
         Raylib.EndMode3D();
@@ -415,7 +415,7 @@ internal static unsafe partial class VisualEngine3D
                     vec4 swatch = texture(texture0,uv) * colDiffuse;
                     vec3 n = normalize(normalWS), v = normalize(eye-posWS);
                     if(surface==3) { color=vec4(vec3(.029,.050,.063)+vec3(.07,.13,.14)*pow(1.-abs(dot(n,v)),3.),1.); return; }
-                    if (surface != 0) {
+                    if (surface == 1 || surface == 2) {
                         vec3 key = normalize(vec3(-.65,.80,.65));
                         float edge = max(0.,dot(n,normalize(vec3(.32,.65,-.70))));
                         float radial = length(posWS.xz);
@@ -436,7 +436,12 @@ internal static unsafe partial class VisualEngine3D
                     float bounce = max(dot(n,normalize(vec3(.5,.05,.82))),0.);
                     vec3 light = vec3(.34,.36,.39) + vec3(.87,.72,.55)*max(dot(n,key),0.)
                                  + vec3(.09,.18,.21)*bounce;
-                    color = vec4(pigment * light + rim * vec3(.31,.63,.68), swatch.a);
+                    vec3 result=pigment*light+rim*vec3(.31,.63,.68);
+                    if(surface==4) {
+                        float gleam=pow(max(0.,dot(n,normalize(key+v))),16.);
+                        result+=pigment*vec3(.28,.21,.15)+vec3(.29,.22,.15)*gleam;
+                    }
+                    color=vec4(result,swatch.a);
                 }
                 """);
             if (dossierShader.Id == 0 || dossierShader.Id == Rlgl.GetShaderIdDefault())
@@ -454,27 +459,65 @@ internal static unsafe partial class VisualEngine3D
             var pose = Matrix4x4.CreateScale(radius, height, radius) * Matrix4x4.CreateTranslation(0, from, 0);
             Raylib.DrawMesh(stageCylinder.Meshes[0], metal, Matrix4x4.Transpose(pose));
         }
-        StageBand(.67f, -.102f, .052f, 1);
-        StageBand(.704f, -.050f, .009f, 2);
-        StageBand(.70f, -.041f, .041f, 1);
-        Raylib.SetShaderValue(dossierShader, dossierSurface, hidden ? 3 : 0, ShaderUniformDataType.Int);
+        if(!shop)
+        {
+            StageBand(.67f, -.102f, .052f, 1);
+            StageBand(.704f, -.050f, .009f, 2);
+            StageBand(.70f, -.041f, .041f, 1);
+        }
+        Raylib.SetShaderValue(dossierShader, dossierSurface, hidden ? 3 : shop ? 4 : 0, ShaderUniformDataType.Int);
         Matrix4x4 transform = tool ?
             Matrix4x4.CreateRotationX(-1.22f) * Matrix4x4.CreateRotationZ(-.48f) : Matrix4x4.Identity;
         transform *= Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationY(yaw * MathF.PI / 180)
                    * Matrix4x4.CreateTranslation(0, tool ? .55f : 0, 0);
         if(shop)
         {
+            if(asset is "pager" or "signet")
+            {
+                Rlgl.PushMatrix();
+                Rlgl.Translatef(0,.64f,0);
+                Rlgl.Rotatef(yaw+12,0,1,0);
+                Rlgl.Rotatef(-7,0,0,1);
+                Color brass=new(186,142,76,255);
+                if(asset=="pager")
+                {
+                    Raylib.DrawCube(Vector3.Zero,1.32f,.64f,.25f,new(44,37,39,255));
+                    Raylib.DrawCube(new(-.12f,.05f,.14f),.89f,.33f,.04f,brass);
+                    Raylib.DrawCube(new(-.12f,.05f,.17f),.82f,.26f,.025f,new(149,158,117,255));
+                    for(int i=0;i<5;i++) Raylib.DrawCube(new(.39f,.16f-i*.064f,.14f),.24f,.023f,.02f,new(16,15,16,255));
+                    Raylib.DrawCube(new(.40f,-.19f,.15f),.15f,.095f,.05f,new(152,50,48,255));
+                    Raylib.DrawCube(new(-.36f,.33f,0),.16f,.06f,.11f,brass);
+                }
+                else
+                {
+                    const int segments=40;
+                    for(int i=0;i<segments;i++)
+                    {
+                        Vector3 Ring(int j) => new(.32f*MathF.Cos(j*2*MathF.PI/segments),.32f*MathF.Sin(j*2*MathF.PI/segments)-.04f,0);
+                        Raylib.DrawCylinderEx(Ring(i),Ring(i+1),.066f,.066f,10,brass);
+                    }
+                    Raylib.DrawCube(new(0,.23f,0),.45f,.26f,.20f,brass);
+                    Raylib.DrawCube(new(0,.23f,.11f),.36f,.18f,.035f,new(80,20,30,255));
+                    Raylib.DrawCube(new(0,.23f,.14f),.17f,.035f,.02f,brass);
+                }
+                Rlgl.PopMatrix();
+                return;
+            }
             if(asset=="keycard")
             {
                 Rlgl.PushMatrix();
                 Rlgl.Translatef(0,.64f,0);
                 Rlgl.Rotatef(yaw,0,1,0);
-                Rlgl.Rotatef(-9,0,0,1);
+                Rlgl.Rotatef(-6,0,0,1);
+                Rlgl.Scalef(1.25f,1.25f,1.25f);
                 Raylib.DrawCube(Vector3.Zero,.99f,.64f,.052f,new(146,44,54,255));
                 foreach(int side in new[]{-1,1})
                 {
                     float z=side*.029f;
-                    Raylib.DrawCube(new(-.26f,.01f,z),.20f,.17f,.012f,new(228,184,104,255));
+                    Raylib.DrawCube(new(-.27f,-.17f,z),.16f,.09f,.012f,new(228,184,104,255));
+                    Raylib.DrawCube(new(-.27f,.06f,z),.20f,.22f,.012f,new(44,33,40,255));
+                    Raylib.DrawSphere(new(-.27f,.085f,z+side*.009f),.047f,new(210,189,160,255));
+                    Raylib.DrawCube(new(-.27f,-.012f,z+side*.012f),.13f,.046f,.012f,new(210,189,160,255));
                     // Raised Cyrillic СБ on both faces of the badge.
                     void LetterStroke(float x,float y,float w,float h) =>
                         Raylib.DrawCube(new(side*x,y,z),w,h,.014f,new(236,213,173,255));
@@ -493,9 +536,13 @@ internal static unsafe partial class VisualEngine3D
             }
             var bounds=ModelBounds(asset);
             Vector3 extent=bounds.Max-bounds.Min;
-            float fit=1.16f/Math.Max(extent.X,Math.Max(extent.Y,extent.Z));
+            bool lengthwise=extent.Z>extent.X && asset.StartsWith("weapon_");
+            float angle=(yaw+(lengthwise ? 90 : 0))*MathF.PI/180;
+            float width=Math.Abs(MathF.Cos(angle))*extent.X+Math.Abs(MathF.Sin(angle))*extent.Z;
+            float depth=Math.Abs(MathF.Sin(angle))*extent.X+Math.Abs(MathF.Cos(angle))*extent.Z;
+            float fit=Math.Min(2.02f/width,.88f/(extent.Y+.095f*depth));
             transform=Matrix4x4.CreateTranslation(-(bounds.Max+bounds.Min)/2)*Matrix4x4.CreateScale(fit)
-                *Matrix4x4.CreateRotationZ(-.16f)*Matrix4x4.CreateRotationY(yaw*MathF.PI/180)
+                *Matrix4x4.CreateRotationY(angle)
                 *Matrix4x4.CreateTranslation(0,.64f,0);
         }
         bool partner = asset == "char_partner_90s";

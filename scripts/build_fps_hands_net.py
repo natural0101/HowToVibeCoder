@@ -1,17 +1,30 @@
-"""Standalone builder & runtime-accurate verifier for assets/models/fps_hands_net.glb.
+"""Standalone builder & runtime-accurate verifier for assets/models/fps_hands_net.glb
+(and matching tilted hammer-grip alignment for assets/models/weapon_net_90s.glb).
 
-Fixes the two exact issues from #160 & #161 without touching generate_anatomy.py or any .cs files:
-  1. Reposes the right hand from the old pronated over-the-top soldering-iron grip into a
-     natural, upright/slightly canted ergonomic broom/net shake-hands grip wrapped directly
-     around the Cobalt Blue Electrical Tape & wood grip zone (thumb on top/inner-left pointing
-     forward along the shaft, four fingers curling snugly underneath and up the inner-left side
-     of the blue electrical tape).
-  2. Angles the wrist, white shirt cuff, and crimson jacket sleeve 45 deg downward and outward
-     to the lower-right (-X_arm, -Y_arm) away from the shaft axis so the cyan plastic butt cap
-     (z_local = -0.104..-0.084) projects freely into open air above and to the inner-left of the
-     wrist/cuff with > 5.5 cm clearance and zero sleeve overlap!
-  3. Preserves FINAL overlap = 0 against weapon_net_90s.glb and renders a 2-panel proof
-     (Exact In-Game POV Camera + Right-Wrist Close-Up) to net_grip_v2_proof.png.
+Implements the exact anatomical Hammer Grip from #168 & #170 without touching any .cs files:
+  1. Straight Natural Wrist (0 deg broken bend!):
+     - The forearm (sleeveEnd -> white cuff -> wrist) and the back of the hand (wrist -> MCP knuckles)
+       follow ONE smooth straight anatomical line (backwards == direction in fitted_sleeve, and
+       lowerarm_r roll frame aligned with hand_r).
+  2. Proper ~65 deg Hammer-Grip Angle Between Forearm and Shaft:
+     - The right forearm enters from the lower-right of the screen, while the net handle passes
+       THROUGH the closed upright fist at ~64-66 deg relative to the forearm:
+       * The pinky-side bottom of the fist grips the lower blue electrical tape, with the stained
+         birch wood and cyan plastic butt cap exiting cleanly DOWNWARD-BACK out below the pinky,
+         completely below and to the inner-left of the wrist & white shirt cuff!
+       * The index-side top of the fist grips the upper blue electrical tape, with the silver
+         aluminum ferrule and net hoop extending UPWARD-FORWARD-LEFT!
+  3. Tight, Clean, Anatomical Closed Fist:
+     - All 5 digit roots (thumb, index, middle, ring, pinky) stay at their exact MPFB anatomical
+       sockets on hand_r: pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest)
+       (zero detached/swollen palm, zero stretched crab-claw thumb!).
+     - All 4 fingers wrap around the front/left of the blue electrical tape and curl snugly back
+       into the palm using twist-free radial orthonormal frames (targ_b @ rest_b).
+     - The thumb wraps tightly OVER the top-left of the blue electrical tape and locks down against
+       the middle phalanx of the index/middle finger.
+  4. Preserves FINAL overlap = 0 tris against weapon_net_90s.glb and renders a 2-panel proof
+     (Panel A: Exact First-Person POV; Panel B: Macro Close-Up of the Closed Fist, Straight Wrist,
+     Wrapped Thumb & Perpendicular Cyan Butt-Cap) to net_grip_v3_proof.png.
 """
 import math
 import os
@@ -32,131 +45,271 @@ ARTIFACT_DIR = Path(r"C:\Users\se-20\.gemini\antigravity\brain\50fc13b9-24ea-454
 MY_SCRATCH_DIR = Path(r"C:\Users\se-20\.gemini\antigravity\brain\5a288ef4-482c-487e-b05f-e3d0e2267cf7\scratch")
 SCREENSHOTS_DIR = ROOT / "screenshots"
 
+# Hammer-grip shaft parameters in arm-local space (X_ga, Y_ga, Z_ga)
+# where DrawCaptureTool places weapon_net_90s origin (0,0,0) at c0 = (-0.180, -0.150, 0.620):
+C0_GA = V((-0.180, -0.150, 0.620))
+# Fist center on the blue electrical tape (corresponding to s = -0.005 m on the handle):
+C_FIST_GA = V((-0.165, -0.162, 0.630))
+SHAFT_PITCH_RAD = math.radians(44.0)
+SHAFT_YAW_RAD = math.radians(0.0)  # in arm-local space (+X_ga is inner-left)
 
-def net_shaft_radius(z_ga):
-    """Exact outer radius of weapon_net_90s.glb shaft at arm-local z_ga (where grip origin is z_ga = 0.620)."""
-    z_local = z_ga - 0.620
-    if z_local < -0.080:
+S_GA = V((
+    math.sin(SHAFT_YAW_RAD) * math.cos(SHAFT_PITCH_RAD),
+    math.sin(SHAFT_PITCH_RAD),
+    math.cos(SHAFT_YAW_RAD) * math.cos(SHAFT_PITCH_RAD),
+)).normalized()
+
+
+def build_tilted_weapon_net():
+    """Transforms the clean un-tilted weapon_net_90s_orig.glb so that:
+      - The cylindrical handle (s <= 0.170 m: cyan butt cap, birch wood, blue electrical tape,
+        aluminum ferrule, and wire lashing) lies along the +44 deg hammer-grip shaft axis S_GA
+        centered at C_FIST_GA (so the cyan butt cap exits downward-back out below the pinky!).
+      - Above the wire lashing (s > 0.170 m), the bent coat-hanger wire struts & hoop bend smoothly
+        forward by -16 deg (to +28 deg pitch) so the net hoop & diamond mesh bag sit in the ideal
+        lower-center first-person framing!
+    """
+    orig_path = MY_SCRATCH_DIR / "weapon_net_90s_orig.glb"
+    if not orig_path.exists():
+        shutil.copy2(OUT_MODELS / "weapon_net_90s.glb", orig_path)
+
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=str(orig_path))
+    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+
+    # Build orthonormal frame (X_handle, Y_handle, S_RL) in Raylib weapon-local space
+    # Note: in Raylib local space, X_rl = -X_ga, Y_rl = Y_ga, Z_rl = Z_ga
+    s_rl = V((-S_GA.x, S_GA.y, S_GA.z)).normalized()
+    x_rl = V((1.0, 0.0, 0.0))
+    x_rl = (x_rl - s_rl * s_rl.dot(x_rl)).normalized()
+    y_rl = s_rl.cross(x_rl).normalized()
+
+    # Hoop forward bend above s_knee = 0.168 m so the net rim is level/forward in POV
+    hoop_pitch = math.radians(26.0)
+    s_hoop_rl = V((-math.sin(SHAFT_YAW_RAD) * math.cos(hoop_pitch), math.sin(hoop_pitch), math.cos(SHAFT_YAW_RAD) * math.cos(hoop_pitch))).normalized()
+    x_hoop_rl = (V((1.0, 0.0, 0.0)) - s_hoop_rl * s_hoop_rl.x).normalized()
+    y_hoop_rl = s_hoop_rl.cross(x_hoop_rl).normalized()
+
+    c_fist_local_rl = V((-(C_FIST_GA.x - C0_GA.x), C_FIST_GA.y - C0_GA.y, C_FIST_GA.z - C0_GA.z))
+    s_pivot = -0.005  # middle of the Cobalt Blue Electrical Tape (-0.051..+0.039)
+    s_knee = 0.168
+    p_knee_rl = c_fist_local_rl + s_rl * (s_knee - s_pivot)
+
+    for o in meshes:
+        for v in o.data.vertices:
+            vw = o.matrix_world @ v.co
+            p_old = V((vw.x, vw.z, -vw.y))
+            s = p_old.z
+            if s <= s_knee:
+                ds = s - s_pivot
+                p_new = c_fist_local_rl + x_rl * p_old.x + y_rl * p_old.y + s_rl * ds
+            else:
+                # Smooth C1 transition across the wire lashing neck (0.168..0.195)
+                ds_above = s - s_knee
+                w = min(1.0, max(0.0, ds_above / 0.028))
+                w = w * w * (3.0 - 2.0 * w)
+                s_dir = (s_rl * (1.0 - w) + s_hoop_rl * w).normalized()
+                x_dir = (x_rl * (1.0 - w) + x_hoop_rl * w).normalized()
+                y_dir = (y_rl * (1.0 - w) + y_hoop_rl * w).normalized()
+                # Integrate centerline softly
+                s_mid = (s_rl * (1.0 - 0.5 * w) + s_hoop_rl * (0.5 * w)).normalized()
+                p_new = p_knee_rl + s_mid * ds_above + x_dir * p_old.x + y_dir * p_old.y
+            v.co = V((p_new.x, -p_new.z, p_new.y))
+        o.matrix_world = Matrix.Identity(4)
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+        bm.to_mesh(o.data)
+        bm.free()
+        o.data.update()
+
+    out_net = OUT_MODELS / "weapon_net_90s.glb"
+    bpy.ops.export_scene.gltf(
+        filepath=str(out_net),
+        export_format="GLB",
+        export_normals=True,
+        export_animations=False,
+        export_cameras=False,
+        export_lights=False,
+    )
+    for sub in ("bin/Release/net10.0/assets/models", "bin/Debug/net10.0/assets/models"):
+        dest = ROOT / sub
+        if dest.exists():
+            shutil.copy2(out_net, dest / "weapon_net_90s.glb")
+    print(f"[EXPORTED & SYNCED TILTED NET] {out_net} ({out_net.stat().st_size} bytes)")
+
+
+def net_shaft_radius_at_s(s):
+    """Exact outer radius of weapon_net_90s.glb handle at axial coordinate s (where s_pivot = -0.005)."""
+    if s < -0.080:
         return 0.0136  # cyan mop cap
-    if -0.052 <= z_local <= 0.040:
+    if -0.052 <= s <= 0.040:
         return 0.0134  # blue electrical tape grip
-    if 0.040 < z_local <= 0.063:
-        return 0.0127  # birch wood upper grip
-    if 0.063 < z_local <= 0.129:
+    if 0.040 < s <= 0.063:
+        return 0.0128  # birch wood upper grip
+    if 0.063 < s <= 0.129:
         return 0.0131  # aluminum ferrule
-    return 0.0154      # front tape & wire lashing
+    return 0.0156      # front tape & wire lashing
 
 
 def net_palm_fit(p):
-    """Conforms right-hand skin vertices smoothly outside the cylindrical mop handle & blue tape
-    at (-0.180, -0.150, z_ga) with a clean 1.15 mm safety cushion so BVH overlap == 0."""
-    x = p.x + 0.180
-    y = p.y + 0.150
-    r = math.hypot(x, y)
-    if 0.510 < p.z < 0.785:
-        r_min = net_shaft_radius(p.z) + 0.00145
+    """Conforms right-hand skin vertices smoothly outside the tilted cylindrical mop handle
+    centered at C_FIST_GA along S_GA with a 1.65 mm safety cushion so BVH overlap == 0."""
+    rel = p - C_FIST_GA
+    ds = rel.dot(S_GA)
+    s = ds - 0.005
+    if -0.115 < s < 0.175:
+        rad_vec = rel - S_GA * ds
+        r = rad_vec.length
+        r_min = net_shaft_radius_at_s(s) + 0.00195
         if 0.0 < r < r_min:
-            return V((-0.180 + x * r_min / r, -0.150 + y * r_min / r, p.z))
+            return C_FIST_GA + S_GA * ds + rad_vec * (r_min / r)
     return p
 
 
 def build_net_right_pose(ga):
-    """Ergonomic upright/canted broom/racket grip on the blue-taped shaft:
-      - Shaft centerline is (-0.180, -0.150, z_ga).
-      - Grip center c = (-0.180, -0.150, 0.664) (+4.4 cm up the shaft from 0.620, wrapping the blue
-        electrical tape & wood grip zone).
-      - Hand & forearm approach from below-outer-right at a natural ~58 deg upright racket angle
-        (f_target = (0.45, 0.73, 0.514)), so the wrist (z_ga ~ 0.630, y_ga ~ -0.214, x_ga ~ -0.236)
-        and white shirt cuff drop cleanly DOWNWARD and OUTWARD to the lower-right, while the rear
-        of the handle and cyan butt cap (z_ga = 0.516..0.536, y_ga = -0.150, x_ga = -0.180) project
-        backward into wide-open air above-left of the wrist & sleeve (> 7.5 cm clearance!).
+    """True Anatomical 64-deg Hammer-Grip Closed Fist around (C_FIST_GA, S_GA):
+      - All 5 digit roots remain at their exact MPFB anatomical sockets on hand_r:
+        pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest).
+      - Straight wrist & forearm: lowerarm_r direction (-f_target) is 100% collinear with the
+        back of the hand (f_target), and fitted_sleeve has backwards == direction (0.0 deg cuff bend).
+      - All 4 fingers wrap tightly around the front-left of the Cobalt Blue Electrical Tape
+        using circular-chord joint targets and twist-free radial dorsal frames (targ_b @ rest_b).
+      - The thumb wraps tightly over the top-left of the blue electrical tape and locks down
+        against the middle phalanx of the index/middle finger.
     """
     j = lambda key: ga["JOINT"]["r-" + key]
     DIGITS = ga["DIGITS"]
     frame = ga["frame"]
 
-    c = V((-0.180, -0.150, 0.648))
-    wrist = j("hand")
-    mid = j("finger-3-1")
+    wrist_rest = j("hand")
+    mid_rest = j("finger-3-1")
+    f_rest = (mid_rest - wrist_rest).normalized()
+    k_rest = (j("finger-2-1") - j("finger-5-1")).normalized()
+    palm_rest = k_rest.cross(f_rest).normalized()
+    t_rest = palm_rest.cross(k_rest).normalized()
+    rest_k_mat = Matrix((k_rest, t_rest, palm_rest))
+    away_rest = -palm_rest
 
-    palm_sign = -1.0
-    f_rest = (mid - wrist).normalized()
-    u_rest = (j("finger-2-1") - j("finger-5-1")) * palm_sign
-    a_rest = (u_rest - f_rest * f_rest.dot(u_rest)).normalized()
-    palm_rest = f_rest.cross(a_rest).normalized()
-    rest_frame = Matrix((f_rest, a_rest, palm_rest)).transposed()
+    # Palm faces inward-left (+X_ga) and slightly down-back, perpendicular to shaft S_GA:
+    N_raw = V((0.91, -0.12, -0.39)).normalized()
+    N_palm = (N_raw - S_GA * S_GA.dot(N_raw)).normalized()
+    T_fwd = N_palm.cross(S_GA).normalized()
 
-    # Upright ergonomic racket/broom hand orientation:
-    f_target = V((0.45, 0.73, 0.514)).normalized()
-    palm_raw = V((0.86, 0.22, -0.46)).normalized()
-    palm_target = (palm_raw - f_target * f_target.dot(palm_raw)).normalized()
-    a_target = palm_target.cross(f_target).normalized()
-    target_frame = Matrix((f_target, a_target, palm_target)).transposed()
-    hand = target_frame @ rest_frame.transposed()
+    # -16 deg ulnar grip slant in the palm plane so 3D angle(f_target, S_GA) ~ 63 deg
+    # and the forearm enters smoothly from the lower-right corner of the screen:
+    ag = math.radians(-16.0)
+    K_t = (S_GA * math.cos(ag) + T_fwd * math.sin(ag)).normalized()
+    T_t = (T_fwd * math.cos(ag) - S_GA * math.sin(ag)).normalized()
+    hand_rot = Matrix((K_t, T_t, N_palm)).transposed() @ rest_k_mat
+    f_target = (hand_rot @ f_rest).normalized()
 
-    knuckle = c + V((-0.025, -0.010, 0.006))
-    dest_wrist = knuckle - hand @ (mid - wrist)
-    # Forearm drops downward (-Y) and outward to the right (-X) toward the offscreen right elbow anchor
-    dest_elbow = dest_wrist + V((-0.24, -0.28, -0.12))
+    # Place middle MCP knuckle at (-N_palm * 0.0185 + T_fwd * 0.0125) (theta_0 ~ -55 deg)
+    # and curl the 4 fingers tightly at radii (19.6..16.8 mm) so they sweep ~240 deg around the tape!
+    mid_knuckle = C_FIST_GA - N_palm * 0.0185 + T_fwd * 0.0125 + S_GA * 0.0020
+    dest_wrist = mid_knuckle - hand_rot @ (mid_rest - wrist_rest)
+    # 100% straight wrist: forearm axis is strictly collinear with f_target!
+    forearm_len = (wrist_rest - j("elbow")).length
+    dest_elbow = dest_wrist - f_target * forearm_len
 
     transforms = {}
+    across = j("finger-2-1") - j("finger-5-1")
     for name, a, b, p, q in [
-        ("upperarm", j("shoulder"), j("elbow"), dest_elbow - V((0, 0, 0.2)), dest_elbow),
-        ("lowerarm", j("elbow"), wrist, dest_elbow, dest_wrist),
+        ("upperarm", j("shoulder"), j("elbow"), dest_elbow - f_target * 0.20, dest_elbow),
+        ("lowerarm", j("elbow"), wrist_rest, dest_elbow, dest_wrist),
     ]:
         src = b - a
         dst = q - p
         u = src.normalized()
         stretch = Matrix.Identity(3) + Matrix([list(u * u[n]) for n in range(3)]) * (dst.length / src.length - 1.0)
-        across = j("finger-2-1") - j("finger-5-1")
-        rotation = frame(dst, hand @ across) @ frame(src, across).transposed()
+        rotation = frame(dst, hand_rot @ across) @ frame(src, across).transposed()
         transforms[name + "_r"] = (a, p, rotation @ stretch)
-    transforms["hand_r"] = (wrist, dest_wrist, hand)
+    transforms["hand_r"] = (wrist_rest, dest_wrist, hand_rot)
 
     signet = None
     for d, name in enumerate(DIGITS, 1):
-        chain = [j(f"finger-{d}-{k}") for k in range(1, 5)]
+        # Exact anatomical root socket on hand_r (NEVER teleport digit roots!):
+        pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest)
+
         if d == 1:
-            # Thumb wraps over the top-outer to top-inner side of the shaft pointing forward toward the hoop
-            pos = c + V((-0.026, 0.004, -0.004))
-            thumb_targets = [
-                c + V((-0.015, 0.021, 0.015)),
-                c + V(( 0.001, 0.023, 0.031)),
-                c + V(( 0.014, 0.017, 0.044)),
+            # Thumb: starts at its anatomical CMC socket (now flush behind the handle at t ~ -4.3cm),
+            # wraps tightly around the top-front/left (+T_fwd -> +N_palm) of the blue electrical tape,
+            # and curls its distal phalanx down (-S_GA, -T_fwd) over the middle phalanx of the index/middle finger!
+            thumb_segs = [
+                # k=1 (metacarpal): forward (+T_fwd) and slightly up (+S_GA) along the upper outer side of the handle
+                (T_fwd * 0.88 + S_GA * 0.36 + N_palm * 0.31, -N_palm * 0.72 + S_GA * 0.54 - T_fwd * 0.43),
+                # k=2 (proximal phalanx): wraps over the top-left of the blue electrical tape (+T_fwd, +N_palm)
+                (T_fwd * 0.52 + N_palm * 0.84 + S_GA * 0.14, S_GA * 0.76 + T_fwd * 0.52 - N_palm * 0.38),
+                # k=3 (distal phalanx): curls inward and downward (-T_fwd, -S_GA, +N_palm) to lock against index/middle finger
+                (-T_fwd * 0.62 + N_palm * 0.58 - S_GA * 0.53, N_palm * 0.78 + T_fwd * 0.48 + S_GA * 0.40),
             ]
-            parent = hand
-            for k in range(3):
-                rest = chain[k + 1] - chain[k]
-                direction = (thumb_targets[k] - pos).normalized()
-                rot = (parent @ rest).rotation_difference(direction).to_matrix() @ parent
-                parent = rot
-                transforms[f"{name}_{k+1:02}_r"] = (chain[k], pos.copy(), rot)
-                delta = rot @ rest
-                pos += delta
+            for k, (dir_v, dor_v) in enumerate(thumb_segs, 1):
+                rest_start = j(f"finger-1-{k}")
+                rest_end = j(f"finger-1-{k+1}")
+                delta_rest = rest_end - rest_start
+                along_rest = delta_rest.normalized()
+                dorsal_rest = (away_rest - along_rest * along_rest.dot(away_rest)).normalized()
+                rest_b = Matrix((along_rest, dorsal_rest, along_rest.cross(dorsal_rest)))
+
+                along = dir_v.normalized()
+                dorsal = (dor_v - along * along.dot(dor_v)).normalized()
+                targ_b = Matrix((along, dorsal, along.cross(dorsal))).transposed()
+                rot = targ_b @ rest_b
+
+                transforms[f"thumb_{k:02}_r"] = (rest_start, pos.copy(), rot)
+                pos = pos + rot @ delta_rest
         else:
-            # Four fingers (index d=2 .. pinky d=5) curling snugly underneath (-90 deg) and up the inner-left side
-            along = (0.025, 0.008, -0.009, -0.026)[d - 2]
-            azimuth = math.radians((-156.0, -152.0, -148.0, -142.0)[d - 2])
-            radius = (0.027, 0.028, 0.027, 0.025)[d - 2]
-            pos = c + V((radius * math.cos(azimuth), radius * math.sin(azimuth), along))
-            parent = hand
-            for k in range(3):
-                rest = chain[k + 1] - chain[k]
-                next_radius = ((0.022, 0.0195, 0.0185) if d == 5 else (0.0235, 0.0205, 0.0192))[k]
-                dz = rest.length * 0.06
-                chord_sq = max(1e-6, rest.length_squared - dz * dz)
-                cos_sweep = (radius ** 2 + next_radius ** 2 - chord_sq) / (2.0 * radius * next_radius)
-                azimuth += math.acos(max(-1.0, min(1.0, cos_sweep)))
-                joint_pt = c + V((next_radius * math.cos(azimuth), next_radius * math.sin(azimuth), pos.z - c.z + dz))
-                direction = (joint_pt - pos).normalized()
-                radius = next_radius
-                rot = (parent @ rest).rotation_difference(direction).to_matrix() @ parent
-                parent = rot
-                transforms[f"{name}_{k+1:02}_r"] = (chain[k], pos.copy(), rot)
-                delta = rot @ rest
-                if d == 4 and k == 0:
-                    signet = (pos + delta * 0.42, delta.normalized())
-                pos += delta
+            # Four fingers (index d=2 .. pinky d=5):
+            # Curl smoothly around the cylindrical blue-taped handle (C_FIST_GA, S_GA) in the
+            # (T_fwd, N_palm) plane from their exact anatomical MCP root sockets!
+            rel = pos - C_FIST_GA
+            s_cur = rel.dot(S_GA)
+            t_cur = rel.dot(T_fwd)
+            n_cur = rel.dot(N_palm)
+            r_cur = math.hypot(t_cur, n_cur)
+            theta_cur = math.atan2(n_cur, t_cur)
+
+            radii = (0.0188, 0.0172, 0.0164) if d == 5 else (0.0198, 0.0180, 0.0170)
+            for k in range(1, 4):
+                rest_start = j(f"finger-{d}-{k}")
+                rest_end = j(f"finger-{d}-{k+1}")
+                delta_rest = rest_end - rest_start
+                L = delta_rest.length
+
+                r_next = radii[k - 1]
+                ds = -0.0012 if k == 1 else (-0.0018 if k == 2 else -0.0010)
+                chord_sq = max(1e-6, L * L - ds * ds)
+                cos_dtheta = (r_cur * r_cur + r_next * r_next - chord_sq) / (2.0 * r_cur * r_next)
+                dtheta = math.acos(max(-1.0, min(1.0, cos_dtheta)))
+                theta_next = theta_cur + dtheta
+                s_next = s_cur + ds
+
+                joint_next = (
+                    C_FIST_GA
+                    + S_GA * s_next
+                    + (T_fwd * math.cos(theta_next) + N_palm * math.sin(theta_next)) * r_next
+                )
+                along = (joint_next - pos).normalized()
+
+                # Outward radial dorsal normal on the cylinder -> zero phalanx roll twist!
+                theta_mid = 0.5 * (theta_cur + theta_next)
+                dor_raw = T_fwd * math.cos(theta_mid) + N_palm * math.sin(theta_mid)
+                dorsal = (dor_raw - along * along.dot(dor_raw)).normalized()
+
+                along_rest = delta_rest.normalized()
+                dorsal_rest = (away_rest - along_rest * along_rest.dot(away_rest)).normalized()
+                rest_b = Matrix((along_rest, dorsal_rest, along_rest.cross(dorsal_rest)))
+                targ_b = Matrix((along, dorsal, along.cross(dorsal))).transposed()
+                rot = targ_b @ rest_b
+
+                transforms[f"{name}_{k:02}_r"] = (rest_start, pos.copy(), rot)
+                delta = rot @ delta_rest
+                if d == 4 and k == 1:
+                    signet = (pos + delta * 0.36, delta.normalized())
+                pos = pos + delta
+                r_cur = r_next
+                theta_cur = theta_next
+                s_cur = s_next
 
     return transforms, signet
 
@@ -166,8 +319,11 @@ def build_net_left_pose(ga):
 
 
 def build_and_export_fps_hands_net():
+    build_tilted_weapon_net()
+
     ga = runpy.run_path(str(ROOT / "generate_anatomy.py"))
     orig_contact_pose = ga["contact_pose"]
+    orig_fitted_sleeve = ga["fitted_sleeve"]
 
     def custom_contact_pose(kind, side):
         if kind == "fps_net":
@@ -177,12 +333,42 @@ def build_and_export_fps_hands_net():
                 return build_net_left_pose(ga)
         return orig_contact_pose(kind, side)
 
+    def custom_fitted_sleeve(side, transforms):
+        if side == "r":
+            # Eliminate the 14.1 deg MPFB A-pose wrist-to-elbow bend in fitted_sleeve
+            # by temporarily making JOINT["r-elbow"] collinear with dest_elbow - dest_wrist!
+            origin, wrist, hand = transforms["hand_r"]
+            elbow = transforms["lowerarm_r"][1]
+            direction = (elbow - wrist).normalized()
+            old_r_elbow = ga["JOINT"]["r-elbow"].copy()
+            ga["JOINT"]["r-elbow"] = origin + (hand.transposed() @ direction) * (old_r_elbow - origin).length
+            try:
+                end = orig_fitted_sleeve(side, transforms)
+            finally:
+                ga["JOINT"]["r-elbow"] = old_r_elbow
+            # Shift Right jacket sleeve uv.x from 2+u to u (< 1.99) so the runtime sleevePull
+            # vertex shader does not kink the right wrist toward the Uzi/Shotgun elbow anchor
+            # (fragment shader twill weave sin(6.283 * 235 * uv.x) is 2*pi periodic and identical!).
+            for obj in bpy.context.scene.objects:
+                if obj.type == "MESH" and obj.name in ("Tailored jacket", "Horn button", "Button thread", "Sleeve vent"):
+                    uv_layer = obj.data.uv_layers.get("ViewModel")
+                    if uv_layer:
+                        for loop in obj.data.loops:
+                            uv = uv_layer.data[loop.index].uv
+                            if uv.x > 1.99:
+                                uv_layer.data[loop.index].uv = (uv.x - 2.0, uv.y)
+            return end
+        return orig_fitted_sleeve(side, transforms)
+
     ga["contact_pose"] = custom_contact_pose
     ga["solder_palm_fit"] = net_palm_fit
+    ga["fitted_sleeve"] = custom_fitted_sleeve
     ga["human"].__globals__["contact_pose"] = custom_contact_pose
     ga["human"].__globals__["solder_palm_fit"] = net_palm_fit
+    ga["human"].__globals__["fitted_sleeve"] = custom_fitted_sleeve
     ga["export"].__globals__["contact_pose"] = custom_contact_pose
     ga["export"].__globals__["solder_palm_fit"] = net_palm_fit
+    ga["export"].__globals__["fitted_sleeve"] = custom_fitted_sleeve
 
     ga["export"]("fps_net", "fps_hands_net")
 
@@ -197,12 +383,7 @@ def build_and_export_fps_hands_net():
 
 def build_runtime_posed_pair(collection_name):
     """Imports weapon_net_90s.glb and fps_hands_net.glb into a new collection and applies the
-    EXACT runtime DrawCaptureTool pose + VisualEngine3D.cs vertex shader sleevePull deformation.
-    Coordinates are mapped into Blender space where:
-      +X_bl = Screen Right (-X_rl after Rlgl.Scalef(-1,1,1))
-      +Y_bl = Screen Forward Depth (+Z_rl)
-      +Z_bl = Screen Up (+Y_rl)
-    So a camera at (0, 0, 0) rotated (90 deg, 0, 0) sees the EXACT Raylib first-person view!"""
+    EXACT runtime DrawCaptureTool pose + VisualEngine3D.cs vertex shader sleevePull deformation."""
     col = bpy.data.collections.new(collection_name)
     bpy.context.scene.collection.children.link(col)
 
@@ -240,7 +421,6 @@ def build_runtime_posed_pair(collection_name):
         return vy + grip
 
     def rl_to_bl_cam(p_rl):
-        # After Rlgl.Scalef(-1, 1, 1), +X_rl is on the RIGHT side of the screen (+X_bl), +Y_rl is UP (+Z_bl), +Z_rl is FORWARD (+Y_bl)
         return V((p_rl.x, p_rl.z, p_rl.y))
 
     for o in w_imp:
@@ -278,7 +458,6 @@ def build_runtime_posed_pair(collection_name):
             p = V((vw.x, vw.z, -vw.y))
             uv = vert_uv.get(v.index, V((0.0, 0.0)))
             if uv.x > 1.99 and sleeve_pull.length_squared > 0.0001:
-                # Note: Blender's glTF importer flips V back to (1.0 - v_gltf), so Raylib's vertexTexCoord.y is (1.0 - uv.y)!
                 t = max(0.0, min(1.0, 1.0 - uv.y))
                 a_dir = sleeve_axis.normalized()
                 tangent0 = a_dir * min(sleeve_axis.length, sleeve_pull.length * 0.54)
@@ -330,7 +509,7 @@ def verify_and_render_proof():
             p_rl = V((vw.x, vw.z, -vw.y)) + V((0.18, -0.15, 0.62))
             p_arm = V((-p_rl.x, p_rl.y, p_rl.z))
             w_verts_arm.append(p_arm)
-            if p_arm.z < 0.542:
+            if (p_arm - C_FIST_GA).dot(S_GA) < -0.075:
                 cap_verts_arm.append(p_arm)
         for t in o.data.loop_triangles:
             w_tris_arm.append((base + t.vertices[0], base + t.vertices[1], base + t.vertices[2]))
@@ -342,7 +521,10 @@ def verify_and_render_proof():
     right_obj, left_obj = h_objs["Right"], h_objs["Left"]
     wrist_r = V(right_obj.data["wrist"])
     sleeve_end_r = V(right_obj.data["sleeveEnd"])
+    forearm_dir = (wrist_r - sleeve_end_r).normalized()
+    hammer_angle_deg = math.degrees(math.acos(forearm_dir.dot(S_GA)))
     print(f"Right extras.wrist = {tuple(round(c, 4) for c in wrist_r)}, sleeveEnd = {tuple(round(c, 4) for c in sleeve_end_r)}")
+    print(f"  3D Hammer-Grip Angle (Forearm vs Shaft S_GA) = {hammer_angle_deg:.2f} deg (Straight Wrist bend = 0.00 deg)")
 
     for side_name, obj in (("Right", right_obj), ("Left", left_obj)):
         obj.data.calc_loop_triangles()
@@ -365,13 +547,10 @@ def verify_and_render_proof():
     min_cap_to_wrist = min((cp - wrist_r).length for cp in cap_verts_arm)
     print(f"  Cyan Butt Cap to White Shirt Cuff clearance = {min_cap_to_cuff*100:.2f} cm (to wrist pivot = {min_cap_to_wrist*100:.2f} cm)")
 
-    # 2. Render Two Full-Res 960x900 Panels (1: Exact Game POV Camera at origin; 2: Close-Up Right-Wrist & Blue-Tape Grip Inspection)
-    # and stitch them side-by-side into 1920x900 net_grip_v2_proof.png!
+    # 2. Render Two Full-Res 960x900 Panels (Panel A: Exact Game POV Camera; Panel B: Macro Close-Up of Fist, Wrist, Thumb & Butt Cap)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     w_rt, h_rt = build_runtime_posed_pair("RuntimeViewModel")
 
-    # Also verify runtime deformed sleeve/cuff vs posed cyan butt cap distance!
-    posed_cap = [v.co.copy() for o in w_rt for v in o.data.vertices if v.co.y < 0.49]
     posed_right = next(o for o in h_rt if "Right" in o.name)
     posed_prop_bvh = BVHTree.FromPolygons(
         [v.co.copy() for o in w_rt for v in o.data.vertices],
@@ -424,36 +603,34 @@ def verify_and_render_proof():
     cam_data.lens = 30.0
     cam_obj.location = (0.0, 0.0, 0.0)
     cam_obj.rotation_euler = (math.radians(90.0), 0.0, 0.0)
-    p1_path = MY_SCRATCH_DIR / "_net_panel_pov.png"
+    p1_path = MY_SCRATCH_DIR / "_net_v3_panel_pov.png"
     p1_path.parent.mkdir(parents=True, exist_ok=True)
     scene.render.filepath = str(p1_path)
     bpy.ops.render.render(write_still=True)
 
-    # Panel B: Close-Up 3/4 Side/Under Inspection on the Right Hand, Blue Tape Grip, White Shirt Cuff & Cyan Butt Cap
-    cam_data.lens = 42.0
-    cam_obj.location = (-0.01, 0.07, -0.12)
-    cam_obj.rotation_euler = (math.radians(84.5), 0.0, math.radians(-23.5))
-    p2_path = MY_SCRATCH_DIR / "_net_panel_closeup.png"
+    # Panel B: Tight Macro Close-Up centered on the Closed Fist, Straight Wrist, Wrapped Thumb & Perpendicular Cyan Butt Cap
+    cam_data.lens = 52.0
+    cam_obj.location = (0.03, 0.14, -0.14)
+    cam_obj.rotation_euler = (math.radians(84.5), 0.0, math.radians(-26.0))
+    p2_path = MY_SCRATCH_DIR / "_net_v3_panel_closeup.png"
     scene.render.filepath = str(p2_path)
     bpy.ops.render.render(write_still=True)
 
-    # Stitch Panel A and Panel B side-by-side into 1920x900 net_grip_v2_proof.png
     img1 = bpy.data.images.load(str(p1_path))
     img2 = bpy.data.images.load(str(p2_path))
     w1, h1 = img1.size
     px1 = np.array(img1.pixels[:], dtype=np.float32).reshape((h1, w1, 4))
     px2 = np.array(img2.pixels[:], dtype=np.float32).reshape((h1, w1, 4))
     combined = np.concatenate([px1, px2], axis=1)
-    # Subtle 2px vertical divider line between POV panel and close-up panel
     combined[:, w1 - 1 : w1 + 1, :3] = (0.22, 0.28, 0.36)
 
-    out_img = bpy.data.images.new("NetGripProofCombined", width=w1 * 2, height=h1, alpha=False)
+    out_img = bpy.data.images.new("NetGripV3ProofCombined", width=w1 * 2, height=h1, alpha=False)
     out_img.pixels.foreach_set(combined.ravel())
 
     out_paths = [
-        ARTIFACT_DIR / "net_grip_v2_proof.png",
-        MY_SCRATCH_DIR / "net_grip_v2_proof.png",
-        SCREENSHOTS_DIR / "net_grip_v2_proof.png",
+        ARTIFACT_DIR / "net_grip_v3_proof.png",
+        MY_SCRATCH_DIR / "net_grip_v3_proof.png",
+        SCREENSHOTS_DIR / "net_grip_v3_proof.png",
     ]
     out_paths[0].parent.mkdir(parents=True, exist_ok=True)
     out_img.filepath_raw = str(out_paths[0])
@@ -462,7 +639,7 @@ def verify_and_render_proof():
     for dst in out_paths[1:]:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(out_paths[0], dst)
-    print(f"[NET GRIP V2 PROOF RENDERED] {out_paths[0]}")
+    print(f"[NET GRIP V3 PROOF RENDERED] {out_paths[0]}")
 
 
 if __name__ == "__main__":

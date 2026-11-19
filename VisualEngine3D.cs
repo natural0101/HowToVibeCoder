@@ -50,7 +50,7 @@ internal static unsafe partial class VisualEngine3D
         in vec3 vertexPosition;
         in vec3 vertexNormal;
         in vec4 vertexColor;
-        uniform int batch;
+        uniform int batch, boothColor;
         out vec4 tint;
         in vec2 vertexTexCoord;
         uniform mat4 mvp, matModel;
@@ -99,7 +99,7 @@ internal static unsafe partial class VisualEngine3D
             pos = (matModel * vec4(p,1)).xyz;
             norm = normalize(transpose(inverse(mat3(matModel))) * n);
             uv = vertexTexCoord; localXZ = vertexPosition.xz;
-            tint = batch == 1 || firstPerson==1 ? vertexColor : vec4(1.);
+            tint = batch == 1 || firstPerson==1 || boothColor==1 ? vertexColor : vec4(1.);
             gl_Position = mvp * vec4(p,1);
             // Reserve the nearest tenth for the viewmodel, retaining depth
             // precision between the closely spaced fingers and grip surfaces.
@@ -114,6 +114,7 @@ internal static unsafe partial class VisualEngine3D
         in vec2 uv;
         in vec4 tint;
         uniform sampler2D texture0;
+        uniform int boothColor;
         uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
         uniform float power, clock, flashStrength, cabinPower;
@@ -237,6 +238,7 @@ internal static unsafe partial class VisualEngine3D
             vec3 base=tex.rgb*ink.rgb;
             bool leather=finish==6 || (finish==17 && colSpecular.a>.49 && colSpecular.a<.51);
             vec3 emission=(finish==17 || finish==21) ? colSpecular.rgb*tex.rgb : vec3(0.);
+            if(boothColor==1) emission*=tint.rgb;
             if(finish==17 && colSpecular.a>.70 && colSpecular.a<.80) {
                 float tick=floor(clock*(2.2+7.*rackLoad));
                 float active=step(.40,hash(vec2(floor(pos.y*44.)+floor(pos.x*24.),tick)));
@@ -327,6 +329,10 @@ internal static unsafe partial class VisualEngine3D
                 if(firstPerson==0) pigment=mix(base,pigment,.40);
                 vec3 value=pigment*(vec3(.23,.27,.35)+sky*.12+bounce*.10+max(0.,dot(n,sunDir))*sunlight(n)*vec3(1.48,1.02,.64));
                 if(firstPerson==0) {
+                    vec3 portrait=vec3(-.65,1.92,11.95)-pos;
+                    float falloff=1.-smoothstep(.45,2.45,length(portrait));
+                    float wrap=clamp(dot(n,normalize(portrait))*.85+.15,0.,1.);
+                    value+=pigment*falloff*(vec3(.06,.04,.08)+vec3(.48,.36,.28)*wrap);
                     float weave=sin(uv.x*480.)*cos(uv.y*380.)*(1.-smoothstep(.2,1.,fwidth(uv.x)*480.));
                     value*=1.+.035*weave;
                     value+=vec3(.09,.14,.18)*pow(1.-abs(dot(n,v)),3.);
@@ -451,6 +457,7 @@ internal static unsafe partial class VisualEngine3D
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         shader.Locs[(int)ShaderLocationIndex.ColorSpecular]=Loc("colSpecular");
+        boothColorLoc=Loc("boothColor");
         handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
@@ -483,6 +490,7 @@ internal static unsafe partial class VisualEngine3D
             ApplyShaderToModel(model);
             ReadMaterialLighting(path,model);
             string name = Path.GetFileNameWithoutExtension(path);
+            RestoreBoothPalette(path,name,model);
             imports.Add(name, model);
             if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
         }
@@ -701,7 +709,7 @@ internal static unsafe partial class VisualEngine3D
                 return;
             }
             model.Transform = Matrix4x4.Transpose(transform);
-            Raylib.DrawModelEx(model,Vector3.Zero,Vector3.UnitY,0,Vector3.One,tint ?? Color.White);
+            DrawPaintedModel(model,name,Vector3.Zero,0,Vector3.One,tint ?? Color.White);
             return;
         }
         if (hideProp)
@@ -712,8 +720,16 @@ internal static unsafe partial class VisualEngine3D
                 if (!partnerPropMeshes.Contains(i)) Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
             return;
         }
-        Raylib.DrawModelEx(model, position, Vector3.UnitY, yaw, (stretch ?? Vector3.One)*scale, tint ?? Color.White);
+        DrawPaintedModel(model,name,position,yaw,(stretch ?? Vector3.One)*scale,tint ?? Color.White);
         CapturedAssets?.Add(name);
+    }
+
+    private static void DrawPaintedModel(Model model,string name,Vector3 pos,float yaw,Vector3 scale,Color tint)
+    {
+        bool painted=paintedBoothMeshes.Contains(name);
+        if(painted) Raylib.SetShaderValue(shader,boothColorLoc,1,ShaderUniformDataType.Int);
+        Raylib.DrawModelEx(model,pos,Vector3.UnitY,yaw,scale,tint);
+        if(painted) Raylib.SetShaderValue(shader,boothColorLoc,0,ShaderUniformDataType.Int);
     }
 
     internal static void Workstation(Vector3 feet,Vector2 pose,float yaw)

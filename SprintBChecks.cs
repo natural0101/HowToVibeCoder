@@ -98,7 +98,7 @@ public static partial class Program
         ResetClassicFixture();
         _playerCash=175; Key(KeyboardKey.U); Key(KeyboardKey.Two);
         Key(KeyboardKey.Up);
-        Check(floorRow==(int)Sidegrade.CarryHarness && firstShopRow==1,"last upgrade scrolls into view");
+        Check(floorRow==(int)Sidegrade.CarryHarness,"up wraps to last card in column");
         Key(KeyboardKey.Enter);
         Check(_playerCash==0 && Floor.Has(Sidegrade.CarryHarness),"harness costs $175");
         Key(KeyboardKey.Escape);
@@ -114,16 +114,31 @@ public static partial class Program
         Aim(_world.HrTarotBoothPos,1.6f); Interact();
         Check(_world.TotalCodersSoldToHr==1 && _world.CarriedCoder==null,"armed HR delivery");
         ResetClassicFixture();
+        void Click(Rectangle rect)
+        {
+            Vector2 point=PanelOffset+PanelScale*new Vector2(rect.X+rect.Width/2,rect.Y+rect.Height/2);
+            Input(7,(int)point.X,(int)point.Y); Input(6,(int)MouseButton.Left); Frame();
+            Input(5,(int)MouseButton.Left); Frame();
+        }
+        _playerCash=5000; Key(KeyboardKey.U);
+        Click(ArsenalTab(1)); Check(sidegrades,"mouse opens upgrades");
+        Click(FloorRowRect(3)); Check(floorRow==3 && !Floor.Has(Sidegrade.Drum),"first click selects card");
+        Click(FloorRowRect(3)); Check(Floor.Has(Sidegrade.Drum) && _playerCash==4680,"second click buys drum once");
+        Click(FloorRowRect(9)); Click(ShopPurchase);
+        Check(Floor.Has(Sidegrade.PortableCo2) && _playerCash==4490,"purchase ticket button");
+        Click(ArsenalTab(0)); Check(!sidegrades,"mouse opens weapons");
+        Key(KeyboardKey.Escape); ResetClassicFixture();
         _playerCash=5000; Key(KeyboardKey.U); Key(KeyboardKey.Two);
-        Check(sidegrades && FloorSystems.GearList.Length==11 && FloorRowRect(9).Y+FloorRowRect(9).Height<566,"ten visible upgrade rows");
+        Check(sidegrades && FloorSystems.GearList.Length==11 && FloorRowRect(10).Y+FloorRowRect(10).Height==610,"all eleven cards fit");
         for(int i=0;i<FloorSystems.GearList.Length;i++)
         {
-            Check(floorRow==i && FloorRowRect(i).Y>=204 && FloorRowRect(i).Y+FloorRowRect(i).Height<566,"visible upgrade "+i);
+            Check(floorRow==i && FloorRowRect(i).Equals(new Rectangle(788+202*(i%2),150+78*(i/2),190,70)),"visible upgrade "+i);
             wallet=_playerCash;
             int cost=Floor.Price(FloorSystems.GearList[i]);
             Key(KeyboardKey.Enter);
             Check(Floor.Has((Sidegrade)i) && _playerCash==wallet-cost,"purchase row "+i);
-            Key(KeyboardKey.Down);
+            if(i%2==0) Key(KeyboardKey.Right);
+            else { Key(KeyboardKey.Left); Key(KeyboardKey.Down); }
         }
         Check(Floor.Price(FloorSystems.Weapons[4])==552 && Floor.Price(FloorSystems.GearList[9])==219,"signet surcharge");
         Key(KeyboardKey.Escape); Floor.PT=60; Key(KeyboardKey.Q);

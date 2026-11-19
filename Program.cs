@@ -93,6 +93,8 @@ public static partial class Program
         _weapons = new WeaponAndCombatView { Inventory=Floor, DrawBlocked=BlockWeaponDraw };
 
         LoadSlotIcons();
+        shopBackdrop=Raylib.LoadTexture(Path.Combine(AppContext.BaseDirectory,"assets","ui","shop_briefcase_bg.png"));
+        Raylib.SetTextureFilter(shopBackdrop,TextureFilter.Bilinear);
         preparedFloor=_world;
         WireUpSystems();
         ConfigureCoop();
@@ -154,6 +156,8 @@ public static partial class Program
         if(!interactive) File.Delete(displayPath);
         Net.Dispose();
         LoreAndMenusUI.UnloadArchive();
+        Raylib.UnloadTexture(shopBackdrop);
+        foreach(var icon in _slotIcons) if(icon.Id!=0) Raylib.UnloadTexture(icon);
         CombatSprites.Unload();
         VisualEngine3D.Unload();
         MainMenuAndPauseUI.UnloadArt();
@@ -1107,6 +1111,7 @@ public static partial class Program
         PressTestKey(KeyboardKey.E);
         if(floorPanel!=FloorPanel.Upgrades || sidegrades) throw new InvalidDataException("Expected Veronika's arsenal");
         PressTestKey(KeyboardKey.Up);
+        PressTestKey(KeyboardKey.Right);
         if(FloorSystems.Arsenal[floorRow]!=FloorSystems.ElevatorKeycard) throw new InvalidDataException("Expected keycard row");
     }
 
@@ -2024,11 +2029,16 @@ public static partial class Program
             Camera3D Shot(Vector3 eye,Vector3 target,float fov) => new() { Position=eye,Target=target,Up=Vector3.UnitY,FovY=fov };
             FloorSystems.SpeakCoaching(FloorSystems.ShopGreeting);
             _world.AdvanceLighting(.9f);
-            CaptureShot("25_veronika_animated_closeup.png",sceneCamera:Shot(booth+new Vector3(.90f,1.74f,-1.92f),
-                booth+new Vector3(-.48f,1.31f,-.12f),40));
+            CaptureShot("25_veronika_animated_closeup.png",sceneCamera:Shot(booth+new Vector3(.32f,1.70f,-1.61f),
+                booth+new Vector3(-.06f,1.38f,-.06f),36));
             OpenFloorPanel(FloorPanel.Upgrades);
+            _playerCash=240;
+            Floor.BuyWeapon(0,_=>true);
+            Floor.BuyWeapon(1,_=>true);
             floorRow=3;
             CaptureShot("26_shop_3d_showcase.png");
+            sidegrades=true; floorRow=9;
+            CaptureShot("26b_shop_upgrades_tab.png");
             OpenFloorPanel(FloorPanel.None);
             CaptureShot("27_window_city_ground.png",sceneCamera:Shot(new(-37.55f,1.72f,2),new(-69,-42,-8),63));
             var station=_world.GalleyDesks[0].DeskPosition;
@@ -2508,7 +2518,7 @@ public static partial class Program
         Check(Floor.SEC>=22 && Floor.Audit==0,"unanswered audit raises security");
         Floor.IncidentNow(Incident.Audit,_world);
         int balance=_playerCash;
-        Use(_world.HrTarotBoothPos+new Vector3(-1.25f,0,.64f),1.33f);
+        Use(_world.ContractBoardFeet,1.35f);
         Check(_playerCash==balance-180 && Floor.Audit==0,"audit bribe paid once");
         Floor.IncidentNow(Incident.Fire,_world); balance=_playerCash;
         Use(rack,1.2f); Use(rack,1.2f);
