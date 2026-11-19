@@ -416,9 +416,11 @@ def apply_box_uvs(obj, scale_uv=1.2):
         sy = max(1e-5, max_y - min_y)
         sz = max(1e-5, max_z - min_z)
         for poly in mesh.polygons:
+            flip_u = poly.normal.y > 0.0
             for loop_idx in poly.loop_indices:
                 vw = obj.matrix_world @ verts[mesh.loops[loop_idx].vertex_index].co
-                u = (1.0 - (vw.x - min_x) / sx) if is_screen else ((vw.x - min_x) / sx)
+                raw_u = (vw.x - min_x) / sx
+                u = (1.0 - raw_u) if (is_screen and flip_u) else raw_u
                 w = (vw.z - min_z) / sz if is_screen else (vw.y - min_y) / sy
                 uv_layer[loop_idx].uv = (u, w)
         return
@@ -828,8 +830,361 @@ def render_landmark_proof_sheet():
     print(f"[PROOF RENDERED] {proof_path}")
 
 
+# ==============================================================================
+# 4. PROP: BUG-TRACKER DEPOSIT TERMINAL «ПРИЁМНИК БАГОВ $1-$8» (prop_bug_terminal.glb)
+# Origin at bottom base (Y_rl = 0 / Z_bl = 0), facing +Z in Raylib (Y_bl < 0),
+# ~0.75m wide x 0.62m deep x 1.38m tall, ~3,000-6,000 tris, smooth bevels, 7 materials.
+# ==============================================================================
+_GLYPHS_5X7 = {
+    "А": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+    "Б": ["11111", "10000", "10000", "11110", "10001", "10001", "11110"],
+    "В": ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+    "Г": ["11111", "10000", "10000", "10000", "10000", "10000", "10000"],
+    "Д": ["00110", "01001", "01001", "01001", "01001", "11111", "10001"],
+    "Е": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+    "Ё": ["01010", "11111", "10000", "11110", "10000", "10000", "11111"],
+    "З": ["01110", "10001", "00001", "00110", "00001", "10001", "01110"],
+    "И": ["10001", "10001", "10011", "10101", "11001", "10001", "10001"],
+    "Й": ["01110", "10001", "10011", "10101", "11001", "10001", "10001"],
+    "К": ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+    "Л": ["00111", "01001", "01001", "01001", "01001", "01001", "10001"],
+    "М": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+    "Н": ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+    "О": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+    "П": ["11111", "10001", "10001", "10001", "10001", "10001", "10001"],
+    "Р": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+    "С": ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
+    "Т": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+    "У": ["10001", "10001", "10001", "01111", "00001", "10001", "01110"],
+    "Ц": ["10010", "10010", "10010", "10010", "10010", "11111", "00001"],
+    "Ч": ["10001", "10001", "10001", "01111", "00001", "00001", "00001"],
+    "Ы": ["10001", "10001", "10001", "11101", "10011", "10011", "11101"],
+    "Ь": ["10000", "10000", "10000", "11110", "10001", "10001", "11110"],
+    "Я": ["01111", "10001", "10001", "01111", "00101", "01001", "10001"],
+    "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+    "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+    "/": ["00001", "00010", "00010", "00100", "01000", "01000", "10000"],
+    ":": ["00000", "00100", "00100", "00000", "00100", "00100", "00000"],
+    "$": ["00100", "01111", "10100", "01110", "00101", "11110", "00100"],
+    "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+    "2": ["01110", "10001", "00001", "00110", "01000", "10000", "11111"],
+    "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+    "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+    "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+    "[": ["01110", "01000", "01000", "01000", "01000", "01000", "01110"],
+    "]": ["01110", "00010", "00010", "00010", "00010", "00010", "01110"],
+    ">": ["10000", "01000", "00100", "00010", "00100", "01000", "10000"],
+    " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+}
+
+
+def _draw_text_5x7(img, text, x0, y_top, scale, rgb):
+    """Draws crisp 5x7 Russian/ASCII bitmap text into a bottom-up Blender numpy texture (row 0 = bottom)."""
+    h, w, _ = img.shape
+    cx = x0
+    for ch in text:
+        glyph = _GLYPHS_5X7.get(ch, _GLYPHS_5X7[" "])
+        for gy in range(7):
+            row_str = glyph[gy]
+            py_top = y_top - gy * scale
+            py0 = max(0, py_top - scale)
+            py1 = min(h, py_top)
+            if py1 <= py0:
+                continue
+            for gx in range(5):
+                if row_str[gx] == "1":
+                    px0 = max(0, cx + gx * scale)
+                    px1 = min(w, cx + (gx + 1) * scale)
+                    if px1 > px0:
+                        img[py0:py1, px0:px1, :3] = rgb
+        cx += 6 * scale
+
+
+def tex_bug_terminal_steel(name="Tex_BugTermSteel", size=512):
+    y, x = np.mgrid[0:size, 0:size].astype(np.float32) / size
+    rng = np.random.default_rng(1999)
+    brush = rng.normal(0.0, 0.016, (1, size)).astype(np.float32)
+    brush = np.repeat(brush, size, axis=0)
+    panel = (np.abs((x * 4.0) % 1.0 - 0.5) > 0.47) | (np.abs((y * 4.0) % 1.0 - 0.5) > 0.47)
+    img = np.zeros((size, size, 4), dtype=np.float32)
+    img[..., 0] = 0.14 + brush
+    img[..., 1] = 0.165 + brush
+    img[..., 2] = 0.205 + brush
+    img[panel, :3] = (0.08, 0.095, 0.12)
+    img[..., 3] = 1.0
+    return pack_image(name, np.clip(img, 0.0, 1.0))
+
+
+def tex_hopper_bioglass(name="Tex_HopperBioGlass", size=256):
+    y, x = np.mgrid[0:size, 0:size].astype(np.float32) / size
+    img = np.zeros((size, size, 4), dtype=np.float32)
+    # Illuminated cyan-emerald specimen jar glass with caustic gradient & graduation ticks
+    caustic = 0.5 + 0.5 * np.sin(x * math.tau * 4.0) * np.cos(y * math.tau * 3.0)
+    img[..., 0] = 0.06 + 0.08 * caustic
+    img[..., 1] = 0.34 + 0.22 * caustic
+    img[..., 2] = 0.44 + 0.26 * caustic
+    # Horizontal measurement ticks & bio-scan lines
+    scan = (np.abs((y * 12.0) % 1.0 - 0.5) < 0.05)
+    img[scan, :3] = (0.24, 0.88, 0.96)
+    img[..., 3] = 1.0
+    return pack_image(name, np.clip(img, 0.0, 1.0))
+
+
+def tex_bug_terminal_screen(name="Tex_BugTerminalScreen"):
+    """Crisp 512x256 Russian Bug-Tracker Terminal Screen: БАГ-ТРЕКЕР // ПРИЁМ $1-$8 + Oscilloscope + Tariff Cards."""
+    h, w = 256, 512
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    img = np.zeros((h, w, 4), dtype=np.float32)
+    img[..., :3] = (0.032, 0.045, 0.068)
+    img[..., 3] = 1.0
+
+    # Outer CRT bezel frame & top title bar
+    img[h - 42 :, :, :3] = (0.065, 0.095, 0.145)
+    img[h - 44 : h - 41, :, :3] = (0.94, 0.74, 0.26)
+    _draw_text_5x7(img, "БАГ-ТРЕКЕР // ПРИЁМ $1-$8", 22, h - 11, 3, (0.98, 0.84, 0.34))
+
+    # Left panel (x: 16..244, y: 44..204): Bug Bio-Frequency Oscilloscope
+    img[44:204, 16:244, :3] = (0.020, 0.032, 0.048)
+    img[44:204, 16:18, :3] = (0.16, 0.58, 0.72)
+    img[44:204, 242:244, :3] = (0.16, 0.58, 0.72)
+    img[202:204, 16:244, :3] = (0.16, 0.58, 0.72)
+    img[44:46, 16:244, :3] = (0.16, 0.58, 0.72)
+    for gx in range(40, 240, 28):
+        img[46:202, gx : gx + 1, :3] = (0.05, 0.11, 0.16)
+    for gy in range(64, 200, 24):
+        img[gy : gy + 1, 18:242, :3] = (0.05, 0.11, 0.16)
+
+    _draw_text_5x7(img, "СПЕКТР БАГОВ", 32, 194, 2, (0.28, 0.88, 0.96))
+
+    # Dual live bug waveform curves inside oscilloscope
+    for px in range(22, 238):
+        t = (px - 22) / 216.0
+        wy1 = int(118 + 34 * math.sin(t * math.tau * 3.0) * math.cos(t * math.tau * 1.5) + 12 * math.sin(t * math.tau * 9.0))
+        wy2 = int(112 + 22 * math.cos(t * math.tau * 2.0 + 0.8))
+        img[max(48, wy2 - 1) : min(198, wy2 + 2), px, :3] = (0.94, 0.68, 0.22)
+        img[max(48, wy1 - 2) : min(198, wy1 + 2), px, :3] = (0.18, 0.96, 0.72)
+
+    # Right panel (x: 256..496, y: 44..204): 4 Color-Coded Frog-Bug Tariff Rows ($1, $2, $4, $8)
+    tariffs = [
+        (166, "$1 ЗЕЛЁНЫЙ", (0.22, 0.92, 0.46)),
+        (128, "$2 ЦИАНОВЫЙ", (0.18, 0.86, 0.98)),
+        (90, "$4 КРИМЗОН", (0.96, 0.28, 0.42)),
+        (52, "$8 ЗОЛОТОЙ", (0.98, 0.78, 0.24)),
+    ]
+    for ry, label, col in tariffs:
+        img[ry : ry + 30, 256:496, :3] = (0.045, 0.065, 0.095)
+        img[ry : ry + 30, 256:266, :3] = col
+        img[ry + 28 : ry + 30, 256:496, :3] = (0.12, 0.18, 0.26)
+        _draw_text_5x7(img, label, 278, ry + 22, 2, col)
+
+    # Bottom status & interaction prompt bar
+    img[6:36, 16:496, :3] = (0.045, 0.18, 0.16)
+    img[34:36, 16:496, :3] = (0.22, 0.94, 0.72)
+    _draw_text_5x7(img, "[E] СДАТЬ БАГ > ВЫДАЧА $$$", 48, 28, 2, (0.36, 0.98, 0.78))
+
+    # Flip vertically because pack_image() applies np.flipud() expecting top-down image arrays
+    return pack_image(name, np.clip(np.flipud(img), 0.0, 1.0))
+
+
+def build_bug_terminal():
+    clear_scene()
+    img_steel = tex_bug_terminal_steel("Tex_BugTermSteel", 512)
+    img_brass = tex_brushed_brass("Tex_BugTermBrass", 256)
+    img_obsidian = tex_obsidian_marble("Tex_BugTermObsidian", 512)
+    img_screen = tex_bug_terminal_screen("Tex_BugTerminalScreen")
+    img_glass = tex_hopper_bioglass("Tex_HopperBioGlass", 256)
+
+    m_steel = make_textured_mat("BugTerm_CharcoalSteel", img_steel, metallic=0.72, roughness=0.30)
+    m_brass = make_textured_mat("BugTerm_BrushedBrass", img_brass, metallic=0.88, roughness=0.22)
+    m_obsidian = make_textured_mat("BugTerm_ObsidianTrim", img_obsidian, metallic=0.28, roughness=0.24)
+    m_screen = make_textured_mat(
+        "BugTerm_DisplayScreen", img_screen, metallic=0.06, roughness=0.16, emission_rgb=(0.24, 0.88, 0.92), emission_strength=1.15
+    )
+    m_glass = make_textured_mat(
+        "BugTerm_HopperGlass", img_glass, metallic=0.15, roughness=0.12, emission_rgb=(0.12, 0.68, 0.82), emission_strength=0.70
+    )
+    m_cyan = make_mat(
+        "BugTerm_CyanGlow", (0.18, 0.94, 1.0, 1.0), metallic=0.05, roughness=0.10, emission_rgb=(0.14, 0.92, 1.0), emission_strength=2.2
+    )
+    m_amber = make_mat(
+        "BugTerm_AmberGlow", (1.0, 0.76, 0.22, 1.0), metallic=0.15, roughness=0.14, emission_rgb=(1.0, 0.72, 0.18), emission_strength=2.0
+    )
+
+    # 1. Heavy Armored Base Plinth (Y_rl = 0.00..0.11m, width=0.75m, depth=0.62m)
+    add_box("Base_Plinth_Core", (0, 0.045, 0), (0.75, 0.09, 0.62), m_obsidian, bevel=0.015, segments=1)
+    add_box("Base_Brass_Step", (0, 0.098, 0), (0.72, 0.022, 0.59), m_brass, bevel=0.006, segments=1)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            add_box(f"Base_Corner_Bumper_{sx}_{sz}", (sx * 0.355, 0.048, sz * 0.29), (0.045, 0.088, 0.045), m_brass, bevel=0.006, segments=1)
+
+    # 2. Lower Brushed Charcoal-Steel Cabinet & Brass Corner Pilasters (Y_rl = 0.11..0.76m)
+    add_box("Lower_Cabinet_Body", (0, 0.435, -0.01), (0.68, 0.65, 0.52), m_steel, bevel=0.018, segments=2)
+    for sx in (-1, 1):
+        add_box(f"Cabinet_Brass_Pilaster_{sx}", (sx * 0.342, 0.44, 0.235), (0.036, 0.66, 0.055), m_brass, bevel=0.008, segments=1)
+        add_box(f"Cabinet_Rear_Pilaster_{sx}", (sx * 0.342, 0.44, -0.255), (0.032, 0.66, 0.045), m_brass, bevel=0.006, segments=1)
+        # Side ventilation louver grilles
+        for lv in range(5):
+            ly = 0.26 + lv * 0.085
+            add_box(f"Side_Vent_Louver_{sx}_{lv}", (sx * 0.344, ly, -0.02), (0.014, 0.028, 0.28), m_obsidian, bevel=0.003, segments=1)
+
+    # Horizontal brass belt molding
+    add_box("Mid_Brass_Belt", (0, 0.745, 0.01), (0.73, 0.028, 0.58), m_brass, bevel=0.007, segments=1)
+
+    # 3. Front Specimen Intake Chute (Left, +Z_rl) & Cash/Coin Payout Bay (Right, +Z_rl)
+    # Left: Specimen Vacuum Hopper Door («ПРИЁМ БАГОВ»)
+    add_box("Intake_Chute_Frame", (-0.155, 0.50, 0.255), (0.25, 0.27, 0.035), m_brass, bevel=0.008, segments=1)
+    add_box("Intake_Chute_Door", (-0.155, 0.50, 0.268), (0.21, 0.23, 0.022), m_obsidian, bevel=0.006, segments=1)
+    add_rod("Intake_Brass_Handle", (-0.22, 0.55, 0.292), (-0.09, 0.55, 0.292), 0.011, 0.011, m_brass, vertices=12)
+    add_box("Intake_Laser_Strip", (-0.155, 0.605, 0.278), (0.18, 0.016, 0.012), m_cyan, bevel=0.002, segments=1)
+
+    # Right: Cash & Coin Payout Dispenser («ВЫДАЧА $$$»)
+    add_box("Payout_Housing_Frame", (0.165, 0.50, 0.255), (0.24, 0.27, 0.035), m_obsidian, bevel=0.008, segments=1)
+    add_box("Payout_Bill_Bezel", (0.165, 0.56, 0.272), (0.18, 0.065, 0.022), m_brass, bevel=0.005, segments=1)
+    add_box("Payout_Bill_Slot", (0.165, 0.56, 0.282), (0.14, 0.018, 0.010), m_obsidian, bevel=0.002, segments=1)
+    add_box("Payout_Amber_LED", (0.165, 0.602, 0.278), (0.15, 0.014, 0.010), m_amber, bevel=0.002, segments=1)
+    add_box("Payout_Coin_Tray", (0.165, 0.42, 0.276), (0.18, 0.075, 0.048), m_brass, bevel=0.006, segments=1)
+    add_box("Payout_Coin_Well", (0.165, 0.435, 0.278), (0.14, 0.045, 0.036), m_obsidian, bevel=0.004, segments=1)
+
+    # Lower Front Exhaust Grille & Power Badge
+    add_box("Lower_Front_Grille_Frame", (0, 0.22, 0.252), (0.56, 0.14, 0.024), m_obsidian, bevel=0.005, segments=1)
+    for gl in range(4):
+        gy = 0.175 + gl * 0.030
+        add_box(f"Front_Grille_Slat_{gl}", (0, gy, 0.262), (0.50, 0.012, 0.012), m_steel, bevel=0.002, segments=1)
+
+    # 4. Ergonomic Control Console Deck (Y_rl = 0.76..0.82m, projecting forward to Z_rl = +0.31m)
+    add_box("Control_Deck_Slab", (0, 0.78, 0.05), (0.71, 0.055, 0.52), m_obsidian, bevel=0.012, segments=1)
+    # Left: Glowing Cyan Frog-Scanner Pad on Control Deck
+    add_vcyl("Deck_Scanner_Rim", (-0.16, 0.812, 0.19), 0.105, 0.016, m_brass, vertices=20, bevel=0.003)
+    add_vcyl("Deck_Scanner_Pad", (-0.16, 0.818, 0.19), 0.088, 0.012, m_cyan, vertices=20, bevel=0.002)
+    # Right: Mechanical Keypad & Oversized Amber/Brass Deposit Button
+    for kr in range(2):
+        for kc in range(3):
+            kx = 0.05 + kc * 0.048
+            kz = 0.16 + kr * 0.052
+            add_box(f"Deck_Key_{kr}_{kc}", (kx, 0.814, kz), (0.034, 0.016, 0.034), m_steel, bevel=0.002, segments=1)
+    add_vcyl("Deck_Confirm_Btn_Rim", (0.245, 0.814, 0.185), 0.044, 0.018, m_brass, vertices=16, bevel=0.002)
+    add_vcyl("Deck_Confirm_Btn", (0.245, 0.822, 0.185), 0.034, 0.018, m_amber, vertices=16, bevel=0.002)
+
+    # 5. Inclined Upper CRT/LCD Terminal Housing & Crisp 512x256 Russian Display (Y_rl = 0.80..1.08m, facing +Z_rl)
+    add_box("Upper_Terminal_Cabinet", (0, 0.93, -0.03), (0.66, 0.28, 0.40), m_steel, bevel=0.016, segments=2)
+    for sx in (-1, 1):
+        add_box(f"Upper_Side_Brass_Fin_{sx}", (sx * 0.335, 0.93, -0.02), (0.024, 0.27, 0.36), m_brass, bevel=0.006, segments=1)
+
+    # Slanted front display bezel & screen tilted -15 deg back so it faces player eye level (+Z_rl, +Y_rl)
+    scr_tilt = -0.24
+    add_box("Terminal_Display_OuterBezel", (0, 0.935, 0.172), (0.58, 0.29, 0.042), m_brass, rot=(scr_tilt, 0, 0), bevel=0.008, segments=1)
+    add_box("Terminal_Display_InnerHood", (0, 0.935, 0.182), (0.53, 0.255, 0.028), m_obsidian, rot=(scr_tilt, 0, 0), bevel=0.005, segments=1)
+    add_box("BugTerm_Display_Screen", (0, 0.936, 0.194), (0.495, 0.228, 0.008), m_screen, rot=(scr_tilt, 0, 0), bevel=0.002, segments=1)
+
+    # 6. Top Illuminated Glass Specimen Hopper / Jar with Glowing Cyan & Amber Rings (Y_rl = 1.05..1.38m)
+    hop_z = -0.03
+    add_box("Crown_Platform_Slab", (0, 1.072, hop_z), (0.62, 0.032, 0.38), m_obsidian, bevel=0.008, segments=1)
+    add_vcyl("Hopper_Base_Collar", (0, 1.098, hop_z), 0.215, 0.036, m_brass, vertices=22, bevel=0.004)
+    # Glowing Cyan Lower Induction Ring
+    add_vcyl("Hopper_Lower_Cyan_Ring", (0, 1.122, hop_z), 0.222, 0.018, m_cyan, vertices=22, bevel=0.003)
+
+    # Illuminated Glass Specimen Hopper Cylinder
+    add_vcyl("Hopper_Glass_Cylinder", (0, 1.215, hop_z), 0.192, 0.175, m_glass, vertices=24, bevel=0.003)
+
+    # Equatorial Bio-Laser Scan Ring around the Hopper Glass
+    add_vcyl("Hopper_Equatorial_Laser_Ring", (0, 1.215, hop_z), 0.196, 0.010, m_cyan, vertices=24, bevel=0.002)
+
+    # 4 External Brushed-Brass Containment Tie-Rods around the Glass Hopper
+    for ang_deg in (45, 135, 225, 315):
+        rad = math.radians(ang_deg)
+        rx = 0.208 * math.cos(rad)
+        rz = hop_z + 0.208 * math.sin(rad)
+        add_rod(f"Hopper_Brass_TieRod_{ang_deg}", (rx, 1.11, rz), (rx, 1.315, rz), 0.011, 0.011, m_brass, vertices=10)
+
+    # Glowing Amber Upper Containment Ring & Domed Brass Top Cap + Beacon Finial (Y_rl up to 1.38m)
+    add_vcyl("Hopper_Upper_Amber_Ring", (0, 1.308, hop_z), 0.218, 0.018, m_amber, vertices=22, bevel=0.003)
+    add_vcyl("Hopper_Top_Brass_Cap", (0, 1.332, hop_z), 0.205, 0.032, m_brass, vertices=22, bevel=0.005)
+    add_vcyl("Hopper_Beacon_Pedestal", (0, 1.355, hop_z), 0.075, 0.022, m_obsidian, vertices=16, bevel=0.003)
+    add_sphere("Hopper_Top_Beacon_Dome", (0, 1.368, hop_z), 0.042, m_cyan, scale=(1.0, 0.55, 1.0), segments=16, ring_count=10)
+
+    finalize_and_export(
+        "prop_bug_terminal.glb",
+        target_min=(-0.375, -0.31, 0.0),
+        target_max=(0.375, 0.31, 1.38),
+        uv_scale=1.25,
+    )
+
+
+def render_bug_terminal_proof():
+    """Renders a 3-angle studio proof sheet of prop_bug_terminal.glb to screenshots/bug_terminal_proof.png."""
+    clear_scene()
+    # Note: prop_bug_terminal faces +Z in Raylib -> -Y in Blender!
+    # So rotation_euler=(0, 0, 0) faces -Y (directly toward camera at Y = -3.45)!
+    views = [
+        ((-1.15, 0.0, 0.0), math.radians(-28.0)),  # 3/4 Front-Left view
+        ((0.0, -0.15, 0.0), 0.0),                  # Direct Front close-up on screen & hopper
+        ((1.15, 0.0, 0.0), math.radians(32.0)),    # 3/4 Front-Right view
+    ]
+    for loc, rot_z in views:
+        bpy.ops.import_scene.gltf(filepath=str(OUT_MODELS / "prop_bug_terminal.glb"))
+        imported = [o for o in bpy.context.selected_objects if o.type == "MESH"]
+        for o in imported:
+            o.rotation_mode = "XYZ"
+            o.rotation_euler = (0.0, 0.0, rot_z)
+            o.location += Vector(loc)
+
+    bpy.ops.mesh.primitive_plane_add(size=16.0, location=(0.0, 0.0, 0.0))
+    floor = bpy.context.active_object
+    m_floor = make_mat("BugProofFloor", (0.07, 0.085, 0.11, 1.0), metallic=0.18, roughness=0.50)
+    floor.data.materials.append(m_floor)
+
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.resolution_x = 1800
+    scene.render.resolution_y = 960
+    scene.render.film_transparent = False
+    world = bpy.data.worlds.new("BugProofWorld")
+    scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs[0].default_value = (0.055, 0.070, 0.095, 1.0)
+        bg.inputs[1].default_value = 1.15
+
+    cam_data = bpy.data.cameras.new("BugProofCam")
+    cam_data.lens = 35.0
+    cam_obj = bpy.data.objects.new("BugProofCam", cam_data)
+    scene.collection.objects.link(cam_obj)
+    cam_obj.location = (0.0, -3.55, 1.16)
+    cam_obj.rotation_euler = (math.radians(81.0), 0.0, 0.0)
+    scene.camera = cam_obj
+
+    for lname, lpos, energy, col in [
+        ("KeyLight", (2.8, -3.5, 4.2), 4.6, (1.0, 0.95, 0.86)),
+        ("FillLight", (-3.2, -2.8, 3.0), 2.8, (0.74, 0.90, 1.0)),
+        ("RimLight", (0.0, 3.5, 3.8), 3.4, (1.0, 0.82, 0.56)),
+    ]:
+        ldata = bpy.data.lights.new(name=lname, type="SUN")
+        ldata.energy = energy
+        ldata.color = col
+        lobj = bpy.data.objects.new(name=lname, object_data=ldata)
+        scene.collection.objects.link(lobj)
+        lobj.location = lpos
+        lobj.rotation_euler = (math.radians(48), 0, math.radians(25 if "Key" in lname else -35))
+
+    out_screenshots = ROOT / "screenshots" / "bug_terminal_proof.png"
+    out_screenshots.parent.mkdir(parents=True, exist_ok=True)
+    scene.render.filepath = str(out_screenshots)
+    bpy.ops.render.render(write_still=True)
+    scratch_copy = Path(r"C:\Users\se-20\.gemini\antigravity\brain\5a288ef4-482c-487e-b05f-e3d0e2267cf7\scratch\bug_terminal_proof.png")
+    shutil.copy2(out_screenshots, scratch_copy)
+    print(f"[BUG TERMINAL PROOF RENDERED] {out_screenshots}")
+
+
 if __name__ == "__main__":
-    build_server_rack()
-    build_macbook_trap_desk()
-    build_hr_reception_desk()
-    render_landmark_proof_sheet()
+    import sys
+    if "--bug-terminal-only" in sys.argv:
+        build_bug_terminal()
+        render_bug_terminal_proof()
+    else:
+        build_server_rack()
+        build_macbook_trap_desk()
+        build_hr_reception_desk()
+        build_bug_terminal()
+        render_landmark_proof_sheet()
+        render_bug_terminal_proof()

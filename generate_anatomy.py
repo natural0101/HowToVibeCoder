@@ -357,8 +357,88 @@ def keyed_grip(kind, side):
     return transforms, signet
 
 
+def bare_hands_pose(side):
+    sign = 1.0 if side == "l" else -1.0
+    j = lambda key: JOINT[f"{side}-{key}"]
+    wrist_rest = j("hand")
+    mid_rest = j("finger-3-1")
+    palm_sign = 1.0 if side == "l" else -1.0
+    f_rest = (mid_rest - wrist_rest).normalized()
+    u_rest = (j("finger-2-1") - j("finger-5-1")) * palm_sign
+    a_rest = (u_rest - f_rest * f_rest.dot(u_rest)).normalized()
+    palm_rest = f_rest.cross(a_rest).normalized()
+    rest_frame = Matrix((f_rest, a_rest, palm_rest)).transposed()
+    away_rest = -palm_rest
+
+    f_target = V((-sign * 0.22, 0.24, 0.945)).normalized()
+    palm_raw = V((-sign * 0.78, -0.35, 0.52)).normalized()
+    palm_target = (palm_raw - f_target * f_target.dot(palm_raw)).normalized()
+    a_target = palm_target.cross(f_target).normalized()
+    target_frame = Matrix((f_target, a_target, palm_target)).transposed()
+    hand_rot = target_frame @ rest_frame.transposed()
+
+    mid_knuckle = V((sign * 0.165, -0.135, 0.625))
+    dest_wrist = mid_knuckle - hand_rot @ (mid_rest - wrist_rest)
+    dest_elbow = V((sign * 0.340, -0.320, 0.305))
+
+    source = wrist_rest - j("elbow")
+    axis = source.normalized()
+    stretch = Matrix.Identity(3) + Matrix([list(axis * axis[n]) for n in range(3)]) * (
+        (dest_wrist - dest_elbow).length / source.length - 1.0
+    )
+    across = j("finger-2-1") - j("finger-5-1")
+    fore_rot = frame(dest_wrist - dest_elbow, hand_rot @ across) @ frame(source, across).transposed()
+    transforms = {
+        "lowerarm_" + side: (j("elbow"), dest_elbow, fore_rot @ stretch),
+        "hand_" + side: (wrist_rest, dest_wrist, hand_rot),
+    }
+
+    idx_up = a_target * palm_sign
+    dorsal_base = -palm_target
+    signet = None
+    for d, name in enumerate(DIGITS, 1):
+        pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest)
+        if d == 1:
+            segs = [
+                (f_target * 0.65 + idx_up * 0.52 + palm_target * 0.55, idx_up * 0.75 - palm_target * 0.66),
+                (f_target * 0.80 + idx_up * 0.22 + palm_target * 0.55, idx_up * 0.68 - palm_target * 0.73),
+                (f_target * 0.66 - idx_up * 0.08 + palm_target * 0.75, idx_up * 0.62 - palm_target * 0.78),
+            ]
+        else:
+            spread = (3.5 - d) * 0.085
+            segs = []
+            for k, curl in enumerate((0.26, 0.64, 0.96)):
+                ca = curl + 0.04 * (d - 2)
+                dir_v = f_target * math.cos(ca) + palm_target * math.sin(ca) + idx_up * (spread * math.cos(ca))
+                dor_v = dorsal_base * math.cos(ca) + f_target * math.sin(ca)
+                segs.append((dir_v, dor_v))
+
+        for k, (dir_v, dor_v) in enumerate(segs, 1):
+            rest_start = j(f"finger-{d}-{k}")
+            rest_end = j(f"finger-{d}-{k+1}")
+            delta_rest = rest_end - rest_start
+            along_rest = delta_rest.normalized()
+            dorsal_rest = (away_rest - along_rest * along_rest.dot(away_rest)).normalized()
+            rest_b = Matrix((along_rest, dorsal_rest, along_rest.cross(dorsal_rest)))
+
+            along = dir_v.normalized()
+            dorsal = (dor_v - along * along.dot(dor_v)).normalized()
+            targ_b = Matrix((along, dorsal, along.cross(dorsal))).transposed()
+            rot = targ_b @ rest_b
+
+            transforms[f"{name}_{k:02}_{side}"] = (rest_start, pos.copy(), rot)
+            delta = rot @ delta_rest
+            if name == "ring" and k == 1:
+                signet = (pos + delta * 0.42, delta.normalized())
+            pos = pos + delta
+
+    return transforms, signet
+
+
 def contact_pose(kind, side):
-    if kind != "fps_solder":
+    if kind == "fps_bare":
+        return bare_hands_pose(side)
+    if kind not in ("fps_solder", "fps_net"):
         return keyed_grip(kind, side)
     j=lambda key: JOINT[side+"-"+key]
     axis=V((0,0,-1))
@@ -811,7 +891,7 @@ def human(kind):
                 axis = (c-a).normalized()
                 centre = a+axis*(p-a).dot(axis)
                 fullness=.25 if kind=="seer" else .48
-                if kind=="fps_solder" and s=="r":
+                if kind in ("fps_solder","fps_net") and s=="r":
                     fullness*=max(0,min(1,(c-p).dot(axis)/.065))
                 p+=(p-centre)*fullness
             if REST[i].y<.91 and abs(REST[i].x)<.27:
@@ -827,7 +907,7 @@ def human(kind):
                 if bone in transforms:
                     org,dest,rot = transforms[bone]
                     local=p-org
-                    if kind=="fps_solder" and side=="r" and bone.split("_")[0] in DIGITS:
+                    if kind in ("fps_solder","fps_net") and side=="r" and bone.split("_")[0] in DIGITS:
                         digit, segment, _ = bone.split("_")
                         tip = JOINT[f"r-finger-{DIGITS.index(digit)+1}-{int(segment)+1}"]
                         axis = (tip-org).normalized()
@@ -938,7 +1018,7 @@ def human(kind):
         # to the skinned surface (joint centres alone omit the skin envelope).
         origin,start,rotation=transforms["ring_01_r"]
         delta=rotation@(JOINT["r-finger-4-2"]-JOINT["r-finger-4-1"])
-        pos,axis=start+delta*(.78 if kind=="fps_solder" else .5),delta.normalized()
+        pos,axis=start+delta*(.78 if kind in ("fps_solder","fps_net") else .5),delta.normalized()
         rings["r"]=(pos,axis)
         basis=frame(axis,(0,1,0))
         skin=pieces["r"]
@@ -951,12 +1031,12 @@ def human(kind):
         wire("Gold ring band",[surface(basis.col[1]*math.cos(i*math.tau/32)+
              basis.col[2]*math.sin(i*math.tau/32)) for i in range(32)],.0012,"gold",True)
         outward=rotation@V((-1,0,0))
-        if kind=="fps_solder":
+        if kind in ("fps_solder","fps_net"):
             outward=pos-V((-.18,-.15,pos.z))
             outward.z=-outward.length
         outward=(outward-axis*outward.dot(axis)).normalized()
-        if kind in ("fps_shotgun","fps_uzi"):
-            facing=V((-.88,.10,.46))
+        if kind in ("fps_shotgun","fps_uzi","fps_bare"):
+            facing=V((-.88,.10,.46)) if kind != "fps_bare" else V((-.78,.35,-.52))
             outward=(facing-axis*facing.dot(axis)).normalized()
         top=surface(outward)
         oval("Signet setting",top,(.005,.004,.006),"gold")
@@ -1259,7 +1339,7 @@ def export(kind, filename):
             wrist=arm["hand_"+side][1]
             elbow=arm["lowerarm_"+side][1]
             sleeve_end=V(obj.data["sleeveEnd"])
-            if kind=="fps_solder" and side=="r":
+            if kind in ("fps_solder","fps_net") and side=="r":
                 for vertex in obj.data.vertices:
                     x,y,z=vertex.co
                     vertex.co=xyz(solder_palm_fit(V((x,z,-y))))
@@ -1468,14 +1548,17 @@ def game_prop():
 
 
 if __name__ == "__main__":
-    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv:
+    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv and "--net-and-bare-only" not in __import__("sys").argv:
         game_prop()
     for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
                            ("coder","char_vibe_coder"),("partner","char_partner_90s"),
                            ("seer","char_hr_veronika"),("fps","fps_hands_cs2"),
+                           ("fps_bare","fps_hands_bare"),("fps_net","fps_hands_net"),
                            ("fps_belt","fps_hands_belt"),("fps_solder","fps_hands_solder"),
                            ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
-        if "--solder-only" in __import__("sys").argv:
+        if "--net-and-bare-only" in __import__("sys").argv:
+            if kind in ("fps_bare","fps_net"): export(kind,filename)
+        elif "--solder-only" in __import__("sys").argv:
             if kind == "fps_solder": export(kind,filename)
         elif "--coders-only" in __import__("sys").argv:
             if kind in ("coder","coder_seated"): export(kind,filename)

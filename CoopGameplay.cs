@@ -24,6 +24,7 @@ public static partial class Program
         {
             bot=true;
             _world.Partner=new PartnerAvatar();
+            _world.Partner.Effects.UnlockedMicroUzi=true;
             _world.Partner.Move(LocalPose with { Eye=_world.ResolvePlayerCollision(_playerPos+new Vector3(1.7f,0,-1.2f)), Weapon=WeaponType.MicroUzi });
         };
         Net.OnJoined=() =>
@@ -63,7 +64,20 @@ public static partial class Program
     private static FloorSnapshot CaptureFloor() => new(_playerCash,_world.ElevatorBoss,_world.ElevatorDoorOpenAmount,
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
-        guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder);
+        guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder,
+        ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon);
+
+    private static void ApplyProgression(FloorSnapshot? state)
+    {
+        if(state?.ProgressionVersion is null or <1) Floor.OwnedWeaponsMask=FloorSystems.ClassicMask;
+        Floor.OwnedWeaponsMask |= 1<<(int)WeaponType.BareHands;
+        _weapons.Inventory=Floor;
+        if(!Floor.HasWeapon(_weapons.CurrentWeapon)) _weapons.Equip(WeaponType.BareHands);
+        if(state?.Frogs is {} frogs)
+        {
+            _world.Frogs.Clear(); _world.Frogs.AddRange(frogs);
+        }
+    }
 
     private static void HandleCoopMessage(CoopMessage message)
     {
@@ -71,6 +85,7 @@ public static partial class Program
         {
             if(state.Boss==null || state.Coders==null || state.Desks?.Length!=4 || state.Projectiles==null) return;
             if(state.Systems!=null) _world.Systems=state.Systems;
+            ApplyProgression(state);
             _playerCash=state.Cash; _playerHp=state.GuestHp; hostHp=state.HostHp;
             _world.ElevatorBoss=state.Boss; _world.ElevatorDoorOpenAmount=state.Door;
             _world.HasElevatorKey=state.Key; _world.IsFloor2Unlocked=state.Unlocked;
@@ -85,10 +100,21 @@ public static partial class Program
         }
         if(message is {Kind:"fire", Pose:{} shooter})
         {
+            if(Net.Host && !Floor.HasWeapon(shooter.Weapon)) return;
             if(shooter.Weapon==WeaponType.ChatGun && !_world.IsFloor2Unlocked && !_weapons.UnlockedChatGun) return;
             var partner=_world.Partner??=new PartnerAvatar();
             bot=false; partner.Move(shooter);
-            partner.Attack(_world,GrantCash,Net.Host);
+            // The host validates ownership before accepting a guest attack. On the guest a
+            // fire packet may precede the next inventory snapshot.
+            if(Net.Host) partner.Effects.Inventory=Floor;
+            else partner.Effects.Inventory.OwnedWeaponsMask|=1<<(int)shooter.Weapon;
+            if(Net.Host && shooter.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
+            {
+                partner.Effects.CurrentWeapon=shooter.Weapon;
+                if(_world.ProcessPlayerAttack(shooter.Camera,partner.Effects,GrantCash,out var feedback))
+                    Net.Send(new("status",Text:feedback));
+            }
+            else partner.Attack(_world,GrantCash,Net.Host);
             if(Net.Host && _world.IsFloor2Unlocked) _weapons.UnlockedChatGun=true;
             PlayCurrentWeaponAudio(shooter.Weapon);
         }
@@ -98,7 +124,7 @@ public static partial class Program
             if(joint!=null) { Net.Send(new("status",Text:joint)); return; }
             var carried=_world.CarriedCoder;
             _world.CarriedCoder=guestCarried;
-            string result=_world.Interact(actor.Camera,TrySpendCash,GrantCash);
+            string result=_world.Interact(actor.Camera,TrySpendCash,GrantCash,actor.Weapon);
             guestCarried=_world.CarriedCoder;
             _world.CarriedCoder=carried;
             Net.Send(new("status",Text:result));
@@ -120,7 +146,7 @@ public static partial class Program
         else if(Net.Guest && message is {Kind:"status", Text:{} status})
         {
             panelMessage=status;
-            SetHudBanner(status);
+            SetHudBanner(status,2.4f,foreground:true);
         }
     }
 
@@ -136,7 +162,12 @@ public static partial class Program
     {
         if(bot && !Net.Ready) _world.Partner?.Follow(dt,LocalPose,_world,GrantCash);
         _world.Partner?.Tick(dt);
-        if(Net.Guest) { _world.AdvanceLighting(dt); return; }
+        if(Net.Guest)
+        {
+            _world.AdvanceLighting(dt);
+            foreach(var frog in _world.Frogs) if(frog.Rest<=0) frog.AdvanceArc(dt);
+            return;
+        }
         _world.UpdateWorld(dt,_playerPos,_isCrouching,(amount,_)=>_playerCash=Math.Max(0,_playerCash+amount),(damage,label)=>
         {
             _playerHp=AfterDamage(_playerHp,damage);
@@ -184,6 +215,7 @@ public static partial class Program
     private static void StagePartner(Vector3 feet,Vector3 target)
     {
         var ally=new PartnerAvatar();
+        ally.Effects.UnlockedMicroUzi=true;
         var eye=feet+Vector3.UnitY*1.72f;
         var aim=Vector3.Normalize(target-eye);
         ally.Move(new(eye,MathF.Atan2(aim.X,aim.Z),MathF.Asin(aim.Y),WeaponType.MicroUzi));
@@ -194,6 +226,56 @@ public static partial class Program
 
 public static partial class Program
 {
+    private static void CheckCoopProgression(bool guest)
+    {
+        if(!guest) ResetNewGameFloor();
+        var timer=System.Diagnostics.Stopwatch.StartNew();
+        int sent=0; bool deposited=false, ordered=false, hostSawPocket=false;
+        double settled=0;
+        while(timer.Elapsed.TotalSeconds<20)
+        {
+            Net.Pump(LocalPose,CaptureFloor);
+            if(guest && Floor.JobId<0 && Floor.Seated==0 && _world.Frogs.Count>0)
+            {
+                if(sent<3 && _playerCash==0 && Floor.PocketFrogs.Count==sent)
+                {
+                    var frog=_world.Frogs.First(f=>f.SpeciesId=="frog_hopper");
+                    _weapons.Equip(WeaponType.BareHands);
+                    _playerPos=frog.Feet+new Vector3(0,1.1f,1);
+                    LookAtTarget(frog.Feet+Vector3.UnitY*.15f);
+                    Fire(BuildPlayerCamera()); sent++;
+                }
+                if(sent==3 && Floor.PocketFrogs.Count==3 && !deposited)
+                {
+                    _playerPos=SkyscraperFloor1World.TerminalPos+new Vector3(0,1.72f,1.6f);
+                    LookAtTarget(SkyscraperFloor1World.TerminalPos+Vector3.UnitY*1.08f);
+                    Net.Send(new("interact",LocalPose)); deposited=true;
+                }
+                if(deposited && !ordered && _playerCash==4 && Floor.DiscoveredSpecies.GetValueOrDefault("frog_hopper")==3)
+                { FloorAction(WeaponBuyOffset); ordered=true; }
+                if(ordered && Floor.HasWeapon(WeaponType.CaptureNet) && _playerCash==1 && Floor.PocketFrogs.Count==0)
+                {
+                    _weapons.SelectOwnedSlot(1);
+                    if(_weapons.CurrentWeapon!=WeaponType.CaptureNet) throw new InvalidDataException("Guest net slot");
+                    Console.WriteLine("COOP PASS guest: three shared catches, terminal deposit, collection and net purchase"); return;
+                }
+            }
+            if(!guest)
+            {
+                hostSawPocket |= Floor.PocketFrogs.Count==3;
+                if(hostSawPocket && _playerCash==1 && Floor.PocketFrogs.Count==0 && Floor.HasWeapon(WeaponType.CaptureNet)
+                    && Floor.DiscoveredSpecies.GetValueOrDefault("frog_hopper")==3)
+                {
+                    if(settled==0) settled=timer.Elapsed.TotalSeconds;
+                    if(timer.Elapsed.TotalSeconds-settled>.65)
+                    { Console.WriteLine("COOP PASS host: shared catches, single payout, net unlocked"); return; }
+                }
+            }
+            DrawFrame();
+        }
+        throw new TimeoutException($"Shared progression guest={guest}, catches={sent}, pocket={Floor.PocketFrogs.Count}, cash={_playerCash}");
+    }
+
     private static void CheckCoopEscort(bool guest)
     {
         var clock=System.Diagnostics.Stopwatch.StartNew();
@@ -203,7 +285,7 @@ public static partial class Program
         double settled=0;
         if(!guest)
         {
-            var recruit=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
+            var recruit=_world.SpawnFighter(CoderArchetype.JuniorPrompter,meeting,VibeCoderCollection.All.First(s=>s.Id=="tab"));
             identity=recruit.Id; recruit.Position=meeting+new Vector3(0,-1.72f,-1.6f);
             LookAtTarget(recruit.CombatCenter);
             _weapons.SelectSlot(1);

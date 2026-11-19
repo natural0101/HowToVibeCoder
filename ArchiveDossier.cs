@@ -87,7 +87,7 @@ public static partial class LoreAndMenusUI
     {
         0 => SelectedArchiveEntry == 5 ? SolderModel : CoderModel,
         1 => TarotModel,
-        2 => CoderModel,
+        2 => VibeCoderCollection.All[SelectedArchiveEntry].IsFrog ? "prop_bug_frog" : CoderModel,
         _ => SelectedArchiveEntry is 2 or 5 ? SolderModel : PartnerModel
     };
 
@@ -220,7 +220,7 @@ public static partial class LoreAndMenusUI
         }
         string model = ExhibitModel;
         bool tool = model == SolderModel;
-        float scale = model == AgentModel ? .72f : model == TarotModel ? .84f : tool ? 4.3f : 1f;
+        float scale = model=="prop_bug_frog" ? 4.1f : model == AgentModel ? .72f : model == TarotModel ? .84f : tool ? 4.3f : 1f;
         float yaw = -31 + 34 * MathF.Sin(_exhibitTime * .33f);
         Camera3D dossierCam = new() { Position = new(0, 1.42f, 3.75f), Target = new(0, .83f, 0), Up = Vector3.UnitY, FovY = 2.08f, Projection = CameraProjection.Orthographic };
         Raylib.BeginTextureMode(_exhibitTexture);
@@ -412,10 +412,15 @@ internal static unsafe partial class VisualEngine3D
                 Material material = model.Materials[model.MeshMaterial[i]];
                 material.Shader = dossierShader;
                 Color original=material.Maps[0].Color;
-                if(species!=null && !hidden) material.Maps[0].Color=VisualEngine3D.CoderPigment(model.MeshMaterial[i],species.HoodieColor,species.GlassesColor,original);
+                if(species!=null && !hidden) material.Maps[0].Color=species.IsFrog ? Raylib.ColorTint(original,species.HoodieColor) : VisualEngine3D.CoderPigment(model.MeshMaterial[i],species.HoodieColor,species.GlassesColor,original);
                 Raylib.DrawMesh(model.Meshes[i], material, pose);
                 material.Maps[0].Color=original;
             }
+        }
+        if(species is {IsFrog:true} && !HasAsset(asset))
+        {
+            SkyscraperFloor1World.DrawFrog(Vector3.Zero,yaw*MathF.PI/180,hidden ? new(18,30,34,255) : species.HoodieColor,scale:scale);
+            return;
         }
         DrawParts(asset, transform, partner);
         if (partner)

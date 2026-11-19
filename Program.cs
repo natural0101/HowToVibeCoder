@@ -17,7 +17,7 @@ public static partial class Program
     private static Font _uiFont;
 
     // Player state
-    private static Vector3 _playerPos = new(0f, 1.72f, 12.2f);
+    private static Vector3 _playerPos = new(0f, 1.72f, 11.5f);
     private static float _playerYaw = MathF.PI; // Looking North (-Z) toward Central MacBook & Elevator Core
     private static float _playerPitch = -0.05f;
     private static bool _isCrouching = false;
@@ -31,7 +31,8 @@ public static partial class Program
     private static readonly Random ShotRandom = new(413);
     private static float _walkBobPhase = 0f;
 
-    private static int _playerCash = 450;
+    private static int _playerCash;
+    internal static int SharedCash => _playerCash;
     private static int _playerHp = 100;
     private const int XpPerLevel = 1073;
     private static int _xp = 412;
@@ -44,6 +45,7 @@ public static partial class Program
     private static float _weaponFireCooldown = 0f;
     private static string _hudStatusBanner = "ДОБРО ПОЖАЛОВАТЬ В CLOUD ENTROPIC TOWER (ЭТАЖ 1)! Включи Макбук [E] и лови вайб-кодеров!";
     private static float _hudStatusTimer = 6.0f;
+    private static bool _foregroundBanner;
 
     public static int Main(string[] args)
     {
@@ -80,7 +82,7 @@ public static partial class Program
         _world = new SkyscraperFloor1World(fixtureSeed);
         _menuFloor = new SkyscraperFloor1World { Partner = new PartnerAvatar(), ElevatorDoorOpenAmount = .62f };
         _menuFloor.Partner.Move(new(new(-26.2f,1.72f,5.5f),1.26f,0,WeaponType.MicroUzi));
-        _weapons = new WeaponAndCombatView();
+        _weapons = new WeaponAndCombatView { Inventory=Floor };
 
         WireUpSystems();
         ConfigureCoop();
@@ -100,8 +102,10 @@ public static partial class Program
             var guestLog=guest?.StandardOutput.ReadToEndAsync();
             try
             {
+                if(join<0) { Floor.OwnedWeaponsMask=FloorSystems.ClassicMask; _playerCash=450; }
                 RunCoopSmoke(join>=0);
                 CheckCoopEscort(join>=0);
+                CheckCoopProgression(join>=0);
                 if(guest!=null)
                 {
                     if(!guest.WaitForExit(10000)) throw new TimeoutException("Guest did not finish.");
@@ -182,11 +186,12 @@ public static partial class Program
         };
         LoreAndMenusUI.OnUnlockAllWeaponsRequested = () =>
         {
+            Floor.OwnedWeaponsMask |= FloorSystems.ClassicMask;
             _weapons.UnlockedSolderingIron = true;
             _weapons.UnlockedMicroUzi = true;
             _weapons.UnlockedSawedOff = true;
             _weapons.UnlockedChatGun = true;
-            SetHudBanner("ОТКРЫТ ВЕСЬ АРСЕНАЛ 90-Х: РЕМЕНЬ [1], ПАЯЛЬНИК [2], MICRO-UZI [3], ОБРЕЗ/ЧАТ-ГАН [4]!");
+            SetHudBanner("Весь арсенал открыт");
         };
         LoreAndMenusUI.OnResetFloorRequested = () => { if(!Net.Guest) ResetNewGameFloor(); };
         LoreAndMenusUI.RequestCasePayment = () => {
@@ -233,7 +238,7 @@ public static partial class Program
                     _weapons.UnlockedMicroUzi,
                     _weapons.UnlockedSawedOff || _weapons.UnlockedChatGun
                 },
-                CurrentWeaponSlot = (int)_weapons.CurrentWeapon - 1,
+                CurrentWeaponSlot = Math.Clamp((int)_weapons.CurrentWeapon-1,0,3),
                 EquippedSkinId = LoreAndMenusUI.LastWonSkin?.Id ?? -1,
                 SeatedGalleyCoders = seatedCount,
                 HasElevatorKey = _world.HasElevatorKey,
@@ -264,6 +269,7 @@ public static partial class Program
             _world.IsFloor2Unlocked = data.ElevatorBossDefeated;
             _world.ElevatorBoss.IsDefeated = data.ElevatorBossDefeated;
             RestoreFloorSave(data);
+            if(data.ElevatorBossDefeated) _weapons.UnlockedChatGun=true;
             _playerPos = new Vector3(data.PlayerPosX, Math.Max(1.2f, data.PlayerPosY), data.PlayerPosZ);
         };
     }
@@ -274,13 +280,13 @@ public static partial class Program
         bot=awaitingSpawn=pendingCase=false; guestCarried=peerEscort=null; guestHp=100;
         _world = new SkyscraperFloor1World(fixtureSeed);
         AudioMusicSystem.VoiceTimer = 0;
-        _playerPos = new Vector3(0f, 1.72f, 12.2f);
+        _playerPos = new Vector3(0f, 1.72f, 11.5f);
         _playerYaw = MathF.PI;
-        _playerPitch = -0.04f;
+        _playerPitch = -.20f;
         _isCrouching = false;
-        _playerCash = 450;
+        _playerCash = 0;
         _playerHp = 100;
-        _weapons = new WeaponAndCombatView();
+        _weapons = new WeaponAndCombatView { Inventory=Floor };
         LoreAndMenusUI.ActiveWeaponView = _weapons;
         _xp = 412;
         _energy = 100;
@@ -288,7 +294,7 @@ public static partial class Program
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _damageFlash = 0;
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _lastHudHp=100;
         _sprinting=_toggleCrouch=_exhausted=false;
-        SetHudBanner("Найди макбук в центре зала");
+        SetHudBanner("Поймай баг руками [ЛКМ] и сдай его в баг-трекер [E]");
     }
 
     private static bool TrySpendCash(int cost)
@@ -306,8 +312,9 @@ public static partial class Program
         SetHudBanner($"+${amount} ({sourceLabel}) | Баланс: ${_playerCash}");
     }
 
-    private static void SetHudBanner(string text, float duration = 4.2f)
+    private static void SetHudBanner(string text, float duration = 4.2f,bool foreground=false)
     {
+        _foregroundBanner=foreground;
         _hudStatusBanner = text;
         _hudStatusTimer = duration;
     }
@@ -387,11 +394,15 @@ public static partial class Program
             AudioMusicSystem.PlayTarotCash();
         }
 
-        // Weapon slots [1..4]
-        if (Raylib.IsKeyPressed(KeyboardKey.One)) _weapons.SelectSlot(1);
-        if (Raylib.IsKeyPressed(KeyboardKey.Two)) _weapons.SelectSlot(2);
-        if (Raylib.IsKeyPressed(KeyboardKey.Three)) _weapons.SelectSlot(3);
-        if (Raylib.IsKeyPressed(KeyboardKey.Four)) _weapons.SelectSlot(4);
+        for(int i=0;i<6;i++)
+            if(Raylib.IsKeyPressed(KeyboardKey.One+i)) _weapons.SelectOwnedSlot(i);
+        int wheel=Math.Sign(Raylib.GetMouseWheelMove());
+        if(wheel!=0)
+        {
+            var owned=_weapons.Hotbar;
+            int index=Array.IndexOf(owned,_weapons.CurrentWeapon==WeaponType.ChatGun ? WeaponType.SawedOff : _weapons.CurrentWeapon);
+            _weapons.SelectOwnedSlot((index+owned.Length-wheel)%owned.Length);
+        }
         if (Raylib.IsKeyPressed(KeyboardKey.F) && !Raylib.IsKeyDown(KeyboardKey.E)) _weapons.TriggerInspect();
 
         if (Raylib.IsKeyPressed(KeyboardKey.C)) _toggleCrouch = !_toggleCrouch;
@@ -435,8 +446,14 @@ public static partial class Program
             }
             FloorPanel station=_world.PanelAt(camera);
             if(station!=FloorPanel.None) { OpenFloorPanel(station); return; }
+            if(_weapons.CurrentWeapon==WeaponType.BareHands && _world.FocusPrompt(camera)=="Поймать баг")
+            {
+                UpdateTrigger(dt,false,true,false,isMoving);
+                TickFloor(dt);
+                return;
+            }
             if(Net.Guest) Net.Send(new("interact",LocalPose));
-            else SetHudBanner(_world.Interact(BuildPlayerCamera(), TrySpendCash, GrantCash),4.8f);
+            else SetHudBanner(_world.Interact(camera,TrySpendCash,GrantCash,_weapons.CurrentWeapon),2.4f,foreground:true);
         }
 
         UpdateTrigger(dt, Raylib.IsMouseButtonDown(MouseButton.Left),Raylib.IsMouseButtonPressed(MouseButton.Left),
@@ -542,15 +559,16 @@ public static partial class Program
             _weapons.UseRound();
             if(gun==WeaponType.SolderingIron) _weapons.HeatIron();
             float steady=_isCrouching ? .65f : 1;
-            bool melee=gun is WeaponType.Belt or WeaponType.SolderingIron;
+            bool capture=gun is WeaponType.BareHands or WeaponType.CaptureNet;
+            bool melee=capture || gun is WeaponType.Belt or WeaponType.SolderingIron;
             Vector3 aim=Vector3.Normalize(cam.Target-cam.Position);
-            if (melee)
+            if (melee && !capture)
             {
                 Vector3 flat=new(aim.X,0,aim.Z);
                 _playerPos=_world.ResolvePlayerCollision(_playerPos+Vector3.Normalize(flat)*.24f,.40f,_playerPos.Y-_eyeHeight);
                 cam=BuildPlayerCamera();
             }
-            else
+            else if(!capture)
             {
                 Vector3 right=Vector3.Normalize(Vector3.Cross(aim,Vector3.UnitY));
                 float cone=(gun==WeaponType.SawedOff ? .033f : .009f)*steady*(1+_recoilPitch*12);
@@ -567,7 +585,7 @@ public static partial class Program
                 float distance=_world.PelletDistance(cam.Position,aim,range);
                 _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false,shotDirection:aim);
             }
-            else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg,aim) && msg.Length>0) SetHudBanner(msg,1.3f);
+            else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg,aim) && msg.Length>0) SetHudBanner(msg,1.3f,foreground:capture);
             float kick=gun==WeaponType.SawedOff ? .077f : melee ? .009f : .023f;
             // Impulse the spring velocity. The camera starts at the firing sightline.
             float yawKick=(2*ShotRandom.NextSingle()-1)*kick*steady;
@@ -586,6 +604,8 @@ public static partial class Program
     {
         switch (wt)
         {
+            case WeaponType.BareHands: AudioMusicSystem.PlayHandGrab(); break;
+            case WeaponType.CaptureNet: AudioMusicSystem.PlayNetSwipe(); break;
             case WeaponType.Belt:
                 AudioMusicSystem.PlayBeltWhip();
                 break;
@@ -696,6 +716,7 @@ public static partial class Program
         Rectangle cash = new(32, sh-108, cashWidth, 29);
         MainMenuAndPauseUI.Surface(cash,dark,2);
         MainMenuAndPauseUI.Center(_uiFont,money,cash,22,white);
+        if(Floor.PocketFrogs.Count>0) ShadowText(_uiFont,$"Садок: {Floor.PocketFrogs.Count}",cash.X+cash.Width+9,cash.Y+5,16,white);
         void Meter(int x, float fraction)
         {
             Vector2 p = new(x, sh-50);
@@ -723,22 +744,23 @@ public static partial class Program
         LoreAndMenusUI.DrawTextCrisp(_uiFont,$"{(int)MathF.Round(_energy)}%",232,sh-61,21,white);
         LoreAndMenusUI.DrawTextCrisp(_uiFont,"НАПОР",232,sh-37,11,white);
 
-        int barX=cx-139, barY=sh-82;
-        for(int i=0;i<4;i++)
+        var tools=_weapons.Hotbar;
+        int barX=cx-(tools.Length*70-4)/2, barY=sh-82;
+        for(int i=0;i<tools.Length;i++)
         {
             Rectangle r=new(barX+i*70,barY,66,66);
-            bool active=Math.Min((int)_weapons.CurrentWeapon,4)==i+1;
+            bool active=tools[i]==_weapons.CurrentWeapon || tools[i]==WeaponType.SawedOff && _weapons.CurrentWeapon==WeaponType.ChatGun;
             Raylib.DrawRectangleRounded(r,.13f,6,new Color(19,24,38,active ? 128 : 76));
             if(active) Raylib.DrawRectangleRoundedLinesEx(r,.13f,6,2,white);
             LoreAndMenusUI.DrawTextCrisp(_serif,(i+1).ToString(),(int)r.X+5,barY+3,16,white);
-            bool unlocked = i switch {1=>_weapons.UnlockedSolderingIron,2=>_weapons.UnlockedMicroUzi,3=>_weapons.UnlockedSawedOff || _weapons.UnlockedChatGun,_=>true};
-            DrawSlotIcon(i,new(r.X+34,r.Y+35),unlocked);
+            int icon=tools[i] switch { WeaponType.BareHands=>4, WeaponType.CaptureNet=>5, _=>(int)tools[i]-1 };
+            DrawSlotIcon(icon,new(r.X+34,r.Y+35),true);
         }
 
         DrawFloorTelemetry();
         var camera=BuildPlayerCamera();
-        string target=CoopEscort(camera,false,apply:false) ?? _world.FocusPrompt(camera);
-        if(target.Length>0)
+        string target=CoopEscort(camera,false,apply:false) ?? _world.FocusPrompt(camera,_weapons.CurrentWeapon);
+        if(target.Length>0 && !(_foregroundBanner && _hudStatusTimer>0))
         {
             string prompt=target=="Подписать NDA" ? target+" [E]" : "[E]  "+target;
             float width=GameFonts.Measure(_serif,prompt,19).X;
@@ -793,7 +815,7 @@ public static partial class Program
                 "icon_slot_1_belt.png",
                 "icon_slot_2_solder.png",
                 "icon_slot_3_uzi.png",
-                "icon_slot_4_shotgun.png"
+                "icon_slot_4_shotgun.png", "icon_slot_0_bare.png", "icon_slot_net.png"
             ];
             _slotIcons = new Texture2D[files.Length];
             for (int i = 0; i < files.Length; i++)
@@ -810,6 +832,7 @@ public static partial class Program
             }
         }
 
+        Color whiteIcon=accent ?? Color.White;
         int idx = Math.Clamp(index, 0, _slotIcons.Length - 1);
         Texture2D icon = _slotIcons[idx];
         if (icon.Id != 0)
@@ -819,6 +842,19 @@ public static partial class Program
             Rectangle src = new(0, 0, icon.Width, icon.Height);
             Rectangle dst = new(center.X - 29f, center.Y - 29f, 58f, 58f);
             Raylib.DrawTexturePro(icon, src, dst, Vector2.Zero, 0f, tint);
+        }
+        else if(index==5)
+        {
+            Raylib.DrawLineEx(center+new Vector2(-17,16),center+new Vector2(4,-4),3,whiteIcon);
+            Raylib.DrawEllipseLines((int)center.X+7,(int)center.Y-7,13,8,whiteIcon);
+            Raylib.DrawLineEx(center+new Vector2(-5,-6),center+new Vector2(11,5),1,whiteIcon);
+            Raylib.DrawLineEx(center+new Vector2(11,5),center+new Vector2(19,-6),1,whiteIcon);
+        }
+        else if(index==4)
+        {
+            Raylib.DrawRectangleRounded(new(center.X-9,center.Y-1,18,15),.65f,6,whiteIcon);
+            for(int k=0;k<4;k++) Raylib.DrawLineEx(center+new Vector2(-7+4*k,4),center+new Vector2(-8+4.6f*k,-8-4*MathF.Sin(k)),3,whiteIcon);
+            Raylib.DrawLineEx(center+new Vector2(-7,8),center+new Vector2(-15,-2),4,whiteIcon);
         }
     }
 
@@ -945,6 +981,150 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 4-6");
     }
 
+    private static unsafe void CheckZeroToEmpire(Action<string> capture)
+    {
+        void Check(bool ok,string step)
+        {
+            if(!ok) throw new InvalidDataException("Zero-to-Empire: "+step);
+        }
+        bool exit=false;
+        void Key(KeyboardKey key)
+        {
+            AutomationEvent e=new() {Type=2}; e.Params[0]=(int)key;
+            Raylib.PlayAutomationEvent(e); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+            e.Type=1; Raylib.PlayAutomationEvent(e); Raylib.PollInputEvents();
+        }
+        void Approach(Vector3 point,float gap=1.25f)
+        {
+            _playerPos=_world.ResolvePlayerCollision(new(point.X,1.48f,point.Z+gap));
+            LookAtTarget(point);
+        }
+        void Attack()
+        {
+            _weaponFireCooldown=0;
+            UpdateTrigger(1f/60,true,true,false,false);
+        }
+        void RoundTrip()
+        {
+            var data=MainMenuAndPauseUI.CaptureCurrentGameState!();
+            var equipped=_weapons.CurrentWeapon;
+            int wallet=_playerCash, mask=Floor.OwnedWeaponsMask;
+            var pocket=Floor.PocketFrogs.ToArray(); var discoveries=Floor.DiscoveredSpecies.ToArray();
+            string path=Path.GetTempFileName();
+            try
+            {
+                File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(data));
+                WriteFloorSave(data,path,pendingShift!);
+                ResetNewGameFloor();
+                var saved=System.Text.Json.JsonSerializer.Deserialize<GameSaveData>(File.ReadAllText(path))!;
+                _playerCash=saved.Cash;
+                RestoreFloorSave(saved,path);
+                Check(mask==Floor.OwnedWeaponsMask && equipped==_weapons.CurrentWeapon && _playerCash==wallet &&
+                    pocket.SequenceEqual(Floor.PocketFrogs) && discoveries.SequenceEqual(Floor.DiscoveredSpecies),"slot round-trip");
+            }
+            finally { pendingShift=null; pendingFloorSave=null; File.Delete(path); }
+        }
+        ResetNewGameFloor();
+        Check(_playerCash==0 && _weapons.Hotbar.SequenceEqual(new[]{WeaponType.BareHands}) &&
+            _weapons.CurrentWeapon==WeaponType.BareHands && Floor.OwnedWeaponsMask==1,"starting inventory");
+        _weapons.CurrentWeapon=WeaponType.MicroUzi;
+        _weapons.SelectSlot(3); Key(KeyboardKey.Six);
+        Check(!Floor.HasWeapon(WeaponType.CaptureNet) && !TrySpendCash(3),"zero budget");
+        Check(_weapons.CurrentWeapon==WeaponType.BareHands,"locked weapon");
+        RoundTrip();
+        Check(_world.Frogs.Count is >=7 and <=10 && _world.ActiveCoders.Count(c=>c.TimidIntern) is >=2 and <=3,"visible lobby population");
+        Check(_world.Frogs.Any(f=>f.Feet.Y>.15f),"jumping frogs at spawn");
+        capture("12_bare_start_frogs.png");
+        for(int i=0;i<3;i++)
+        {
+            var frog=_world.Frogs.First(f=>f.SpeciesId=="frog_hopper");
+            Approach(frog.Feet+Vector3.UnitY*.15f);
+            if(i==2) { _weaponFireCooldown=0; Key(KeyboardKey.E); } else Attack();
+            Check(Floor.PocketFrogs.Count==i+1,"bare catch "+i);
+        }
+        Check(Floor.DiscoveredSpecies.Count==0,"blind pocket");
+        Approach(SkyscraperFloor1World.TerminalPos+Vector3.UnitY*1.08f);
+        Check(_world.FocusPrompt(BuildPlayerCamera()).Contains("(3 шт.)"),"terminal focus");
+        Key(KeyboardKey.E);
+        Check(_playerCash==4 && Floor.PocketFrogs.Count==0 && Floor.DiscoveredSpecies["frog_hopper"]==3 &&
+            _hudStatusBanner.Contains("Хватает"),"terminal payout plus one discovery");
+        Key(KeyboardKey.U); Check(floorPanel==FloorPanel.Upgrades && !sidegrades,"weapon shop");
+        Key(KeyboardKey.Tab); Check(sidegrades,"upgrade tab");
+        Key(KeyboardKey.One); Key(KeyboardKey.Enter); Key(KeyboardKey.U); Key(KeyboardKey.Two);
+        Check(_playerCash==1 && _weapons.CurrentWeapon==WeaponType.CaptureNet && _weapons.Hotbar.Count()==2,"paid net and slot 2");
+        _playerPos=new(.2f,1.72f,11.5f); LookAtTarget(new(.25f,.75f,7.4f));
+        for(int i=0;i<32;i++) _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
+        capture("13_net_and_progression.png");
+        var crash=_world.Frogs.First(f=>f.SpeciesId=="frog_crash");
+        Approach(crash.Feet+Vector3.UnitY*.15f);
+        _weapons.SelectOwnedSlot(0); Attack();
+        Check(_world.Frogs.Contains(crash) && Floor.PocketFrogs.Count==0 && _hudStatusBanner.Contains("Слишком шустрый"),"crash dodge");
+        _weapons.SelectOwnedSlot(1);
+        Approach(crash.Feet+Vector3.UnitY*.15f); Attack();
+        Check(Floor.PocketFrogs.Contains("frog_crash"),"net catches crash");
+        // Four simultaneous targets exercise the sweep limit through the combat path.
+        var cluster=new Vector3(24,0,18);
+        for(int i=0;i<4;i++)
+            _world.Frogs.Add(new BugFrog {SpeciesId=i==0 ? "frog_hotfix" : "frog_syntax",
+                From=cluster+Vector3.UnitX*(i-.5f)*.12f,To=cluster,Rest=1});
+        int carried=Floor.PocketFrogs.Count;
+        Approach(cluster+Vector3.UnitY*.15f,1.7f); Attack();
+        Check(Floor.PocketFrogs.Count==carried+3 && _world.Frogs.Count(f=>f.From.X>22)==1,"three per sweep");
+        var intern=_world.ActiveCoders.First(c=>c.TimidIntern);
+        Approach(intern.CombatCenter);
+        Attack(); Check(intern.State==CoderAIState.Subdued,"net subdues intern");
+        Approach(intern.Position+Vector3.UnitY*.45f); Key(KeyboardKey.E);
+        Check(_world.CarriedCoder==intern,"intern NDA");
+        Approach(_world.GalleyDesks[0].DeskPosition+Vector3.UnitY*.9f*SkyscraperFloor1World.WorkstationScale,1.9f);
+        Key(KeyboardKey.E);
+        Check(_world.GalleyDesks[0].IsOccupied,"intern payroll");
+        for(int i=1;i<FloorSystems.Weapons.Length;i++)
+        {
+            int price=FloorSystems.Weapons[i].Price;
+            var desk=_world.GalleyDesks[0];
+            for(int tick=0;tick<1200 && _playerCash<price;tick++)
+            {
+                if(desk.IsSlackingInTwitter && Floor.HasWeapon(WeaponType.Belt))
+                {
+                    _weapons.Equip(WeaponType.Belt);
+                    Approach(desk.SeatedFeet+Vector3.UnitY*.77f,1.45f);
+                    Attack();
+                }
+                TickFloor(.1f);
+            }
+            int before=_playerCash;
+            ApplyFloorAction(WeaponBuyOffset+i);
+            _weapons.SelectOwnedSlot(i+1);
+            Check(_playerCash==before-price && _weapons.CurrentWeapon==FloorSystems.WeaponOrder[i+1],"paid "+FloorSystems.Weapons[i].Title);
+        }
+        Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask && VibeCoderCollection.All.Length==20,"full arsenal and catalogue");
+        RoundTrip();
+        Key(KeyboardKey.N); Key(KeyboardKey.Three);
+        int frogIndex=Array.FindIndex(VibeCoderCollection.All,s=>s.Id=="frog_hopper");
+        for(int i=0;i<frogIndex;i++) Key(KeyboardKey.Down);
+        Check(LoreAndMenusUI.CollectionEntry(frogIndex)=="Баг-Попрыгун","deposited frog dossier");
+        DrawFrame();
+        Key(KeyboardKey.Down);
+        Check(LoreAndMenusUI.CollectionEntry(frogIndex+1).StartsWith("???"),"unsold frog dossier");
+        DrawFrame(); Key(KeyboardKey.N);
+        var legacy=new GameSaveData(); string oldSlot=Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(oldSlot,"{}"); ResetNewGameFloor(); RestoreFloorSave(legacy,oldSlot);
+            Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask,"legacy slot migration");
+        }
+        finally { File.Delete(oldSlot); }
+        Console.WriteLine("[AUTOTEST] PASS Zero-to-Empire: $0, hand and E catches, terminal, net, intern NDA, payroll, all six slots and save migration");
+    }
+
+    private static void ResetClassicFixture()
+    {
+        ResetNewGameFloor();
+        Floor.OwnedWeaponsMask=FloorSystems.ClassicMask;
+        _playerCash=450;
+        _weapons.Equip(WeaponType.Belt);
+    }
+
     private static void CheckViewmodelRates()
     {
         Camera3D camera=new() { Target=Vector3.UnitZ, Up=Vector3.UnitY, FovY=76 };
@@ -953,6 +1133,7 @@ public static partial class Program
         foreach(int hz in new[]{60,120,144})
         {
             var view=new WeaponAndCombatView();
+            view.Inventory.OwnedWeaponsMask=FloorSystems.ClassicMask;
             view.SelectSlot(4);
             float dt=1f/hz;
             for(int i=0;i<hz;i++) view.UpdateWeapons(dt,camera);
@@ -975,6 +1156,7 @@ public static partial class Program
         foreach (var (slot, duration) in new[] { (3, 1.45f), (4, 1.55f) })
         {
             var view = new WeaponAndCombatView();
+            view.Inventory.OwnedWeaponsMask=FloorSystems.ClassicMask;
             view.SelectSlot(slot);
             view.UseRound();
             view.TriggerInspect();
@@ -1036,7 +1218,7 @@ public static partial class Program
 
         if(!string.IsNullOrEmpty(frameDir))
         {
-            ResetNewGameFloor();
+            ResetClassicFixture();
             _playerPos=new(24,1.72f,17);
             // Continuous 60 Hz take from the normal input and rendering paths.
             const string take="motion";
@@ -1044,15 +1226,15 @@ public static partial class Program
             {
                 Key(slot,true); Tick(1,take); Key(slot,false); Tick(31,take);
             }
-            Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false); Tick(45);
+            Key(KeyboardKey.Six,true); Tick(); Key(KeyboardKey.Six,false); Tick(45);
             Tick(12,take);
             _weapons.UseRound();
             _weapons.UseRound(); // Stage both spent hulls for the reload.
             Key(KeyboardKey.R,true); Tick(1,take); Key(KeyboardKey.R,false); Tick(100,take);
-            Select(KeyboardKey.Three);
+            Select(KeyboardKey.Five);
             _weapons.UseRound();
             Key(KeyboardKey.R,true); Tick(1,take); Key(KeyboardKey.R,false); Tick(94,take);
-            Select(KeyboardKey.Four);
+            Select(KeyboardKey.Six);
             Key(KeyboardKey.W,true); Key(KeyboardKey.LeftShift,true); Tick(47,take);
             Key(KeyboardKey.Space,true); Tick(1,take); Key(KeyboardKey.Space,false);
             Key(KeyboardKey.LeftShift,false); Key(KeyboardKey.W,false); Tick(66,take);
@@ -1060,11 +1242,11 @@ public static partial class Program
             Key(KeyboardKey.A,true); Tick(22,take); Key(KeyboardKey.A,false);
             Key(KeyboardKey.D,true); Tick(27,take); Key(KeyboardKey.D,false); Tick(21,take);
             Mouse(true); Tick(1,take); Mouse(false); Tick(45,take);
-            Select(KeyboardKey.Three);
+            Select(KeyboardKey.Five);
             Mouse(true); Tick(31,take); Mouse(false); Tick(36,take);
         }
 
-        ResetNewGameFloor();
+        ResetClassicFixture();
         Raylib.DisableCursor();
         Tick(2);
         _playerPos=new(24,1.72f,17);
@@ -1110,16 +1292,16 @@ public static partial class Program
         Require(_playerVelY>5,"buffered landing jump");
         Console.WriteLine($"[AUTOTEST] Bait top={SkyscraperFloor1World.TrapTop:F3}m, side collision, vault, coyote and buffered jump PASS");
 
-        ResetNewGameFloor();
+        ResetClassicFixture();
         _playerPos=new(24,1.72f,17);
-        Key(KeyboardKey.Three,true); Tick(); Key(KeyboardKey.Three,false);
+        Key(KeyboardKey.Five,true); Tick(); Key(KeyboardKey.Five,false);
         Mouse(true); Tick(60); Mouse(false); Tick();
         int burst=32-_weapons.Ammo;
         Require(burst==12,"held LMB burst: "+burst);
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false);
         Tick(40); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
         capture("reload_uzi.png"); Tick(49); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
-        Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false);
+        Key(KeyboardKey.Six,true); Tick(); Key(KeyboardKey.Six,false);
         Mouse(true); Tick(); Mouse(false); Tick(27); Require(_weapons.Ammo==1,"shotgun first shell");
         Mouse(true); Tick(); Mouse(false); Require(_weapons.Ammo==0 && _weapons.Reloading,"shotgun auto reload");
         Tick(43); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
@@ -1127,13 +1309,13 @@ public static partial class Program
         Mouse(true); Tick(); Mouse(false); Tick();
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(95);
         Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
-        Key(KeyboardKey.Three,true); Tick(); Key(KeyboardKey.Three,false);
+        Key(KeyboardKey.Five,true); Tick(); Key(KeyboardKey.Five,false);
         Mouse(true); Tick(156); Mouse(false);
         Require(_weapons.Ammo==0 && _weapons.Reloading,"Uzi empty auto reload");
         Tick(89); Require(_weapons.Ammo==32,"empty Uzi refill");
         Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 20->32; shotgun 2->1->0->2, two ejected hulls");
 
-        ResetNewGameFloor();
+        ResetClassicFixture();
         var fighters=_world.ActiveCoders.Where(c=>c.IsCombatCoder).ToArray();
         Require(fighters.Length==4 && fighters.All(c=>c.MaxHp is >=40 and <=55),"weak fighters");
         var enemy=fighters[0];
@@ -1243,7 +1425,7 @@ public static partial class Program
         }
 
         // 0. 00_main_menu_classic.png - Classic PC Main Menu over live 3D Skyscraper Floor 1
-        ResetNewGameFloor();
+        ResetClassicFixture();
         MainMenuAndPauseUI.IsInMainMenu = true;
         MainMenuAndPauseUI.IsPaused = false;
         MainMenuAndPauseUI.IsSaveLoadPanelOpen = false;
@@ -1269,11 +1451,12 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
 
+        CheckZeroToEmpire(name=>CaptureShot(name));
         CheckSprintA(name=>CaptureShot(name));
         CheckFpsGameplay(name=>{ _hudStatusTimer=0; CaptureShot(name); });
 
         // 1. 01_office_hub_hr_tarot.png - Central White Shark Reception opposite the Elevator: HR Tarot Veronika with crystal ball & candles, Belt in crimson jacket hands
-        ResetNewGameFloor();
+        ResetClassicFixture();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(1); // Father's Leather Belt
         _playerPos = new Vector3(0.0f, 1.72f, 10.15f);
@@ -1282,7 +1465,7 @@ public static partial class Program
         CaptureShot("01_office_hub_hr_tarot.png","crop_slot_1_belt.png",new(307,452,715,214));
 
         // 2. 02_macbook_trap_ambush.png - Ambush behind Leather Sofa/Ficus, glowing MacBook Trap + Central Armored Elevator Shaft + Left/Right Forks + Walking Vibe Coder with Anxiety Bar
-        ResetNewGameFloor();
+        ResetClassicFixture();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(2); // 90s Soldering Iron with rising rosin smoke
         _isCrouching = true;
@@ -1338,7 +1521,7 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] F started and finished inspection in all four slots.");
 
         // 3. 03_uzi_combat_saas_miniboss.png - Firing Micro-Uzi (muzzle flash, brass shells, tracers, hitmarker) at SaaS Guru Mini-Boss + flying 3D "500 INTERNAL ERROR" & "API KEY LEAKED" blocks
-        ResetNewGameFloor();
+        ResetClassicFixture();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _isCrouching = false;
         _weapons.SelectSlot(3); // Micro-Uzi
@@ -1380,7 +1563,7 @@ public static partial class Program
         CaptureShot("03_uzi_combat_saas_miniboss.png","crop_slot_3_uzi.png",new(670,317,442,370));
 
         // 4. 04_hr_tarot_payout_and_galley.png - Selling captured coder to HR Tarot Veronika (+$$$ Cash Burst) + Working & Slacking Coders at Galley Desks
-        ResetNewGameFloor();
+        ResetClassicFixture();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(1);
         _world.CarriedCoder = new VibeCoderEntity
@@ -1409,7 +1592,7 @@ public static partial class Program
         CaptureShot("04_hr_tarot_payout_and_galley.png");
 
         // 5. 05_elevator_boss_escaped_agent.png - Open Central Armored Elevator + Escaped AI Agent v0.1 Boss throwing 40GB node_modules cubes
-        ResetNewGameFloor();
+        ResetClassicFixture();
         MainMenuAndPauseUI.IsInMainMenu = false;
         _weapons.SelectSlot(4); // Sawed-Off Shotgun / Chat-Gun
         _weapons.UpdateWeapons(.3f,BuildPlayerCamera());
@@ -1460,13 +1643,13 @@ public static partial class Program
 {
     private static unsafe void CheckSprintA(Action<string> capture)
     {
-        ResetNewGameFloor();
+        ResetClassicFixture();
         Raylib.DisableCursor();
         static void Check(bool ok,string step)
         {
             if(!ok) throw new InvalidDataException("Sprint A: "+step);
         }
-        Check(VibeCoderCollection.All.Select(s=>s.Id).Distinct().Count()==16,"unique species IDs");
+        Check(VibeCoderCollection.All.Select(s=>s.Id).Distinct().Count()==20,"unique species IDs");
         var distribution=new int[4];
         var rng=new Random(829);
         for(int i=0;i<12000;i++)
@@ -1638,12 +1821,13 @@ public static partial class Program
         Check(Floor.Report is {Job:1,Success:true} && _world.GalleyDesks[2].TechDebtRate<0,"architect stealth delivery");
         Floor.Start(2,_world); Floor.Deliver(CoderArchetype.CryptoBro,false,250); Floor.Tick(.01f,_world,null);
         Check(Floor.Report is {Job:2,Success:true},"fintech delivery");
-        ResetNewGameFloor();
+        ResetClassicFixture();
         Floor.Start(3,_world); Use(SkyscraperFloor1World.DeployPos,1.12f);
         Check(Floor.ReleaseStarted && Floor.Friday==45,"Friday contract armed");
         for(int i=0;i<451;i++)
         {
-            var threat=_world.ActiveCoders.Find(c=>c.ReleaseAttacker && c.Hp>0 && c.State!=CoderAIState.Subdued);
+            var threat=_world.ActiveCoders.Where(c=>c.IsCombatCoder && c.Hp>0 && c.State!=CoderAIState.Subdued && (c.ReleaseAttacker || c.Aggro))
+                .OrderByDescending(c=>c.ReleaseAttacker).ThenBy(c=>Vector3.DistanceSquared(c.Position,_playerPos)).FirstOrDefault();
             if(threat!=null && i%4==0)
             {
                 At(threat.Position+new Vector3(0,1.72f,1.8f),threat.CombatCenter);
@@ -1665,12 +1849,12 @@ public static partial class Program
             WriteFloorSave(restoreData,scratch,pendingShift!);
             pendingShift=null;
             var expected=Floor;
-            ResetNewGameFloor(); RestoreFloorSave(restoreData,scratch);
+            ResetClassicFixture(); RestoreFloorSave(restoreData,scratch);
             Check(Floor.Report==expected.Report && Floor.SEC==expected.SEC && Floor.PT==expected.PT &&
                 Floor.TD==expected.TD && Floor.Serial==expected.Serial,"saved shift round-trip");
         }
         finally { File.Delete(scratch); }
-        ResetNewGameFloor();
+        ResetClassicFixture();
         var rack=_world.RackPos;
         var near=_world.ActiveCoders[2]; near.Position=rack+new Vector3(2,0,0);
         At(rack+new Vector3(0,1.72f,2.5f),rack+Vector3.UnitY);
@@ -1700,7 +1884,7 @@ public static partial class Program
         _weapons.UpdateWeapons(1.46f,BuildPlayerCamera());
         Check(_weapons.Capacity==50 && _weapons.Reloading,"drum reload tradeoff");
         _weapons.UpdateWeapons(.45f,BuildPlayerCamera()); Check(_weapons.Ammo==50,"drum refills to 50");
-        ResetNewGameFloor();
+        ResetClassicFixture();
         Console.WriteLine("[AUTOTEST] Sprint A PASS: risk, four profiles, NDA, payroll, parry, electro-puddle, Friday, five contracts, debrief and sidegrades");
     }
 }

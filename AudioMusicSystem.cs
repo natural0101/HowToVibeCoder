@@ -183,6 +183,8 @@ namespace HowToVibeCoder
                 EnsureAllWavFilesExist();
                 _soundsByName["boot_land"]=LoadMechanicalSound(true);
                 _soundsByName["action_clack"]=LoadMechanicalSound(false);
+                foreach(string effect in new[]{"frog_croak","net_swipe","hand_grab"})
+                    _soundsByName[effect]=LoadPcm(CaptureSound(effect));
                 SfxBeltWhip = LoadAndRegister("belt_whip.wav");
                 SfxSolderSizzle = LoadAndRegister("solder_sizzle.wav");
                 SfxUziShot = LoadAndRegister("uzi_shot.wav");
@@ -347,9 +349,9 @@ namespace HowToVibeCoder
             }
             return samples;
         }
-        private static unsafe Sound LoadMechanicalSound(bool landing)
+        private static Sound LoadMechanicalSound(bool landing) => LoadPcm(MechanicalTransient(landing));
+        private static unsafe Sound LoadPcm(short[] samples)
         {
-            short[] samples=MechanicalTransient(landing);
             fixed(short* pcm=samples)
             {
                 Wave wave=new() { SampleCount=(uint)samples.Length, SampleRate=44100, SampleSize=16, Channels=1, Data=pcm };
@@ -370,6 +372,26 @@ namespace HowToVibeCoder
             Console.WriteLine("[AUTOTEST] Landing thump and reload clack loaded, native master=0");
         }
 
+        private static short[] CaptureSound(string kind)
+        {
+            bool croak=kind=="frog_croak", swipe=kind=="net_swipe";
+            short[] pcm=new short[croak ? 8800 : swipe ? 10300 : 4400];
+            Random noise=new(215);
+            double phase=0, smooth=0;
+            for(int i=0;i<pcm.Length;i++)
+            {
+                double u=(double)i/pcm.Length;
+                phase+=Math.Tau*(860-540*u+90*Math.Sin(u*18))/44100;
+                smooth+=((noise.NextDouble()*2-1)-smooth)*(.07+.45*u);
+                double tone=croak ? Math.Sin(phase+.8*Math.Sin(phase*2))*(.6+.4*Math.Sin(35*u)) :
+                    swipe ? smooth*Math.Sin(Math.PI*u) : smooth*Math.Exp(-14*u)+.3*Math.Sin(phase*.24)*Math.Exp(-10*u);
+                pcm[i]=ClampSample(.8*tone*Math.Min(1,u*65)*Math.Pow(1-u,1.6));
+            }
+            return pcm;
+        }
+        public static void PlayFrogCroak() => PlaySfx("frog_croak",.94f+_rng.NextSingle()*.12f,.32f);
+        public static void PlayNetSwipe() => PlaySfx("net_swipe",1,.78f);
+        public static void PlayHandGrab() => PlaySfx("hand_grab",1,.75f);
         public static void PlayLanding() => PlaySfx("boot_land",1,.65f);
         public static void PlayActionClack(float pitch) => PlaySfx("action_clack",pitch,.74f);
         public static void PlayBeltWhip() => PlayWeaponSound(SfxBeltWhip, volumeScale: EffectLevels[0]);

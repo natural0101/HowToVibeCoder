@@ -11,7 +11,8 @@ namespace HowToVibeCoder;
 
 internal sealed record FloorSnapshot(int Cash, EscapedAgentBoss Boss, float Door, bool Key, bool Unlocked,
     bool Trap, SubscriptionBaitTier Bait, VibeCoderEntity[] Coders, GalleyDeskSlot[] Desks,
-    EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100, FloorSystems? Systems = null,VibeCoderEntity? HostCarried=null);
+    EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100, FloorSystems? Systems = null,VibeCoderEntity? HostCarried=null, int ProgressionVersion=0,
+    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands);
 
 internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0);
 internal sealed record Motion(string Session, long Sequence, PlayerPose Pose);
@@ -19,7 +20,7 @@ internal sealed record Motion(string Session, long Sequence, PlayerPose Pose);
 internal sealed class CoopNetworkSystem : IDisposable
 {
     public const int DefaultPort=27094;
-    private const string Hello="HowToVibeCoder/4", Search=Hello+"/search", Offer=Hello+"/host";
+    private const string Hello="HowToVibeCoder/5", Search=Hello+"/search", Offer=Hello+"/host";
     private static readonly JsonSerializerOptions Json=new() {
         IncludeFields=true, IgnoreReadOnlyProperties=true, DefaultIgnoreCondition=JsonIgnoreCondition.WhenWritingNull
     };

@@ -8,10 +8,7 @@ namespace HowToVibeCoder;
 
 public enum SubscriptionBaitTier
 {
-    FreeTier = 0,         // $0   - attracts Junior Tabber (100 HP, $150 payout)
-    CursorPro = 1,        // $20  - attracts Prompt-Bro (160 HP, $240 payout)
-    TurkishAccount = 2,   // $80  - attracts Cursor Adept (240 HP, $360 payout)
-    CloudEntropicMax = 3  // $200 - spawns Mini-Boss "ГУРУ КУРСОРА: SAAS ЗА 2 ЧАСА ($60K MRR)" (600 HP, $600 payout)
+    FreeTier=0, CursorPro=1, TurkishAccount=2, CloudEntropicMax=3
 }
 
 public enum CoderArchetype
@@ -50,7 +47,7 @@ public sealed class VibeCoderEntity
     public string Name = "";
     public string SpeciesId = "";
     public VibeCoderRarity Rarity;
-    public bool IdentityRevealed;
+    public bool IdentityRevealed, TimidIntern;
     internal string MysteryTag => (Rarity==VibeCoderRarity.Common ? "???" : "★ ???") +
         (State==CoderAIState.Subdued ? "  Сломлен" : "");
     public string Subtitle = "";
@@ -297,6 +294,7 @@ public sealed partial class SkyscraperFloor1World
 
     public SkyscraperFloor1World(int? speciesSeed=null)
     {
+        frogRandom=speciesSeed.HasValue ? new Random(speciesSeed.Value+83) : new Random();
         speciesRandom=speciesSeed.HasValue ? new Random(speciesSeed.Value) : new Random();
         InitializeFloorLayout();
     }
@@ -466,6 +464,7 @@ public sealed partial class SkyscraperFloor1World
         SpawnFighter(CoderArchetype.TeamLeadMeeter,new(-7,0,-11));
         SpawnFighter(CoderArchetype.SeniorArchitect,new(7,0,-12));
 
+        SeedLobby();
         // Reset Boss & Progression
         ElevatorBoss.IsActive = false;
         ElevatorBoss.IsDefeated = false;
@@ -703,11 +702,11 @@ public sealed partial class SkyscraperFloor1World
 
     public static (string Name, int Cost, Color NeonColor, string Description) GetBaitInfo(SubscriptionBaitTier tier) => tier switch
     {
-        SubscriptionBaitTier.FreeTier => ("Free Tier ($0)", 0, new Color(45, 245, 130, 255), "Базовый шанс редких видов. Выкуп $160"),
-        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($20)", 20, new Color(40, 215, 255, 255), "Повышает шанс редких видов. Выкуп $250"),
-        SubscriptionBaitTier.TurkishAccount => ("Турецкий Аккаунт ($80)", 80, new Color(215, 75, 255, 255), "Повышает шанс редких и эпических видов. Выкуп $380"),
-        SubscriptionBaitTier.CloudEntropicMax => ("Cloud Entropic Max ($200)", 200, new Color(255, 185, 35, 255), "Мини-босс и кандидат. Наивысший шанс легендарного вида. Выкуп босса $600"),
-        _ => ("Free Tier ($0)", 0, Color.Lime, "")
+        SubscriptionBaitTier.FreeTier => ("Бесплатный Wi-Fi ($15)", 15, new Color(45, 245, 130, 255), "Обычные кандидаты. Выкуп $160"),
+        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($60)", 60, new Color(40, 215, 255, 255), "Повышает шанс редких видов. Выкуп $250"),
+        SubscriptionBaitTier.TurkishAccount => ("Team Workspace ($140)", 140, new Color(215, 75, 255, 255), "Повышает шанс редких и эпических видов. Выкуп $380"),
+        SubscriptionBaitTier.CloudEntropicMax => ("Enterprise Unlimited ($260)", 260, new Color(255, 185, 35, 255), "Мини-босс и кандидат. Наивысший шанс легендарного вида. Выкуп босса $600"),
+        _ => ("Бесплатный Wi-Fi ($15)", 15, Color.Lime, "")
     };
 
     // =========================================================================
@@ -728,6 +727,7 @@ public sealed partial class SkyscraperFloor1World
             Add(p+new Vector3(0,0,.74f*WorkstationScale),.54f,.52f*WorkstationScale,.50f);
         }
         Add(DeployPos,.83f,1.14f,.61f);
+        Add(TerminalPos,.75f,1.35f,.65f);
         Add(CoffeePos,.85f,1.39f,.68f);
         foreach (var p in Pillars) Add(p.Center,2*p.HalfWidth,CeilingHeight,2*p.HalfDepth);
         Add(CentralElevatorCorePos,2*ElevatorCoreHalfW,CeilingHeight,2*ElevatorCoreHalfD);
@@ -904,7 +904,7 @@ public sealed partial class SkyscraperFloor1World
         }
         else
         {
-            var species=VibeCoderCollection.Roll(speciesRandom,tier,Systems);
+            var species=tier==SubscriptionBaitTier.FreeTier ? VibeCoderCollection.CommonBait[speciesRandom.Next(VibeCoderCollection.CommonBait.Length)] : VibeCoderCollection.Roll(speciesRandom,tier,Systems);
             coder.AssignRole(species.Archetype);
             VibeCoderCollection.Dress(coder,species);
         }
@@ -1003,7 +1003,7 @@ public sealed partial class SkyscraperFloor1World
             int activeCount = 0;
             for (int i = 0; i < ActiveCoders.Count; i++)
             {
-                if (!ActiveCoders[i].IsCombatCoder && ActiveCoders[i].State != CoderAIState.PanickedFleeing)
+                if (!ActiveCoders[i].TimidIntern && !ActiveCoders[i].IsCombatCoder && ActiveCoders[i].State != CoderAIState.PanickedFleeing)
                     activeCount++;
             }
 
@@ -1046,6 +1046,7 @@ public sealed partial class SkyscraperFloor1World
         }
 
         Systems.Tick(dt,this,onPassiveIncomeOrPayout);
+        TickFrogs(dt,playerPos,guestPosition);
         return passiveEarned;
     }
 
@@ -1079,6 +1080,19 @@ public sealed partial class SkyscraperFloor1World
                 continue;
             }
             if(c.State==CoderAIState.Subdued) continue;
+            if(c.TimidIntern)
+            {
+                Vector3 away=c.Position-playerPos; away.Y=0;
+                if(away.LengthSquared() is >.001f and <3.24f)
+                {
+                    c.Position=ResolvePlayerCollision(c.Position+Vector3.Normalize(away)*dt*1.9f,.24f);
+                    c.FacingYaw=MathF.Atan2(away.X,away.Z); c.WalkCycle+=dt*8;
+                    if(c.StateTimer<=0 && !Systems.HasWeapon(WeaponType.CaptureNet))
+                    { Systems.Announce("Пугливый — нужен Сачок ($3)",1.3f); c.StateTimer=3; }
+                }
+                c.StateTimer=Math.Max(0,c.StateTimer-dt);
+                continue;
+            }
             if (c.IsCombatCoder && c.State==CoderAIState.CombatHostile && c.StunTimer<=0)
             {
                 if (UpdateFighter(c,dt,playerPos))
@@ -1645,6 +1659,13 @@ public sealed partial class SkyscraperFloor1World
         Vector3 origin = camera.Position;
         Vector3 forward = shotDirection ?? Vector3.Normalize(camera.Target - camera.Position);
 
+        if(weaponSystem.CurrentWeapon is WeaponType.BareHands or WeaponType.CaptureNet)
+        {
+            combatFeedback=CatchSweep(camera,weaponSystem.CurrentWeapon==WeaponType.CaptureNet);
+            weaponSystem.TriggerWeaponAttack(camera,hitEnemy:combatFeedback.Length>0);
+            return combatFeedback.Length>0;
+        }
+
         float maxRange = weaponSystem.CurrentWeapon switch
         {
             WeaponType.Belt => 3.8f,
@@ -1747,7 +1768,7 @@ public sealed partial class SkyscraperFloor1World
                     onGrantMoney?.Invoke(1500, "ПОБЕДА НАД ИИ-АГЕНТОМ v0.1");
                     AudioMusicSystem.PlayTarotCash();
 
-                    combatFeedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Выпал СЕКРЕТНЫЙ ЧАТ-ГАН [4] + $1500! Лифт на 2-й этаж открыт!";
+                    combatFeedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Выпал СЕКРЕТНЫЙ ЧАТ-ГАН + $1500! Лифт на 2-й этаж открыт!";
                 }
                 else
                 {
@@ -2060,6 +2081,7 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Shadow(CentralMacBookPos,3*TrapScale,1.9f*TrapScale);
             foreach(var desk in GalleyDesks) VisualEngine3D.Shadow(desk.DeskPosition,3,2.4f);
         }
+        DrawBugHunt();
         DrawOfficeProps3D();
         DrawHrTarotBoothAndVeronika3D();
         Draw90sArsenalAndShopStand3D();
@@ -2079,7 +2101,24 @@ public sealed partial class SkyscraperFloor1World
             }
         }
         DrawElevatorDoors(false);
-        Partner?.Draw();
+        if(Partner is {} ally && ally.Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
+        {
+            float yaw=ally.Pose.Yaw, height=ally.Pose.Eye.Y<1.4f ? .75f : 1;
+            VisualEngine3D.DrawCharacterDirectionalShadow(ally.Feet,1.7f*height,.32f);
+            VisualEngine3D.Asset("char_partner_90s",ally.Feet,yaw*180/MathF.PI,stretch:new Vector3(1,height,1),hideProp:true);
+            if(ally.Pose.Weapon==WeaponType.CaptureNet)
+            {
+                var grip=ally.Feet+Vector3.Transform(new Vector3(-.095f,1.25f*height,.26f),Quaternion.CreateFromAxisAngle(Vector3.UnitY,yaw));
+                if(VisualEngine3D.HasAsset("weapon_net_90s")) VisualEngine3D.Asset("weapon_net_90s",grip,yaw*180/MathF.PI);
+                else
+                {
+                    var tip=grip+new Vector3(MathF.Sin(yaw),.23f,MathF.Cos(yaw))*.62f;
+                    VisualEngine3D.Rod(grip,tip,.014f,.012f,8,new(154,103,68,255));
+                    Raylib.DrawCircle3D(tip,.16f,Vector3.UnitX,90,Color.LightGray);
+                }
+            }
+        }
+        else Partner?.Draw();
 
         // Draw all active Vibe Coders & SaaS Guru Mini-Boss
         for (int i = 0; i < ActiveCoders.Count; i++)
@@ -2448,7 +2487,7 @@ public sealed partial class SkyscraperFloor1World
         Vector3 s = ArsenalShopPos;
         VisualEngine3D.Asset("prop_arsenal_counter", s, 0f);
 
-        // 4 Subscription Bait Boxes displayed on counter (`Free $0`, `Pro $20`, `Turkey $80`, `Max $200`)
+        // Four subscription tiers on the counter.
         SubscriptionBaitTier[] tiers =
         {
             SubscriptionBaitTier.FreeTier,
@@ -2735,7 +2774,7 @@ public sealed partial class SkyscraperFloor1World
     // =========================================================================
     // 2D WORLD-TO-SCREEN LABELS, HEALTH BARS, ANXIETY BARS & INTERACTION HINTS
     // =========================================================================
-    private enum FocusKind { None, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Cooler, Coffee, Rack, Printer, Deploy }
+    private enum FocusKind { None, Terminal, Frog, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Cooler, Coffee, Rack, Printer, Deploy }
     private readonly record struct Focus(FocusKind Kind, string Label, int Index);
     private string PickUp(VibeCoderEntity c,Action<int,string> grant)
     {
@@ -2761,11 +2800,14 @@ public sealed partial class SkyscraperFloor1World
         return $"СХВАЧЕН: {c.Name}! Неси в будку HR-Таролога Вероники (слева на Юге) или на стол Галеры (справа)!";
     }
 
-    public string Interact(Camera3D camera, Func<int,bool> spend, Action<int,string> grant)
+    public string Interact(Camera3D camera, Func<int,bool> spend, Action<int,string> grant, WeaponType tool=WeaponType.BareHands)
     {
-        Focus focus = FindFocus(camera);
+        Focus focus = FindFocus(camera,tool);
         switch (focus.Kind)
         {
+            case FocusKind.Terminal:
+            case FocusKind.Veronika when Systems.PocketFrogs.Count>0: return DepositBugs(grant);
+            case FocusKind.Frog: return CatchSweep(camera,false);
             case FocusKind.Offer:
                 var candidate=ActiveCoders[focus.Index];
                 if(!spend(80)) return "На аванс нужно $80";
@@ -2801,9 +2843,9 @@ public sealed partial class SkyscraperFloor1World
         }
     }
 
-    public string FocusPrompt(Camera3D camera) => FindFocus(camera).Label;
+    public string FocusPrompt(Camera3D camera,WeaponType tool=WeaponType.BareHands) => FindFocus(camera,tool).Label;
 
-    private Focus FindFocus(Camera3D camera)
+    private Focus FindFocus(Camera3D camera,WeaponType tool=WeaponType.BareHands)
     {
         Vector3 look = Vector3.Normalize(camera.Target - camera.Position);
         Focus focus = new(FocusKind.None, "", -1);
@@ -2822,7 +2864,9 @@ public sealed partial class SkyscraperFloor1World
             Consider(station.Feet,station.Height,3.2f,station.Kind,label,i);
         }
         Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "Макбук-ловушка");
-        Consider(HrTarotBoothPos, 1.6f, 4.6f, FocusKind.Veronika, "HR Вероника");
+        string deposit=$"Сдать багов ({Systems.PocketFrogs.Count} шт.)";
+        Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер: садок пуст");
+        Consider(HrTarotBoothPos,1.6f,4.6f,FocusKind.Veronika,Systems.PocketFrogs.Count>0 ? deposit : "HR Вероника");
         Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
         Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, "Центральный лифт");
         Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, "Центральный лифт");
@@ -2836,6 +2880,12 @@ public sealed partial class SkyscraperFloor1World
         for(int i=0;i<ActiveCoders.Count;i++)
             if(ActiveCoders[i].Hp>0 && ActiveCoders[i].State==CoderAIState.Subdued)
                 Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,"Подписать NDA",i);
+        if(tool==WeaponType.BareHands)
+            foreach(var frog in Frogs)
+            {
+                float aim=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,2.4f);
+                if(aim>Math.Max(best,HandAim(frog))) { best=aim; focus=new(FocusKind.Frog,"Поймать баг",-1); }
+            }
         return focus;
     }
 
@@ -2883,6 +2933,14 @@ public sealed partial class SkyscraperFloor1World
             Raylib.DrawRectangleRec(track,new Color(14,18,26,145));
             track.Width*=Math.Clamp(health,0,1);
             if(track.Width>=1) Raylib.DrawRectangleRec(track,accent);
+        }
+        foreach(var frog in Frogs)
+        {
+            bool rare=frog.Species.Rarity!=VibeCoderRarity.Common;
+            float alignment=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,rare ? 8 : 4.5f);
+            if(alignment<(rare ? .91f : .98f)) continue;
+            string label=Systems.DiscoveredSpecies.ContainsKey(frog.SpeciesId) ? frog.Species.Name : rare ? "★ ???" : "???";
+            Plate(frog.Feet+Vector3.UnitY*.38f,label,-1,frog.Species.HoodieColor,true);
         }
         if(Vector3.DistanceSquared(camera.Position,HrTarotBoothPos)<100 && FindFocus(camera).Kind!=FocusKind.Veronika)
             Plate(HrTarotBoothPos+Vector3.UnitY*1.87f,"HR Вероника",1f,new Color(168,153,202,255));
@@ -3192,5 +3250,228 @@ public sealed partial class SkyscraperFloor1World
                 Arc(c.CombatCenter);
         while(channel<3)
             Arc(center+new Vector3(MathF.Cos(channel*2.7f)*.72f,.06f,MathF.Sin(channel*2.7f)*.72f));
+    }
+}
+
+internal sealed class BugFrog
+{
+    public string SpeciesId="frog_hopper";
+    public Vector3 From, To;
+    public float Phase, Rest, Yaw, TargetYaw;
+    internal void AdvanceArc(float dt) => Phase=Math.Min(1,Phase+dt/(.35f+.30f*Species.HopHeight));
+    internal VibeCoderSpecies Species => VibeCoderCollection.Frogs[SpeciesId];
+    internal Vector3 Feet => Vector3.Lerp(From,To,Phase)+Vector3.UnitY*(4*Phase*(1-Phase)*Species.HopHeight);
+}
+
+public sealed partial class SkyscraperFloor1World
+{
+    internal readonly List<BugFrog> Frogs=new();
+    internal static readonly Vector3 TerminalPos=new(-2.05f,0,8.85f);
+    private readonly Random frogRandom;
+    private float refill, previousDebt, croakDelay;
+
+    private void SeedLobby()
+    {
+        Frogs.Clear(); previousDebt=0; refill=4;
+        Vector3[] pads=[new(-1,0,10.05f),new(.95f,0,9.4f),new(-.55f,0,8.1f),
+            new(2.1f,0,8.4f),new(-3.1f,0,7.2f),new(1.1f,0,6.7f),new(-1.6f,0,6.8f),new(3.3f,0,9.1f)];
+        for(int i=0;i<pads.Length;i++)
+        {
+            var frog=SpawnFrog(pads[i],i<3 ? "frog_hopper" : i==3 ? "frog_crash" : i==4 ? "frog_syntax" : null);
+            BeginHop(frog,frog.From+Vector3.UnitZ*3);
+            frog.Phase=i*.12f; frog.Yaw=frog.TargetYaw;
+        }
+        foreach(Vector3 feet in new Vector3[]{new(-2.9f,0,10.9f),new(3.2f,0,7.3f),new(4.3f,0,10)})
+        {
+            var intern=new VibeCoderEntity {Id=_nextCoderId++,Position=ResolvePlayerCollision(feet,.24f),
+                TimidIntern=true,IdentityRevealed=true,Name="Стажёр-Одуванчик",State=CoderAIState.WalkingToBait,
+                MaxHp=30,Hp=30,TarotPayoutValue=10,LaptopLost=true,GlassesColor=new(188,218,182,255)};
+            intern.AssignRole(CoderArchetype.JuniorPrompter);
+            ActiveCoders.Add(intern);
+        }
+    }
+
+    private BugFrog SpawnFrog(Vector3 p,string? id=null)
+    {
+        float roll=frogRandom.NextSingle();
+        p=ResolvePlayerCollision(p,.22f);
+        var frog=new BugFrog {SpeciesId=id ?? (roll<.035f ? "frog_hotfix" : roll<.20f ? "frog_crash" :
+            roll<.47f ? "frog_syntax" : "frog_hopper"),From=p,To=p,Rest=.6f+1.2f*frogRandom.NextSingle()};
+        Frogs.Add(frog);
+        return frog;
+    }
+
+    private bool ClearHop(Vector3 from,Vector3 to)
+    {
+        const float margin=.21f;
+        if(Math.Abs(to.X)>HalfWidth-margin || Math.Abs(to.Z)>HalfDepth-margin) return false;
+        var travel=to-from;
+        float length=travel.Length();
+        if(length<.001f) return false;
+        var ray=new Ray(from+Vector3.UnitY*.05f,travel/length);
+        foreach(var box in solids)
+        {
+            var expanded=new BoundingBox(new(box.Min.X-margin,0,box.Min.Z-margin),
+                new(box.Max.X+margin,box.Max.Y,box.Max.Z+margin));
+            var hit=Raylib.GetRayCollisionBox(ray,expanded);
+            if(hit.Hit && hit.Distance<=length) return false;
+        }
+        return true;
+    }
+
+    private void BeginHop(BugFrog frog,Vector3 eye)
+    {
+        var feet=frog.Feet; feet.Y=0;
+        var away=feet-eye; away.Y=0;
+        float angle=frogRandom.NextSingle()*MathF.Tau;
+        if(frog.SpeciesId!="frog_hopper" && away.LengthSquared()<10) angle=MathF.Atan2(away.X,away.Z);
+        frog.From=frog.To=feet; frog.Phase=0; frog.Rest=0;
+        for(int i=0;i<8;i++)
+        {
+            float yaw=angle+i*2.40f;
+            var target=feet+new Vector3(MathF.Sin(yaw),0,MathF.Cos(yaw))*frog.Species.HopDistance;
+            if(!ClearHop(feet,target)) continue;
+            frog.To=target; frog.TargetYaw=yaw; break;
+        }
+    }
+
+    private void TickFrogs(float dt,Vector3 eye,Vector3? guest)
+    {
+        refill-=dt; croakDelay-=dt;
+        if(Systems.TD<previousDebt) previousDebt=Systems.TD;
+        if(Frogs.Count<24 && Systems.TD>previousDebt && (previousDebt==0 || Systems.TD-previousDebt>=1))
+        {
+            SpawnFrog(RackPos+new Vector3(frogRandom.NextSingle()*3-1.5f,0,1.4f+frogRandom.NextSingle()));
+            previousDebt=Systems.TD;
+        }
+        if(refill<=0 && Frogs.Count<8)
+        {
+            SpawnFrog(new(frogRandom.NextSingle()*5-2.5f,0,7+frogRandom.NextSingle()*3));
+            refill=3.5f;
+        }
+        foreach(var frog in Frogs)
+        {
+            Vector3 near=guest is {} g && Vector3.DistanceSquared(frog.Feet,g)<Vector3.DistanceSquared(frog.Feet,eye) ? g : eye;
+            if(frog.Rest>0)
+            {
+                frog.Rest-=dt;
+                if(frog.Rest<=0) BeginHop(frog,near);
+                continue;
+            }
+            float turn=MathF.IEEERemainder(frog.TargetYaw-frog.Yaw,MathF.Tau);
+            frog.Yaw+=turn*(1-MathF.Exp(-14*dt));
+            frog.AdvanceArc(dt);
+            if(frog.Phase<1) continue;
+            frog.Rest=.6f+1.2f*frogRandom.NextSingle();
+            if(croakDelay<=0 && Vector3.DistanceSquared(frog.To,near)<36)
+            { AudioMusicSystem.PlayFrogCroak(); croakDelay=2.2f; }
+        }
+    }
+
+    private float CatchAim(Camera3D camera,Vector3 point,float range)
+    {
+        Vector3 delta=point-camera.Position;
+        float distance=delta.Length();
+        if(distance>range || distance<.001f) return -1;
+        var dir=delta/distance;
+        if(TraceSurface(camera.Position,dir,distance)+.02f<distance) return -1;
+        return Vector3.Dot(dir,Vector3.Normalize(camera.Target-camera.Position));
+    }
+    private static float HandAim(BugFrog frog)=>frog.SpeciesId=="frog_syntax" ? .987f : .963f;
+
+    private string CatchSweep(Camera3D camera,bool net)
+    {
+        var targets=Frogs.Select(f=>(Frog:f,Aim:CatchAim(camera,f.Feet+Vector3.UnitY*.15f,net ? 3.6f : 2.4f)))
+            .Where(t=>t.Aim>(net ? .70f : HandAim(t.Frog))).OrderByDescending(t=>t.Aim).Take(net ? 3 : 1).ToArray();
+        foreach(var (frog,_) in targets)
+        {
+            if(!net && frog.SpeciesId is "frog_crash" or "frog_hotfix")
+            {
+                var away=frog.Feet-camera.Position; away.Y=0;
+                var ground=frog.Feet; ground.Y=0;
+                if(frog.SpeciesId=="frog_crash" || away.LengthSquared()>.001f &&
+                    ClearHop(ground,ground+Vector3.Normalize(away)*frog.Species.HopDistance))
+                {
+                    BeginHop(frog,camera.Position);
+                    return "Слишком шустрый — нужен Сачок ($3)";
+                }
+            }
+            Systems.PocketFrogs.Add(frog.SpeciesId); Frogs.Remove(frog);
+        }
+        if(!net && targets.Length>0) return $"В садке: {Systems.PocketFrogs.Count}";
+        foreach(var c in ActiveCoders)
+        {
+            if(!c.TimidIntern || c.Hp<=0 || c.State==CoderAIState.Subdued ||
+                CatchAim(camera,c.CombatCenter,net ? 3.6f : 2.4f)<(net ? .70f : .94f)) continue;
+            if(!net)
+            {
+                var away=c.Position-camera.Position; away.Y=0;
+                if(away.LengthSquared()>.001f) c.KnockbackVel=Vector3.Normalize(away)*3;
+                return "Пугливый — нужен Сачок ($3)";
+            }
+            c.State=CoderAIState.Subdued; c.Composure=0;
+            return "Стажёр пойман. Подпиши NDA [E]";
+        }
+        return targets.Length>0 ? $"В садке: {Systems.PocketFrogs.Count}" : "";
+    }
+
+    private string DepositBugs(Action<int,string> grant)
+    {
+        if(Systems.PocketFrogs.Count==0) return "Садок пуст";
+        int total=0;
+        foreach(string id in Systems.PocketFrogs)
+        {
+            var species=VibeCoderCollection.Frogs[id];
+            total+=species.SalePrice;
+            Systems.Discover(species,grant);
+        }
+        Systems.PocketFrogs.Clear();
+        Systems.Earned+=total;
+        grant(total,"Баг-трекер");
+        AudioMusicSystem.PlayTarotCash();
+        return !Systems.HasWeapon(WeaponType.CaptureNet) && Program.SharedCash>=3 ?
+            "Хватает на Сачок ($3) — открой Арсенал [U]" : $"Баги сданы: +${total}";
+    }
+
+    private void DrawBugHunt()
+    {
+        if(VisualEngine3D.HasAsset("prop_bug_terminal")) VisualEngine3D.Asset("prop_bug_terminal",TerminalPos);
+        else
+        {
+            VisualEngine3D.Box(TerminalPos+Vector3.UnitY*.52f,.53f,1.04f,.43f,new(63,78,82,255));
+            VisualEngine3D.Box(TerminalPos+new Vector3(0,1.09f,0),.74f,.46f,.39f,new(42,56,61,255));
+            VisualEngine3D.Box(TerminalPos+new Vector3(0,1.11f,.20f),.58f,.27f,.017f,new(93,224,172,255),Finish.Lamp);
+        }
+        foreach(var frog in Frogs)
+        {
+            float stretch=frog.Rest>0 ? 1-.17f*Math.Clamp(1-frog.Rest/.15f,0,1) : 1+.19f*MathF.Sin(2*MathF.PI*frog.Phase);
+            DrawFrog(frog.Feet,frog.Yaw,frog.Species.HoodieColor,stretch);
+            if(frog.SpeciesId!="frog_hotfix" || VisualEngine3D.CastingShadows) continue;
+            var floor=frog.Feet; floor.Y=.024f;
+            Raylib.DrawCircle3D(floor,.31f+.02f*MathF.Sin(_worldClock*4),Vector3.UnitX,90,Color.Gold);
+            for(int i=0;i<4;i++)
+            {
+                float a=_worldClock+i*MathF.Tau/4;
+                VisualEngine3D.Orb(floor+new Vector3(.24f*MathF.Cos(a),.19f+.14f*MathF.Sin(2*a),.24f*MathF.Sin(a)),.014f,Color.Gold,Finish.Lamp);
+            }
+        }
+    }
+
+    internal static void DrawFrog(Vector3 p,float yaw,Color ink,float stretch=1,float scale=1)
+    {
+        var size=new Vector3(1/MathF.Sqrt(stretch),stretch,1/MathF.Sqrt(stretch));
+        if(VisualEngine3D.HasAsset("prop_bug_frog"))
+        { VisualEngine3D.Asset("prop_bug_frog",p,yaw*180/MathF.PI,scale,ink,stretch:size); return; }
+        var rotation=Quaternion.CreateFromAxisAngle(Vector3.UnitY,yaw);
+        void Oval(Vector3 local,Vector3 radii,Color tint) =>
+            VisualEngine3D.Oval(p+Vector3.Transform(local*size*scale,rotation),radii*scale*size,tint);
+        Oval(new(0,.115f,0),new(.16f,.105f,.19f),ink);
+        Oval(new(0,.18f,.10f),new(.145f,.085f,.10f),ink);
+        foreach(int sign in new[]{-1,1})
+        {
+            Oval(new(.14f*sign,.055f,-.06f),new(.085f,.051f,.13f),ink);
+            Oval(new(.085f*sign,.246f,.135f),new(.037f),ink);
+            Oval(new(.085f*sign,.251f,.163f),new(.016f),new(20,40,36,255));
+        }
     }
 }

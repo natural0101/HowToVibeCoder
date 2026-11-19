@@ -7,7 +7,11 @@ namespace HowToVibeCoder;
 public enum VibeCoderRarity { Common, Rare, Epic, Legendary }
 
 internal sealed record VibeCoderSpecies(string Id, string Name, VibeCoderRarity Rarity,
-    CoderArchetype Archetype, Color HoodieColor, Color GlassesColor, int BonusPayout, string Hint, string Bio);
+    CoderArchetype Archetype, Color HoodieColor, Color GlassesColor, int BonusPayout, string Hint, string Bio,
+    int SalePrice=0, float HopDistance=0, float HopHeight=0)
+{
+    internal bool IsFrog => SalePrice>0;
+}
 
 internal static class VibeCoderCollection
 {
@@ -25,10 +29,17 @@ internal static class VibeCoderCollection
         new("framework", "Маг 40 Фреймворков", Rare, CryptoBro, new(42,88,204,255), new(249,197,76,255), 70, "Ищи золотой отблеск у Макбука.", "Сороковой фреймворк склеивает предыдущие тридцать девять. Кнопка скоро заработает."),
         new("no-commits", "Сеньор Без Коммитов", Epic, SeniorArchitect, new(48,49,60,255), new(247,173,65,255), 140, "Дорогая подписка и высокий риск привлекают эпических кандидатов.", "За семь лет написал одну строку. Это была подпись под архитектурным решением."),
         new("skolkovo", "Нейро-Шаман Сколково", Epic, CryptoBro, new(81,48,142,255), new(247,74,209,255), 150, "Подними риск и включи платную приманку.", "Обучил модель предсказывать гранты. Первую заявку модель выписала себе."),
+        new("frog_hopper","Баг-Попрыгун",Common,JuniorPrompter,new(97,255,74,255),Color.White,1,"Смотри под ноги у приёмной.","Прыгает на каждый новый тик сборки.",1,.85f,.42f),
+        new("frog_syntax","Синтаксис-Жаб",Common,JuniorPrompter,new(41,239,255,255),Color.White,2,"Прицелься перед прыжком.","Проглотил закрывающую скобку.",2,1.45f,.58f),
+        new("frog_crash","Краш-Лягух",Rare,JuniorPrompter,new(250,70,57,255),Color.White,4,"Попробуй широкий взмах сачком.","Роняет сборку при каждом приземлении.",4,2.15f,.78f),
+        new("frog_hotfix","Золотой Хотфикс-Жаб",Epic,JuniorPrompter,new(255,213,60,255),Color.White,8,"Ищи золотой отблеск у стоек.","Выкатился в пятницу и чудом пережил выходные.",8,1.65f,.68f),
         new("meetup", "Босс Митапов в Баленсиаге", Epic, TeamLeadMeeter, new(221,213,191,255), new(212,40,72,255), 150, "Присмотрись к белому силуэту во время инцидента.", "Доклад не сохранился. Зато кроссовки попали во все отчёты конференции."),
         new("legacy", "Призрак Легаси 1998", Legendary, SeniorArchitect, new(69,111,75,255), new(233,196,96,255), 300, "Пятничный релиз повышает шанс появления.", "Последний, кто помнит пароль от сборочного сервера. Пароль набирает только на ощупь."),
         new("friday", "Коммитер в Прод (Пятница 19:59)", Legendary, CryptoBro, new(202,47,49,255), new(255,196,57,255), 320, "Включи пятничный деплой и следи за входом.", "В 19:58 пожелал всем хороших выходных. В 20:01 перестал читать рабочий чат.")
     ];
+
+    internal static readonly VibeCoderSpecies[] CommonBait=All.Where(s=>!s.IsFrog && s.Rarity==Common).ToArray();
+    internal static readonly Dictionary<string,VibeCoderSpecies> Frogs=All.Where(s=>s.IsFrog).ToDictionary(s=>s.Id);
 
     internal static string Tag(VibeCoderRarity r) => r switch { Rare=>"РЕДКИЙ", Epic=>"ЭПИЧЕСКИЙ", Legendary=>"ЛЕГЕНДАРНЫЙ", _=>"ОБЫЧНЫЙ" };
     internal static Color Ink(VibeCoderRarity r) => r switch { Rare=>new(249,198,103,255), Epic=>new(199,159,255,255), Legendary=>new(114,244,195,255), _=>new(211,221,220,255) };
@@ -41,8 +52,8 @@ internal static class VibeCoderCollection
         double rare=.22+.022*tier;
         double roll=rng.NextDouble();
         var rarity=roll<legendary ? Legendary : roll<legendary+epic ? Epic : roll<legendary+epic+rare ? Rare : Common;
-        var pool=All.Where(s=>(role==null || s.Archetype==role) && s.Rarity==rarity).ToArray();
-        if(pool.Length==0) pool=All.Where(s=>s.Archetype==role).ToArray();
+        var pool=All.Where(s=>!s.IsFrog && (role==null || s.Archetype==role) && s.Rarity==rarity).ToArray();
+        if(pool.Length==0) pool=All.Where(s=>!s.IsFrog && s.Archetype==role).ToArray();
         return pool[rng.Next(pool.Length)];
     }
 

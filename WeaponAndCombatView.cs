@@ -7,6 +7,8 @@ namespace HowToVibeCoder;
 
 public enum WeaponType
 {
+    BareHands = 0,
+    CaptureNet = 6,
     Belt = 1,
     SolderingIron = 2,
     MicroUzi = 3,
@@ -89,13 +91,22 @@ public struct FloatingCombatText3D
 public class WeaponAndCombatView
 {
     // Current weapon & unlock state
-    public WeaponType CurrentWeapon = WeaponType.Belt;
-    public bool UnlockedSolderingIron = true;
-    public bool UnlockedMicroUzi = true;
-    public bool UnlockedSawedOff = true;
-    public bool UnlockedChatGun = false;
-
-    // Skin system from [K] Case Roulette
+    internal FloorSystems Inventory=new();
+    private WeaponType equipped=WeaponType.BareHands;
+    public WeaponType CurrentWeapon
+    {
+        get => equipped;
+        set { if(Inventory.HasWeapon(value)) equipped=value; }
+    }
+    private void SetOwned(WeaponType weapon,bool value)
+    {
+        int bit=1<<(int)weapon;
+        Inventory.OwnedWeaponsMask=value ? Inventory.OwnedWeaponsMask|bit : Inventory.OwnedWeaponsMask&~bit;
+    }
+    public bool UnlockedSolderingIron { get => Inventory.HasWeapon(WeaponType.SolderingIron); set => SetOwned(WeaponType.SolderingIron,value); }
+    public bool UnlockedMicroUzi { get => Inventory.HasWeapon(WeaponType.MicroUzi); set => SetOwned(WeaponType.MicroUzi,value); }
+    public bool UnlockedSawedOff { get => Inventory.HasWeapon(WeaponType.SawedOff); set => SetOwned(WeaponType.SawedOff,value); }
+    public bool UnlockedChatGun { get => Inventory.HasWeapon(WeaponType.ChatGun); set => SetOwned(WeaponType.ChatGun,value); }
     public Color SkinTintPrimary = new Color(0, 0, 0, 0); // Alpha 0 = default authentic 90s look
     public Color SkinTintAccent = new Color(255, 215, 0, 255);
     public string CurrentSkinName = "Классика 1994 (Сток)";
@@ -323,28 +334,39 @@ public class WeaponAndCombatView
 
     public void SelectSlot(int slotNumber)
     {
-        WeaponType target = slotNumber switch
-        {
-            1 => WeaponType.Belt,
-            2 => WeaponType.SolderingIron,
-            3 => WeaponType.MicroUzi,
-            4 => UnlockedChatGun ? WeaponType.ChatGun : WeaponType.SawedOff,
-            _ => CurrentWeapon
-        };
+        // Legacy equipment and cosmetic APIs use the original four weapon IDs.
+        if(slotNumber is >=1 and <=4) Equip((WeaponType)slotNumber);
+    }
 
-        if (target != CurrentWeapon)
+    private int hotbarMask=-1;
+    private WeaponType[] hotbar=[];
+    internal WeaponType[] Hotbar
+    {
+        get
         {
-            CurrentWeapon = target;
-            _inspectTimer = _reloadTime = _flash = 0;
-            StartDraw(1);
+            if(hotbarMask!=Inventory.OwnedWeaponsMask)
+            {
+                hotbarMask=Inventory.OwnedWeaponsMask;
+                hotbar=FloorSystems.WeaponOrder.Where(w=>Inventory.HasWeapon(w) || w==WeaponType.SawedOff && UnlockedChatGun).ToArray();
+            }
+            return hotbar;
         }
-        else if (slotNumber == 4 && UnlockedChatGun)
-        {
-            // Toggle between SawedOff and ChatGun on pressing [4] again
-            CurrentWeapon = (CurrentWeapon == WeaponType.SawedOff) ? WeaponType.ChatGun : WeaponType.SawedOff;
-            _inspectTimer = _reloadTime = _flash = 0;
-            StartDraw(1);
-        }
+    }
+
+    internal void SelectOwnedSlot(int index)
+    {
+        var items=Hotbar;
+        if((uint)index<(uint)items.Length) Equip(items[index]);
+    }
+
+    internal void Equip(WeaponType target)
+    {
+        if(target==WeaponType.SawedOff && UnlockedChatGun &&
+            (!UnlockedSawedOff || CurrentWeapon==WeaponType.SawedOff)) target=WeaponType.ChatGun;
+        if(!Inventory.HasWeapon(target) || CurrentWeapon==target) return;
+        CurrentWeapon=target;
+        _inspectTimer=_reloadTime=_flash=0;
+        StartDraw(1);
     }
 
     private void StartDraw(float amount)
@@ -378,6 +400,12 @@ public class WeaponAndCombatView
         Vector3? shotDirection = null)
     {
         _inspectTimer = 0;
+        if(CurrentWeapon is WeaponType.CaptureNet or WeaponType.BareHands)
+        {
+            _catchSpring.Impulse(CurrentWeapon==WeaponType.CaptureNet ? 26 : 36);
+            if(hitEnemy) TriggerHitmarker();
+            return;
+        }
         Vector3 forward = shotDirection ?? Vector3.Normalize(camera.Target-camera.Position);
         if (CurrentWeapon is WeaponType.SawedOff or WeaponType.ChatGun or WeaponType.MicroUzi)
         {
@@ -634,6 +662,7 @@ public class WeaponAndCombatView
     public void UpdateWeapons(float dt, Camera3D camera, bool isMoving = false, bool holdingFire = false)
     {
         _animClock += dt;
+        _catchSpring.Advance(0,dt,18,.62f);
         _flash=Math.Max(0,_flash-dt);
         TickReload(dt,camera);
         _inspectTimer = MathF.Max(0,_inspectTimer-dt);
@@ -1034,6 +1063,10 @@ public class WeaponAndCombatView
 
         switch (CurrentWeapon)
         {
+            case WeaponType.BareHands:
+            case WeaponType.CaptureNet:
+                DrawCaptureTool(baseOffset,CurrentWeapon==WeaponType.CaptureNet);
+                break;
             case WeaponType.Belt:
                 DrawBeltViewModel3D(baseOffset);
                 break;
@@ -1064,6 +1097,39 @@ public class WeaponAndCombatView
     // =========================================================================
     // SLOT 1: ОТЦОВСКИЙ КОЖАНЫЙ РЕМЕНЬ (`WeaponType.Belt`)
     // =========================================================================
+    private SpringFloat _catchSpring;
+    private void DrawCaptureTool(Vector3 offset,bool net)
+    {
+        float reach=Math.Clamp(_catchSpring.Value,-.2f,1.2f);
+        string hands=net ? "fps_hands_net" : "fps_hands_bare";
+        Vector3 grip=offset+new Vector3(.18f,-.15f,.62f);
+        var pose=Matrix4x4.CreateTranslation(-grip)*Matrix4x4.CreateRotationY(net ? -.52f-reach*1.1f : 0)
+            *Matrix4x4.CreateRotationX(net ? -.25f+.28f*reach : 0)
+            *Matrix4x4.CreateTranslation(grip+new Vector3(0,.04f*reach,.13f*reach))*ToolStance(grip);
+        foreach(bool right in new[]{false,true})
+        {
+            Vector3 slide=offset+(net ? Vector3.Zero : new Vector3((right ? -1 : 1)*.18f*reach,0,0));
+            if(VisualEngine3D.HasAsset(hands)) VisualEngine3D.ArmAssembly(right,slide,hands,pose);
+            else VisualEngine3D.Arm(right,new Vector3(right ? .20f : -.20f,-.22f,right ? .56f : .65f)+slide,"fps_hands_cs2",pose);
+        }
+        if(!net) return;
+        if(VisualEngine3D.HasAsset("weapon_net_90s"))
+            VisualEngine3D.Asset("weapon_net_90s",grip,assemblyTransform:pose);
+        else
+        {
+            Vector3 P(float x,float y,float z)=>Vector3.Transform(grip+new Vector3(x,y,z),pose);
+            VisualEngine3D.Rod(P(0,0,-.09f),P(0,.14f,.52f),.015f,.012f,10,new(151,104,62,255));
+            var mesh=new Color(143,199,187,255);
+            Vector3 Rim(float a)=>P(.17f*MathF.Sin(a),.14f+.17f*(1-MathF.Cos(a)),.52f);
+            for(int i=0;i<24;i++)
+            {
+                float a=MathF.Tau*i/24;
+                VisualEngine3D.Rod(Rim(a),Rim(a+MathF.Tau/24),.008f,.008f,6,mesh);
+                if(i%3==0) VisualEngine3D.Rod(Rim(a),P(0,.23f,.70f),.003f,.003f,5,mesh);
+            }
+        }
+    }
+
     private void DrawBeltViewModel3D(Vector3 baseOffset)
     {
         float p = BeltSwingPhase; // 1.0 -> 0.0 during swing
@@ -1463,16 +1529,20 @@ public class WeaponAndCombatView
 
     public string GetCurrentWeaponDisplayName() => CurrentWeapon switch
     {
-        WeaponType.Belt => "1: ОТЦОВСКИЙ КОЖАНЫЙ РЕМЕНЬ (ЗОЛОТАЯ ПРЯЖКА)",
-        WeaponType.SolderingIron => "2: ПАЯЛЬНИК ИЗ 90-Х (СИНЯЯ ИЗОЛЕНТА + КАНИФОЛЬ)",
-        WeaponType.MicroUzi => "3: БАНДИТСКИЙ MICRO-UZI (9mm АВТО)",
-        WeaponType.SawedOff => "4: ОБРЕЗ ДВУСТВОЛКИ (12 КАЛИБР ДУПЛЕТ)",
-        WeaponType.ChatGun => "4: СЕКРЕТНЫЙ ЧАТ-ГАН (ЗОЛОТЫЕ ПРОМПТЫ)",
+        WeaponType.BareHands => "Голые руки",
+        WeaponType.CaptureNet => "Сачок-ловушка",
+        WeaponType.Belt => "ОТЦОВСКИЙ КОЖАНЫЙ РЕМЕНЬ (ЗОЛОТАЯ ПРЯЖКА)",
+        WeaponType.SolderingIron => "ПАЯЛЬНИК ИЗ 90-Х (СИНЯЯ ИЗОЛЕНТА + КАНИФОЛЬ)",
+        WeaponType.MicroUzi => "БАНДИТСКИЙ MICRO-UZI (9mm АВТО)",
+        WeaponType.SawedOff => "ОБРЕЗ ДВУСТВОЛКИ (12 КАЛИБР ДУПЛЕТ)",
+        WeaponType.ChatGun => "СЕКРЕТНЫЙ ЧАТ-ГАН (ЗОЛОТЫЕ ПРОМПТЫ)",
         _ => "ОРУЖИЕ 90-Х"
     };
 
     public string GetWeaponAttackSoundFileName() => CurrentWeapon switch
     {
+        WeaponType.BareHands => "hand_grab",
+        WeaponType.CaptureNet => "net_swipe",
         WeaponType.Belt => "belt_whip.wav",
         WeaponType.SolderingIron => "solder_sizzle.wav",
         WeaponType.MicroUzi => "uzi_shot.wav",

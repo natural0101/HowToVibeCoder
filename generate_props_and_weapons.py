@@ -269,6 +269,16 @@ def build_hr_reception_desk():
     mod = runpy.run_path(str(Path(__file__).resolve().parent / "build_landmark_props.py"))
     mod["build_hr_reception_desk"]()
 
+def build_bug_terminal():
+    import runpy
+    mod = runpy.run_path(str(Path(__file__).resolve().parent / "build_landmark_props.py"))
+    mod["build_bug_terminal"]()
+
+def build_bug_frog():
+    import runpy
+    mod = runpy.run_path(str(ASSETS / "external_cc0/office/build_prop_bug_frog.py"))
+    mod["build_prop_bug_frog"]()
+
 # ==============================================================================
 # 9. PROP: ESCAPED AI AGENT BOSS (escaped_ai_boss.glb)
 # ==============================================================================
@@ -723,6 +733,211 @@ def build_weapon_solder():
     bpy.context.collection.objects.link(bpy.data.objects.new("Tinned copper chisel",tip_mesh))
     finalize_and_export("weapon_solder_90s.glb", preserve_smoothing=True)
 
+
+# ==============================================================================
+# 11B. WEAPON NET: $3 OFFICE CAPTURE NET («САЧОК-ЛОВУШКА ИЗ ШВАБРЫ И СЕТКИ»)
+# ==============================================================================
+def build_weapon_net():
+    clear_scene()
+    wood = make_mat("Turned hardwood", (.47, .21, .075, 1), roughness=.49)
+    nodes, links = wood.node_tree.nodes, wood.node_tree.links
+    bsdf = nodes.get("Principled BSDF")
+    grain = nodes.new("ShaderNodeTexImage")
+    grain.image = bpy.data.images.load(str(CHAIR_SOURCE / "chair_wood_albedo.png"))
+    import numpy as np
+    source = grain.image
+    pixels = np.empty(len(source.pixels), dtype=np.float32)
+    source.pixels.foreach_get(pixels)
+    pixels.reshape(-1, 4)[:, :3] *= (.44, .22, .085)
+    stained = bpy.data.images.new("Mop stained birch grain", *source.size)
+    stained.pixels.foreach_set(pixels)
+    stained.pack()
+    grain.image = stained
+    links.new(grain.outputs["Color"], bsdf.inputs["Base Color"])
+
+    tape = make_mat("Cobalt PVC tape", (.022, .12, .43, 1), roughness=.36)
+    edge = make_mat("Tape lap", (.015, .077, .29, 1), roughness=.40)
+    mop_cap = make_mat("MopPlasticCap", (.06, .34, .32, 1), roughness=.42)
+    alu = make_mat("AnodizedMopAluminum", (.54, .58, .62, 1), metallic=.82, roughness=.32)
+    steel_wire = make_mat("GalvanizedHoopWire", (.42, .46, .50, 1), metallic=.85, roughness=.28)
+    rim_canvas = make_mat("NetCanvasCollar", (.08, .22, .20, 1), roughness=.78)
+    net_cord = make_mat("WovenNylonNet", (.20, .52, .42, 1), roughness=.62)
+    net_accent = make_mat("NeonBugMeshThread", (.30, .78, .58, 1), roughness=.48)
+
+    # 1) Mop Handle & Blue Electrical Tape Grip (exact grip alignment matching weapon_solder_90s.glb!)
+    rows = [
+        (-.104, .0055, mop_cap),
+        (-.098, .0115, mop_cap),
+        (-.084, .0134, mop_cap),
+        (-.080, .0128, wood),
+        (-.074, .0132, wood),
+        (-.068, .0125, wood),
+        (-.051, .0126, tape),
+    ]
+    for i in range(8):
+        z = -.050 + i * .011
+        rows.extend([(z, .0131, tape), (z + .0093, .0132, edge), (z + .0105, .0129, tape)])
+    rows += [
+        (.039, .0126, wood),
+        (.048, .0125, wood),
+        (.062, .0124, wood),
+        (.063, .0130, alu),
+        (.095, .0126, alu),
+        (.128, .0124, alu),
+        (.130, .0142, tape),
+    ]
+    for i in range(4):
+        z = .131 + i * .010
+        rows.extend([(z, .0148, tape), (z + .0082, .0152, edge), (z + .0095, .0145, tape)])
+    rows.extend([(.172, .0136, tape), (.176, .0112, alu), (.180, .0050, alu)])
+
+    sides = 24
+    vertices, faces = [], []
+    for z, r, material in rows:
+        for i in range(sides):
+            angle = math.tau * i / sides
+            lap = .0018 * math.sin(angle) if (-.051 <= z <= .038 or .130 <= z <= .172) else 0
+            vertices.append(rl_pos((r * math.cos(angle), r * math.sin(angle), z + lap)))
+    for j in range(len(rows) - 1):
+        for i in range(sides):
+            n = (i + 1) % sides
+            faces.append((j * sides + i, j * sides + n, (j + 1) * sides + n, (j + 1) * sides + i))
+    faces += [tuple(reversed(range(sides))), tuple(range(len(vertices) - sides, len(vertices)))]
+    mesh = bpy.data.meshes.new("MopHandleProfile")
+    mesh.from_pydata(vertices, [], faces)
+    obj = bpy.data.objects.new("MopHandle", mesh)
+    bpy.context.collection.objects.link(obj)
+    materials = [wood, tape, edge, mop_cap, alu]
+    for material in materials:
+        mesh.materials.append(material)
+    uv = mesh.uv_layers.new(name="Turned grain")
+    for face in mesh.polygons:
+        row, side = divmod(face.index, sides)
+        if row >= len(rows) - 1:
+            face.material_index = materials.index(mop_cap if face.index == len(faces) - 2 else alu)
+            continue
+        face.material_index = materials.index(rows[row][2])
+        face.use_smooth = True
+        for loop, u_i, v_i in zip(face.loop_indices, (side, side + 1, side + 1, side), (row, row, row + 1, row + 1)):
+            uv.data[loop].uv = ((rows[v_i][0] + .10) * 4, u_i / sides)
+
+    def add_tube_path(name, pts_3d, radius, mat, tube_sides=6, closed=False):
+        n_pts = len(pts_3d)
+        t_verts = []
+        t_faces = []
+        for idx, p in enumerate(pts_3d):
+            p_vec = Vector(p)
+            if closed:
+                p_prev = Vector(pts_3d[(idx - 1) % n_pts])
+                p_next = Vector(pts_3d[(idx + 1) % n_pts])
+                tang = (p_next - p_prev).normalized()
+            elif idx == 0:
+                tang = (Vector(pts_3d[1]) - p_vec).normalized()
+            elif idx == n_pts - 1:
+                tang = (p_vec - Vector(pts_3d[-2])).normalized()
+            else:
+                tang = (Vector(pts_3d[idx + 1]) - Vector(pts_3d[idx - 1])).normalized()
+            up = Vector((0, 1, 0)) if abs(tang.y) < 0.9 else Vector((1, 0, 0))
+            b1 = tang.cross(up).normalized()
+            b2 = tang.cross(b1).normalized()
+            for s_i in range(tube_sides):
+                ang = s_i * math.tau / tube_sides
+                pt = p_vec + b1 * (radius * math.cos(ang)) + b2 * (radius * math.sin(ang))
+                t_verts.append(rl_pos((pt.x, pt.y, pt.z)))
+        ring_count = n_pts if closed else (n_pts - 1)
+        for r_i in range(ring_count):
+            nr = (r_i + 1) % n_pts
+            for s_i in range(tube_sides):
+                ns = (s_i + 1) % tube_sides
+                t_faces.append((r_i * tube_sides + s_i, r_i * tube_sides + ns, nr * tube_sides + ns, nr * tube_sides + s_i))
+        m_data = bpy.data.meshes.new(name)
+        m_data.from_pydata(t_verts, [], t_faces)
+        for poly in m_data.polygons:
+            poly.use_smooth = True
+        m_data.materials.append(mat)
+        o_tube = bpy.data.objects.new(name, m_data)
+        bpy.context.collection.objects.link(o_tube)
+        return o_tube
+
+    # 2) Twisted galvanized wire lashing + bent coat-hanger hoop legs
+    for turn_i in range(3):
+        zt = 0.142 + turn_i * 0.011
+        ring_pts = [(0.0158 * math.cos(k * math.tau / 16), 0.0158 * math.sin(k * math.tau / 16), zt) for k in range(16)]
+        add_tube_path(f"WireLashing_{turn_i}", ring_pts, 0.0017, steel_wire, tube_sides=6, closed=True)
+
+    hoop_cx, hoop_cy, hoop_cz = 0.0, 0.008, 0.304
+    hoop_rx, hoop_rz = 0.106, 0.112
+    for s_sign in (-1, 1):
+        strut_pts = [
+            (s_sign * 0.009, 0.002, 0.165),
+            (s_sign * 0.018, 0.005, 0.182),
+            (s_sign * 0.036, 0.008, 0.198),
+        ]
+        add_tube_path(f"HoopNeckStrut_{s_sign}", strut_pts, 0.0036, steel_wire, tube_sides=8, closed=False)
+
+    # 3) Bent steel wire hoop + canvas net rim sleeve + blue electrical tape front patch
+    n_hoop = 36
+    hoop_pts = []
+    for k in range(n_hoop):
+        a = k * math.tau / n_hoop
+        # slight authentic 90s hand-bent wobble
+        wobble = 1.0 + 0.018 * math.cos(a * 3.0)
+        hx = hoop_cx + hoop_rx * math.sin(a) * wobble
+        hz = hoop_cz - hoop_rz * math.cos(a) * wobble
+        hy = hoop_cy + 0.004 * math.sin(a * 2.0)
+        hoop_pts.append((hx, hy, hz))
+    add_tube_path("GalvanizedWireHoop", hoop_pts, 0.0038, steel_wire, tube_sides=8, closed=True)
+
+    # Canvas sleeve around main span of hoop + blue tape wrap at front apex
+    sleeve_pts = [hoop_pts[k % n_hoop] for k in range(2, n_hoop - 1)]
+    add_tube_path("NetCanvasRimSleeve", sleeve_pts, 0.0054, rim_canvas, tube_sides=8, closed=False)
+    front_tape_pts = [hoop_pts[k % n_hoop] for k in range(n_hoop // 2 - 2, n_hoop // 2 + 3)]
+    add_tube_path("FrontHoopBlueTapePatch", front_tape_pts, 0.0064, tape, tube_sides=8, closed=False)
+
+    # 4) True 3D Open-Lattice Woven Diamond Mesh Net Bag draping off the hoop (~3,800 tris)
+    def net_bag_point(u, theta):
+        # u in [0..1] from hoop (0) to tied bottom apex (1)
+        s = (math.cos(u * math.pi * 0.47) ** 0.76) * (1.0 - 0.86 * (u ** 3.2))
+        s = max(0.06, s)
+        rx = hoop_rx * 0.96 * s
+        rz = hoop_rz * 0.96 * s
+        # Natural trailing bag drape downward and slightly backward
+        cy = hoop_cy - 0.162 * math.sin(u * math.pi * 0.52)
+        cz = hoop_cz - 0.028 * (u ** 1.25)
+        wobble = 1.0 + 0.025 * math.sin(u * math.pi) * math.cos(theta * 5.0)
+        return (
+            hoop_cx + rx * math.sin(theta) * wobble,
+            cy + 0.003 * math.sin(theta * 2.0) * (1.0 - u),
+            cz - rz * math.cos(theta) * wobble,
+        )
+
+    n_spokes = 8
+    n_u_steps = 7
+    twist_span = 1.45
+    for idx in range(n_spokes):
+        theta0 = idx * math.tau / n_spokes
+        pts_l = []
+        pts_r = []
+        for step in range(n_u_steps):
+            u = step / (n_u_steps - 1)
+            pts_l.append(net_bag_point(u, theta0 + twist_span * u))
+            pts_r.append(net_bag_point(u, theta0 - twist_span * u))
+        mat_c = net_accent if idx % 3 == 0 else net_cord
+        add_tube_path(f"NetDiamondCordL_{idx}", pts_l, 0.0017, mat_c, tube_sides=4, closed=False)
+        add_tube_path(f"NetDiamondCordR_{idx}", pts_r, 0.0017, net_cord, tube_sides=4, closed=False)
+
+    for r_idx, u_ring in enumerate((0.22, 0.46, 0.70, 0.92)):
+        ring_pts = [net_bag_point(u_ring, k * math.tau / 20) for k in range(20)]
+        mat_r = tape if r_idx == 3 else (net_accent if r_idx == 1 else net_cord)
+        rad_r = 0.0038 if r_idx == 3 else 0.0017
+        add_tube_path(f"NetLatitudeRing_{r_idx}", ring_pts, rad_r, mat_r, tube_sides=4, closed=True)
+
+    # Bottom tied net knot & blue electrical tape cinch at apex
+    apex = net_bag_point(1.0, 0.0)
+    add_sphere("NetBottomKnot", (apex[0], apex[1] - 0.005, apex[2]), 0.009, rim_canvas, segments=14, ring_count=10)
+    finalize_and_export("weapon_net_90s.glb", preserve_smoothing=True)
+
+
 # ==============================================================================
 # 12. WEAPON 4: SAWED-OFF DOUBLE-BARREL SHOTGUN (weapon_shotgun_90s.glb)
 # ==============================================================================
@@ -1136,7 +1351,7 @@ def render_centered_icon(glb_name, png_name, roll_deg=32.0):
     # Camera sees the 3/4 leather loop & buckle face, and the rich 3/4 side of each weapon.
     if "belt" in glb_name:
         direction = Vector((0.08, 0.72, -0.68))
-    elif "solder" in glb_name:
+    elif "solder" in glb_name or "net" in glb_name:
         direction = Vector((0.88, -0.34, 0.42))
     else:
         direction = Vector((1.0, -0.35, 0.52))
@@ -1209,7 +1424,10 @@ def render_hotbar_icons(selected=None):
 
 
 if __name__ == "__main__":
-    if "--solder-only" in __import__("sys").argv:
+    if "--net-only" in __import__("sys").argv:
+        build_weapon_net()
+        render_centered_icon("weapon_net_90s.glb", "icon_slot_net.png", -36)
+    elif "--solder-only" in __import__("sys").argv:
         build_weapon_solder()
         render_centered_icon("weapon_solder_90s.glb", "icon_slot_2_solder.png", -36)
     elif "--ficus-only" in __import__("sys").argv:
@@ -1249,6 +1467,8 @@ if __name__ == "__main__":
             build_trash_bin()
             build_server_rack()
             build_hr_reception_desk()
+            build_bug_terminal()
+            build_bug_frog()
             build_weapon_belt()
             build_weapon_solder()
             build_weapon_uzi()

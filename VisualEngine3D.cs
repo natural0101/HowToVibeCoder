@@ -388,6 +388,8 @@ internal static unsafe partial class VisualEngine3D
         }
         """;
 
+    internal static bool HasAsset(string name) => imports.ContainsKey(name);
+
     public static void Load()
     {
         shader = Raylib.LoadShaderFromMemory(Vertex, Fragment);
