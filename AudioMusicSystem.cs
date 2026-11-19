@@ -383,6 +383,13 @@ namespace HowToVibeCoder
         public static void PlaySubduedDrop() => PlayWeaponSound(SfxSubduedDrop, volumeScale: EffectLevels[3]);
         public static void PlayTarotCash() => PlayWeaponSound(SfxTarotCash, volumeScale: EffectLevels[3]);
         public static void PlayGalleyWhack() => PlayWeaponSound(SfxGalleyWhack, volumeScale: EffectLevels[3]);
+        internal static void PlayTowerPA()
+        {
+            if (!AudioReady) return;
+            Raylib.SetSoundVolume(VoiceRoboticAgent,VoiceVolume*.72f);
+            Raylib.SetSoundPitch(VoiceRoboticAgent,.91f);
+            Raylib.PlaySound(VoiceRoboticAgent);
+        }
         public static void PlayBossSiren() => PlayWeaponSound(SfxBossSiren, volumeScale: EffectLevels[2]);
 
         public static void PlaySfx(string name, float pitch = 1.0f, float volumeScale = 1.0f)

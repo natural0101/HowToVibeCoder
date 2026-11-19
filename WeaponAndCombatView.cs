@@ -187,12 +187,24 @@ public class WeaponAndCombatView
         _wasGrounded=isGrounded;
     }
     internal float LandingCompression => _landing.Value*.92f;
-    internal int Capacity => CurrentWeapon switch { WeaponType.MicroUzi=>32, WeaponType.SawedOff=>2, _=>0 };
+    internal bool Drum, InsulatedIron;
+    internal float IronHeat, IronLockout;
+    internal void CoolIron(float dt)
+    {
+        IronLockout=Math.Max(0,IronLockout-dt);
+        IronHeat=Math.Max(0,IronHeat-dt*(InsulatedIron ? .37f : .22f));
+    }
+    internal void HeatIron()
+    {
+        IronHeat=Math.Min(1,IronHeat+(InsulatedIron ? .42f : .28f));
+        if(IronHeat>=.999f) IronLockout=InsulatedIron ? 1.05f : 1.65f;
+    }
+    internal int Capacity => CurrentWeapon switch { WeaponType.MicroUzi=>Drum ? 50 : 32, WeaponType.SawedOff=>2, _=>0 };
     internal int Ammo => CurrentWeapon switch { WeaponType.MicroUzi=>_uziRounds, WeaponType.SawedOff=>_shells, _=>-1 };
     internal float ClosingImpulse => CurrentWeapon==WeaponType.SawedOff ? _receiverBump.Value : 0;
     internal bool Reloading => _reloadTime > 0;
     private const float ShotgunReloadDuration = 1.55f;
-    private float ReloadDuration => CurrentWeapon==WeaponType.MicroUzi ? 1.45f : ShotgunReloadDuration;
+    private float ReloadDuration => CurrentWeapon==WeaponType.MicroUzi ? 1.45f*(Drum ? 1.3f : 1) : ShotgunReloadDuration;
     private float _inspectPhaseAtReload;
     internal float ReloadProgress => Reloading ? 1-_reloadTime/ReloadDuration : 0;
     internal void UseRound()
@@ -254,7 +266,7 @@ public class WeaponAndCombatView
         _receiverBump.Advance(0,Math.Max(0,dt-elapsed),26,.64f);
         if (_reloadTime==0)
         {
-            if (CurrentWeapon==WeaponType.MicroUzi) _uziRounds=32;
+            if (CurrentWeapon==WeaponType.MicroUzi) _uziRounds=Capacity;
             else _shells=2;
         }
     }
@@ -961,7 +973,7 @@ public class WeaponAndCombatView
 
     private static void DrawCasing(Vector3 basePos,Vector3 axis,bool hull)
     {
-        float r=hull ? .0126f : .0042f;
+        float r=hull ? .0092f : .0042f;
         Vector3 cap=basePos+axis*(hull ? .010f : .0035f);
         var brass=new Color(172,134,68,255);
         VisualEngine3D.Rod(basePos,cap,r*1.07f,r*1.07f,10,brass,Finish.Bronze);
@@ -1314,19 +1326,18 @@ public class WeaponAndCombatView
         Quaternion onForend=Quaternion.CreateFromAxisAngle(Vector3.UnitX,angle);
         // Authored shell-head midpoint and shell axis in fps_left_shells.glb (BVH overlap == 0).
         Vector3 shellHeadSocket=assembly+new Vector3(.180f,-.092f,.765f);
-        Quaternion shellAlign=Quaternion.CreateFromAxisAngle(Vector3.UnitX,angle-.6194f);
+        Quaternion shellAlign=Quaternion.CreateFromAxisAngle(Vector3.UnitX,angle-.6191f);
         Vector3 breechMid=entry+Vector3.UnitX*(count==1 ? .035f : .0175f);
         float carry=Ramp(t,.22f,.42f);
         float push1=Ramp(t,.42f,.55f), push2=Ramp(t,.55f,.66f);
         float push=count==1 ? .0536f*Ramp(t,.42f,.62f) : .028f*push1+.0256f*push2;
-        float handPush=Math.Min(push,.016f);
+        float handPush=Math.Min(push,.008f);
         float retract=Ramp(t,.66f,.73f);
-        Vector3 handClearance=new(-.003f,.024f,-.010f);
-        Vector3 pocketMid=breechMid-axis*.145f+new Vector3(-.095f,-.105f,-.035f);
-        Vector3 stageMid=breechMid-axis*(.064f-handPush)+handClearance;
-        Vector3 targetHeadMid=Vector3.Lerp(pocketMid+handClearance,stageMid,carry)
-            +new Vector3(-.026f,.014f,-.012f)*MathF.Sin(carry*MathF.PI)
-            +new Vector3(-.048f,-.055f,-.025f)*retract;
+        Vector3 pocketMid=breechMid-axis*.115f+new Vector3(-.055f,.012f,-.018f);
+        Vector3 stageMid=breechMid-axis*(.056f-handPush);
+        Vector3 arc=new Vector3(-.012f,.022f,-.008f)*MathF.Sin(carry*MathF.PI);
+        Vector3 targetHeadMid=Vector3.Lerp(pocketMid,stageMid,carry)+arc
+            +new Vector3(-.048f,-.045f,-.025f)*retract;
         Matrix4x4 shellsHandFrame=HandAt(shellHeadSocket,targetHeadMid,shellAlign,pose);
 
         VisualEngine3D.ArmAssembly(true,assembly,"fps_hands_shotgun",pose,ShotgunKickPhase*.08f);
@@ -1365,7 +1376,6 @@ public class WeaponAndCombatView
                 var (mouth,dir)=Chamber(gripTop,angle,i);
                 var at=Vector3.Transform(mouth-dir*.001f,pose);
                 var forward=Vector3.TransformNormal(dir,pose);
-                VisualEngine3D.Rod(at-forward*.0007f,at,.0149f,.0149f,24,new(37,32,28,255));
                 if(i<_shells) DrawCasing(at-forward*.0012f,forward,true);
             }
         }
@@ -1381,8 +1391,7 @@ public class WeaponAndCombatView
                     : i==0 ? .0536f*push1 : .024f*push1+.0296f*push2;
                 Vector3 chamberStage=mouth-axis*(.056f-shellPush);
                 Vector3 pocketShell=pocketMid+Vector3.UnitX*(chamber==0 ? -.0175f : .0175f);
-                Vector3 unseatedPos=Vector3.Lerp(pocketShell,chamberStage,carry)
-                    +new Vector3(-.026f,.014f,-.012f)*MathF.Sin(carry*MathF.PI);
+                Vector3 unseatedPos=Vector3.Lerp(pocketShell,chamberStage,carry)+arc;
                 Vector3 shellBase=Vector3.Transform(seated ? mouth-axis*.0024f : unseatedPos,pose);
                 Vector3 shellAxis=Vector3.TransformNormal(axis,pose);
                 DrawCasing(shellBase,shellAxis,true);

@@ -824,7 +824,7 @@ def build_weapon_shotgun():
     m_receiver     = make_mat("ReceiverSteel", (.065, .082, .103, 1), metallic=.89, roughness=.34)
     m_steel_dark   = make_mat("DarkSteelTrim", (.043, .055, .072, 1), metallic=.85, roughness=.39)
     m_barrel       = make_mat("BluedSteel", (.032, .045, .061, 1), metallic=.90, roughness=.29)
-    m_bore         = make_mat("BoreBlack", (0.02, 0.02, 0.03, 1), roughness=0.85)
+    m_bore         = make_mat("BoreBlack", (0.002, 0.002, 0.003, 1), metallic=0.0, roughness=1.0)
     m_brass        = make_mat("BrassBead", (0.96, 0.78, 0.22, 1), metallic=0.90, roughness=0.16)
 
     walnut = ASSETS / "external_cc0/walnut_veneer"
@@ -1109,16 +1109,87 @@ def build_weapon_shotgun():
     smooth(add_box("ForendSteelLatch", (0, -0.021, -0.205), (0.0095, 0.0035, 0.068), m_receiver, bevel=0.0015))
     smooth(add_sphere("ForendIronTip", (0, -0.001, -0.106), 1.0, m_receiver, scale=(0.0235, 0.0135, 0.018), segments=36, ring_count=20))
 
-    # 4) HIGH-POLY 48-SEGMENT TWIN BLUED BARRELS WITH VENTILATED SIGHT RIB & COMPACT BRASS BEAD
+    # 4) HIGH-POLY 48-SEGMENT TWIN BLUED BARRELS WITH DEEP DARK HOLLOW CHAMBERS (z = -0.092 -> -0.165, r = 0.0096m)
+    def add_lofted_tube(name, bx, by, ring_zr, mat, closed_loop=True):
+        n_seg = 48
+        n_rings = len(ring_zr)
+        t_verts = []
+        for tz, tr in ring_zr:
+            for i in range(n_seg):
+                ang = i * math.tau / n_seg
+                t_verts.append(rl_pos((bx + tr * math.cos(ang), by + tr * math.sin(ang), tz)))
+        t_faces = []
+        limit = n_rings if closed_loop else (n_rings - 1)
+        for k in range(limit):
+            k_next = (k + 1) % n_rings
+            for i in range(n_seg):
+                a = k * n_seg + i
+                b = k * n_seg + (i + 1) % n_seg
+                c = k_next * n_seg + (i + 1) % n_seg
+                d = k_next * n_seg + i
+                t_faces.append((a, b, c, d))
+        t_mesh = bpy.data.meshes.new(name)
+        t_mesh.from_pydata(t_verts, [], t_faces)
+        t_mesh.update()
+        t_obj = bpy.data.objects.new(name, t_mesh)
+        bpy.context.collection.objects.link(t_obj)
+        t_mesh.materials.append(mat)
+        return smooth(t_obj)
+
     for side in (-1, 1):
         bx = side * 0.0175
-        smooth(add_rod(f"BluedBarrel_{side}", (bx, 0.024, -0.092), (bx, 0.024, -0.456), 0.0168, 0.0158, m_barrel, 48))
-        smooth(add_rod(f"MuzzleCrown_{side}", (bx, 0.024, -0.456), (bx, 0.024, -0.466), 0.0166, 0.0164, m_receiver, 48))
-        smooth(add_rod(f"HollowBore_{side}",  (bx, 0.024, -0.452), (bx, 0.024, -0.467), 0.0132, 0.0132, m_bore, 36))
-        smooth(add_rod(f"BreechBand_{side}",  (bx, 0.024, -0.092), (bx, 0.024, -0.118), 0.0173, 0.0169, m_receiver, 48))
+        by = 0.0240
+        # Watertight hollow outer blued barrel wall (tucked inside BreechBand at z = -0.114)
+        add_lofted_tube(f"BluedBarrel_{side}", bx, by, [
+            (-0.1140, 0.0167),
+            (-0.2800, 0.0163),
+            (-0.4565, 0.0158),
+            (-0.4565, 0.0138),
+            (-0.1140, 0.0142),
+        ], m_barrel)
+        # Watertight annular steel breech band & chamfered chamber rim at z = -0.092 (hollow center r = 0.0098m, lo.Z = -0.118 < -0.100)
+        add_lofted_tube(f"BreechBand_{side}", bx, by, [
+            (-0.1180, 0.0169),
+            (-0.0926, 0.0173),
+            (-0.0917, 0.0168),
+            (-0.0916, 0.0156),
+            (-0.0916, 0.0114),
+            (-0.0922, 0.0102),
+            (-0.0942, 0.0098),
+            (-0.1020, 0.0128),
+            (-0.1180, 0.0152),
+        ], m_receiver)
+        # Watertight deep pitch-black hollow 12-gauge chamber cavity (z = -0.0926 -> -0.165, r = 0.0098m, lo.Z = -0.1665 < -0.100)
+        add_lofted_tube(f"BreechChamberBore_{side}", bx, by, [
+            (-0.0926, 0.00985),
+            (-0.1250, 0.00975),
+            (-0.1550, 0.00950),
+            (-0.1650, 0.00920),
+            (-0.1650, 0.00030),
+            (-0.1665, 0.00030),
+            (-0.1665, 0.01120),
+            (-0.0935, 0.01120),
+        ], m_bore)
+        # Watertight annular steel muzzle crown (hollow center r = 0.0096m)
+        add_lofted_tube(f"MuzzleCrown_{side}", bx, by, [
+            (-0.4560, 0.0166),
+            (-0.4660, 0.0164),
+            (-0.4660, 0.0104),
+            (-0.4640, 0.0096),
+            (-0.4560, 0.0096),
+        ], m_receiver)
+        # Watertight deep dark muzzle bore cavity (z = -0.464 -> -0.390, r = 0.0096m)
+        add_lofted_tube(f"HollowBore_{side}", bx, by, [
+            (-0.4640, 0.00962),
+            (-0.3900, 0.00920),
+            (-0.3900, 0.00040),
+            (-0.3885, 0.00040),
+            (-0.3885, 0.01060),
+            (-0.4640, 0.01060),
+        ], m_bore)
 
     # Central joining rib & raised ventilated top sighting rib
-    smooth(add_box("MidBarrelFiller", (0, 0.024, -0.275), (0.012, 0.012, 0.365), m_barrel, bevel=0.0015))
+    smooth(add_box("MidBarrelFiller", (0, 0.024, -0.280), (0.011, 0.011, 0.350), m_barrel, bevel=0.0015))
     smooth(add_box("VentilatedTopRib", (0, 0.0416, -0.276), (0.0092, 0.0032, 0.368), m_barrel, bevel=0.0012))
     for post_i in range(9):
         pz = -0.110 - post_i * 0.042

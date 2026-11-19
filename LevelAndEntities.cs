@@ -16,10 +16,11 @@ public enum SubscriptionBaitTier
 
 public enum CoderArchetype
 {
-    JuniorTabber = 0,
-    PromptBro = 1,
-    CursorAdept = 2,
-    SaasGuruMiniBoss = 3
+    JuniorPrompter = 0,
+    CryptoBro = 1,
+    TeamLeadMeeter = 2,
+    SaasGuruMiniBoss = 3,
+    SeniorArchitect = 4
 }
 
 public enum CoderAIState
@@ -71,6 +72,36 @@ public sealed class VibeCoderEntity
     public float SpeechTimer;
     public int SpawnSide; // -1 = West door, +1 = East door
 
+    public float Composure, Ego, Fear, Greed;
+    public bool JointNda;
+    public bool BaitTaken, LaptopLost, RaidGuard, ReleaseAttacker;
+    public string Role => Archetype switch {
+        CoderArchetype.JuniorPrompter=>"Джуниор-Промптер",CoderArchetype.CryptoBro=>"Крипто-Бро",
+        CoderArchetype.TeamLeadMeeter=>"Тимлид-Митингер",CoderArchetype.SeniorArchitect=>"Сеньор-Архитектор",_=>"Гуру Курсора" };
+
+    internal void AssignRole(CoderArchetype role)
+    {
+        Archetype=role;
+        (Composure,Ego,Fear,Greed,HoodieColor)=role switch {
+            CoderArchetype.JuniorPrompter=>(48,28,16,41,new Color(65,180,220,255)),
+            CoderArchetype.CryptoBro=>(68,65,9,62,new Color(220,155,47,255)),
+            CoderArchetype.TeamLeadMeeter=>(96,57,6,22,new Color(77,173,115,255)),
+            CoderArchetype.SeniorArchitect=>(90,96,4,12,new Color(154,119,212,255)),
+            _=>(99,100,0,35,new Color(245,190,25,255)) };
+    }
+
+    internal void Pressure(float resolve,float ego,float fear,float greed=0)
+    {
+        Composure=Math.Clamp(Composure-resolve,0,100);
+        Ego=Math.Clamp(Ego-ego,0,100); Fear=Math.Clamp(Fear+fear,0,100); Greed=Math.Clamp(Greed+greed,0,100);
+        bool broken=Archetype switch {
+            CoderArchetype.SeniorArchitect=>Ego<=35 && (Fear>=40 || Composure<=25),
+            CoderArchetype.TeamLeadMeeter=>Composure<=20 || Fear>=70 && Ego<=45,
+            _=>Composure<=25 || Fear>=60 && Ego<=45 || Greed>=75 && Composure<=50 };
+        if(!broken || Hp<=0) return;
+        State=CoderAIState.Subdued; Windup=0; SpeechTimer=0;
+    }
+
     public bool IsMiniBoss => Archetype == CoderArchetype.SaasGuruMiniBoss;
     public const float BodyScale = .70f;
     public float ModelScale => BodyScale * (IsMiniBoss ? 1.28f : 1f);
@@ -90,6 +121,7 @@ public sealed class GalleyDeskSlot
     public Color HoodieColor;
     public bool IsSlackingInTwitter;
     public float SlackCycleTimer;
+    public float Productivity=20, TechDebtRate, Morale=1, Burnout, TradingTimer=28;
     public float TypingPhase;
     public float IncomeAccumulator;
     public float WhackFlashTimer;
@@ -108,6 +140,8 @@ public struct EnemyProjectile3D
     public string Label;
     public Color PrimaryColor;
     public Color WireColor;
+    public int OwnerId;
+    public bool Deflected, Coin;
     public bool IsNodeModulesCube, IsGlitch;
 }
 
@@ -189,7 +223,7 @@ public sealed class EscapedAgentBoss
     public Vector3 ChargeDirection;
 }
 
-public sealed class SkyscraperFloor1World
+public sealed partial class SkyscraperFloor1World
 {
     // Massive Warface "White Shark" («Белая Акула») Tactical Skyscraper Floor 1 (76m x 76m, Soaring 11.2m High-Ceiling Atrium!)
     public const float HalfWidth = 38.0f;
@@ -417,20 +451,13 @@ public sealed class SkyscraperFloor1World
 
         // Populate 85+ 3D Office Props across the Left Fork, Right Fork, Central Atrium, and North Hall!
         PopulateRichOfficeProps();
+        MapStations();
         BuildSolids();
-        void Fighter(string name, float x, float z)
-        {
-            ActiveCoders.Add(new VibeCoderEntity {
-                Id = _nextCoderId++, IsCombatCoder = true, Name = name, MaxHp = 54, Hp = 54,
-                Position = new(x,0,z), State = CoderAIState.CombatHostile, AttackCooldown = .48f,
-                HoodieColor = new(172,43,48,255), GlassesColor = new Color(246,83,43,255)
-            });
-        }
-        Fighter("Боевой Промптер Макс", -8, 5.5f);
-        Fighter("Токсичный Джуниор Егор", 12, 6.5f);
-        Fighter("Агро-Вайбер Кирилл", -7, -11);
-        Fighter("Сеньор-Промпт Лёха", 7, -12);
-
+        Systems=new();
+        SpawnFighter(CoderArchetype.JuniorPrompter,new(-8,0,5.5f));
+        SpawnFighter(CoderArchetype.CryptoBro,new(12,0,6.5f));
+        SpawnFighter(CoderArchetype.TeamLeadMeeter,new(-7,0,-11));
+        SpawnFighter(CoderArchetype.SeniorArchitect,new(7,0,-12));
 
         // Reset Boss & Progression
         ElevatorBoss.IsActive = false;
@@ -669,9 +696,9 @@ public sealed class SkyscraperFloor1World
 
     public static (string Name, int Cost, Color NeonColor, string Description) GetBaitInfo(SubscriptionBaitTier tier) => tier switch
     {
-        SubscriptionBaitTier.FreeTier => ("Free Tier ($0)", 0, new Color(45, 245, 130, 255), "Приманивает Джуниор-Табберов (100 ХП | Выкуп $150)"),
-        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($20)", 20, new Color(40, 215, 255, 255), "Приманивает Промпт-Бро (160 ХП | Выкуп $240)"),
-        SubscriptionBaitTier.TurkishAccount => ("Турецкий Аккаунт ($80)", 80, new Color(215, 75, 255, 255), "Приманивает Адептов Курсора (240 ХП | Выкуп $360)"),
+        SubscriptionBaitTier.FreeTier => ("Free Tier ($0)", 0, new Color(45, 245, 130, 255), "Джуниор-Промптер. Выкуп $160"),
+        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($20)", 20, new Color(40, 215, 255, 255), "Крипто-Бро. Выкуп $250"),
+        SubscriptionBaitTier.TurkishAccount => ("Турецкий Аккаунт ($80)", 80, new Color(215, 75, 255, 255), "Тимлид-Митингер. Выкуп $380"),
         SubscriptionBaitTier.CloudEntropicMax => ("Cloud Entropic Max ($200)", 200, new Color(255, 185, 35, 255), "ВЫЗЫВАЕТ МИНИ-БОССА «ГУРУ КУРСОРА: SAAS ЗА 2 ЧАСА» (600 ХП | Выкуп $600)"),
         _ => ("Free Tier ($0)", 0, Color.Lime, "")
     };
@@ -693,6 +720,8 @@ public sealed class SkyscraperFloor1World
             Add(p-new Vector3(0,0,.58f*WorkstationScale),2.25f*WorkstationScale,1.46f*WorkstationScale,.12f);
             Add(p+new Vector3(0,0,.74f*WorkstationScale),.54f,.52f*WorkstationScale,.50f);
         }
+        Add(DeployPos,.83f,1.14f,.61f);
+        Add(CoffeePos,.85f,1.39f,.68f);
         foreach (var p in Pillars) Add(p.Center,2*p.HalfWidth,CeilingHeight,2*p.HalfDepth);
         Add(CentralElevatorCorePos,2*ElevatorCoreHalfW,CeilingHeight,2*ElevatorCoreHalfD);
         foreach (var bay in InteriorWallBays()) solids.Add(new(bay.Center-bay.Size/2,bay.Center+bay.Size/2));
@@ -851,19 +880,19 @@ public sealed class SkyscraperFloor1World
 
         CoderArchetype archetype = tier switch
         {
-            SubscriptionBaitTier.FreeTier => CoderArchetype.JuniorTabber,
-            SubscriptionBaitTier.CursorPro => CoderArchetype.PromptBro,
-            SubscriptionBaitTier.TurkishAccount => CoderArchetype.CursorAdept,
+            SubscriptionBaitTier.FreeTier => CoderArchetype.JuniorPrompter,
+            SubscriptionBaitTier.CursorPro => CoderArchetype.CryptoBro,
+            SubscriptionBaitTier.TurkishAccount => CoderArchetype.TeamLeadMeeter,
             SubscriptionBaitTier.CloudEntropicMax => CoderArchetype.SaasGuruMiniBoss,
-            _ => CoderArchetype.JuniorTabber
+            _ => CoderArchetype.JuniorPrompter
         };
 
         VibeCoderEntity coder = archetype switch
         {
-            CoderArchetype.JuniorTabber => new VibeCoderEntity
+            CoderArchetype.JuniorPrompter => new VibeCoderEntity
             {
                 Id = _nextCoderId++,
-                Archetype = CoderArchetype.JuniorTabber,
+                Archetype = CoderArchetype.JuniorPrompter,
                 Name = "Джуниор Таббер Данила",
                 Subtitle = "Жмёт Tab не глядя | 0 дней без падения прода",
                 Position = spawnPos,
@@ -877,10 +906,10 @@ public sealed class SkyscraperFloor1World
                 SpeechTimer = 3.5f,
                 SpawnSide = side
             },
-            CoderArchetype.PromptBro => new VibeCoderEntity
+            CoderArchetype.CryptoBro => new VibeCoderEntity
             {
                 Id = _nextCoderId++,
-                Archetype = CoderArchetype.PromptBro,
+                Archetype = CoderArchetype.CryptoBro,
                 Name = "Промпт-Бро Артемий",
                 Subtitle = "Архитектор промптов | Не знает что такое массив",
                 Position = spawnPos,
@@ -894,10 +923,10 @@ public sealed class SkyscraperFloor1World
                 SpeechTimer = 3.5f,
                 SpawnSide = side
             },
-            CoderArchetype.CursorAdept => new VibeCoderEntity
+            CoderArchetype.TeamLeadMeeter => new VibeCoderEntity
             {
                 Id = _nextCoderId++,
-                Archetype = CoderArchetype.CursorAdept,
+                Archetype = CoderArchetype.TeamLeadMeeter,
                 Name = "Адепт Курсора Тимур",
                 Subtitle = "10 окон ИИ одновременно | Коммитит .env в гитхаб",
                 Position = spawnPos,
@@ -930,6 +959,8 @@ public sealed class SkyscraperFloor1World
             }
         };
 
+        coder.AssignRole(archetype);
+        if(!coder.IsMiniBoss) coder.Name=coder.Role;
         Vector3 toMac = CentralMacBookPos - spawnPos;
         coder.FacingYaw = MathF.Atan2(toMac.X, toMac.Z);
         ActiveCoders.Add(coder);
@@ -1007,6 +1038,8 @@ public sealed class SkyscraperFloor1World
         Vector3? guestPosition=null, Action<int>? onGuestHit=null)
     {
         AdvanceLighting(dt);
+        ApplyElectricField();
+        Systems.AgentHealth=ElevatorBoss.Hp/ElevatorBoss.MaxHp;
         Vector3 Nearest(Vector3 enemy) => guestPosition is {} guest &&
             Vector3.DistanceSquared(enemy,guest)<Vector3.DistanceSquared(enemy,playerPos) ? guest : playerPos;
 
@@ -1043,7 +1076,7 @@ public sealed class SkyscraperFloor1World
         UpdateElevatorBoss(dt, Nearest(ElevatorBoss.Position));
 
         // 4. Update Enemy Projectiles (500 ERROR blocks & 40GB node_modules cubes)
-        UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile,guestPosition,onGuestHit);
+        UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile,guestPosition,onGuestHit,onPassiveIncomeOrPayout);
 
         // 5. Update 4 Galley Desks (Passive +$20/sec per working coder, or Twitter slack state)
         int passiveEarned = UpdateGalleyDesks(dt, onPassiveIncomeOrPayout);
@@ -1063,6 +1096,7 @@ public sealed class SkyscraperFloor1World
             CashParticles[i] = cp;
         }
 
+        Systems.Tick(dt,this,onPassiveIncomeOrPayout);
         return passiveEarned;
     }
 
@@ -1084,7 +1118,7 @@ public sealed class SkyscraperFloor1World
                 c.Position = ResolvePlayerCollision(c.Position + c.KnockbackVel*dt,.24f);
                 c.KnockbackVel *= MathF.Exp(-8*dt);
             }
-            if (c.IsCombatCoder && c.State == CoderAIState.Subdued)
+            if (c.Hp<=0 && c.State == CoderAIState.Subdued)
             {
                 c.KnockoutTime += dt;
                 if (c.KnockoutTime > 1.3f) ActiveCoders.RemoveAt(i);
@@ -1095,7 +1129,8 @@ public sealed class SkyscraperFloor1World
                 c.HitStaggerTimer = Math.Max(0,c.HitStaggerTimer-dt);
                 continue;
             }
-            if (c.IsCombatCoder)
+            if(c.State==CoderAIState.Subdued) continue;
+            if (c.IsCombatCoder && c.State==CoderAIState.CombatHostile && c.StunTimer<=0)
             {
                 if (UpdateFighter(c,dt,playerPos))
                 {
@@ -1137,6 +1172,7 @@ public sealed class SkyscraperFloor1World
                     {
                         c.State = CoderAIState.SittingAtMacBook;
                         c.Anxiety = 0f;
+                        c.Pressure(32,0,0,45);
                         c.FacingYaw = 0f; // Looking at MacBook screen
                         c.SpeechBubble = "ПОПАЛСЯ НА ХАЛЯВУ! ЖМЁТ ACCEPT ALL НЕ ГЛЯДЯ!";
                         c.SpeechTimer = 6.0f;
@@ -1144,7 +1180,7 @@ public sealed class SkyscraperFloor1World
 
                     // Anxiety check: if player is close and NOT in ambush before coder reaches the MacBook!
                     float distToPlayer = Vector2.Distance(new Vector2(c.Position.X, c.Position.Z), new Vector2(playerPos.X, playerPos.Z));
-                    if (!IsPlayerInAmbush && distToPlayer < 9.5f)
+                    if (c.State==CoderAIState.WalkingToBait && !IsPlayerInAmbush && distToPlayer < 9.5f)
                     {
                         float rate = (10.5f - distToPlayer) * 9.5f;
                         c.Anxiety = Math.Clamp(c.Anxiety + rate * dt, 0f, 100f);
@@ -1209,7 +1245,7 @@ public sealed class SkyscraperFloor1World
                     if (c.AttackCooldown <= 0f)
                     {
                         c.AttackCooldown = 2.15f;
-                        SpawnSaasGuruErrorBlock(c.CombatCenter, playerPos);
+                        SpawnSaasGuruErrorBlock(c.CombatCenter, playerPos,c.Id);
 
                         string[] battleCries =
                         {
@@ -1253,6 +1289,20 @@ public sealed class SkyscraperFloor1World
 
     private bool UpdateFighter(VibeCoderEntity c,float dt,Vector3 eye)
     {
+        if(IsMacBookTrapActive && !c.RaidGuard && !c.ReleaseAttacker && !c.BaitTaken &&
+            c.Archetype is CoderArchetype.JuniorPrompter or CoderArchetype.CryptoBro && Vector3.DistanceSquared(c.Position,CentralMacBookPos)<90)
+        {
+            c.State=CoderAIState.WalkingToBait; c.Windup=0; c.BaitTaken=true;
+            return false;
+        }
+        if(c.ReleaseAttacker && Systems.Friday>0 && Vector3.DistanceSquared(c.Position,eye)>25)
+        {
+            Vector3 node=GalleyDesks[0].DeskPosition+new Vector3(-1.4f,0,-1.4f);
+            Vector3 step=node-c.Position;
+            if(step.LengthSquared()>1) c.Position=ResolvePlayerCollision(c.Position+Vector3.Normalize(step)*3.8f*dt,.24f);
+            c.WalkCycle+=dt*8;
+            return false;
+        }
         Vector3 offset = eye-c.Position;
         offset.Y = 0;
         float dist = offset.Length();
@@ -1264,7 +1314,9 @@ public sealed class SkyscraperFloor1World
         if (!c.Aggro && dist<=11 && visible)
         {
             c.Aggro = true;
-            c.SpeechBubble = "Ща поправлю твой промпт!";
+            c.SpeechBubble = c.Archetype switch { CoderArchetype.TeamLeadMeeter=>"Синк на 15 минут!",
+                CoderArchetype.CryptoBro=>"На пресейл успеваем?", CoderArchetype.SeniorArchitect=>"Сначала согласуем схему.",
+                _=>"Ща поправлю твой промпт!" };
             c.SpeechTimer = .95f;
         }
         if (!c.Aggro) return false;
@@ -1275,18 +1327,22 @@ public sealed class SkyscraperFloor1World
             c.Windup = Math.Max(0,c.Windup-dt);
             if (c.Windup>0) return false;
             c.AttackCooldown = c.WindingSlap ? 1.4f : 1.85f;
-            if (c.WindingSlap) return visible && dist<2.8f && Math.Abs(eye.Y-1.4f)<1;
+            if (c.WindingSlap) return !c.LaptopLost && visible && dist<2.8f && Math.Abs(eye.Y-1.4f)<1;
             EnemyProjectiles.Add(new() {
                 Position=hand, Velocity=Vector3.Normalize(c.ThrowTarget-hand)*12,
                 AngularVelocity=new(180,290,110), Radius=.14f, Life=2, MaxLife=2,
-                Damage=7, Label="Конфликт в main", PrimaryColor=new(255,64,31,255),
+                OwnerId=c.Id, Coin=c.Archetype==CoderArchetype.CryptoBro,
+                Damage=7, Label=c.Archetype==CoderArchetype.CryptoBro ? "Глитч-коин" : "Конфликт в main",
+                PrimaryColor=c.Archetype==CoderArchetype.CryptoBro ? Color.Gold : new(255,64,31,255),
                 WireColor=new(255,212,106,255), IsGlitch=true });
             return false;
         }
-        c.AttackCooldown -= dt;
+        bool synced=ActiveCoders.Exists(lead=>lead!=c && lead.Archetype==CoderArchetype.TeamLeadMeeter &&
+            lead.State==CoderAIState.CombatHostile && Vector3.DistanceSquared(lead.Position,c.Position)<25);
+        c.AttackCooldown -= dt*(synced ? 1.5f : 1);
         if (c.AttackCooldown<=0 && visible && dist<=11)
         {
-            c.WindingSlap = dist<2.8f;
+            c.WindingSlap = !c.LaptopLost && dist<2.8f;
             c.Windup = c.WindingSlap ? .38f : .58f;
             c.ThrowTarget = eye-Vector3.UnitY*.38f;
             c.SpeechBubble = c.WindingSlap ? "Лови ноут!" : "Пушу в main!";
@@ -1296,12 +1352,14 @@ public sealed class SkyscraperFloor1World
         Vector3 strafe = new(dir.Z,0,-dir.X);
         Vector3 motion = dir*(dist>8 ? 2.1f : dist<1.65f ? -.75f : 0) +
             strafe*(.92f*MathF.Sin(c.StateTimer*2.1f+c.Id));
+        if(c.Archetype==CoderArchetype.CryptoBro) motion+=strafe*(3.8f*MathF.Sin(c.StateTimer*4));
+        if(c.Archetype==CoderArchetype.SeniorArchitect && dist<7) motion-=dir*2.8f;
         c.Position = ResolvePlayerCollision(c.Position+motion*dt,.24f);
         c.WalkCycle += dt*motion.Length()*5;
         return false;
     }
 
-    private void SpawnSaasGuruErrorBlock(Vector3 origin, Vector3 playerPos)
+    private void SpawnSaasGuruErrorBlock(Vector3 origin, Vector3 playerPos,int ownerId)
     {
         string[] errorLabels =
         {
@@ -1318,7 +1376,7 @@ public sealed class SkyscraperFloor1World
         EnemyProjectiles.Add(new EnemyProjectile3D
         {
             Position = origin,
-            Velocity = dir * 9.5f,
+            Velocity = dir * 9.5f, OwnerId=ownerId,
             Rotation = Vector3.Zero,
             AngularVelocity = new Vector3(180f, 260f, 140f),
             Radius = 0.42f,
@@ -1499,7 +1557,7 @@ public sealed class SkyscraperFloor1World
         });
     }
 
-    private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string>? onPlayerHit, Vector3? guestPosition, Action<int>? onGuestHit)
+    private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string>? onPlayerHit, Vector3? guestPosition, Action<int>? onGuestHit, Action<int,string>? projectilePayout)
     {
         for (int i = EnemyProjectiles.Count - 1; i >= 0; i--)
         {
@@ -1539,6 +1597,18 @@ public sealed class SkyscraperFloor1World
                 continue;
             }
 
+            if(pr.Deflected)
+            {
+                var target=ActiveCoders.Find(c=>c.Hp>0 && Vector3.DistanceSquared(pr.Position,c.CombatCenter)<.72f);
+                if(target!=null)
+                {
+                    target.Hp=Math.Max(0,target.Hp-pr.Damage); target.HitStaggerTimer=.5f;
+                    if(target.Hp==0) KillCoder(target,projectilePayout);
+                    EnemyProjectiles.RemoveAt(i);
+                }
+                else EnemyProjectiles[i]=pr;
+                continue;
+            }
             // Check hit against Player
             float distPlayer = Vector3.Distance(pr.Position, playerPos);
             if (distPlayer < pr.Radius + 0.55f)
@@ -1583,14 +1653,25 @@ public sealed class SkyscraperFloor1World
                 }
                 else
                 {
-                    // +$20/sec passive income
-                    desk.IncomeAccumulator += 20f * dt;
-                    if (desk.IncomeAccumulator >= 20f)
+                    bool supported=GalleyDesks.Exists(d=>d.IsOccupied && d.Archetype==CoderArchetype.TeamLeadMeeter && !d.IsSlackingInTwitter);
+                    float load=Systems.Friday>0 ? 1.7f : 1;
+                    desk.Burnout=Math.Min(100,desk.Burnout+dt*load*(supported ? .21f : .48f));
+                    if(desk.Burnout>=100) { desk.IsSlackingInTwitter=true; continue; }
+                    Systems.Risk(debt:desk.TechDebtRate*load*dt);
+                    desk.IncomeAccumulator+=DeskRate(desk,supported)*dt;
+                    int payout=(int)desk.IncomeAccumulator;
+                    desk.IncomeAccumulator-=payout;
+                    if(desk.Archetype==CoderArchetype.CryptoBro && (desk.TradingTimer-=dt)<=0)
                     {
-                        int payout = 20;
-                        desk.IncomeAccumulator -= 20f;
-                        totalEarnedThisTick += payout;
-                        onPassiveIncome?.Invoke(payout, $"Галера #{i + 1} ({desk.CoderName})");
+                        desk.TradingTimer=24+_rng.Next(18);
+                        payout+=_rng.Next(2)==0 ? -35 : 45;
+                        Systems.Announce(payout<0 ? "Крипто-Бро потерял $35 на комиссии." : "Сделка Крипто-Бро принесла $45.");
+                    }
+                    if(payout!=0)
+                    {
+                        Systems.Earned+=payout;
+                        totalEarnedThisTick+=payout;
+                        onPassiveIncome?.Invoke(payout,"Галера");
                     }
                 }
             }
@@ -1634,6 +1715,12 @@ public sealed class SkyscraperFloor1World
             _ => 35
         };
 
+        WeaponType tool=weaponSystem.CurrentWeapon;
+        if(tool==WeaponType.MicroUzi) Systems.Risk(security:2.6f);
+        if(tool==WeaponType.SawedOff) Systems.Risk(security:7);
+        if(tool==WeaponType.Belt && TryParry(camera,forward,weaponSystem,out combatFeedback)) return true;
+        bool salt=tool==WeaponType.SawedOff && Systems.Shell==Sidegrade.Salt;
+        bool negotiator=tool==WeaponType.SawedOff && Systems.Shell==Sidegrade.Negotiator;
         float surfaceDistance = TraceSurface(origin,forward,maxRange+.01f);
         maxRange = Math.Min(maxRange,surfaceDistance);
         bool melee = weaponSystem.CurrentWeapon is WeaponType.Belt or WeaponType.SolderingIron;
@@ -1648,11 +1735,17 @@ public sealed class SkyscraperFloor1World
             float dist = toDesk.Length();
             if (dist <= Math.Min(maxRange,4.2f) && Vector3.Dot(forward, Vector3.Normalize(toDesk)) > 0.65f)
             {
-                if (desk.IsSlackingInTwitter || weaponSystem.CurrentWeapon == WeaponType.Belt)
+                if (weaponSystem.CurrentWeapon == WeaponType.Belt)
                 {
                     desk.IsSlackingInTwitter = false;
                     desk.SlackCycleTimer = 25f;
                     desk.WhackFlashTimer = 0.6f;
+                    if(Systems.WantsCoffee)
+                    {
+                        Systems.WantsCoffee=false;
+                        foreach(var worker in GalleyDesks) worker.Morale=1;
+                    }
+                    desk.Morale=1; desk.Burnout=Math.Max(0,desk.Burnout-40);
 
                     AudioMusicSystem.PlayGalleyWhack();
                     AudioMusicSystem.TriggerRandomVoiceLine("КОММЕРС 90-Х", AudioMusicSystem.Boss90sBeltLines, (int)SpeakerVoiceType.Boss90s);
@@ -1663,9 +1756,9 @@ public sealed class SkyscraperFloor1World
                         hitEnemy: true,
                         damageDealt: 0,
                         isCritical: true,
-                        customHitLabel: "В РАБОТУ! +$20/СЕК!", shotDirection: forward);
+                        customHitLabel: "СМЕНА ВОССТАНОВЛЕНА", shotDirection: forward);
 
-                    combatFeedback = $"ВОСПИТАТЕЛЬНЫЙ ЛЕЩ! {desk.CoderName} закрыл Twitter и снова пашет на Галере (+$20/сек)!";
+                    combatFeedback = $"ВОСПИТАТЕЛЬНЫЙ ЛЕЩ! {desk.CoderName} закрыл Twitter и снова пашет на Галере!";
                     return true;
                 }
             }
@@ -1679,6 +1772,9 @@ public sealed class SkyscraperFloor1World
             {
                 bool isCrit = _rng.Next(100) < 28 || ElevatorBoss.State == ElevatorBossState.StunnedWallCrash;
                 int dmg = isCrit ? (int)(baseDamage * 1.55f) : baseDamage;
+                if(salt) dmg=(int)(dmg*.45f);
+                if(negotiator) dmg=(int)(dmg*1.4f);
+                Systems.Style((StyleAction)((int)tool-1));
                 ElevatorBoss.Hp = MathF.Max(0f, ElevatorBoss.Hp - dmg);
                 ElevatorBoss.HitFlashTimer = 0.16f;
 
@@ -1697,6 +1793,7 @@ public sealed class SkyscraperFloor1World
                     weaponSystem.UnlockedChatGun = true;
 
                     SpawnCashBurst(bossCenter, 24, "$$$ +$1500 БОНУС БОССА!");
+                    Systems.Earned+=1500; Systems.Risk(security:14);
                     onGrantMoney?.Invoke(1500, "ПОБЕДА НАД ИИ-АГЕНТОМ v0.1");
                     AudioMusicSystem.PlayTarotCash();
 
@@ -1718,10 +1815,10 @@ public sealed class SkyscraperFloor1World
         for (int i = 0; i < ActiveCoders.Count; i++)
         {
             VibeCoderEntity c = ActiveCoders[i];
-            if (c.State == CoderAIState.Subdued) continue;
+            if (c.Hp<=0 || (melee || salt) && c.State==CoderAIState.Subdued) continue;
 
             Vector3 center = c.CombatCenter;
-            float hitRadius = .75f * c.ModelScale + (melee ? .28f : 0);
+            float hitRadius = .75f*c.ModelScale+(melee ? .28f : 0)+(tool==WeaponType.Belt && Systems.Has(Sidegrade.DirectorBelt) ? .24f : 0);
 
             if (TryRaySphereHit(origin, forward, center, hitRadius, bestDist, out Vector3 hp, out float d))
             {
@@ -1748,46 +1845,52 @@ public sealed class SkyscraperFloor1World
                 target.Windup = 0;
                 target.AttackCooldown = Math.Max(target.AttackCooldown,.45f);
             }
-            var impulse = new Vector3(forward.X,0,forward.Z);
-            target.KnockbackVel = Vector3.Normalize(impulse)*(melee ? 7 : weaponSystem.CurrentWeapon==WeaponType.SawedOff ? 9 : 3.6f);
-            target.HitStaggerTimer = melee ? .32f : .18f;
-            target.Hp = MathF.Max(0f, target.Hp - dmg);
-            target.HitFlashTimer = 0.18f;
-
-            if (weaponSystem.CurrentWeapon == WeaponType.SolderingIron)
+            float power=Systems.Style((StyleAction)((int)tool-1));
+            var impulse=new Vector3(forward.X,0,forward.Z);
+            target.KnockbackVel=impulse*(melee ? 7 : tool==WeaponType.SawedOff ? 9 : 3.6f);
+            if(tool==WeaponType.Belt && Systems.Coffee>0) target.KnockbackVel*=2;
+            target.HitStaggerTimer=melee ? .32f : .18f;
+            target.HitFlashTimer=.18f;
+            if(melee || salt)
             {
-                target.StunTimer = 1.5f;
-            }
-
-            AudioMusicSystem.PlayHitmarker();
-            weaponSystem.TriggerWeaponAttack(camera, bestHitPoint, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: target.CombatCenter, shotDirection: forward);
-
-            if (target.Hp <= 0f)
-            {
-                target.State = CoderAIState.Subdued;
-                target.Anxiety = 0f;
-                if (target.IsCombatCoder)
+                bool disarm=tool==WeaponType.Belt && !target.LaptopLost;
+                if(disarm) target.LaptopLost=true;
+                if(tool==WeaponType.Belt)
                 {
-                    SpawnCashBurst(target.CombatCenter,8,"+$35");
-                    onGrantMoney?.Invoke(35,target.Name);
-                    AudioMusicSystem.PlaySubduedDrop();
-                    combatFeedback = $"{target.Name} выбыл. +$35";
-                    return true;
+                    target.Pressure(28*power,disarm ? 40 : 0,34*power);
+                    if(Systems.Has(Sidegrade.DirectorBelt))
+                    {
+                        target.HitStaggerTimer=.23f;
+                        foreach(var other in ActiveCoders)
+                            if(other!=target && other.Hp>0 && other.State!=CoderAIState.Subdued &&
+                                Vector3.DistanceSquared(other.Position,target.Position)<2.3f &&
+                                Vector3.Dot(other.CombatCenter-origin,forward)>0)
+                                other.Pressure(28*power,0,34*power);
+                    }
                 }
-                target.SpeechBubble = target.IsMiniBoss
-                    ? "ПОЩАДИ! ЗАБИРАЙ МОЙ SAAS И СДАВАЙ HR-ТАРОЛОГУ ЗА $600!"
-                    : "Я СОГЛАСЕН НА ОФФЕР БЕЗ ОПЦИОНОВ! НАЖМИ [E]!";
-                target.SpeechTimer = 6.0f;
-
-                AudioMusicSystem.PlaySubduedDrop();
-                combatFeedback = $"СПЕСЬ СБИТА В НОЛЬ! {target.Name} готов к поимке - подойди и нажми [E]!";
+                else if(salt) { target.Pressure(38*power,34*power,48*power); target.StunTimer=1.8f; }
+                else
+                {
+                    float tape=Systems.Has(Sidegrade.Tape) ? 1.45f : 1;
+                    target.Pressure(14*power,32*power*tape,22*power); target.StunTimer=1.5f*tape;
+                }
+                combatFeedback=target.State==CoderAIState.Subdued ? $"{target.Role} сломлен. Подпиши NDA [E]" :
+                    disarm ? "Ноутбук выбит. Эго -40" : $"Выдержка {target.Composure:F0}   Эго {target.Ego:F0}";
+                weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,0,disarm,receiverCenter:target.CombatCenter,shotDirection:forward);
             }
             else
             {
-                combatFeedback = $"Удар по «{target.Name}»: -{dmg} спеси (осталось {(int)target.Hp}/{(int)target.MaxHp})";
+                if(target.Archetype==CoderArchetype.SeniorArchitect && target.Ego>45) dmg=(int)(dmg*.73f);
+                if(negotiator && !target.IsMiniBoss) dmg=Math.Max(dmg,(int)MathF.Ceiling(target.Hp));
+                target.Hp=Math.Max(0,target.Hp-dmg);
+                weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,dmg,isCrit,receiverCenter:target.CombatCenter,shotDirection:forward);
+                if(target.Hp<=0) { KillCoder(target,onGrantMoney); combatFeedback=$"{target.Role} выбыл. СБ +14"; }
             }
+            AudioMusicSystem.PlayHitmarker();
             return true;
         }
+
+        if(surfaceDistance<=maxRange && HitStation(camera,weaponSystem,origin+forward*surfaceDistance,out combatFeedback)) return true;
 
         // 4. Missed enemy - still fire weapon visuals into world geometry
         weaponSystem.TriggerWeaponAttack(camera, surfaceDistance <= maxRange ? origin+forward*surfaceDistance : null, hitEnemy: false, shotDirection: forward);
@@ -1844,18 +1947,14 @@ public sealed class SkyscraperFloor1World
                 }
             }
 
-            // Also allow instant sell if player presses E near south zone
-            if (playerPos.Z >= 10.5f)
-            {
-                return SellCarriedCoderToHrVeronika(onGrantMoney);
-            }
+
         }
 
         // 2. Check if near a Subdued Coder to pick them up
         for (int i = 0; i < ActiveCoders.Count; i++)
         {
             var c = ActiveCoders[i];
-            if (!c.IsCombatCoder && c.State == CoderAIState.Subdued)
+            if (c.Hp>0 && c.State == CoderAIState.Subdued)
             {
                 float dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(c.Position.X, c.Position.Z));
                 if (dist <= 3.8f)
@@ -1904,6 +2003,7 @@ public sealed class SkyscraperFloor1World
         var c = CarriedCoder;
         CarriedCoder = null;
         TotalCodersSoldToHr++;
+        Systems.Deliver(c.Archetype,false,c.TarotPayoutValue);
 
         string[] tarotCards =
         {
@@ -1919,6 +2019,7 @@ public sealed class SkyscraperFloor1World
         LastTarotVerdictText = $"Карта «{LastTarotCardDrawn}»! {c.Name} продан за +${payout}!";
         TarotVerdictTimer = 6.5f;
 
+        Systems.Earned+=payout;
         onGrantMoney?.Invoke(payout, $"HR-Таролог Вероника ({c.Name})");
         SpawnCashBurst(HrTarotBoothPos + new Vector3(0f, 1.35f, 0f), 16, $"+${payout} ТАРО-КЭШ!");
 
@@ -1959,11 +2060,16 @@ public sealed class SkyscraperFloor1World
         desk.SlackCycleTimer = 25f;
         desk.IncomeAccumulator = 0f;
 
+        desk.Productivity=desk.Archetype switch { CoderArchetype.JuniorPrompter=>14, CoderArchetype.SeniorArchitect=>28,
+            CoderArchetype.TeamLeadMeeter=>18, _=>20 };
+        desk.TechDebtRate=desk.Archetype switch { CoderArchetype.JuniorPrompter=>.28f,CoderArchetype.SeniorArchitect=>-.45f,_=>0 };
+        desk.Burnout=0; desk.Morale=Systems.WantsCoffee ? .65f : 1;
+        Systems.Deliver(desk.Archetype,true,CarriedCoder.TarotPayoutValue);
         string name = CarriedCoder.Name;
         CarriedCoder = null;
 
         AudioMusicSystem.PlayTarotCash();
-        return $"ПОСАЖЕН НА ГАЛЕРУ #{targetIdx + 1}: {name} теперь приносит +$20/сек пассивного дохода!";
+        return $"ПОСАЖЕН НА ГАЛЕРУ #{targetIdx + 1}: {name} в смене. Ставка ${desk.Productivity}/с";
     }
 
     public void SpawnCashBurst(Vector3 origin, int count, string label = "$$$")
@@ -2037,6 +2143,7 @@ public sealed class SkyscraperFloor1World
         DrawEscapedAgentBoss3D();
 
         // Draw Enemy Projectiles (3D 500 ERROR blocks & 40 GB node_modules cubes)
+        DrawStations();
         DrawEnemyProjectiles3D();
 
         // Draw 3D Cash Bundles flying in the air
@@ -2582,6 +2689,8 @@ public sealed class SkyscraperFloor1World
             : c.HitStaggerTimer>0 ? -.32f*Math.Min(1,c.HitStaggerTimer*6) : c.State==CoderAIState.Subdued ? -.48f : 0;
         Color tint=c.HitFlashTimer>0 ? Color.White : Raylib.ColorLerp(Color.White,c.HoodieColor,c.IsCombatCoder ? .87f : .36f);
         VisualEngine3D.DrawCoder(c,c.Position+Vector3.UnitY*bob,tilt,tint);
+        if(c.Archetype==CoderArchetype.TeamLeadMeeter && c.State==CoderAIState.CombatHostile)
+            Raylib.DrawCircle3D(c.Position+Vector3.UnitY*.04f,5,Vector3.UnitX,90,new Color(128,224,149,155));
         if (c.IsCombatCoder && c.Windup>0)
         {
             Vector3 forward=new(MathF.Sin(c.FacingYaw),0,MathF.Cos(c.FacingYaw));
@@ -2619,6 +2728,10 @@ public sealed class SkyscraperFloor1World
         for (int i = 0; i < EnemyProjectiles.Count; i++)
         {
             var pr = EnemyProjectiles[i];
+            if(pr.Coin) {
+                VisualEngine3D.Oval(pr.Position,new(.095f,.095f,.027f),Color.Gold,Finish.Lamp);
+                continue;
+            }
             if (pr.IsGlitch)
             {
                 Vector3 dir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
@@ -2635,11 +2748,13 @@ public sealed class SkyscraperFloor1World
     // =========================================================================
     // 2D WORLD-TO-SCREEN LABELS, HEALTH BARS, ANXIETY BARS & INTERACTION HINTS
     // =========================================================================
-    private enum FocusKind { None, MacBook, Veronika, Shop, Elevator, Desk, Coder }
+    private enum FocusKind { None, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Cooler, Coffee, Rack, Printer, Deploy }
     private readonly record struct Focus(FocusKind Kind, string Label, int Index);
     private string PickUp(VibeCoderEntity c)
     {
         if (CarriedCoder != null) return "Сначала отведи пойманного кодера к Веронике или на галеру";
+        Systems.Style(StyleAction.Capture);
+        Systems.Risk(security:.5f);
         CarriedCoder = c;
         ActiveCoders.Remove(c);
         AudioMusicSystem.TriggerVoiceLine(
@@ -2654,11 +2769,27 @@ public sealed class SkyscraperFloor1World
         Focus focus = FindFocus(camera);
         switch (focus.Kind)
         {
+            case FocusKind.Offer:
+                var candidate=ActiveCoders[focus.Index];
+                if(!spend(80)) return "На аванс нужно $80";
+                candidate.Pressure(24,0,-6,45);
+                return candidate.State==CoderAIState.Subdued ? "Аванс принят. Подпиши NDA [E]" : "Кандидат изучает оффер";
+            case FocusKind.Board:
+                if(Systems.Audit>0 && spend(180)) { Systems.Audit=0; Systems.Risk(security:-10); return "Аудит оплачен"; }
+                return Systems.Audit>0 ? "В общаке нужно $180" : "Доска контрактов [J]";
+            case FocusKind.Cooler: return Spill(stations[focus.Index].Feet);
+            case FocusKind.Coffee:
+                Systems.Coffee=12; Systems.RestoreMorale(this);
+                return "Эспрессо-разнос на 12 секунд";
+            case FocusKind.Rack: return Systems.Reboot(grant);
+            case FocusKind.Deploy: return Systems.Deploy(this);
+            case FocusKind.Printer: return Systems.Print();
             case FocusKind.Coder: return PickUp(ActiveCoders[focus.Index]);
             case FocusKind.Veronika: return SellCarriedCoderToHrVeronika(grant);
             case FocusKind.Desk:
                 var desk = GalleyDesks[focus.Index];
-                if (desk.IsOccupied) return desk.IsSlackingInTwitter ? "Кодер отвлёкся на Twitter" : "Кодер работает";
+                if (desk.IsOccupied && CarriedCoder!=null) desk.IsOccupied=false; // The outgoing worker ends their shift.
+                if (desk.IsOccupied) return $"{desk.CoderName}: ставка ${desk.Productivity}/с, мораль {desk.Morale:P0}, выгорание {desk.Burnout:F0}%";
                 return SeatCarriedCoderAtGalley(focus.Index);
             case FocusKind.MacBook:
                 ActivateMacBookTrap(SelectedBaitTier,spend,out string trap);
@@ -2687,18 +2818,27 @@ public sealed class SkyscraperFloor1World
             float alignment = Vector3.Dot(look, Vector3.Normalize(delta));
             if (alignment > best) { best = alignment; focus = new(kind,name,index); }
         }
+        for(int i=0;i<stations.Count;i++)
+        {
+            var station=stations[i];
+            string label=station.Kind==FocusKind.Board && Systems.Audit>0 ? "Оплатить аудит ($180)" : station.Label;
+            Consider(station.Feet,station.Height,3.2f,station.Kind,label,i);
+        }
         Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "Макбук-ловушка");
         Consider(HrTarotBoothPos, 1.6f, 4.6f, FocusKind.Veronika, "HR Вероника");
-        Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Выбрать подписку");
+        Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
         Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, "Центральный лифт");
         Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, "Центральный лифт");
         Consider(ElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, "Вызвать лифт");
         Consider(SouthElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, "Вызвать лифт");
         for(int i=0;i<GalleyDesks.Count;i++)
-            Consider(GalleyDesks[i].DeskPosition,.9f*WorkstationScale,3.6f,FocusKind.Desk,"Стол галеры",i);
+            Consider(GalleyDesks[i].DeskPosition,.9f*WorkstationScale,3.6f,FocusKind.Desk,CarriedCoder!=null && GalleyDesks[i].IsOccupied ? "Сменить работника Галеры" : "Стол галеры",i);
         for(int i=0;i<ActiveCoders.Count;i++)
-            if(!ActiveCoders[i].IsCombatCoder && ActiveCoders[i].State==CoderAIState.Subdued)
-                Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,ActiveCoders[i].Name,i);
+            if(CarriedCoder==null && ActiveCoders[i].Archetype==CoderArchetype.CryptoBro && ActiveCoders[i].State!=CoderAIState.Subdued)
+                Consider(ActiveCoders[i].Position,.82f,2.6f,FocusKind.Offer,"Предложить аванс ($80)",i);
+        for(int i=0;i<ActiveCoders.Count;i++)
+            if(ActiveCoders[i].Hp>0 && ActiveCoders[i].State==CoderAIState.Subdued)
+                Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,"Подписать NDA: "+ActiveCoders[i].Role,i);
         return focus;
     }
 
@@ -2724,6 +2864,7 @@ public sealed class SkyscraperFloor1World
             if(actor.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,actor.Position)>100) continue;
             float scale=actor.ModelScale;
             ProtectHead(actor.Position,scale,scale);
+            if(actor.LaptopLost) continue;
             // Enclose the open computer at its draw yaw, including the tilted lid.
             var forward = new Vector3(MathF.Sin(actor.FacingYaw),0,MathF.Cos(actor.FacingYaw));
             var side = new Vector3(forward.Z,0,-forward.X);
@@ -2752,9 +2893,9 @@ public sealed class SkyscraperFloor1World
                 Program.PartnerHp/100f,new Color(109,202,162,255));
         foreach(var c in ActiveCoders)
         {
-            if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.State==CoderAIState.Subdued) continue;
-            Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.IsMiniBoss?"ГУРУ КУРСОРА":c.Name,
-                c.Hp/c.MaxHp,c.IsCombatCoder ? new Color(246,83,43,255) : new Color(236,168,93,255));
+            if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.Hp<=0) continue;
+            Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.State==CoderAIState.Subdued ? c.Role+" / Сломлен" : c.Role,
+                c.Composure/100,c.HoodieColor);
             if (c.IsCombatCoder && c.SpeechTimer>0 && Vector3.Dot(look,c.Position-camera.Position)>0)
             {
                 Vector2 anchor=Raylib.GetWorldToScreen(c.Position+Vector3.UnitY*1.60f,camera);
@@ -2777,7 +2918,7 @@ internal static unsafe partial class VisualEngine3D
     internal static void DrawCoder(VibeCoderEntity c,Vector3 feet,float tilt,Color tint)
     {
         const string asset="char_vibe_coder";
-        if (!c.IsCombatCoder && c.HitFlashTimer<=0)
+        if (!c.IsCombatCoder && !c.LaptopLost && c.HitFlashTimer<=0)
         {
             Asset(asset,feet,c.FacingYaw*180/MathF.PI,c.ModelScale,tint,tilt);
             return;
@@ -2792,12 +2933,241 @@ internal static unsafe partial class VisualEngine3D
             // raylib material zero is the fallback; these are the authored blue,
             // navy and teal swatches of the single shared char_vibe_coder GLB.
             if(c.IsCombatCoder)
-                pigment=i switch { 3=>new Color(124,18,22,255), 5=>new Color(54,7,11,255),
-                    9=>new Color(247,43,9,255), _=>pigment };
+                pigment=i switch { 3=>c.HoodieColor, 5=>Raylib.ColorBrightness(c.HoodieColor,-.55f),
+                    9=>c.GlassesColor, _=>pigment };
             if (i is 3 or 5)
                 pigment=Raylib.ColorLerp(pigment,new Color(255,195,130,255),flash);
         }
-        Asset(asset,feet,c.FacingYaw*180/MathF.PI,c.ModelScale,Color.White,tilt);
+        if(c.LaptopLost)
+        {
+            Surface(Finish.Anatomy,0);
+            var pose=Matrix4x4.CreateRotationX(tilt)*Matrix4x4.CreateScale(c.ModelScale)*
+                Matrix4x4.CreateRotationY(c.FacingYaw)*Matrix4x4.CreateTranslation(feet);
+            for(int mesh=0;mesh<model.MeshCount;mesh++)
+            {
+                int material=model.MeshMaterial[mesh];
+                // Final four authored swatches belong to the chassis, glass, display and glow.
+                if(material<11) Raylib.DrawMesh(model.Meshes[mesh],model.Materials[material],Matrix4x4.Transpose(pose));
+            }
+        }
+        else Asset(asset,feet,c.FacingYaw*180/MathF.PI,c.ModelScale,Color.White,tilt);
         for(int i=0;i<saved.Length;i++) model.Materials[i].Maps[0].Color=saved[i];
+    }
+}
+
+public sealed partial class SkyscraperFloor1World
+{
+    internal FloorSystems Systems = new();
+    internal void ResumeCoderIds() => _nextCoderId=1+Math.Max(ActiveCoders.Select(c=>c.Id).DefaultIfEmpty().Max(),CarriedCoder?.Id ?? 0);
+    internal Vector3 RackPos => AmbushCovers[3].Position;
+    internal Vector3 CoolerPos => AmbushCovers[2].Position;
+    internal static readonly Vector3 DeployPos=new(-2.6f,0,1.48f), CoffeePos=new(2.5f,0,12.9f);
+    private readonly record struct Station(FocusKind Kind,Vector3 Feet,float Height,string Label);
+    private readonly List<Station> stations=new();
+
+    private void MapStations()
+    {
+        stations.Clear();
+        void Add(FocusKind kind,Vector3 position,float height,string label) => stations.Add(new(kind,position,height,label));
+        Add(FocusKind.Cooler,CoolerPos,.9f,"Опрокинуть кулер");
+        Add(FocusKind.Rack,RackPos,1.2f,"Перезапустить стойку B12");
+        Add(FocusKind.Coffee,CoffeePos,1.15f,"Эспрессо-оверклок");
+        Add(FocusKind.Deploy,DeployPos,1.12f,"DEPLOY В ПЯТНИЦУ (×2.5)");
+        Add(FocusKind.Board,HrTarotBoothPos+new Vector3(-1.25f,0,.64f),1.33f,"Доска контрактов");
+        foreach(var p in OfficeProps)
+        {
+            if(p.Kind==OfficePropKind.WaterCooler) Add(FocusKind.Cooler,p.Position,.9f,"Опрокинуть кулер");
+            if(p.Kind==OfficePropKind.XeroxPhotocopier) Add(FocusKind.Printer,p.Position,.9f,"Напечатать фальшивый пропуск");
+        }
+    }
+
+    internal FloorPanel PanelAt(Camera3D camera) => FindFocus(camera).Kind switch {
+        FocusKind.Board when Systems.Audit<=0=>FloorPanel.Contracts,
+        FocusKind.Shop=>FloorPanel.Upgrades,_=>FloorPanel.None };
+
+    internal VibeCoderEntity SpawnFighter(CoderArchetype role,Vector3 feet)
+    {
+        var c=new VibeCoderEntity { Id=_nextCoderId++, Position=feet, MaxHp=54, Hp=54,
+            State=CoderAIState.CombatHostile, IsCombatCoder=true, AttackCooldown=.48f,
+            GlassesColor=new(236,192,125,255), SpawnSide=feet.X<0 ? -1 : 1 };
+        c.AssignRole(role); c.Name=c.Role;
+        c.TarotPayoutValue=role switch { CoderArchetype.SeniorArchitect=>440,CoderArchetype.TeamLeadMeeter=>280,
+            CoderArchetype.CryptoBro=>250,_=>160 };
+        ActiveCoders.Add(c);
+        return c;
+    }
+
+    internal void EnsureCandidate(CoderArchetype role)
+    {
+        if(!ActiveCoders.Exists(c=>c.Archetype==role && c.Hp>0))
+            SpawnFighter(role,EastSpawnDoorPos);
+    }
+
+    internal void SpawnWave(int count,bool raid=false)
+    {
+        CoderArchetype[] roles=[CoderArchetype.JuniorPrompter,CoderArchetype.CryptoBro,CoderArchetype.TeamLeadMeeter,CoderArchetype.SeniorArchitect];
+        for(int i=0;i<count && ActiveCoders.Count<22;i++)
+        {
+            float side=i%2==0 ? 1 : -1;
+            Vector3 spawn=Systems.Friday>0 ? new(7+i*1.6f,0,5) : new(side*(11+i),0,6+i);
+            var c=SpawnFighter(roles[_rng.Next(roles.Length)],spawn);
+            c.Aggro=true; c.RaidGuard=raid; c.ReleaseAttacker=Systems.Friday>0;
+            c.SpeechBubble=raid ? "Проверка пропусков!" : "Кто открыл релизную ветку?";
+            c.SpeechTimer=2;
+        }
+    }
+
+    internal float DeskRate(GalleyDeskSlot desk,bool supported)
+    {
+        if(!desk.IsOccupied || desk.IsSlackingInTwitter || desk.Burnout>=100) return 0;
+        float fit=Systems.JobId==2 && desk.Archetype==CoderArchetype.CryptoBro ? 1.5f : 1;
+        return desk.Productivity*desk.Morale*(supported ? 1.12f : 1)*fit*Systems.FridayMultiplier*(Systems.Ddos ? .5f : 1);
+    }
+
+    private string Spill(Vector3 ground)
+    {
+        var spill=Systems.Puddles.Find(p=>p.Position==ground);
+        if(spill==null) { spill=new() { Position=ground }; Systems.Puddles.Add(spill); }
+        spill.Wet=18;
+        return "Вода на полу. Подведи жало к луже.";
+    }
+
+    private void ApplyElectricField()
+    {
+        if(Systems.Puddles.Count==0) return;
+        foreach(var c in ActiveCoders)
+        {
+            if(c.Hp<=0 || !Systems.Puddles.Exists(p=>p.Electric>0 && Vector3.DistanceSquared(c.Position,p.Position)<=3.2f*3.2f)) continue;
+            // The first shock does psychological damage. Remaining contact holds the stun.
+            if(c.StunTimer<.2f) c.Pressure(42,18,46);
+            c.StunTimer=1.8f;
+            c.Windup=0;
+        }
+    }
+
+    private bool TryParry(Camera3D cam,Vector3 aim,WeaponAndCombatView weapon,out string feedback)
+    {
+        feedback="";
+        bool wide=Systems.Has(Sidegrade.DirectorBelt);
+        for(int i=0;i<EnemyProjectiles.Count;i++)
+        {
+            var p=EnemyProjectiles[i];
+            Vector3 offset=p.Position-cam.Position;
+            if(p.Deflected || p.IsNodeModulesCube || offset.LengthSquared()>(wide ? 12.25f : 7.84f) ||
+                Vector3.Dot(aim,Vector3.Normalize(offset))<(wide ? .42f : .63f) || Vector3.Dot(p.Velocity,offset)>=0 ||
+                TraceSurface(cam.Position,Vector3.Normalize(offset),offset.Length())+.02f<offset.Length()) continue;
+            var owner=ActiveCoders.Find(c=>c.Id==p.OwnerId && c.Hp>0);
+            Vector3 direction=owner!=null ? Vector3.Normalize(owner.CombatCenter-p.Position) : -Vector3.Normalize(p.Velocity);
+            p.Velocity=direction*Math.Max(14,p.Velocity.Length()*1.4f);
+            p.Damage*=2; p.Deflected=true; p.WireColor=p.PrimaryColor=Color.Gold; p.Life=3;
+            EnemyProjectiles[i]=p;
+            Systems.Style(StyleAction.Parry);
+            feedback="ОТБИЛ БАГ РЕМНЁМ!";
+            weapon.TriggerWeaponAttack(cam,p.Position,true,0,true,customHitLabel:feedback);
+            weapon.SpawnBurstSparks(p.Position,direction,24,Color.Gold,Color.Yellow,2,6,false);
+            return true;
+        }
+        return false;
+    }
+
+    private bool HitStation(Camera3D cam,WeaponAndCombatView weapon,Vector3 hit,out string feedback)
+    {
+        feedback="";
+        if(weapon.CurrentWeapon==WeaponType.SolderingIron && hit.Y<.12f &&
+            Systems.Puddles.Find(p=>Vector3.DistanceSquared(hit,p.Position)<3.2f*3.2f) is {} spill)
+        {
+            if(spill.Electric<=0) Systems.Style(StyleAction.Water);
+            spill.Electric=Math.Min(6,spill.Wet);
+            ApplyElectricField(); feedback="Разряд по воде!";
+            weapon.SetCombatBanner(feedback,new Color(152,237,239,255));
+        }
+        else
+        {
+            foreach(var station in stations)
+            {
+                Vector3 d=hit-station.Feet;
+                if(station.Kind==FocusKind.Cooler && d.Y>=0 && d.Y<=1.6f && Math.Abs(d.X)<.5f && Math.Abs(d.Z)<.5f)
+                    feedback=Spill(station.Feet);
+                if(station.Kind==FocusKind.Rack && weapon.CurrentWeapon!=WeaponType.Belt &&
+                    d.Y>=0 && d.Y<=2.1f && Math.Abs(d.X)<.47f && Math.Abs(d.Z)<.52f)
+                {
+                    Systems.Overheat(this); feedback="B12 перегрета. Персонал покидает сектор.";
+                }
+            }
+        }
+        if(feedback.Length==0) return false;
+        weapon.TriggerWeaponAttack(cam,hit,false);
+        return true;
+    }
+
+    private void KillCoder(VibeCoderEntity c,Action<int,string>? pay)
+    {
+        c.State=CoderAIState.Subdued; c.Hp=0; c.KnockoutTime=0; c.SpeechTimer=0;
+        int cash=c.IsCombatCoder ? 35 : Math.Max(35,c.TarotPayoutValue/3);
+        Systems.Risk(security:14); Systems.Earned+=cash;
+        SpawnCashBurst(c.CombatCenter,8,$"+${cash}"); pay?.Invoke(cash,c.Role);
+        AudioMusicSystem.PlaySubduedDrop();
+    }
+
+    private void DrawStations()
+    {
+        Color steel=new(62,71,76,255), brass=new(166,128,68,255);
+        void Box(Vector3 pos,float w,float h,float d,Color color) => VisualEngine3D.Box(pos,w,h,d,color);
+        Box(DeployPos+new Vector3(0,.48f,0),.52f,.96f,.44f,steel);
+        Box(DeployPos+Vector3.UnitY*.98f,.83f,.11f,.61f,brass);
+        Color alarm=Systems.Friday>0 && MathF.Sin(_worldClock*9)>0 ? new(255,149,94,255) : new(208,37,29,255);
+        VisualEngine3D.Rod(DeployPos+Vector3.UnitY*1.03f,DeployPos+Vector3.UnitY*1.14f,.19f,.17f,20,alarm,Finish.Lamp);
+        Box(CoffeePos+Vector3.UnitY*.45f,.85f,.9f,.68f,steel);
+        Box(CoffeePos+new Vector3(0,1.1f,-.14f),.68f,.45f,.35f,new(128,61,44,255));
+        Box(CoffeePos+Vector3.UnitY*1.35f,.74f,.09f,.63f,brass);
+        DrawCoffee(CoffeePos+new Vector3(0,.91f,.18f));
+        Vector3 board=HrTarotBoothPos+new Vector3(-1.25f,1.32f,.64f);
+        Box(board,.73f,.48f,.09f,steel);
+        Box(board+Vector3.UnitZ*.055f,.62f,.34f,.025f,new(202,185,146,255));
+        for(int i=0;i<3;i++) Box(board+new Vector3(-.07f,.08f-.08f*i,.074f),.35f,.016f,.01f,steel);
+        if(Systems.RackHeat>0)
+        {
+            for(int i=0;i<14;i++)
+            {
+                float t=(_worldClock*.65f+i/14f)%1;
+                var puff=RackPos+new Vector3(.25f*MathF.Sin(i*9+t*4),1.83f+t*2.6f,.19f*MathF.Cos(i*7+t));
+                VisualEngine3D.Oval(puff,new Vector3(.12f+t*.35f),new(87,83,81,(int)(174*(1-t))),Finish.RosinSmoke);
+                var spark=RackPos+new Vector3(.36f*MathF.Sin(i),.6f+1.3f*t,.51f);
+                VisualEngine3D.Rod(spark,spark+new Vector3(.04f,.09f,.06f),.012f,.004f,6,Color.Orange,Finish.Lamp);
+            }
+        }
+        if(Systems.Friday>0)
+        {
+            float pulse=(1+MathF.Sin(_worldClock*8))*.5f;
+            foreach(int side in new[]{-1,1})
+            {
+                var lamp=new Vector3(side*3.9f,2.75f,.65f);
+                VisualEngine3D.Box(lamp,.42f,.17f,.15f,steel);
+                VisualEngine3D.Oval(lamp+Vector3.UnitZ*.12f,new(.15f,.065f,.06f),
+                    new Color((int)(155+100*pulse),(int)(40+50*pulse),28,255),Finish.Lamp);
+            }
+        }
+        foreach(var spill in Systems.Puddles) DrawSpill(spill);
+    }
+
+    private void DrawSpill(WaterSpill spill)
+    {
+        Vector3 center=spill.Position+Vector3.UnitY*.027f;
+        VisualEngine3D.Oval(center,new(3.2f,.017f,3.2f),new(44,144,165,134),Finish.Glass);
+        VisualEngine3D.Oval(center+new Vector3(.32f,.009f,.1f),new(2.5f,.018f,2.65f),new(46,153,170,113),Finish.Glass);
+        if(spill.Electric<=0) return;
+        for(int i=0;i<10;i++)
+        {
+            float angle=i*MathF.Tau/10+.18f*MathF.Sin(_worldClock*12+i);
+            Vector3 arm=new(MathF.Cos(angle),0,MathF.Sin(angle)),side=new(arm.Z,0,-arm.X);
+            Vector3 last=center+arm*.3f+Vector3.UnitY*.055f;
+            for(int j=1;j<=5;j++)
+            {
+                Vector3 next=center+arm*(.3f+j*.48f)+side*(.24f*MathF.Sin(i*11+j*8+(int)(_worldClock*16)))+
+                    Vector3.UnitY*(j%2==0 ? .10f : .22f);
+                VisualEngine3D.Rod(last,next,.015f,.010f,6,new(111,243,255,255),Finish.Lamp);
+                last=next;
+            }
+        }
     }
 }

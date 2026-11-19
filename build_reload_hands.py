@@ -240,55 +240,59 @@ def reload_left_pose(kind):
     transforms = {}
 
     if kind == "fps_left_shells":
+        # Natural human break-action shotgun reload grip (DOOM / RDR2 / Payday 2 style):
         # Two 12-gauge shells in anatomy space:
-        # Shell 0 (right in view = -0.1975 in anat X) and Shell 1 (left in view = -0.1625 in anat X).
-        # Midpoint between the two shells at brass-rim / lower-hull grip zone:
-        # c = (-0.180, -0.108, 0.778), shell axis tilted along open barrels: (0, -0.58, 0.814).
-        # Left hand approaches from lower-left (view X = +0.108 -> anat X = -0.108):
-        # Palm faces up-right-forward ((-0.58, 0.76, 0.28)), fingers point right-forward ((-0.74, -0.35, 0.57)).
-        dest_wrist = V((-.108, -.156, .718))
-        dest_elbow = V((.145, -.385, .360))
-        hand = solve_hand_frame(side, f_target=(-.74, -.35, .57), palm_target=(-.58, .76, .28))
+        #   Shell 0 (right in view = -0.1975 in anat X) and Shell 1 (left in view = -0.1625 in anat X).
+        #   Brass rim base at Y = -0.092, Z = 0.765; shell axis = (0, -0.58, 0.814).normalized()
+        #   Shell length = 0.052m -> hull center at Y = -0.1071, Z = 0.7862; hull mouth at Y = -0.1221, Z = 0.8073.
+        #
+        # Left hand approaches from ABOVE-LEFT-BEHIND the open breech:
+        #   dest_wrist = (-0.066, -0.068, 0.716)  (view space X = +0.066, Y = -0.068, Z = 0.716)
+        #   dest_elbow = ( 0.160, -0.360, 0.340)  (crimson sleeve exits naturally down-left)
+        #   f_target   = (-0.42, -0.58, 0.698)    (back of hand angled forward-right-down)
+        #   palm_target= (-0.89,  0.36, -0.27)    (palm faces down-right toward the shells, back of hand faces upper-left!)
+        #
+        # Because dest_wrist is shifted slightly left (`X = -0.066`), and the 4 fingers curl into a tight
+        # human half-fist around the left side / underside of the two shells (`X >= -0.194` for index/middle,
+        # `X >= -0.146` for ring/pinky), there is ZERO overlap with BOTH the two shells AND the steel receiver!
+        dest_wrist = V((-.066, -.068, .716))
+        dest_elbow = V((.160, -.360, .340))
+        hand = solve_hand_frame(side, f_target=(-.42, -.58, .698), palm_target=(-.89, .36, -.27))
         add_forearm_transforms(transforms, side, dest_wrist, dest_elbow, hand)
 
-        # Shell 0 center at z=0.785: (-0.1975, -0.108, 0.785), radius = 0.0095m
-        # Shell 1 center at z=0.785: (-0.1625, -0.108, 0.785), radius = 0.0095m
-        # We cradle the underside of both shells (y <= -0.123) with index & middle fingers,
-        # while the thumb rests against the upper-left side of Shell 1's brass rim (x >= -0.147, y ≈ -0.098),
-        # and ring & pinky curl cleanly underneath out of the way (y <= -0.140).
         mcp = {
             digit: dest_wrist + hand @ (j(f"finger-{d}-1") - wrist_rest)
             for d, digit in enumerate(DIGITS, 1)
         }
-        # Thumb: arches over to the left/upper side of Shell 1 brass rim (x = -0.141 > -0.1625 + 0.0135 + 0.008)
+        # Thumb: natural arch over the upper-left brass rim (pointing forward-right along the shell axis, NOT downward!)
         build_digit_chain(transforms, side, 1, "thumb", hand, mcp["thumb"], [
-            (-.120, -.116, .748),
-            (-.131, -.100, .766),
-            (-.139, -.095, .778),
+            (-.102, -.066, .742),
+            (-.122, -.072, .754),
+            (-.138, -.079, .764),
         ])
-        # Index: cradles underneath both shells at z ≈ 0.792..0.804, y = -0.138..-0.130 (clear of shell cylinder bottom)
+        # Index: wraps tightly under the front half of the two shells (Z ≈ 0.786..0.793, Y ≈ -0.145..-0.138)
         build_digit_chain(transforms, side, 2, "index", hand, mcp["index"], [
-            (-.164, -.139, .786),
-            (-.188, -.137, .796),
-            (-.208, -.131, .800),
+            (-.136, -.142, .784),
+            (-.174, -.146, .793),
+            (-.198, -.138, .792),
         ])
-        # Middle: cradles underneath both shells behind index at z ≈ 0.774..0.784, y = -0.142..-0.132
+        # Middle: wraps tightly parallel to index (touching index finger!) under the two shells
         build_digit_chain(transforms, side, 3, "middle", hand, mcp["middle"], [
-            (-.166, -.143, .768),
-            (-.190, -.139, .778),
-            (-.209, -.132, .783),
+            (-.136, -.146, .768),
+            (-.170, -.148, .776),
+            (-.190, -.140, .775),
         ])
-        # Ring: tucked lower & back so it never blocks the shells or chambers
+        # Ring: curls parallel to middle finger into a compact half-fist on the left side (X >= -0.144, clear of receiver!)
         build_digit_chain(transforms, side, 4, "ring", hand, mcp["ring"], [
-            (-.158, -.156, .750),
-            (-.174, -.160, .748),
-            (-.178, -.154, .736),
+            (-.128, -.148, .752),
+            (-.142, -.151, .756),
+            (-.144, -.143, .750),
         ])
-        # Pinky: curled neatly into lower palm
+        # Pinky: curls parallel to ring finger into a compact half-fist (X >= -0.134, zero crab splay, clear of receiver!)
         build_digit_chain(transforms, side, 5, "pinky", hand, mcp["pinky"], [
-            (-.148, -.170, .732),
-            (-.160, -.174, .728),
-            (-.162, -.168, .716),
+            (-.122, -.154, .736),
+            (-.134, -.156, .739),
+            (-.135, -.148, .733),
         ])
 
     elif kind == "fps_left_mag":
@@ -793,6 +797,257 @@ def export_reload_hand(kind):
     print(f"EXPORTED {kind}.glb | Left wrist={tuple(round(c, 5) for c in w_l)} | sleeveEnd={tuple(round(c, 5) for c in e_l)}")
 
 
+def render_shotgun_reload_truth():
+    """Renders 3 first-person verification frames of the shotgun break-action reload:
+      Frame 1 (left):   Approach above-behind open breech (push = 0.000m)
+      Frame 2 (middle): Half-inserted into the dark twin chamber bores (push = 0.028m)
+      Frame 3 (right):  Fully seated flush into the chambers (push = 0.0536m)
+    Uses the exact game ViewModel camera (FovY = 54 deg, 16:9 aspect) and exact
+    WeaponAndCombatView.cs coordinate transforms so the proof image matches runtime 1-to-1.
+    """
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.resolution_x = 1920
+    scene.render.resolution_y = 640
+
+    # Dark slate studio background so silhouette and chamber alignment are unmistakable
+    world = bpy.data.worlds.new("Studio")
+    scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs[0].default_value = (0.10, 0.13, 0.17, 1.0)
+
+    # Helper: convert game-space point (gx, gy, gz) inside Rlgl.Scalef(-1, 1, 1)
+    # to Blender world coordinates (bx, by, bz) where camera at origin looks along +Y_blender (+Z_game)
+    # and +X_blender is screen-right (+X_game, because inside Rlgl.Scalef(-1, 1, 1), +X_game is on the right of the screen!):
+    def game_to_blender(g, panel_dx=0.0):
+        return V((g.x + panel_dx, g.z, g.y))
+
+    angle = 0.66  # open break-action barrel angle (radians)
+    base_offset = V((0.035, -0.012, -0.105)) + V((0.020, -0.006, -0.055))
+    grip_top = base_offset + V((0.180, -0.120, 0.660))
+    hinge_game = grip_top + V((0.0, -0.013, 0.127))
+
+    # Include the runtime reload assembly rotation (pitch = -0.09, yaw = -18 deg, roll = +20 deg around pivot):
+    pivot_game = base_offset + V((0.180, -0.170, 0.600))
+    rad = math.pi / 180.0
+    pitch_r, yaw_r, roll_r = -0.09, -18.0 * rad, 20.0 * rad
+    # System.Numerics Matrix4x4.CreateFromYawPitchRoll(yaw, pitch, roll) for row vectors v * Rz(roll) * Rx(pitch) * Ry(yaw):
+    cz, sz = math.cos(roll_r), math.sin(roll_r)
+    cx, sx = math.cos(pitch_r), math.sin(pitch_r)
+    cy, sy = math.cos(yaw_r), math.sin(yaw_r)
+    Rz = Matrix(((cz, -sz, 0), (sz, cz, 0), (0, 0, 1)))
+    Rx = Matrix(((1, 0, 0), (0, cx, -sx), (0, sx, cx)))
+    Ry = Matrix(((cy, 0, sy), (0, 1, 0), (-sy, 0, cy)))
+    R_pose = Ry @ Rx @ Rz
+
+    def apply_pose(g):
+        return pivot_game + R_pose @ (g - pivot_game)
+
+    # Open barrel axis and chamber mouth positions in game view space:
+    ca, sa = math.cos(angle), math.sin(angle)
+    rot_x = Matrix(((1, 0, 0), (0, ca, -sa), (0, sa, ca)))
+    axis_game = rot_x @ V((0, 0, 1))  # (0, -sin(angle), cos(angle))
+    mouths_game = [
+        hinge_game + rot_x @ (grip_top + V((-0.0175 if i == 0 else 0.0175, 0.024, 0.092)) - hinge_game)
+        for i in (0, 1)
+    ]
+    breech_mid_game = 0.5 * (mouths_game[0] + mouths_game[1])
+
+    # Authored shell-head midpoint and axis in fps_left_shells.glb:
+    # In anatomy space: head_mid_anat = (-0.180, -0.092, 0.765) -> game space (+0.180, -0.092, 0.765) + base_offset
+    shell_head_socket = base_offset + V((0.180, -0.092, 0.765))
+    authored_angle = math.atan2(0.58, 0.814)  # 0.61908 rad
+    d_angle = angle - authored_angle
+    cd, sd = math.cos(d_angle), math.sin(d_angle)
+    rot_align = Matrix(((1, 0, 0), (0, cd, -sd), (0, sd, cd)))
+
+    mat_brass = bpy.data.materials.new("ShellBrass")
+    mat_brass.use_nodes = True
+    bsdf_b = mat_brass.node_tree.nodes["Principled BSDF"]
+    bsdf_b.inputs["Base Color"].default_value = (0.78, 0.56, 0.18, 1)
+    bsdf_b.inputs["Metallic"].default_value = 0.88
+    bsdf_b.inputs["Roughness"].default_value = 0.22
+
+    mat_hull = bpy.data.materials.new("ShellHullRed")
+    mat_hull.use_nodes = True
+    bsdf_h = mat_hull.node_tree.nodes["Principled BSDF"]
+    bsdf_h.inputs["Base Color"].default_value = (0.58, 0.05, 0.04, 1)
+    bsdf_h.inputs["Roughness"].default_value = 0.42
+
+    mat_bore_dark = bpy.data.materials.new("ChamberBoreDark")
+    mat_bore_dark.use_nodes = True
+    bsdf_d = mat_bore_dark.node_tree.nodes["Principled BSDF"]
+    bsdf_d.inputs["Base Color"].default_value = (0.008, 0.009, 0.012, 1)
+    bsdf_d.inputs["Roughness"].default_value = 0.95
+
+    phases = [
+        ("Approach", -0.022, -0.44),
+        ("HalfIn",    0.024,  0.00),
+        ("Seated",    0.0536, 0.44),
+    ]
+
+    for label, push, panel_dx in phases:
+        # 1) Import weapon_shotgun_90s.glb, break barrels by `angle` around local hinge (0, -0.013, -0.127),
+        #    and place at grip_top with yaw=180 deg:
+        bpy.ops.import_scene.gltf(filepath=str(OUT / "weapon_shotgun_90s.glb"))
+        gun_objs = [o for o in bpy.context.selected_objects if o.type == "MESH"]
+        for go in gun_objs:
+            bm = bmesh.new()
+            bm.from_mesh(go.data)
+            bm.verts.ensure_lookup_table()
+            visited = set()
+            islands = []
+            for v in bm.verts:
+                if v.index in visited:
+                    continue
+                comp = []
+                stack = [v]
+                visited.add(v.index)
+                while stack:
+                    cur = stack.pop()
+                    comp.append(cur)
+                    for e in cur.link_edges:
+                        nb = e.other_vert(cur)
+                        if nb.index not in visited:
+                            visited.add(nb.index)
+                            stack.append(nb)
+                islands.append(comp)
+            for comp in islands:
+                min_gltf_z = min(-v.co.y for v in comp)
+                is_moving = min_gltf_z < -0.100
+                for v in comp:
+                    lx, ly, lz = v.co.x, v.co.z, -v.co.y
+                    p_local = V((lx, ly, lz))
+                    if is_moving:
+                        h_loc = V((0.0, -0.013, -0.127))
+                        rel = p_local - h_loc
+                        ca_l, sa_l = math.cos(-angle), math.sin(-angle)
+                        rel = V((rel.x, rel.y * ca_l - rel.z * sa_l, rel.y * sa_l + rel.z * ca_l))
+                        p_local = h_loc + rel
+                    p_game = apply_pose(V((-p_local.x, p_local.y, -p_local.z)) + grip_top)
+                    v.co = game_to_blender(p_game, panel_dx)
+            bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+            bm.to_mesh(go.data)
+            bm.free()
+            go.data.update()
+
+        axis_pose = R_pose @ axis_game
+        axis_bl = V((axis_pose.x, axis_pose.z, axis_pose.y)).normalized()
+
+        # 2) Import Right hand from fps_hands_shotgun.glb at assembly = base_offset:
+        bpy.ops.import_scene.gltf(filepath=str(OUT / "fps_hands_shotgun.glb"))
+        rh_objs = list(bpy.context.selected_objects)
+        for ro in rh_objs:
+            if ro.name.startswith("Left"):
+                bpy.data.objects.remove(ro, do_unlink=True)
+            elif ro.type == "MESH":
+                bm = bmesh.new()
+                bm.from_mesh(ro.data)
+                for v in bm.verts:
+                    p_game = apply_pose(V((-v.co.x, v.co.z, -v.co.y)) + base_offset)
+                    v.co = game_to_blender(p_game, panel_dx)
+                bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+                bm.to_mesh(ro.data)
+                bm.free()
+                ro.data.update()
+
+        # 3) Import Left hand from our new fps_left_shells.glb and place it coaxially with the chambers:
+        hand_push = max(0.0, min(push, 0.008))
+        target_head_mid = breech_mid_game - axis_game * (0.056 - hand_push)
+        bpy.ops.import_scene.gltf(filepath=str(OUT / "fps_left_shells.glb"))
+        lh_objs = list(bpy.context.selected_objects)
+        bind_anat = V((-0.066, -0.068, 0.716))
+        end_anat = V((0.218, -0.422, 0.255))
+        sleeve_axis = end_anat - bind_anat
+        anchor_game = V((0.44, -0.395, 0.23))
+        anchor_unposed = pivot_game + R_pose.transposed() @ (anchor_game - pivot_game)
+        anchor_game0 = shell_head_socket + rot_align.transposed() @ (anchor_unposed - target_head_mid)
+        anchor_anat = V((-(anchor_game0.x - base_offset.x), anchor_game0.y - base_offset.y, anchor_game0.z - base_offset.z))
+        sleeve_pull = anchor_anat - bind_anat
+
+        for lo in lh_objs:
+            if lo.name.startswith("Right"):
+                bpy.data.objects.remove(lo, do_unlink=True)
+            elif lo.type == "MESH":
+                bm = bmesh.new()
+                bm.from_mesh(lo.data)
+                uv_layer = bm.loops.layers.uv.active
+                for v in bm.verts:
+                    p_anat = V((v.co.x, v.co.z, -v.co.y))
+                    uv_y = None
+                    if uv_layer is not None:
+                        for loop in v.link_loops:
+                            uv = loop[uv_layer].uv
+                            if uv.x > 1.99:
+                                uv_y = max(0.0, min(1.0, 1.0 - uv.y))
+                                break
+                    if uv_y is not None and sleeve_pull.length > 0.001:
+                        t_s = uv_y
+                        a_dir = sleeve_axis.normalized()
+                        tan0 = a_dir * min(sleeve_axis.length, sleeve_pull.length * 0.54)
+                        tan1 = sleeve_pull * 1.34
+                        t2, t3 = t_s * t_s, t_s * t_s * t_s
+                        center_s = (t3 - 2 * t2 + t_s) * tan0 + (3 * t2 - 2 * t3) * sleeve_pull + (t3 - t2) * tan1
+                        u_b = max(0.0, min(1.0, (t_s - 0.055) / (0.22 - 0.055)))
+                        blend_s = u_b * u_b * (3 - 2 * u_b)
+                        p_anat = p_anat + (center_s - sleeve_axis * t_s) * blend_s
+                    p_game0 = V((-p_anat.x, p_anat.y, p_anat.z)) + base_offset
+                    p_game = apply_pose(rot_align @ (p_game0 - shell_head_socket) + target_head_mid)
+                    v.co = game_to_blender(p_game, panel_dx)
+                bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+                bm.to_mesh(lo.data)
+                bm.free()
+                lo.data.update()
+
+        # 4) Place the 2 12-gauge shells entering the two chambers coaxially (r_hull = 0.0092m, r_rim = 0.0102m, fits inside r_bore = 0.0098m):
+        for i, m_g in enumerate(mouths_game):
+            shell_base_game = m_g - axis_game * (0.056 - push)
+            c_brass = game_to_blender(apply_pose(shell_base_game + axis_game * 0.005), panel_dx)
+            bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.0102, depth=0.010, location=c_brass)
+            cb = bpy.context.object
+            cb.rotation_mode = "QUATERNION"
+            cb.rotation_quaternion = V((0, 0, 1)).rotation_difference(axis_bl)
+            cb.data.materials.append(mat_brass)
+            c_hull = game_to_blender(apply_pose(shell_base_game + axis_game * 0.031), panel_dx)
+            bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.0092, depth=0.042, location=c_hull)
+            ch = bpy.context.object
+            ch.rotation_mode = "QUATERNION"
+            ch.rotation_quaternion = V((0, 0, 1)).rotation_difference(axis_bl)
+            ch.data.materials.append(mat_hull)
+
+    # Orthographic multi-panel camera positioned slightly above-left-front so the dark open chambers,
+    # the two red/brass shells entering them, and the 4 parallel curled fingers of fps_left_shells are all visible
+    cam_data = bpy.data.cameras.new("TruthCam")
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = 1.18
+    cam = bpy.data.objects.new("TruthCam", cam_data)
+    scene.collection.objects.link(cam)
+    scene.camera = cam
+    cam.location = (0.04, 0.14, 0.08)
+    target = V((0.18, 0.65, -0.14))
+    cam.rotation_mode = "QUATERNION"
+    cam.rotation_quaternion = (target - cam.location).to_track_quat("-Z", "Y")
+
+    for loc, energy in [((-0.5, 0.0, 0.5), 4.2), ((0.4, 0.1, 0.6), 2.8), ((-0.2, 0.3, -0.5), 1.8)]:
+        ld = bpy.data.lights.new("Sun", type="SUN")
+        ld.energy = energy
+        lo = bpy.data.objects.new("Sun", ld)
+        scene.collection.objects.link(lo)
+        lo.location = loc
+        lo.rotation_mode = "QUATERNION"
+        lo.rotation_quaternion = (target - V(loc)).to_track_quat("-Z", "Y")
+
+    out_img = ROOT / "assets/external_cc0/office/shotgun_reload_truth_r11.png"
+    scene.render.filepath = str(out_img)
+    bpy.ops.render.render(write_still=True)
+    print("RENDERED TRUTH PROOF:", out_img)
+
+
 if __name__ == "__main__":
     for pose_kind in ("fps_left_shells", "fps_left_mag", "fps_left_bolt"):
         export_reload_hand(pose_kind)
+    render_shotgun_reload_truth()
+

@@ -9,12 +9,12 @@ public static partial class LoreAndMenusUI
     private const int ArchiveWidth = 1280, ArchiveHeight = 720, RowHeight = 86, VisibleRows = 3;
     private static readonly string[] ArchiveTabs = ["ПЕРЕПИСКА ЦЕХА", "ТАРО-ДОСЬЕ HR", "БЕСТИАРИЙ ЭТАЖА", "СЛОВАРЬ 90-Х"];
     private static readonly string[] IndexTitles = ["Перехваты", "Расклады", "Фигуранты", "Понятия"];
-    private static readonly string[] ChatNames = ["Данила", "Седой", "Гуру SaaS", "Артемий", "Сеньор Помидор", "Крипто-бро"];
-    private static readonly string[] ChatTitles = ["Пятничный деплой", "Счёт от AWS", "Второй процесс", "Человек с паяльником", "Пропавшая таблица", "Замкнутый вызов"];
-    private static readonly string[] TarotNames = ["Алексей", "Данила", "Инженерный отдел"];
-    private static readonly string[] TarotCards = ["Башня", "Тройка кубков", "Меркурий в Деве"];
-    private static readonly string[] BestiaryNames = ["Сбежавший ИИ-агент", "Вайб-кодер", "Вероника", "Братан", "Инцидент у лифта"];
-    private static readonly string[] BestiaryPosts = ["Северный лифт", "Опенспейс", "Приёмная HR", "Напарник", "Дополнение к досье агента"];
+    private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Кассета 1998"];
+    private static readonly string[] ChatTitles = ["Пятничный деплой", "Стойка B12 и Кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело АО Энтропия"];
+    private static readonly string[] TarotNames = ["Сеньор Алексей", "Джуниор Данила", "Крипто и Митингер"];
+    private static readonly string[] TarotCards = ["Аркан XVI: Башня", "Аркан 0: Шут", "Аркан XV: Дьявол"];
+    private static readonly string[] BestiaryNames = ["Сбежавший ИИ-агент", "Архитектор и Джун", "Вероника (Оракул)", "Братан и Кассеты", "Крипто и Митингер"];
+    private static readonly string[] BestiaryPosts = ["Северный лифт // Побег из ZERO", "Опенспейс // Эго vs Страх", "Приёмная HR // Prediction API", "Напарник // Архив АО Энтропия", "Опенспейс // Жадность и Дейлики"];
     private const string CoderModel = "char_vibe_coder", TarotModel = "char_hr_veronika",
                          AgentModel = "escaped_ai_boss", PartnerModel = "char_partner_90s", SolderModel = "weapon_solder_90s";
     private static readonly Color Phosphor = new(239, 198, 110, 255), Ivory = new(241, 239, 224, 255),
@@ -85,9 +85,10 @@ public static partial class LoreAndMenusUI
     };
     private static string ExhibitModel => ActiveLoreTab switch
     {
-        0 => CoderModel, 1 => TarotModel,
-        2 => SelectedArchiveEntry switch { 1 => CoderModel, 2 => TarotModel, 3 => PartnerModel, _ => AgentModel },
-        _ => SelectedArchiveEntry == 2 ? SolderModel : PartnerModel
+        0 => SelectedArchiveEntry == 5 ? SolderModel : CoderModel,
+        1 => TarotModel,
+        2 => SelectedArchiveEntry switch { 1 or 4 => CoderModel, 2 => TarotModel, 3 => PartnerModel, _ => AgentModel },
+        _ => SelectedArchiveEntry is 2 or 5 ? SolderModel : PartnerModel
     };
 
     private static void DrawCornerTicks(Rectangle r, Color c, float len = 9f)
@@ -166,9 +167,9 @@ public static partial class LoreAndMenusUI
         switch (ActiveLoreTab)
         {
             case 0: section = _leakedChats[i].Time; title = ChatTitles[i]; status = _leakedChats[i].RoleBadge; break;
-            case 1: section = "Картотека Вероники"; title = TarotCards[i]; status = TarotEntries[i].title; break;
-            case 2: section = "Бестиарий этажа"; title = i == 4 ? "Захват лифта" : BestiaryNames[i]; status = BestiaryPosts[i]; break;
-            default: section = "Словарь цеха"; title = EntryName(i); status = "Записано со слов напарника"; break;
+            case 1: section = "ТЕРМИНАЛ ZERO // PREDICTION API"; title = TarotCards[i]; status = TarotEntries[i].title; break;
+            case 2: section = "ДОСЬЕ РАЗВЕДКИ // УЗЕЛ 01"; title = BestiaryNames[i]; status = BestiaryPosts[i]; break;
+            default: section = "СЛОВАРЬ АО ЭНТРОПИЯ // 1998–2026"; title = EntryName(i); status = "Оперативный перевод понятий цеха"; break;
         }
 
         Rectangle headerStrip = new(x, 162, width, 24);
@@ -187,39 +188,43 @@ public static partial class LoreAndMenusUI
         }
         else if (ActiveLoreTab == 1)
         {
-            y = RoleLine("Вероника, HR", TarotEntries[i].body, y, Patina);
-            RoleLine("Решение по раскладу", TarotEntries[i].verdict, y, TarotEntries[i].accent);
+            y = RoleLine("Вероника // HR-Таро + Prediction API", TarotEntries[i].body, y, Patina);
+            RoleLine("Боевая рекомендация оракула", TarotEntries[i].verdict, y, TarotEntries[i].accent);
         }
         else if (ActiveLoreTab == 2)
         {
-            if (i == 0 || i == 4)
+            if (i == 0)
             {
-                int part = i == 0 ? 0 : 2;
-                y = RoleLine("Пресс-служба", PressRelease[part] + " " + PressRelease[part + 1], y, Phosphor, compact: i == 4);
-                RoleLine("Петрович, запись с камер", CameraLog[part] + " " + CameraLog[part + 1], y, Patina, compact: i == 4);
+                y = RoleLine("Реестр контура ZERO", PressRelease[0] + " " + PressRelease[1] + " " + PressRelease[3], y, Phosphor, compact: true);
+                RoleLine("Петрович, перехват у лифта", CameraLog[0] + " " + CameraLog[1] + " " + CameraLog[3], y, Patina, compact: true);
             }
             else if (i == 1)
             {
-                var m = _leakedChats[0];
-                y = RoleLine(m.Handle, m.Text, y, m.HandleColor);
-                RoleLine(m.ReplyAuthor, m.ReplyText, y, Patina);
+                var m = _leakedChats[4];
+                y = RoleLine(m.Handle, m.Text, y, m.HandleColor, compact: true);
+                RoleLine(m.ReplyAuthor, m.ReplyText, y, Patina, compact: true);
             }
             else if (i == 2)
             {
-                y = RoleLine("Вероника, приёмная HR", AudioMusicSystem.VeronikaTarotLines[1], y, Patina);
-                RoleLine("Из личного дела Данилы", TarotEntries[1].verdict, y, Phosphor);
+                y = RoleLine("Вероника, скрытый терминал HR", "«Карты Таро — это просто интерфейс для отвода глаз. Мой стол подключён напрямую к prediction API системы ZERO: я заранее вижу, кто обрушит Прод, а кого выгоднее обналичить или посадить на Галеру.»", y, Patina, compact: true);
+                RoleLine("Сводка для Коммерса", "«Приноси пойманных кадров в будку Таро: плачу живыми деньгами из фонда ZERO и подчищаю логи камер, сбивая Внимание СБ (SEC)!»", y, Phosphor, compact: true);
+            }
+            else if (i == 3)
+            {
+                y = RoleLine("Братан, закрытый канал рации", "«Малиновый, прости — это я в 99-м отдал инвестору коробку с аудиокассетами АО „Энтропия“ в счёт долга за склад. Кто ж знал, что они обучат на твоём голосе систему ZERO!»", y, Phosphor, compact: true);
+                RoleLine("Коммерс (Legacy Stakeholder)", "«Потом сочтёмся. Сейчас держим этаж: ты прикрываешь с Узи у кнопки пятничного деплоя x2.5, а я паяльником беру стойку B12 и кулер!»", y, Patina, compact: true);
             }
             else
             {
-                y = RoleLine("Братан, по рации", "«Я у тебя слева. Как двери лифта откроются, держись рядом.»", y, Phosphor);
-                RoleLine("Коммерс", "«Вижу тебя, малиновый. Тогда лифт твой, а я заберу макбук.»", y, Patina);
+                y = RoleLine("Психопрофиль: Крипто-Бро", "«Быстрый и наглый. Ломается только через Жадность (Greed): включайте дорогую приманку на Макбуке или бейте током через пролитый кулер + паяльник 220В.»", y, Phosphor, compact: true);
+                RoleLine("Психопрофиль: Тимлид-Митингер", "«Собирает дейлики и вешает щит на всю пачку. Врывайтесь под Эспрессо-разносом из кофемашины или отбивайте их баг-снаряды кожаным ремнём!»", y, Patina, compact: true);
             }
         }
         else
         {
             var e = DictionaryEntries[i];
-            y = RoleLine("В опенспейсе", e.zoomer, y, Patina);
-            RoleLine("Братан", e.nineties + ". " + e.comment + ".", y, Phosphor);
+            y = RoleLine("Термин Башни ZERO", e.zoomer, y, Patina);
+            RoleLine("Разведка Коммерса", e.nineties + ". " + e.comment + ".", y, Phosphor);
         }
     }
 

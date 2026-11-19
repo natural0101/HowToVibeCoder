@@ -64,6 +64,7 @@ public static partial class Program
         Raylib.SetTargetFPS(60);
         Raylib.SetExitKey(KeyboardKey.Null);
 
+        EnsureFloorTypefaces();
         GameFonts.Load();
         _uiFont = GameFonts.Get(Typeface.Interface, 18);
         _serif = GameFonts.Get(Typeface.Serif, 24);
@@ -87,7 +88,11 @@ public static partial class Program
         }
         else if(args.Contains("--host")) MainMenuAndPauseUI.StartNewOrResumeFloor();
 
-        if (coopSmoke) RunCoopSmoke(join >= 0);
+        if (coopSmoke)
+        {
+            RunCoopSmoke(join>=0);
+            CheckCoopEscort(join>=0);
+        }
         else if (autoTest || gripTest) RunAutomatedScreenshotSuite();
         else
         {
@@ -109,6 +114,39 @@ public static partial class Program
         AudioMusicSystem.Shutdown();
         Raylib.CloseWindow();
         return 0;
+    }
+
+    private static void EnsureFloorTypefaces()
+    {
+        // A fresh repository build can contain only the older menu font bundle.
+        // Use the same authored assets as the dossier when running from that checkout.
+        string destination=Path.Combine(AppContext.BaseDirectory,"assets","fonts");
+        string[] names=["Oswald-SemiBold.ttf","Oswald-Bold.ttf","PTSans-Regular.ttf","PTSans-Bold.ttf"];
+        if(names.All(name=>File.Exists(Path.Combine(destination,name)))) return;
+        foreach(string anchor in new[]{Environment.CurrentDirectory,AppContext.BaseDirectory})
+        {
+            for(var root=new DirectoryInfo(anchor);root!=null;root=root.Parent)
+            {
+                string source=Path.Combine(root.FullName,"assets","fonts");
+                if(!File.Exists(Path.Combine(root.FullName,"HowToVibeCoder.csproj")) ||
+                    !names.All(name=>File.Exists(Path.Combine(source,name)))) continue;
+                Directory.CreateDirectory(destination);
+                foreach(string name in names)
+                {
+                    string target=Path.Combine(destination,name);
+                    if(File.Exists(target)) continue;
+                    string staged=target+"."+Guid.NewGuid().ToString("N")+".tmp";
+                    try
+                    {
+                        File.Copy(Path.Combine(source,name),staged);
+                        try { File.Move(staged,target); }
+                        catch(IOException) when(File.Exists(target)) { }
+                    }
+                    finally { if(File.Exists(staged)) File.Delete(staged); }
+                }
+                return;
+            }
+        }
     }
 
     private static void WireUpSystems()
@@ -164,7 +202,8 @@ public static partial class Program
                 if (_world.GalleyDesks[i].IsOccupied) seatedCount++;
             }
 
-            return new GameSaveData
+            pendingShift=CaptureFloor();
+            return pendingFloorSave = new GameSaveData
             {
                 Cash = _playerCash, Xp = _xp, Energy = _energy, Hp = _playerHp,
                 UnlockedWeapons = new[]
@@ -204,13 +243,15 @@ public static partial class Program
             _world.HasElevatorKey = data.HasElevatorKey;
             _world.IsFloor2Unlocked = data.ElevatorBossDefeated;
             _world.ElevatorBoss.IsDefeated = data.ElevatorBossDefeated;
+            RestoreFloorSave(data);
             _playerPos = new Vector3(data.PlayerPosX, Math.Max(1.2f, data.PlayerPosY), data.PlayerPosZ);
         };
     }
 
     private static void ResetNewGameFloor()
     {
-        bot=awaitingSpawn=pendingCase=false; guestCarried=null; guestHp=100;
+        floorPanel=FloorPanel.None; seenReport=0;
+        bot=awaitingSpawn=pendingCase=false; guestCarried=peerEscort=null; guestHp=100;
         _world = new SkyscraperFloor1World();
         AudioMusicSystem.VoiceTimer = 0;
         _playerPos = new Vector3(0f, 1.72f, 12.2f);
@@ -281,6 +322,14 @@ public static partial class Program
             _hudStatusTimer = MathF.Max(0f, _hudStatusTimer - dt);
         }
 
+        if(!MainMenuAndPauseUI.IsMenuBlockingGameplay && !MainMenuAndPauseUI.IsInMainMenu && !LoreAndMenusUI.IsAnyModalOpen)
+        {
+            if(HandleFloorPanel())
+            {
+                if(Net.Ready) TickFloor(dt);
+                return;
+            }
+        }
         bool wasModal = LoreAndMenusUI.IsAnyModalOpen;
         bool modalShortcut = Raylib.IsKeyPressed(KeyboardKey.F8) || Raylib.IsKeyPressed(KeyboardKey.K) || Raylib.IsKeyPressed(KeyboardKey.N);
         if (!MainMenuAndPauseUI.JoinPanel && (wasModal || modalShortcut))
@@ -292,6 +341,7 @@ public static partial class Program
             return;
         }
         MainMenuAndPauseUI.Update(dt, ref shouldExit);
+        FlushFloorSave();
         if (MainMenuAndPauseUI.IsInMainMenu) _menuTime += dt;
         if (shouldExit || MainMenuAndPauseUI.IsInMainMenu) return;
         if (MainMenuAndPauseUI.IsMenuBlockingGameplay)
@@ -355,6 +405,16 @@ public static partial class Program
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
         {
+            var camera=BuildPlayerCamera();
+            string? joint=CoopEscort(camera,false,apply:!Net.Guest);
+            if(joint!=null)
+            {
+                if(Net.Guest) Net.Send(new("interact",LocalPose));
+                else SetHudBanner(joint);
+                return;
+            }
+            FloorPanel station=_world.PanelAt(camera);
+            if(station!=FloorPanel.None) { OpenFloorPanel(station); return; }
             if(Net.Guest) Net.Send(new("interact",LocalPose));
             else SetHudBanner(_world.Interact(BuildPlayerCamera(), TrySpendCash, GrantCash),4.8f);
         }
@@ -389,11 +449,12 @@ public static partial class Program
         _sprinting=moving && sprint && !_isCrouching && !_exhausted && _energy>0 && _dashTime<=0;
         if (_sprinting)
         {
-            _energy=Math.Max(0,_energy-17*dt); _regenDelay=.65f;
+            _energy=Math.Max(0,_energy-(_world.Systems.Coffee>0 ? 6 : 17)*dt); _regenDelay=.65f;
             if (_energy<=0) _exhausted=true;
         }
         else if (_dashTime<=0 && (_regenDelay-=dt)<=0) _energy=Math.Min(100,_energy+20*dt);
         float speed = _isCrouching ? 4.25f : 6.6f*(_sprinting ? 1.48f : 1);
+        if(_world.Systems.Coffee>0) speed*=1.25f;
         float burst = Math.Min(dt,_dashTime);
         Vector3 travel = move*speed*(dt-burst) + _dashDirection*18*burst;
         _dashTime-=burst;
@@ -429,6 +490,9 @@ public static partial class Program
 
     private static void UpdateTrigger(float dt,bool held,bool pressed,bool reload,bool moving)
     {
+        _weapons.Drum=_world.Systems.Has(Sidegrade.Drum);
+        _weapons.InsulatedIron=_world.Systems.Has(Sidegrade.Tape);
+        _weapons.CoolIron(dt);
         var gun=_weapons.CurrentWeapon;
         bool automatic=gun==WeaponType.MicroUzi;
         bool trigger=automatic ? held : pressed;
@@ -448,13 +512,15 @@ public static partial class Program
         _weapons.SetStance(_walkBobPhase,_isCrouching);
         _weapons.UpdateWeapons(dt,cam,moving && _isGrounded,held);
         if(reload || _weapons.Ammo==0) _weapons.BeginReload();
+        if(gun==WeaponType.SolderingIron && _weapons.IronLockout>0) trigger=false;
         if(trigger && _weaponFireCooldown<=.00001f && !_weapons.Reloading)
         {
             float interval=gun switch {
-                WeaponType.MicroUzi=>1f/12, WeaponType.Belt=>.30f, WeaponType.SolderingIron=>.34f,
+                WeaponType.MicroUzi=>1f/12, WeaponType.Belt=>_world.Systems.Coffee>0 ? .19f : .30f, WeaponType.SolderingIron=>_world.Systems.Has(Sidegrade.Tape) ? .26f : .34f,
                 WeaponType.SawedOff=>.42f, _=>.28f };
             _weaponFireCooldown=interval+(automatic && !pressed ? _weaponFireCooldown : 0);
             _weapons.UseRound();
+            if(gun==WeaponType.SolderingIron) _weapons.HeatIron();
             float steady=_isCrouching ? .65f : 1;
             bool melee=gun is WeaponType.Belt or WeaponType.SolderingIron;
             Vector3 aim=Vector3.Normalize(cam.Target-cam.Position);
@@ -559,7 +625,7 @@ public static partial class Program
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
 
-        bool modalOpen = LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
+        bool modalOpen = floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
             || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen
             || MainMenuAndPauseUI.IsSettingsPanelOpen;
         if (!modalOpen)
@@ -578,6 +644,7 @@ public static partial class Program
         }
 
         LoreAndMenusUI.Draw(_uiFont);
+        if(floorPanel!=FloorPanel.None) DrawFloorPanel();
         Raylib.EndDrawing();
     }
 
@@ -630,28 +697,9 @@ public static partial class Program
             DrawSlotIcon(i,new(r.X+34,r.Y+35),unlocked);
         }
 
-        Color cyan = new(40,213,243,255);
-        Vector2 badge = new(sw-238,25);
-        Raylib.DrawPoly(badge,6,14,-90,cyan);
-        Raylib.DrawPoly(badge,6,11.5f,-90,new Color(23,41,60,255));
-        MainMenuAndPauseUI.Center(_uiFont,(1+_xp/XpPerLevel).ToString(),new(badge.X-12,13,24,24),14,white);
-        Rectangle xp = new(sw-219,14,204,22);
-        Raylib.DrawRectangleRounded(xp,.95f,8,new Color(14,23,35,232));
-        Raylib.DrawRectangleRounded(new(xp.X+2,xp.Y+2,200f*(_xp%XpPerLevel)/XpPerLevel,18),1,8,new Color(18,132,176,245));
-        Raylib.DrawRectangleRoundedLinesEx(xp,.95f,8,1,cyan);
-        MainMenuAndPauseUI.Center(_uiFont,$"{_xp%XpPerLevel} / 1 073 XP",xp,15,white);
-        int working = _world.GalleyDesks.Count(d=>d.IsOccupied && !d.IsSlackingInTwitter);
-        int occupied = _world.GalleyDesks.Count(d=>d.IsOccupied);
-        void Objective(int top,string label,Color edge)
-        {
-            Rectangle r=new(sw-207,top,192,22);
-            Raylib.DrawRectangleRounded(r,.45f,6,new Color(14,23,32,216));
-            Raylib.DrawRectangleRoundedLinesEx(r,.45f,6,1,edge);
-            MainMenuAndPauseUI.Center(_uiFont,label,r,14,white);
-        }
-        Objective(40,"Этаж 1: Белая Акула",new Color(215,165,64,240));
-        Objective(65,$"Галера: {occupied} / 4 (+ ${working*20}/с)",cyan);
-        string target=_world.FocusPrompt(BuildPlayerCamera());
+        DrawFloorTelemetry();
+        var camera=BuildPlayerCamera();
+        string target=CoopEscort(camera,false,apply:false) ?? _world.FocusPrompt(camera);
         if(target.Length>0)
         {
             string prompt="[E]  "+target;
@@ -671,6 +719,8 @@ public static partial class Program
             Raylib.DrawLineEx(a,a+axis*5,2.5f,new Color(18,20,23,150));
             Raylib.DrawLineEx(a,a+axis*5,1.4f,white);
         }
+        if(_weapons.CurrentWeapon==WeaponType.SolderingIron && _weapons.IronLockout>0)
+            HudLine("Жало остывает",cx-56,cy+54,amber);
         if (_weapons.Capacity>0)
         {
             string rounds=_weapons.Reloading ? $"ПЕРЕЗАРЯДКА  {_weapons.ReloadProgress:0%}" : $"{_weapons.Ammo} / {_weapons.Capacity}";
@@ -958,7 +1008,8 @@ public static partial class Program
             }
             Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false); Tick(45);
             Tick(12,take);
-            _weapons.UseRound(); _weapons.UseRound(); // Stage both spent hulls for the reload.
+            _weapons.UseRound();
+            _weapons.UseRound(); // Stage both spent hulls for the reload.
             Key(KeyboardKey.R,true); Tick(1,take); Key(KeyboardKey.R,false); Tick(100,take);
             Select(KeyboardKey.Three);
             _weapons.UseRound();
@@ -1078,7 +1129,7 @@ public static partial class Program
         {
             LookAtTarget(enemy.CombatCenter); Mouse(true); Tick(); Mouse(false); Tick(6); shots++;
         }
-        Require(enemy.State==CoderAIState.Subdued && shots<=3 && _playerCash-cash==35 && _xp-xp==7,"KO reward");
+        Require(enemy.Hp==0 && shots<=3 && _playerCash-cash==35 && _xp-xp==7,"KO reward");
         Tick(90); Require(!_world.ActiveCoders.Contains(enemy),"KO cleanup");
         Require(Math.Abs(_recoilPitch)<.0001f && Math.Abs(_recoilYaw)<.0001f,"camera spring recovery");
         foreach(var (weapon,hits,target) in new[] {
@@ -1090,7 +1141,8 @@ public static partial class Program
             {
                 LookAtTarget(target.CombatCenter);
                 Mouse(true); Tick(); Mouse(false); Tick(29);
-                Require((target.Hp<=0)==(i==hits-1),"KO count "+weapon);
+                if(weapon==WeaponType.SawedOff) Require(target.Hp==0,"lethal buckshot");
+                else Require(target.Hp>0 && (target.Fear>6 || target.State==CoderAIState.Subdued),"non-lethal pressure "+weapon);
             }
         }
         var wallTarget=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
@@ -1101,7 +1153,7 @@ public static partial class Program
         float wallHp=wallTarget.Hp;
         Mouse(true); Tick(); Mouse(false);
         Require(wallTarget.Hp==wallHp && Math.Abs(_weapons.BulletTracers[^1].End.Z-.5f)<.02f,"wall stops ray and tracer");
-        Console.WriteLine("[AUTOTEST] Jump dodge, recoil recovery, wall impact, belt/iron/shotgun KO=2/2/1 PASS");
+        Console.WriteLine("[AUTOTEST] Jump dodge, recoil recovery, wall impact, non-lethal melee and lethal shotgun PASS");
         Console.WriteLine($"[AUTOTEST] Fighters={fighters.Length} HP={enemy.MaxHp} cube={pr.Velocity.Length():F0}m/s damage=7 slap=6 knockback={knockback:F2}m KO={shots} rounds cash=+35 XP=+7");
     }
 
@@ -1111,7 +1163,8 @@ public static partial class Program
         AudioMusicSystem.CheckMovementSounds();
         CheckElevatorNameplates();
         LoreAndMenusUI.CheckMixerControls();
-        string projectScreenshotsDir = Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
+        string projectScreenshotsDir = Environment.GetEnvironmentVariable("VIBECODER_SCREENSHOTS")
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
         string binScreenshotsDir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(projectScreenshotsDir);
         Directory.CreateDirectory(binScreenshotsDir);
@@ -1167,6 +1220,7 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
 
+        CheckSprintA(name=>CaptureShot(name));
         CheckFpsGameplay(name=>{ _hudStatusTimer=0; CaptureShot(name); });
 
         // 1. 01_office_hub_hr_tarot.png - Central White Shark Reception opposite the Elevator: HR Tarot Veronika with crystal ball & candles, Belt in crimson jacket hands
@@ -1350,5 +1404,195 @@ public static partial class Program
         Vector3 d = Vector3.Normalize(target - eye);
         _playerYaw = MathF.Atan2(d.X, d.Z);
         _playerPitch = MathF.Asin(Math.Clamp(d.Y, -0.95f, 0.95f));
+    }
+}
+
+public static partial class Program
+{
+    private static unsafe void CheckSprintA(Action<string> capture)
+    {
+        ResetNewGameFloor();
+        Raylib.DisableCursor();
+        static void Check(bool ok,string step)
+        {
+            if(!ok) throw new InvalidDataException("Sprint A: "+step);
+        }
+        bool exit=false;
+        void Key(KeyboardKey key)
+        {
+            AutomationEvent ev=new() { Type=2 }; ev.Params[0]=(int)key;
+            Raylib.PlayAutomationEvent(ev); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+            ev.Type=1; Raylib.PlayAutomationEvent(ev); Raylib.PollInputEvents();
+        }
+        void At(Vector3 eye,Vector3 target) { _playerPos=eye; LookAtTarget(target); }
+        string Use(Vector3 feet,float height)
+        {
+            At(feet+new Vector3(0,1.72f,1.9f),feet+Vector3.UnitY*height);
+            return _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+        }
+        void Strike(WeaponType tool,Vector3 target)
+        {
+            _weapons.SelectSlot((int)tool); LookAtTarget(target);
+            _world.ProcessPlayerAttack(BuildPlayerCamera(),_weapons,GrantCash,out _);
+        }
+        var roles=_world.ActiveCoders.ToArray();
+        Check(!Raylib.IsAudioDeviceReady() || Raylib.GetMasterVolume()==0,"native audio muted");
+        Check(roles.Select(c=>(c.Composure,c.Ego,c.Fear,c.Greed)).Distinct().Count()==4,"four psychological profiles");
+        Key(KeyboardKey.J); Check(floorPanel==FloorPanel.Contracts,"J opens board");
+        Key(KeyboardKey.Enter); Check(Floor.JobId==0 && Floor.TD>0 && Floor.PT>0,"MVP accepted");
+        At(new(24,1.72f,20),new(24,2,28));
+        for(int i=0;i<9;i++) Strike(WeaponType.MicroUzi,new(24,2,28));
+        float before=Floor.SEC;
+        var printer=_world.OfficeProps.First(p=>p.Kind==OfficePropKind.XeroxPhotocopier);
+        Use(printer.Position,.9f);
+        Check(before>20 && Math.Abs(Floor.SEC-before+20)<.01f && Floor.PrinterWait==35,"gunfire and printed pass");
+        Use(printer.Position,.9f);
+        Check(Math.Abs(Floor.SEC-before+20)<.01f,"printer cooldown");
+
+        var junior=roles[0];
+        junior.Position=new(24,0,17); At(new(24,1.72f,19),junior.CombatCenter);
+        Strike(WeaponType.Belt,junior.CombatCenter);
+        Check(junior.State==CoderAIState.Subdued && junior.Hp==junior.MaxHp && junior.LaptopLost,"belt breaks resolve at full HP");
+        before=Floor.SEC;
+        Use(junior.Position,.45f);
+        Check(_world.CarriedCoder==junior && Floor.SEC>before && Floor.SEC-before<1,"live NDA");
+        var desk=_world.GalleyDesks[0];
+        Use(desk.DeskPosition,.9f*SkyscraperFloor1World.WorkstationScale);
+        Check(Floor.Seated==1 && desk.Productivity==14,"junior payroll");
+        float debt=Floor.TD;
+        _world.UpdateWorld(.5f,_playerPos,false,(p,_)=>_playerCash+=p,null);
+        Check(Floor.TD>debt && Floor.Earned>=7,"junior generates real cash and debt");
+
+        var crypto=roles[1]; crypto.Position=new(24,0,15);
+        At(new(24,1.55f,19),crypto.CombatCenter);
+        Vector3 aim=Vector3.Normalize(crypto.CombatCenter-_playerPos);
+        _world.EnemyProjectiles.Add(new() { Position=_playerPos+aim*1.8f,Velocity=-aim*12,Radius=.14f,
+            OwnerId=crypto.Id,Damage=7,Life=2,MaxLife=2,IsGlitch=true,Coin=true });
+        Strike(WeaponType.Belt,crypto.CombatCenter);
+        Check(_world.EnemyProjectiles.Exists(p=>p.Deflected && p.Damage==14),"belt parry");
+        float hp=crypto.Hp;
+        for(int i=0;i<16;i++) _world.UpdateWorld(1f/60,_playerPos,false,null,null);
+        Check(crypto.Hp==hp-14,"reflected projectile hit owner");
+
+        float temp=Floor.PT;
+        Use(SkyscraperFloor1World.DeployPos,1.12f);
+        Check(Floor.Friday==45 && Floor.FridayMultiplier==2.5f && Floor.PT>=temp+29.99f,"physical deploy button");
+        var cooler=_world.CoolerPos;
+        Use(cooler,.9f); Check(Floor.Puddles.Single().Wet==18,"physical cooler spill");
+        crypto.Position=cooler+new Vector3(1.25f,0,.65f);
+        var water=cooler+new Vector3(.6f,0,1.5f);
+        At(cooler+new Vector3(1.9f,1.72f,3.5f),water);
+        Strike(WeaponType.SolderingIron,water);
+        Check(Floor.Puddles.Single().Electric==6 && crypto.StunTimer>0 && crypto.Fear>=45,"solder conducts through water");
+        var junior2=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
+        junior2.Position=cooler+new Vector3(.1f,0,1.15f);
+        _world.UpdateWorld(1f/60,_playerPos,false,null,null);
+        Check(junior2.State==CoderAIState.Subdued && junior2.Hp>0,"puddle breaks coder on entry");
+        At(cooler+new Vector3(2.6f,1.72f,4.1f),cooler+new Vector3(.05f,.65f,0));
+        _weapons.UpdateWeapons(.25f,BuildPlayerCamera());
+        _hudStatusTimer=AudioMusicSystem.VoiceTimer=0;
+        capture("09_sprint_a_systems.png");
+        Use(junior2.Position,.45f);
+        var desk2=_world.GalleyDesks[1];
+        Use(desk2.DeskPosition,.9f*SkyscraperFloor1World.WorkstationScale);
+        Check(Floor.Seated==2,"second desk receives recruit");
+        for(int i=0;i<600 && Floor.JobId>=0;i++) TickFloor(1f/60);
+        Check(Floor.Report is { Success:true, Job:0, Captured:2 } && Floor.Earned>=450,"MVP settlement");
+        UpdateFrame(1f/60,ref exit); Check(floorPanel==FloorPanel.Debrief,"automatic debrief");
+        capture("08_contract_debrief.png");
+        Key(KeyboardKey.Enter); Check(floorPanel==FloorPanel.Contracts,"next contract route"); Key(KeyboardKey.Escape);
+
+        // Exercise the remaining win/fail conditions independently of screenshot staging.
+        int cash=4000;
+        bool Spend(int price) { if(price>cash) return false; cash-=price; return true; }
+        foreach(var gear in Enum.GetValues<Sidegrade>()) Floor.Buy((int)gear,Spend);
+        Check(cash==4000-FloorSystems.GearList.Sum(g=>g.Price) && Floor.Shell==Sidegrade.Negotiator,"six paid sidegrades");
+        Floor.Buy((int)Sidegrade.Salt,Spend);
+        Check(Floor.Shell==Sidegrade.Salt,"swap loads without another charge");
+        Floor.IncidentNow(Incident.Raid,_world); Floor.Risk(security:45);
+        float sec=Floor.SEC;
+        Floor.UsePager(_world);
+        Check(!Floor.Raid && !_world.ActiveCoders.Any(c=>c.RaidGuard) && Math.Abs(Floor.SEC-Math.Max(0,sec-35))<.01f,"pager withdraws raid");
+        Floor.IncidentNow(Incident.Ddos,_world);
+        Check(Floor.Ddos && _world.DeskRate(desk,false)==desk.Productivity*Floor.FridayMultiplier*.5f,"DDoS halves output");
+        Use(_world.RackPos,1.2f); Check(!Floor.Ddos,"physical reboot");
+        Floor.IncidentNow(Incident.Burnout,_world); Use(SkyscraperFloor1World.CoffeePos,1.15f);
+        Check(Floor.Coffee==12 && !_world.GalleyDesks.Exists(d=>d.IsOccupied && d.Burnout>=100),"coffee recovery");
+        Floor.Start(1,_world); Floor.Risk(security:50); Floor.Tick(.01f,_world,null);
+        Check(Floor.Report is {Job:1,Success:false},"stealth violation");
+        Floor.Risk(security:-100); Floor.Start(1,_world);
+        var senior=roles[3];
+        senior.Position=new(24,0,17); At(new(24,1.72f,19),senior.CombatCenter);
+        Strike(WeaponType.SolderingIron,senior.CombatCenter); Strike(WeaponType.Belt,senior.CombatCenter);
+        Check(senior.State==CoderAIState.Subdued,"architect ego break");
+        Use(senior.Position,.45f); Use(_world.GalleyDesks[2].DeskPosition,.9f*SkyscraperFloor1World.WorkstationScale);
+        Floor.Tick(.01f,_world,null);
+        Check(Floor.Report is {Job:1,Success:true} && _world.GalleyDesks[2].TechDebtRate<0,"architect stealth delivery");
+        Floor.Start(2,_world); Floor.Deliver(CoderArchetype.CryptoBro,false,250); Floor.Tick(.01f,_world,null);
+        Check(Floor.Report is {Job:2,Success:true},"fintech delivery");
+        ResetNewGameFloor();
+        Floor.Start(3,_world); Use(SkyscraperFloor1World.DeployPos,1.12f);
+        Check(Floor.ReleaseStarted && Floor.Friday==45,"Friday contract armed");
+        for(int i=0;i<451;i++)
+        {
+            var threat=_world.ActiveCoders.Find(c=>c.ReleaseAttacker && c.Hp>0 && c.State!=CoderAIState.Subdued);
+            if(threat!=null && i%4==0)
+            {
+                At(threat.Position+new Vector3(0,1.72f,1.8f),threat.CombatCenter);
+                Strike(WeaponType.SawedOff,threat.CombatCenter);
+            }
+            TickFloor(.1f);
+        }
+        Check(Floor.Report is {Job:3,Success:true,Bonus:>=2.5f},"Friday survival: "+Floor.Report?.Diagnosis+" / "+Floor.Defense+" / "+Floor.Friday);
+        Floor.Start(4,_world); Check(_world.ElevatorBoss.IsActive,"contract summons agent");
+        _world.ElevatorBoss.Hp=1; _world.ElevatorBoss.Position=new(24,0,17);
+        At(new(24,1.72f,20),new(24,1.35f,17)); Strike(WeaponType.MicroUzi,new(24,1.35f,17));
+        Floor.Tick(.01f,_world,null); Check(Floor.Report is {Job:4,Success:true},"agent liquidation");
+        var restoreData=MainMenuAndPauseUI.CaptureCurrentGameState!();
+        pendingFloorSave=null;
+        string scratch=Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(scratch,System.Text.Json.JsonSerializer.Serialize(restoreData));
+            WriteFloorSave(restoreData,scratch,pendingShift!);
+            pendingShift=null;
+            var expected=Floor;
+            ResetNewGameFloor(); RestoreFloorSave(restoreData,scratch);
+            Check(Floor.Report==expected.Report && Floor.SEC==expected.SEC && Floor.PT==expected.PT &&
+                Floor.TD==expected.TD && Floor.Serial==expected.Serial,"saved shift round-trip");
+        }
+        finally { File.Delete(scratch); }
+        ResetNewGameFloor();
+        var rack=_world.RackPos;
+        var near=_world.ActiveCoders[2]; near.Position=rack+new Vector3(2,0,0);
+        At(rack+new Vector3(0,1.72f,2.5f),rack+Vector3.UnitY);
+        Strike(WeaponType.SolderingIron,rack+Vector3.UnitY);
+        Check(Floor.RackHeat>0 && Floor.PT>=12 && near.State==CoderAIState.PanickedFleeing,"physical B12 overheat and evacuation");
+        float hot=Floor.PT; Use(rack,1.2f);
+        Check(Floor.RackHeat==0 && Floor.PT<hot,"physical B12 cool-down");
+        Floor.IncidentNow(Incident.Printer,_world); Use(printer.Position,.9f);
+        Check(Floor.Jam>0 && Floor.PrinterWait==0,"jam blocks pass");
+        Floor.IncidentNow(Incident.Audit,_world); Floor.Tick(15,_world,null);
+        Check(Floor.SEC>=22 && Floor.Audit==0,"unanswered audit raises security");
+        Floor.IncidentNow(Incident.Audit,_world);
+        int balance=_playerCash;
+        Use(_world.HrTarotBoothPos+new Vector3(-1.25f,0,.64f),1.33f);
+        Check(_playerCash==balance-180 && Floor.Audit==0,"audit bribe paid once");
+        Floor.IncidentNow(Incident.Fire,_world); balance=_playerCash;
+        Use(rack,1.2f); Use(rack,1.2f);
+        Check(!Floor.FireIncident && _playerCash==balance+120,"single emergency cooling payout");
+        int population=_world.ActiveCoders.Count;
+        Floor.IncidentNow(Incident.Bugs,_world);
+        Check(_world.ActiveCoders.Count>population,"bug surge");
+        Floor.IncidentNow(Incident.Coffee,_world); Use(SkyscraperFloor1World.CoffeePos,1.15f);
+        Check(!Floor.WantsCoffee && Floor.Coffee==12,"coffee demand resolved");
+        Floor.Buy((int)Sidegrade.Drum,_=>true);
+        _weapons.SelectSlot(3); UpdateTrigger(1f/60,true,true,false,false);
+        _weapons.BeginReload();
+        _weapons.UpdateWeapons(1.46f,BuildPlayerCamera());
+        Check(_weapons.Capacity==50 && _weapons.Reloading,"drum reload tradeoff");
+        _weapons.UpdateWeapons(.45f,BuildPlayerCamera()); Check(_weapons.Ammo==50,"drum refills to 50");
+        ResetNewGameFloor();
+        Console.WriteLine("[AUTOTEST] Sprint A PASS: risk, four profiles, NDA, payroll, parry, electro-puddle, Friday, five contracts, debrief and sidegrades");
     }
 }
