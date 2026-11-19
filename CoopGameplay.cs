@@ -67,7 +67,18 @@ public static partial class Program
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
         guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder,
-        ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding);
+        ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
+        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity);
+
+    private static void ApplyElevator(FloorSnapshot state)
+    {
+        _world.ElevatorBoss=state.Boss;
+        _world.HasElevatorKey=state.Key;
+        _world.IsFloor2Unlocked=state.Unlocked;
+        _world.ElevatorRepaired=state.ElevatorRepaired ?? (state.Boss.IsActive || state.Boss.IsDefeated || state.Unlocked);
+        _world.ElevatorDoorOpenAmount=_world.ElevatorRepaired ? state.Door : 0;
+        _world.ElevatorGlassOpacity=state.ElevatorGlassOpacity ?? (_world.ElevatorRepaired ? 0 : 1);
+    }
 
     private static void ApplyProgression(FloorSnapshot? state)
     {
@@ -102,8 +113,9 @@ public static partial class Program
                 FloorSystems.CheerFirstFrog();
             awaitingFirstFloor=false;
             _playerCash=state.Cash; _playerHp=state.GuestHp; hostHp=state.HostHp;
-            _world.ElevatorBoss=state.Boss; _world.ElevatorDoorOpenAmount=state.Door;
-            _world.HasElevatorKey=state.Key; _world.IsFloor2Unlocked=state.Unlocked;
+            if (_world.ElevatorBoss.State != state.Boss.State)
+                SkyscraperFloor1World.PlayElevatorCue(state.Boss.State);
+            ApplyElevator(state);
             if(state.Unlocked) _weapons.UnlockedChatGun=true;
             _world.IsMacBookTrapActive=state.Trap; _world.SelectedBaitTier=state.Bait;
             peerEscort=state.HostCarried;

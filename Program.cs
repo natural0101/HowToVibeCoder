@@ -86,7 +86,7 @@ public static partial class Program
         AudioMusicSystem.Initialize(silent);
         if(silent && Raylib.IsAudioDeviceReady()) Raylib.SetMasterVolume(0f);
         _world = new SkyscraperFloor1World(fixtureSeed);
-        _menuFloor = new SkyscraperFloor1World { Partner = new PartnerAvatar(), ElevatorDoorOpenAmount = .62f };
+        _menuFloor = new SkyscraperFloor1World { Partner = new PartnerAvatar() };
         _menuFloor.Partner.Move(new(new(-26.2f,1.72f,5.5f),1.26f,0,WeaponType.MicroUzi));
         _weapons = new WeaponAndCombatView { Inventory=Floor };
 
@@ -364,7 +364,16 @@ public static partial class Program
         };
     }
 
+    private static bool BossFightMusic => _world.BossRevealed ||
+        _world.ActiveCoders.Exists(c => c.IsMiniBoss && c.State != CoderAIState.Subdued);
+
     private static void UpdateFrame(float dt, ref bool shouldExit)
+    {
+        UpdateGameplay(dt, ref shouldExit);
+        AudioMusicSystem.UpdateMusic(BossFightMusic, dt, MainMenuAndPauseUI.IsInMainMenu);
+    }
+
+    private static void UpdateGameplay(float dt, ref bool shouldExit)
     {
         if(hostOnNextUpdate)
         {
@@ -372,9 +381,6 @@ public static partial class Program
             StartHosting(newShift:true);
         }
         Net.Pump(LocalPose,CaptureFloor);
-        bool bossFightMusic = _world.ElevatorBoss.IsActive ||
-                              _world.ActiveCoders.Exists(c => c.IsMiniBoss && c.State != CoderAIState.Subdued);
-        AudioMusicSystem.UpdateMusic(bossFightMusic, dt, MainMenuAndPauseUI.IsInMainMenu);
 
         if (_hudStatusTimer > 0f)
         {
@@ -403,7 +409,11 @@ public static partial class Program
         MainMenuAndPauseUI.Update(dt, ref shouldExit);
         if(startingFromMenu && !MainMenuAndPauseUI.IsInMainMenu) return;
         FlushFloorSave();
-        if (MainMenuAndPauseUI.IsInMainMenu) _menuTime += dt;
+        if (MainMenuAndPauseUI.IsInMainMenu)
+        {
+            _menuTime += dt;
+            _menuFloor.AdvanceLighting(dt);
+        }
         if (shouldExit || MainMenuAndPauseUI.IsInMainMenu) return;
         if (MainMenuAndPauseUI.IsMenuBlockingGameplay)
         {
@@ -768,37 +778,34 @@ public static partial class Program
         int cx = sw/2, cy = sh/2;
         Color white = new(250,249,245,255), dark = new(22,24,38,142);
         string money = "$" + _playerCash;
-        int cashWidth = (int)GameFonts.Measure(_uiFont,money,22).X + 14;
-        Rectangle cash = new(32, sh-108, cashWidth, 29);
-        MainMenuAndPauseUI.Surface(cash,dark,2);
-        MainMenuAndPauseUI.Center(_uiFont,money,cash,22,white);
-        if(Floor.PocketFrogs.Count>0) ShadowText(_uiFont,$"Садок: {Floor.PocketFrogs.Count}",cash.X+cash.Width+9,cash.Y+5,16,white);
-        void Meter(int x, float fraction)
+        ShadowText(_serif, money, 36, sh - 92, 26, white);
+        if(Floor.PocketFrogs.Count>0)
         {
-            Vector2 p = new(x, sh-50);
-            Raylib.DrawCircleV(p,20,dark);
-            Raylib.DrawRing(p,18,20,0,360,64,new Color(218,221,226,128));
-            if (fraction>0) Raylib.DrawRing(p,17.5f,20,-90,-90+360*fraction,64,white);
+            float mw = GameFonts.Measure(_serif, money, 26).X;
+            ShadowText(_uiFont, $"Садок: {Floor.PocketFrogs.Count}", 36 + mw + 14, sh - 86, 16, white);
         }
-        Meter(52,_playerHp/100f);
 
-        Color heart = _playerHp>30 ? white : new Color(254,152,159,255);
-        Raylib.DrawCircle(47,sh-54,6,heart);
-        Raylib.DrawCircle(57,sh-54,6,heart);
-        Raylib.DrawTriangle(new(41,sh-53),new(52,sh-39),new(63,sh-53),heart);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont,$"{_playerHp} HP",80,sh-61,21,white);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont,"ЗДОРОВЬЕ",80,sh-37,11,white);
+        Color heart = _playerHp > 30 ? white : new Color(254, 152, 159, 255);
+        Color shadow = new(14, 12, 11, 185);
+        Raylib.DrawCircle(44, sh - 46, 5.5f, shadow);
+        Raylib.DrawCircle(53, sh - 46, 5.5f, shadow);
+        Raylib.DrawTriangle(new(38.5f, sh - 45), new(48.5f, sh - 32.5f), new(58.5f, sh - 45), shadow);
+        Raylib.DrawCircle(43, sh - 47, 5.5f, heart);
+        Raylib.DrawCircle(52, sh - 47, 5.5f, heart);
+        Raylib.DrawTriangle(new(37.5f, sh - 46), new(47.5f, sh - 33.5f), new(57.5f, sh - 46), heart);
+        ShadowText(_serif, _playerHp.ToString(), 67, sh - 59, 28, heart);
 
-        Meter(204,_energy/100f);
-        // Our commerce drive meter: a sharp impulse, sharing the health ring.
-        Vector2[] bolt = [new(207,sh-63), new(195,sh-48), new(203,sh-48),
-            new(200,sh-37), new(214,sh-53), new(206,sh-53)];
-        Raylib.DrawTriangle(bolt[0],bolt[1],bolt[2],white);
-        Raylib.DrawTriangle(bolt[0],bolt[2],bolt[5],white);
-        Raylib.DrawTriangle(bolt[2],bolt[3],bolt[4],white);
-        Raylib.DrawTriangle(bolt[2],bolt[4],bolt[5],white);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont,$"{(int)MathF.Round(_energy)}%",232,sh-61,21,white);
-        LoreAndMenusUI.DrawTextCrisp(_uiFont,"НАПОР",232,sh-37,11,white);
+        Vector2[] bolt = [new(155, sh - 56), new(145, sh - 43), new(152, sh - 43),
+            new(149, sh - 33), new(161, sh - 47), new(154, sh - 47)];
+        foreach (var o in new Vector2[] { new(1, 1), Vector2.Zero })
+        {
+            Color c = o == Vector2.Zero ? white : shadow;
+            Raylib.DrawTriangle(bolt[0] + o, bolt[1] + o, bolt[2] + o, c);
+            Raylib.DrawTriangle(bolt[0] + o, bolt[2] + o, bolt[5] + o, c);
+            Raylib.DrawTriangle(bolt[2] + o, bolt[3] + o, bolt[4] + o, c);
+            Raylib.DrawTriangle(bolt[2] + o, bolt[4] + o, bolt[5] + o, c);
+        }
+        ShadowText(_serif, ((int)MathF.Round(_energy)).ToString(), 170, sh - 59, 28, white);
 
         var tools=_weapons.Hotbar;
         int barX=cx-(tools.Length*70-4)/2, barY=sh-82;
@@ -851,7 +858,7 @@ public static partial class Program
             Raylib.DrawRectangleGradientH(0,0,52,sh,red,Color.Blank);
             Raylib.DrawRectangleGradientH(sw-52,0,52,sh,Color.Blank,red);
         }
-        if(CoachingSubtitle)
+        if(CoachingSubtitle || (AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeaker is "Петрович" or "ИИ-Агент v0.1"))
         {
             var face=GameFonts.Get(Typeface.InterfaceBold,18);
             float limit=Math.Min(sw-100,940);
@@ -1659,6 +1666,105 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS LMB hits and damage numbers: 6, 12, 24, 42, 18, 8 x 15");
     }
 
+    private static void FinishElevatorIntro()
+    {
+        for(int i=0;i<145 && !_world.BossInCombat;i++) TickFloor(1f/30);
+        if(!_world.BossInCombat) throw new InvalidDataException("Elevator did not release the agent");
+    }
+
+    private static void CheckElevatorReveal(Action<string> capture)
+    {
+        static void Check(bool ok,string what)
+        {
+            if(!ok) throw new InvalidDataException("Elevator reveal: "+what);
+        }
+        ResetNewGameFloor(greet:false);
+        Floor.Onboarding=OnboardingStep.Done;
+        var north=_world.NorthElevatorPos;
+        void FrameDoors()
+        {
+            _playerPos=north+new Vector3(0,1.72f,-7.1f);
+            LookAtTarget(north+Vector3.UnitY*2.1f);
+        }
+        void AimPanel()
+        {
+            _playerPos=_world.ElevatorButtonPos+new Vector3(0,1.72f,-2);
+            LookAtTarget(_world.ElevatorButtonPos+Vector3.UnitY*1.22f);
+        }
+        string Use() => _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+        string Prompt() => _world.FocusPrompt(BuildPlayerCamera());
+        bool exit=false;
+        void Frame() => UpdateFrame(1f/60,ref exit);
+        Frame();
+        Check(_menuFloor.BrokenElevator && !_menuFloor.BossModelVisible && _menuFloor.ElevatorDoorOpenAmount==0,"menu sealed");
+        Check(_world.BrokenElevator && !_world.BossModelVisible && !BossFightMusic && !_world.BossRevealed &&
+            _world.ElevatorGlassOpacity==1 && _world.ElevatorDoorOpenAmount==0 && _world.BossHudOpacity==0 &&
+            AudioMusicSystem.SceneMusicFile=="music_office_90s.wav","floor sealed");
+        FrameDoors();
+        _world.AdvanceLighting(.105f);
+        capture("21_broken_elevator_secret.png");
+        AimPanel();
+        Check(Prompt()=="Сломанный лифт — нужен Паяльник ($90) и $1000" && Use()==Prompt(),"both requirements missing");
+        _playerCash=1000;
+        Check(Prompt()=="Сломанный лифт — купи Паяльник ($90) у Вероники" && Use()==Prompt() &&
+            _world.BrokenElevator && _playerCash==1000 && !_world.HasElevatorKey,"missing iron preserves money");
+        Floor.BuyWeapon(2,TrySpendCash);
+        Check(_playerCash==910 && Prompt()=="Сломанный лифт — нужно $1000 на обход защиты" && Use()==Prompt() &&
+            _world.BrokenElevator && !_world.HasElevatorKey,"missing lock fee");
+        _playerCash=1000;
+        Check(Prompt()=="Починить щиток и запустить лифт ($1000)","cash prompt");
+        Use();
+        Check(_world.ElevatorBoss.State==ElevatorBossState.Repairing && _world.ElevatorRepaired && _world.HasElevatorKey &&
+            _playerCash==0 && _world.ElevatorGlassOpacity==1 && _world.ElevatorDoorOpenAmount==0 &&
+            AudioMusicSystem.ActiveSpeaker=="Петрович","panel repair and warning");
+        Use();
+        FrameDoors();
+        var cab=_world.ElevatorBoss.Position;
+        Check(cab==north+new Vector3(0,.16f,1.35f),"inside shaft");
+        float opacity=1;
+        bool sawSilhouette=false;
+        for(int i=0;_world.ElevatorBoss.State==ElevatorBossState.Repairing;i++)
+        {
+            Check(i<145 && !_world.BossInCombat && !_world.BossRevealed && !BossFightMusic &&
+                _world.ElevatorGlassOpacity<=opacity && _world.ElevatorDoorOpenAmount==0 && _world.ElevatorBoss.Position==cab &&
+                _world.BossHudOpacity==0 && AudioMusicSystem.SceneMusicFile=="music_office_90s.wav","sealed during repair");
+            opacity=_world.ElevatorGlassOpacity;
+            if(i<=55) Check(!_world.BossModelVisible,"hidden for first 40 percent");
+            sawSilhouette|=_world.BossModelVisible && opacity is >0 and <.65f;
+            if(i==70)
+            {
+                float remaining=_world.ElevatorBoss.StateTimer;
+                var state=System.Text.Json.JsonSerializer.Deserialize<FloorSnapshot>(
+                    System.Text.Json.JsonSerializer.Serialize(CaptureFloor(),FloorJson),FloorJson)!;
+                ApplyElevator(state);
+                Check(_world.ElevatorRepaired && _world.ElevatorGlassOpacity==opacity && _world.ElevatorBoss.StateTimer==remaining && _world.ElevatorBoss.Position==cab,
+                    "mid-repair snapshot");
+            }
+            Frame();
+        }
+        Check(sawSilhouette && opacity<.01f && _world.ElevatorGlassOpacity==0 && _world.BossRevealed && BossFightMusic &&
+            AudioMusicSystem.SceneMusicFile=="music_boss_fight.wav" && _world.ElevatorBoss.State==ElevatorBossState.IntroSpeech && AudioMusicSystem.ActiveVoiceText==SkyscraperFloor1World.AgentQuarantineLine,"reveal cue");
+        float door=0;
+        for(int i=0;i<94;i++)
+        {
+            Frame();
+            if(i==5) Check(_world.BossHudOpacity is >0 and <1,"HUD fades in");
+            Check(_world.ElevatorDoorOpenAmount>=door && !_world.BossInCombat,"intro motion");
+            door=_world.ElevatorDoorOpenAmount;
+        }
+        Check(door==1 && _world.BossHudOpacity==1 && _world.ElevatorBoss.Position.Z<north.Z && _world.ElevatorBoss.ShieldHp>0,"agent outside open doors");
+        capture("22_elevator_repair_reveal.png");
+        FinishElevatorIntro();
+        Check(_world.ElevatorBoss.State==ElevatorBossState.ChargingPlayer,"charge after walkout");
+        ResetClassicFixture();
+        _world.HasElevatorKey=true; _playerCash=0;
+        AimPanel();
+        Check(Prompt()=="Починить щиток и запустить лифт","owned key prompt");
+        Use();
+        Check(_world.ElevatorRepaired && _world.ElevatorBoss.State==ElevatorBossState.Repairing && _playerCash==0,"owned key bypasses fee");
+        Console.WriteLine("[AUTOTEST] PASS broken elevator secret, repair gates, snapshot, reveal, score, shield and charge");
+    }
+
     private static void RunAutomatedScreenshotSuite(string displayPath)
     {
         CheckViewmodelRates();
@@ -1731,6 +1837,7 @@ public static partial class Program
         CaptureShot("07_mods.png");
         MainMenuAndPauseUI.IsModsPanelOpen = false;
         MainMenuAndPauseUI.IsPaused = false;
+        CheckElevatorReveal(name=>CaptureShot(name));
         CheckZeroToEmpire(name=>CaptureShot(name));
         CheckDamageLadder();
         CheckSprintA(name=>CaptureShot(name));
@@ -1879,7 +1986,8 @@ public static partial class Program
         _weapons.SelectSlot(4); // Sawed-Off Shotgun / Chat-Gun
         _weapons.UpdateWeapons(.3f,BuildPlayerCamera());
         _world.HasElevatorKey = true;
-        _world.TrySummonElevatorBoss(_ => true, out _);
+        _world.TrySummonElevatorBoss(TrySpendCash, out _);
+        FinishElevatorIntro();
         _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
         _world.ElevatorDoorOpenAmount=.86f;
         _world.ElevatorBoss.Hp = 480f;
@@ -2125,7 +2233,12 @@ public static partial class Program
             TickFloor(.1f);
         }
         Check(Floor.Report is {Job:3,Success:true,Bonus:>=2.5f},"Friday survival: "+Floor.Report?.Diagnosis+" / "+Floor.Defense+" / "+Floor.Friday);
-        Floor.Start(4,_world); Check(_world.ElevatorBoss.IsActive,"contract summons agent");
+        Floor.Start(4,_world);
+        Check(Floor.JobId==4 && !_world.ElevatorBoss.IsActive,"contract awaits physical repair");
+        _world.HasElevatorKey=true;
+        Use(_world.ElevatorButtonPos,1.22f);
+        FinishElevatorIntro();
+        Check(_world.BossInCombat,"quarantine contract encounter");
         _world.ElevatorBoss.Hp=1; _world.ElevatorBoss.Position=new(24,0,17);
         At(new(24,1.72f,20),new(24,1.35f,17)); Strike(WeaponType.MicroUzi,new(24,1.35f,17));
         Floor.Tick(.01f,_world,null); Check(Floor.Report is {Job:4,Success:true},"agent liquidation");
@@ -2140,7 +2253,7 @@ public static partial class Program
             var expected=Floor;
             ResetClassicFixture(); RestoreFloorSave(restoreData,scratch);
             Check(Floor.Report==expected.Report && Floor.SEC==expected.SEC && Floor.PT==expected.PT &&
-                Floor.TD==expected.TD && Floor.Serial==expected.Serial,"saved shift round-trip");
+                Floor.TD==expected.TD && Floor.Serial==expected.Serial && _world.ElevatorRepaired && _world.ElevatorGlassOpacity==0,"saved shift round-trip");
         }
         finally { File.Delete(scratch); }
         ResetClassicFixture();

@@ -29,7 +29,7 @@ internal sealed partial class FloorSystems
         new("Тихий хантинг Сеньора","Доставить Архитектора живым при СБ ниже 45",120,980),
         new("Финтех-спринт без СБ","Доставить Крипто-Бро или заработать $900",100,820),
         new("Релиз в Пятницу","Нажать DEPLOY и защищать Галеру 45 секунд",110,1200),
-        new("Зачистка лифта","Ликвидировать ИИ-агента до блокировки этажа",180,1500)
+        new("Карантинная шахта","Вернуть Северный лифт в строй до блокировки этажа",180,1500)
     ];
     internal static readonly Gear[] GearList = [
         new("Соль-дробь","Срывает выдержку и оглушает. Урон по броне снижен на 55%.",210),
@@ -82,7 +82,7 @@ internal sealed partial class FloorSystems
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
             OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к Макбуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
             OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком или с руки (ЛКМ), подпиши NDA [E] и тащи ко мне на стойку или на свободный стол Галеры.",
-            _ => "Дело пошло! Бери контракты [J], копи у меня на ремень и паяльник [E] — и готовься к Северному лифту."
+            _ => "Дело пошло! Документы АО «Энтропия» за 1998 год на втором этаже. У Северного лифта сгорел щиток, шахта на карантине. За паяльником заходи ко мне."
         };
         SpeakCoaching(line);
     }
@@ -232,10 +232,6 @@ internal sealed partial class FloorSystems
         Risk(debt:id is 0 or 2 ? 3 : 1,heat:2);
         if(id==1) world.EnsureCandidate(CoderArchetype.SeniorArchitect);
         if(id==2) world.EnsureCandidate(CoderArchetype.CryptoBro);
-        if(id==4 && !world.ElevatorBoss.IsActive)
-        {
-            world.TrySummonElevatorBoss(_=>true,out _);
-        }
         return Jobs[id].Objective;
     }
 
@@ -420,8 +416,9 @@ internal sealed partial class FloorSystems
     internal string Progress => JobId switch {
         0=>$"Галера {Seated}/2    Выручка ${Earned}/450",1=>$"Доставить Архитектора    СБ {(int)SEC}/45",
         2=>$"Доставить Крипто-Бро или заработать ${Earned}/900",3=>ReleaseStarted ? $"Удержать Галеру    Узел {Defense:F0}%" : "Нажать красную кнопку у лифта",
+        4 when AgentHealth<0=>"Восстановить питание Северного лифта",
         4=>$"Ликвидировать агента    Корпус {MathF.Ceiling(100f*AgentHealth)}%",_=>"Заказы [J]    Арсенал [U]" };
-    public float AgentHealth=1;
+    public float AgentHealth=-1;
 }
 
 public static partial class Program
@@ -460,6 +457,9 @@ public static partial class Program
         var shift=File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))?["Shift"]?.Deserialize<SavedShift>(FloorJson) : null;
         if(shift?.Floor is not {Systems:{} systems} state)
         {
+            _world.ElevatorRepaired=data.ElevatorBossDefeated;
+            _world.ElevatorGlassOpacity=data.ElevatorBossDefeated ? 0 : 1;
+            _world.ElevatorDoorOpenAmount=data.ElevatorBossDefeated ? 1 : 0;
             ApplyProgression(null);
             _weapons.Equip((WeaponType)Math.Clamp(data.CurrentWeaponSlot+1,1,4));
             foreach(var desk in _world.GalleyDesks.Take(Math.Clamp(data.SeatedGalleyCoders,0,4)))
@@ -469,9 +469,8 @@ public static partial class Program
         _world.Systems=systems; seenReport=systems.Serial;
         ApplyProgression(state);
         _weapons.Equip(state.ProgressionVersion>=1 ? state.Equipped : (WeaponType)Math.Clamp(data.CurrentWeaponSlot+1,1,4));
-        _world.HasElevatorKey=state.Key; _world.IsFloor2Unlocked=state.Unlocked;
+        ApplyElevator(state);
         _weapons.UnlockedChatGun=state.Unlocked;
-        _world.ElevatorBoss=state.Boss; _world.ElevatorDoorOpenAmount=state.Door;
         _world.SelectedBaitTier=state.Bait; _world.IsMacBookTrapActive=state.Trap; _world.TotalCodersSoldToHr=state.Sold;
         _world.ActiveCoders.Clear(); _world.ActiveCoders.AddRange(state.Coders);
         if(state.Carried!=null) _world.ActiveCoders.Add(state.Carried);
@@ -648,11 +647,19 @@ public static partial class Program
         bool guiding=Floor.Onboarding!=OnboardingStep.Done;
         if(guiding)
             ShadowText(_uiFont,"Цель: "+Floor.Objective(_world.CarriedCoder!=null),28,77,17,WorldLabelLayout.Ivory);
+        bool repairObjective=!guiding && _world.BrokenElevator;
+        if(repairObjective)
+        {
+            string task=!Floor.HasWeapon(WeaponType.SolderingIron) ? $"Цель: Купи Паяльник (${Floor.Price(FloorSystems.Weapons[2])}) и накопи $1000 для починки лифта" :
+                !_world.HasElevatorKey && _playerCash<1000 ? "Цель: Накопи $1000 и почини щиток Северного лифта" :
+                "Цель: Почини щиток Северного лифта [E] (выход на 2-й этаж)";
+            ShadowText(_uiFont,task,28,77,17,WorldLabelLayout.Ivory);
+        }
         string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)
         {
-            ShadowText(_uiFont,notice,28,guiding ? 102 : 78,15,amber);
+            ShadowText(_uiFont,notice,28,guiding || repairObjective ? 102 : 78,15,amber);
         }
         void Right(Font font,string value,int y,int size,Color ink) =>
             ShadowText(font,value,right-GameFonts.Measure(font,value,size).X,y,size,ink);

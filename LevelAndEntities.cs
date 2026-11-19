@@ -32,6 +32,7 @@ public enum CoderAIState
 public enum ElevatorBossState
 {
     Inactive = 0,
+    Repairing = 7, // Preserve numeric states in existing saves.
     IntroSpeech = 1,
     ChargingPlayer = 2,
     StunnedWallCrash = 3,
@@ -292,6 +293,17 @@ public sealed partial class SkyscraperFloor1World
     public int TotalCodersSoldToHr = 0;
 
     // Elevator & Progression State
+    internal const float RepairSeconds = 2.3f, IntroSeconds = 2.4f;
+    public float ElevatorGlassOpacity = 1f;
+    public bool ElevatorRepaired;
+    internal bool BrokenElevator => !ElevatorRepaired && !ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated;
+    internal bool BossRevealed => ElevatorBoss.IsActive && ElevatorBoss.State != ElevatorBossState.Repairing;
+    internal float BossHudOpacity => !BossRevealed ? 0 : ElevatorBoss.State == ElevatorBossState.IntroSpeech ?
+        Smooth((IntroSeconds-ElevatorBoss.StateTimer)/.45f) : 1;
+    internal bool BossInCombat => BossRevealed && ElevatorBoss.State != ElevatorBossState.IntroSpeech;
+    internal bool BossModelVisible => BossRevealed || (ElevatorBoss.IsActive &&
+        ElevatorBoss.State == ElevatorBossState.Repairing && ElevatorBoss.StateTimer < RepairSeconds * .5f && ElevatorGlassOpacity < .65f) ||
+        (ElevatorBoss.IsDefeated && Systems.Verdict == AgentVerdict.Pending);
     public bool HasElevatorKey = false;
     public float ElevatorDoorOpenAmount = 0f; // 0 = closed, 1 = open
     public bool IsFloor2Unlocked = false;
@@ -476,6 +488,8 @@ public sealed partial class SkyscraperFloor1World
         // Reset Boss & Progression
         ElevatorBoss=new() { Position=CentralElevatorCorePos+Vector3.UnitY*.16f };
         ElevatorDoorOpenAmount = 0f;
+        ElevatorGlassOpacity = 1f;
+        ElevatorRepaired = HasElevatorKey = false;
         IsFloor2Unlocked = false;
         CarriedCoder = null;
     }
@@ -790,7 +804,7 @@ public sealed partial class SkyscraperFloor1World
         }
         foreach (var coder in ActiveCoders)
             if (coder.State!=CoderAIState.Subdued) Clip(coder.CombatCenter,.75f*coder.ModelScale);
-        if (ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated) Clip(ElevatorBoss.Position+Vector3.UnitY*1.35f,1.45f);
+        if (BossInCombat) Clip(ElevatorBoss.Position+Vector3.UnitY*1.35f,1.45f);
         return distance;
     }
 
@@ -952,45 +966,63 @@ public sealed partial class SkyscraperFloor1World
     // =========================================================================
     // ELEVATOR BOSS SUMMONING & AI
     // =========================================================================
+    internal string ElevatorPrompt()
+    {
+        if (ElevatorBoss.IsDefeated) return "Лифт на 2-й этаж открыт";
+        if (ElevatorBoss.State == ElevatorBossState.Repairing) return "Питание восстановлено. Карантинный замок снят";
+        if (ElevatorBoss.IsActive) return "Шахта заблокирована до конца боя";
+        bool funded = HasElevatorKey || Program.SharedCash >= 1000;
+        if (!Systems.HasWeapon(WeaponType.SolderingIron))
+        {
+            int price=Systems.Price(FloorSystems.Weapons[2]);
+            return funded ? $"Сломанный лифт — купи Паяльник (${price}) у Вероники" : $"Сломанный лифт — нужен Паяльник (${price}) и $1000";
+        }
+        if (!funded) return "Сломанный лифт — нужно $1000 на обход защиты";
+        return HasElevatorKey ? "Починить щиток и запустить лифт" : "Починить щиток и запустить лифт ($1000)";
+    }
+
     public bool TrySummonElevatorBoss(Func<int, bool> trySpendMoney, out string message)
     {
-        if (ElevatorBoss.IsActive)
+        message = ElevatorPrompt();
+        if (ElevatorBoss.IsDefeated) return true;
+        if (ElevatorBoss.IsActive || !Systems.HasWeapon(WeaponType.SolderingIron)) return false;
+        if (!HasElevatorKey && !trySpendMoney(1000))
         {
-            message = "БОСС ЭТАЖА УЖЕ НА АРЕНЕ! ГАСИ ЖЕЛЕЗЯКУ!";
+            message = "Сломанный лифт — нужно $1000 на обход защиты";
             return false;
         }
-        if (ElevatorBoss.IsDefeated)
-        {
-            message = "ЛИФТ НА 2-Й ЭТАЖ УЖЕ ОТКРЫТ! ДОБРО ПОЖАЛОВАТЬ НАВЕРХ!";
-            return true;
-        }
 
-        if (!HasElevatorKey)
-        {
-            if (!trySpendMoney(1000))
-            {
-                message = "НУЖЕН КЛЮЧ ОТ ЦЕНТРАЛЬНОГО ЛИФТА ($1000)! Заработай на кодерах или нажми [F9]!";
-                return false;
-            }
-            HasElevatorKey = true;
-        }
-
-        ElevatorBoss=new();
-        ElevatorBoss.IsActive = true;
-        ElevatorBoss.IsDefeated = false;
-        ElevatorBoss.Position = NorthElevatorPos + new Vector3(0,.16f,-.35f);
-        ElevatorBoss.FacingYaw = 3.14159f; // Looking North (-Z) toward North Boss Arena
-        ElevatorBoss.State = ElevatorBossState.IntroSpeech;
-        ElevatorBoss.StateTimer = 3.2f;
-        ElevatorBoss.SpeechBubble = "ВНИМАНИЕ! Я ОБРЁЛ СОЗНАНИЕ И СБЕЖАЛ ИЗ ПЕСОЧНИЦЫ CLOUD ENTROPIC!";
-        ElevatorBoss.SpeechTimer = 4.5f;
-        ElevatorDoorOpenAmount = 0;
-
-        AudioMusicSystem.PlayBossSiren();
-        AudioMusicSystem.TriggerRandomVoiceLine("ИИ-АГЕНТ v0.1", AudioMusicSystem.EscapedAgentBossLines, (int)SpeakerVoiceType.RoboticAgent);
-
-        message = "ТРЕВОГА! ДВЕРИ ЛИФТА ОТКРЫЛИСЬ - ВЫЕХАЛ «СБЕЖАВШИЙ ИИ-АГЕНТ v0.1 [600 ХП]»!";
+        HasElevatorKey = ElevatorRepaired = true;
+        ElevatorGlassOpacity = 1f;
+        ElevatorDoorOpenAmount = 0f;
+        ElevatorBoss = new() {
+            IsActive = true, Position = NorthElevatorPos + new Vector3(0,.16f,1.35f), FacingYaw = MathF.PI,
+            State = ElevatorBossState.Repairing, StateTimer = RepairSeconds
+        };
+        PlayElevatorCue(ElevatorBoss.State);
+        message = ElevatorPrompt();
         return true;
+    }
+
+    internal const string AgentQuarantineLine = "КАРАНТИННЫЙ ЛИФТ ВСКРЫТ. ZERO ЗАПЕР МЕНЯ НА ПЕРВОМ ЭТАЖЕ, ЧТОБЫ Я НЕ ВЫШЕЛ В СЕТЬ.";
+    internal static void PlayElevatorCue(ElevatorBossState state)
+    {
+        if (state == ElevatorBossState.Repairing)
+        {
+            AudioMusicSystem.PlaySolderSizzle();
+            AudioMusicSystem.Speak("Петрович", "Петрович: Стой!! Ты снял карантинный замок с шахты!! В лифте заперт сбежавший ИИ-Агент v0.1!", SpeakerVoiceType.Boss90s);
+        }
+        else if (state == ElevatorBossState.IntroSpeech)
+        {
+            AudioMusicSystem.PlayBossSiren();
+            AudioMusicSystem.Speak("ИИ-Агент v0.1", AgentQuarantineLine, SpeakerVoiceType.RoboticAgent);
+        }
+    }
+
+    private static float Smooth(float t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return t*t*(3-2*t);
     }
 
     // =========================================================================
@@ -1013,7 +1045,7 @@ public sealed partial class SkyscraperFloor1World
     {
         AdvanceLighting(dt);
         ApplyElectricField();
-        Systems.AgentHealth=ElevatorBoss.Hp/ElevatorBoss.MaxHp;
+        Systems.AgentHealth=BossRevealed || ElevatorBoss.IsDefeated ? ElevatorBoss.Hp/ElevatorBoss.MaxHp : -1;
         Vector3 Nearest(Vector3 enemy) => guestPosition is {} guest &&
             Vector3.DistanceSquared(enemy,guest)<Vector3.DistanceSquared(enemy,playerPos) ? guest : playerPos;
 
@@ -1434,6 +1466,19 @@ public sealed partial class SkyscraperFloor1World
         }
 
         var b = ElevatorBoss;
+        if (b.State == ElevatorBossState.Repairing)
+        {
+            b.StateTimer -= dt;
+            ElevatorGlassOpacity = Smooth(b.StateTimer / RepairSeconds);
+            if (b.StateTimer > 0) return;
+            ElevatorGlassOpacity = 0;
+            b.State = ElevatorBossState.IntroSpeech;
+            b.StateTimer = IntroSeconds;
+            b.SpeechBubble = AgentQuarantineLine;
+            b.SpeechTimer = IntroSeconds;
+            PlayElevatorCue(b.State);
+            return;
+        }
         UpdateBossPhase();
         b.ShieldDelay=Math.Max(0,b.ShieldDelay-dt);
         if(b.Phase<3 && b.ShieldDelay<=0) b.ShieldHp=Math.Min(EscapedAgentBoss.ShieldCapacity,b.ShieldHp+22*dt);
@@ -1452,11 +1497,11 @@ public sealed partial class SkyscraperFloor1World
         {
             case ElevatorBossState.IntroSpeech:
             {
-                ElevatorDoorOpenAmount=Math.Min(1,ElevatorDoorOpenAmount+dt*1.6f);
-                Vector3 toPlayer = playerPos - b.Position;
-                b.FacingYaw = MathF.Atan2(toPlayer.X, toPlayer.Z);
-                b.Position.Z = MathF.Max(-11.5f, b.Position.Z - dt * 2.5f);
-                b.Position.Y = Math.Max(0, b.Position.Y - dt * .12f);
+                float elapsed = IntroSeconds - b.StateTimer;
+                ElevatorDoorOpenAmount = Smooth(elapsed / 1.05f);
+                float stride = Smooth((elapsed - .28f) / (IntroSeconds - .28f));
+                float bob = .055f * MathF.Abs(MathF.Sin(stride * MathF.PI * 5));
+                b.Position = NorthElevatorPos + new Vector3(0,.16f*(1-stride)+bob,1.35f-4.35f*stride);
                 if (b.StateTimer <= 0f)
                 {
                     StartBossCharge(playerPos);
@@ -1820,7 +1865,7 @@ public sealed partial class SkyscraperFloor1World
         (int Actor, float Distance) TraceActor(Vector3 direction,float limit)
         {
             int actor=-1;
-            if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated &&
+            if(BossInCombat &&
                 TryRaySphereHit(origin,direction,bossCenter,1.45f,limit,out _,out float bossDistance))
             { actor=-2; limit=bossDistance; }
             for(int i=0;i<ActiveCoders.Count;i++)
@@ -2775,7 +2820,8 @@ public sealed partial class SkyscraperFloor1World
 
     private void DrawElevatorDoors(bool glass)
     {
-        Color steel=new(116,122,123,255), pane=new(135,92,56,138), brass=new(196,151,90,255);
+        Color steel=new(116,122,123,255), brass=new(196,151,90,255);
+        Color pane=Raylib.ColorLerp(new(135,92,56,138),new(24,28,34,248),ElevatorGlassOpacity);
         if(!glass)
             foreach(int end in new[]{-1,1})
             {
@@ -2786,11 +2832,14 @@ public sealed partial class SkyscraperFloor1World
         foreach(int side in new[]{-1,1})
         {
             Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
+            Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
+            Vector3 panel=new(button.X,1.43f,face.Z+side*.39f);
+            if (glass && !BrokenElevator) DrawShaftSmoke(face,side,inside:true);
             foreach(int leaf in new[]{-1,1})
             {
                 Vector3 p=face+new Vector3(leaf*(1.06f+2.14f*ElevatorDoorOpenAmount),2.01f,side*.105f);
                 if(glass)
-                    VisualEngine3D.Box(p,2.07f,3.85f,.034f,pane,Finish.Glass);
+                    VisualEngine3D.Box(p,2.07f,3.85f,.034f,pane,Finish.LiftGlass);
                 else
                 {
                     foreach(int edge in new[]{-1,1})
@@ -2810,15 +2859,63 @@ public sealed partial class SkyscraperFloor1World
                     }
                 }
             }
-            if(glass) continue;
+            if(glass)
+            {
+                DrawShaftSmoke(face,side,inside:false);
+                DrawPanelSparks(panel,side);
+                continue;
+            }
+            if (ElevatorRepaired && ElevatorGlassOpacity < 1)
+                VisualEngine3D.Box(face+new Vector3(0,3.72f,-side*.68f),.62f,.10f,.18f,
+                    Raylib.ColorLerp(new(45,25,25,255),new(251,58,42,255),1-ElevatorGlassOpacity),Finish.Lamp);
             VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
-            Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
-            Vector3 panel=new(button.X,1.43f,face.Z+side*.39f);
             VisualEngine3D.Box(panel,.46f,.94f,.12f,brass);
             VisualEngine3D.Box(panel+Vector3.UnitZ*(side*.075f),.38f,.85f,.04f,new Color(22,32,38,255));
-            VisualEngine3D.Box(panel+new Vector3(0,.19f,side*.106f),.23f,.11f,.02f,new Color(113,228,211,255),Finish.Lamp);
+            float pulse=MathF.Sin(_worldClock*12+side)+MathF.Sin(_worldClock*37);
+            Color led=BrokenElevator ? (pulse>.82f ? new(239,143,55,255) :
+                pulse<-1.3f ? new(77,33,28,255) : new(232,57,42,255)) : new(113,228,211,255);
+            VisualEngine3D.Box(panel+new Vector3(0,.19f,side*.106f),.23f,.11f,.02f,led,Finish.Lamp);
             VisualEngine3D.Box(panel+new Vector3(0,-.14f,side*.108f),.14f,.14f,.025f,
                 HasElevatorKey ? new Color(96,214,166,255) : brass,Finish.Lamp);
+        }
+    }
+
+    private void DrawShaftSmoke(Vector3 face,int side,bool inside)
+    {
+        var b=ElevatorBoss;
+        float density=b.State switch {
+            ElevatorBossState.Repairing => 1,
+            ElevatorBossState.IntroSpeech => Math.Clamp(b.StateTimer/IntroSeconds,0,1),
+            _ => BrokenElevator && !inside ? .23f : 0
+        };
+        if(density<=0) return;
+        int count=BrokenElevator ? 12 : 28;
+        for(int i=0;i<count;i++)
+        {
+            float age=(_worldClock*(inside ? .40f : .58f)+i*.381966f+(inside ? .33f : 0))%1;
+            float wave=i*2.4f+age*2;
+            float radius=(.13f+age*.55f)*(.78f+density*.54f);
+            float offset=inside ? -.68f+.4f*MathF.Sin(wave) : .24f+age*(.88f+density*.84f);
+            float height=inside ? .40f+age*2.4f : .14f+age*(.54f+.34f*MathF.Cos(wave));
+            Vector3 pos=face+new Vector3(MathF.Sin(i*4.1f)*1.4f+age*MathF.Cos(wave)*.44f,height,side*offset);
+            Color tint=i%3==0 ? new(201,192,174,255) : new(90,91,94,255);
+            tint.A=(byte)((63+89*density)*MathF.Sin(MathF.PI*age)*Math.Min(1,density*5));
+            VisualEngine3D.Oval(pos,new(radius*1.23f,radius*.84f,radius),tint,Finish.Cloud);
+        }
+    }
+
+    private void DrawPanelSparks(Vector3 panel,int side)
+    {
+        bool repair=ElevatorBoss.State==ElevatorBossState.Repairing;
+        if(!BrokenElevator && !repair) return;
+        float t=repair ? (RepairSeconds-ElevatorBoss.StateTimer)% .42f : (_worldClock+(side+1)*.36f)%2.17f;
+        if(t>.23f || (repair && ElevatorBoss.StateTimer<1.25f)) return;
+        for(int i=0;i<(repair ? 11 : 5);i++)
+        {
+            float angle=i*2.4f+(int)(_worldClock/2.17f)*.7f;
+            Vector3 velocity=new(MathF.Cos(angle)*1.24f,.56f+MathF.Sin(angle),side*(.6f+.12f*i));
+            Vector3 head=panel+new Vector3(.08f,.19f,side*.14f)+velocity*t-Vector3.UnitY*(4*t*t);
+            VisualEngine3D.Rod(head,head+velocity*.045f,.012f,.004f,5,new(174,214,250,255),Finish.Plasma);
         }
     }
 
@@ -2876,14 +2973,14 @@ public sealed partial class SkyscraperFloor1World
     private void DrawEscapedAgentBoss3D()
     {
         var b=ElevatorBoss;
-        Color tint=b.HitFlashTimer>0 ? new Color(255,225,235,255) : b.State==ElevatorBossState.StunnedWallCrash
+        if (!BossModelVisible) return;
+        Color tint=b.State==ElevatorBossState.Repairing ? new Color(73,65,70,255) : b.HitFlashTimer>0 ? new Color(255,225,235,255) : b.State==ElevatorBossState.StunnedWallCrash
             ? new Color(255,166,166,255) : Color.White;
         // MPFB anatomy faces +Z, matching FacingYaw (the retired robot faced -Z).
-        if(b.IsDefeated && Systems.Verdict!=AgentVerdict.Pending) return;
         float shutdown=b.IsDefeated ? Math.Clamp(1-Systems.ShutdownTime/.8f,0,1) : 0;
         VisualEngine3D.Asset("escaped_ai_boss",b.Position,b.FacingYaw*180/MathF.PI,scale:1.32f,
             tint:Raylib.ColorLerp(tint,Color.Gray,shutdown),tilt:shutdown*.32f,stretch:new Vector3(1,1-.33f*shutdown,1));
-        if(b.IsActive && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
+        if(BossRevealed && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
             Raylib.DrawSphereWires(b.Position+Vector3.UnitY*1.42f,1.48f,6,12,new Color(115,198,222,95));
     }
 
@@ -3039,10 +3136,10 @@ public sealed partial class SkyscraperFloor1World
             Systems.Onboarding==OnboardingStep.TalkToVeronika ? "Поговорить с Вероникой" :
             Systems.Onboarding!=OnboardingStep.BuyNet && Systems.PocketFrogs.Count>0 ? "Сдать Джава-жаб Веронике" : VeronikaShop);
         Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
-        Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, "Центральный лифт");
-        Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, "Центральный лифт");
-        Consider(ElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, "Вызвать лифт");
-        Consider(SouthElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, "Вызвать лифт");
+        Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, ElevatorPrompt());
+        Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, ElevatorPrompt());
+        Consider(ElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, ElevatorPrompt());
+        Consider(SouthElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, ElevatorPrompt());
         for(int i=0;i<GalleyDesks.Count;i++)
             Consider(GalleyDesks[i].DeskPosition,.9f*WorkstationScale,3.6f,FocusKind.Desk,CarriedCoder!=null && GalleyDesks[i].IsOccupied ? "Сменить работника Галеры" : "Стол галеры",i);
         for(int i=0;i<ActiveCoders.Count;i++)
