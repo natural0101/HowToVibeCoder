@@ -184,7 +184,136 @@ def frame(forward, across):
 CONTACT_KEYS = json.loads((OUT.parent / "poses/fps_grips.json").read_text())
 
 
+def pistol_grip_right(kind):
+    j = lambda key: JOINT["r-" + key]
+    wrist_rest = j("hand")
+    mid_rest = j("finger-3-1")
+    f_rest = (mid_rest - wrist_rest).normalized()
+    u_rest = (j("finger-2-1") - j("finger-5-1")) * (-1.0)
+    a_rest = (u_rest - f_rest * f_rest.dot(u_rest)).normalized()
+    palm_rest = f_rest.cross(a_rest).normalized()
+    rest_frame = Matrix((f_rest, a_rest, palm_rest)).transposed()
+    away_rest = (mid_rest - wrist_rest).cross(j("finger-2-1") - j("finger-5-1")).normalized()
+
+    if kind == "fps_uzi":
+        f_target = V((-0.14, 0.02, 0.990)).normalized()
+        u_target = V((-0.03, -0.998, 0.02)).normalized()
+        a_target = (u_target - f_target * f_target.dot(u_target)).normalized()
+        palm_target = f_target.cross(a_target).normalized()
+        hand_rot = Matrix((f_target, a_target, palm_target)).transposed() @ rest_frame.transposed()
+
+        mid_knuckle = V((-0.214, -0.191, 0.695))
+        dest_wrist = mid_knuckle - hand_rot @ (mid_rest - wrist_rest)
+        dest_elbow = V((-0.365, -0.375, 0.355))
+
+        digit_dirs = {
+            "thumb": [
+                (V(( 0.84,  0.48,  0.24)), V((-0.20,  0.50, -0.84))),
+                (V(( 0.52,  0.22,  0.82)), V(( 0.72,  0.35, -0.60))),
+                (V((-0.02,  0.10,  0.99)), V(( 0.96,  0.20,  0.02))),
+            ],
+            "index": [
+                (V(( 0.06,  0.18,  0.982)), V((-0.95,  0.18,  0.22))),
+                (V(( 0.58, -0.02,  0.814)), V((-0.74,  0.12,  0.66))),
+                (V(( 0.96, -0.04, -0.260)), V(( 0.25,  0.10,  0.96))),
+            ],
+            "middle": [
+                (V(( 0.90,  0.00,  0.44)), V((-0.40,  0.05,  0.91))),
+                (V(( 0.78,  0.00, -0.62)), V(( 0.62,  0.05,  0.78))),
+                (V(( 0.08,  0.02, -0.99)), V(( 0.99,  0.05,  0.08))),
+            ],
+            "ring": [
+                (V(( 0.88,  0.00,  0.48)), V((-0.44,  0.00,  0.90))),
+                (V(( 0.78,  0.00, -0.62)), V(( 0.62,  0.00,  0.78))),
+                (V(( 0.10,  0.02, -0.99)), V(( 0.99,  0.00,  0.10))),
+            ],
+            "pinky": [
+                (V(( 0.84,  0.00,  0.54)), V((-0.50, -0.05,  0.86))),
+                (V(( 0.80,  0.02, -0.60)), V(( 0.60, -0.05,  0.80))),
+                (V(( 0.14,  0.04, -0.99)), V(( 0.98, -0.05,  0.14))),
+            ],
+        }
+    else:
+        f_target = V((-0.15, -0.15, 0.977)).normalized()
+        u_target = V((-0.03, -0.78, -0.625)).normalized()
+        a_target = (u_target - f_target * f_target.dot(u_target)).normalized()
+        palm_target = f_target.cross(a_target).normalized()
+        hand_rot = Matrix((f_target, a_target, palm_target)).transposed() @ rest_frame.transposed()
+
+        mid_knuckle = V((-0.213, -0.167, 0.642))
+        dest_wrist = mid_knuckle - hand_rot @ (mid_rest - wrist_rest)
+        dest_elbow = V((-0.345, -0.215, 0.325))
+
+        digit_dirs = {
+            "thumb": [
+                (V(( 0.66,  0.50,  0.56)), V((-0.25,  0.65, -0.72))),
+                (V(( 0.64,  0.30,  0.71)), V(( 0.42,  0.55, -0.72))),
+                (V(( 0.04,  0.18,  0.98)), V(( 0.95,  0.25, -0.12))),
+            ],
+            "index": [
+                (V(( 0.06, -0.02,  0.998)), V((-0.95,  0.18,  0.24))),
+                (V(( 0.52, -0.06,  0.852)), V((-0.80,  0.14,  0.58))),
+                (V(( 0.95,  0.02, -0.310)), V(( 0.30,  0.12,  0.95))),
+            ],
+            "middle": [
+                (V(( 0.95, -0.06,  0.30)), V((-0.28, -0.25,  0.92))),
+                (V(( 0.74,  0.16, -0.65)), V(( 0.62, -0.20,  0.76))),
+                (V(( 0.12,  0.24, -0.96)), V(( 0.96,  0.05,  0.15))),
+            ],
+            "ring": [
+                (V(( 0.95, -0.06,  0.30)), V((-0.28, -0.25,  0.92))),
+                (V(( 0.74,  0.16, -0.65)), V(( 0.62, -0.20,  0.76))),
+                (V(( 0.14,  0.24, -0.96)), V(( 0.96,  0.05,  0.16))),
+            ],
+            "pinky": [
+                (V(( 0.95, -0.05,  0.30)), V((-0.28, -0.25,  0.92))),
+                (V(( 0.76,  0.16, -0.63)), V(( 0.60, -0.20,  0.77))),
+                (V(( 0.18,  0.24, -0.95)), V(( 0.95,  0.05,  0.20))),
+            ],
+        }
+
+    source = wrist_rest - j("elbow")
+    axis = source.normalized()
+    stretch = Matrix.Identity(3) + Matrix([list(axis * axis[n]) for n in range(3)]) * (
+        (dest_wrist - dest_elbow).length / source.length - 1.0
+    )
+    fore_rot = source.rotation_difference(dest_wrist - dest_elbow).to_matrix()
+    transforms = {
+        "lowerarm_r": (j("elbow"), dest_elbow, fore_rot @ stretch),
+        "hand_r": (wrist_rest, dest_wrist, hand_rot),
+    }
+
+    signet = None
+    for d, name in enumerate(DIGITS, 1):
+        pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest)
+        if kind == "fps_uzi" and name == "thumb":
+            pos += V((0.004, 0.010, -0.011))
+        segs = digit_dirs[name]
+        for k, (dir_v, dor_v) in enumerate(segs, 1):
+            rest_start = j(f"finger-{d}-{k}")
+            rest_end = j(f"finger-{d}-{k+1}")
+            delta_rest = rest_end - rest_start
+            along_rest = delta_rest.normalized()
+            dorsal_rest = (away_rest - along_rest * along_rest.dot(away_rest)).normalized()
+            rest_b = Matrix((along_rest, dorsal_rest, along_rest.cross(dorsal_rest)))
+
+            along = dir_v.normalized()
+            dorsal = (dor_v - along * along.dot(dor_v)).normalized()
+            targ_b = Matrix((along, dorsal, along.cross(dorsal))).transposed()
+            rot = targ_b @ rest_b
+
+            transforms[f"{name}_{k:02}_r"] = (rest_start, pos.copy(), rot)
+            delta = rot @ delta_rest
+            if name == "ring" and k == 1:
+                signet = (pos + delta * 0.28, delta.normalized())
+            pos = pos + delta
+
+    return transforms, signet
+
+
 def keyed_grip(kind, side):
+    if kind in ("fps_shotgun", "fps_uzi") and side == "r":
+        return pistol_grip_right(kind)
     key = CONTACT_KEYS[kind.removeprefix("fps_")][side]
     joint = lambda name: JOINT[f"{side}-{name}"]
     wrist, elbow = V(key["wrist"]), V(key["elbow"])
@@ -211,33 +340,6 @@ def keyed_grip(kind, side):
             if name == "ring" and k == 1:
                 signet = (pos + delta*.42, delta.normalized())
             pos = pos + delta
-    if kind in ("fps_shotgun","fps_uzi") and side == "r":
-        # Reuse the wrapped MPFB finger chain from the tape grip. The upper
-        # side of that contact frame becomes the near face of the walnut.
-        tape,_=contact_pose("fps_solder","r")
-        old=V((-.18,-.15,.62))
-        micro=kind=="fps_uzi"
-        center=V((-.18,-.197,.6665)) if micro else V((-.18,-.177,.600))
-        tilt=Quaternion(V((1,0,0)),math.radians(-90 if micro else -48)).to_matrix()
-        for bone,(origin,pos,rotation) in tape.items():
-            if bone.startswith(("upperarm","lowerarm","thumb","index")): continue
-            rel=pos-old
-            radial=V((rel.x,rel.y,0))
-            if radial.length: rel+=radial.normalized()*(.014 if micro else .005)
-            transforms[bone]=origin,center+tilt@rel,tilt@rotation
-        # Let the thumb oppose the fingers over the back of the tang.
-        pos=V((-.238,-.189,.647)) if micro else V((-.237,-.180,.602))
-        thumb_path=((-.227,-.167,.643),(-.201,-.154,.631),(-.18,-.151,.633)) if micro else (
-            (-.227,-.156,.600),(-.204,-.137,.597),(-.181,-.133,.605))
-        parent=transforms["hand_r"][2]
-        for k, target in enumerate(thumb_path,1):
-            bone=f"thumb_{k:02}_r"
-            origin=joint(f"finger-1-{k}")
-            delta=joint(f"finger-1-{k+1}")-origin
-            rotation=(parent@delta).rotation_difference((V(target)-pos).normalized()).to_matrix()@parent
-            transforms[bone]=origin,pos.copy(),rotation
-            pos+=rotation@delta
-            parent=rotation
     def aim_digit(digit,shift,tip_offset):
         root=transforms[f"{digit}_01_{side}"][1]
         origin,pos,rot=transforms[f"{digit}_03_{side}"]
@@ -248,8 +350,6 @@ def keyed_grip(kind, side):
             name=f"{digit}_{k:02}_{side}"
             origin,pos,rot=transforms[name]
             transforms[name]=origin,root+V(shift)+turn@(pos-root),turn@rot
-    if kind=="fps_shotgun" and side=="r":
-        aim_digit("index",(0,0,0),(.009,0,0))
     if side=="l" and kind=="fps_shotgun":
         aim_digit("pinky",(.006,0,0),(.015,.001,.002))
     if side=="l" and kind=="fps_uzi":
@@ -482,42 +582,63 @@ def lower_pose(kind):
 def walnut_fit(p):
     # The soft pads flatten against the oval sections of the authored wooden grip.
     # This is a positional correction in arm space, applied before AO and nails.
-    profiles=((-0.104,.098,.025,.022),(-.092,.090,.023,.021),(-.079,.080,.024,.023),
-              (-.064,.068,.022,.021),(-.050,.057,.023,.023),(-.036,.044,.021,.021),
-              (-.020,.027,.021,.024),(-.004,.005,.024,.027),(.008,-.020,.026,.029))
-    h=p.y+.12
-    for (a,za,xa,ra),(b,zb,xb,rb) in zip(profiles,profiles[1:]):
-        if a<=h<=b:
-            t=(h-a)/(b-a)
-            z=.66-(za+(zb-za)*t)
-            rx=(xa+(xb-xa)*t)*.96+.0038
-            rz=ra+(rb-ra)*t+.0045
-            x,d=p.x+.18,p.z-z
-            r=math.hypot(x/rx,d/rz)
-            if 0<r<1:
-                return V((-.18+x/r,p.y,z+d/r))
+    profiles = (
+        (-0.112, 0.104, 0.023, 0.021),
+        (-0.100, 0.095, 0.024, 0.021),
+        (-0.086, 0.085, 0.023, 0.021),
+        (-0.065, 0.0685, 0.0225, 0.0215),
+        (-0.042, 0.0495, 0.0215, 0.0215),
+        (-0.020, 0.0270, 0.0210, 0.0232),
+        (-0.004, 0.0060, 0.0225, 0.0242),
+        ( 0.015,-0.0150, 0.0235, 0.0250),
+    )
+    h = p.y + 0.12
+    for (a, za, xa, ra), (b, zb, xb, rb) in zip(profiles, profiles[1:]):
+        if a <= h <= b:
+            t = (h - a) / (b - a)
+            z = 0.66 - (za + (zb - za) * t)
+            rx = (xa + (xb - xa) * t) + 0.0032
+            rz = (ra + (rb - ra) * t) + 0.0040
+            x, d = p.x + 0.18, p.z - z
+            r = math.hypot(x / rx, d / rz)
+            if 0 < r < 1:
+                p = V((-0.18 + x / r, p.y, z + d / r))
             break
+    if p.y > -0.1345 and 0.655 < p.z < 0.755 and -0.206 < p.x < -0.154:
+        p = V((p.x, -0.1348, p.z))
+    if -0.163 < p.y < -0.128 and 0.686 < p.z < 0.722 and -0.189 < p.x < -0.171:
+        if p.z > 0.704:
+            p = V((p.x, p.y, 0.7225))
+        else:
+            p = V((-0.1895, p.y, p.z))
     return p
 
 
 def polymer_fit(p):
-    if not -.269<p.y<-.127: return p
-    x,z=p.x+.18,p.z-.6665
-    corner=.006
-    # Offset of the rounded polymer panels, including their shallow rear spine.
-    hx,hz=.0234,.0286
-    cx=max(-hx+corner,min(hx-corner,x))
-    cz=max(-hz+corner,min(hz-corner,z))
-    dx,dz=x-cx,z-cz
-    length=math.hypot(dx,dz)
-    if 0<length<corner:
-        x,z=cx+corner*dx/length,cz+corner*dz/length
-    elif length==0:
-        if hx-abs(x)<hz-abs(z): x=math.copysign(hx,x)
-        else: z=math.copysign(hz,z)
-    if -.201<p.y<-.130 and z<0 and abs(x)<.014:
-        z=min(z,-.033+.004*(abs(x)/.014)**4)
-    return V((x-.18,p.y,z+.6665))
+    if not -0.269 < p.y < -0.125:
+        return p
+    cx = -0.180
+    if p.y > -0.168 and p.z > 0.680:
+        tx = p.x + 0.180
+        tz = p.z - 0.719
+        if -0.160 < p.y < -0.138 and abs(tx) < 0.0065 and abs(tz) < 0.0075:
+            if tz > -0.002:
+                return V((p.x, p.y, 0.7268))
+            return V((-0.1868, p.y, p.z))
+    cz = 0.6625
+    hx = 0.0288
+    top_blend = max(0.0, min(1.0, (p.y - (-0.168)) / 0.020))
+    hz_front = 0.0320 + 0.0032 * top_blend
+    hz_rear = 0.0290 if p.y > -0.166 else 0.0372
+    hz = hz_rear if p.z < cz else hz_front
+    dx = (p.x - cx) / hx
+    dz = (p.z - cz) / hz
+    r4 = (dx ** 4 + dz ** 4) ** 0.25
+    if 0.0 < r4 < 1.0:
+        p = V((cx + (p.x - cx) / r4, p.y, cz + (p.z - cz) / r4))
+    if p.y > -0.1455 and 0.630 < p.z < 0.720 and -0.206 < p.x < -0.154:
+        p = V((p.x, -0.1458, p.z))
+    return p
 
 
 def fitted_sleeve(side, transforms):
@@ -835,7 +956,7 @@ def human(kind):
             outward.z=-outward.length
         outward=(outward-axis*outward.dot(axis)).normalized()
         if kind in ("fps_shotgun","fps_uzi"):
-            facing=V((.22,.40,-1))
+            facing=V((-.88,.10,.46))
             outward=(facing-axis*facing.dot(axis)).normalized()
         top=surface(outward)
         oval("Signet setting",top,(.005,.004,.006),"gold")

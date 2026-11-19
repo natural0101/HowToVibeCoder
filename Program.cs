@@ -884,6 +884,27 @@ public static partial class Program
         }
         if(worst>.001f) throw new InvalidDataException($"Viewmodel rate deviation {worst:F6} m");
         Console.WriteLine($"[AUTOTEST] Recoil at 60/120/144 Hz: max muzzle deviation {1000*worst:F3} mm");
+        foreach (var (slot, duration) in new[] { (3, 1.45f), (4, 1.55f) })
+        {
+            var view = new WeaponAndCombatView();
+            view.SelectSlot(slot);
+            view.UseRound();
+            view.TriggerInspect();
+            for (int i = 0; i < 72; i++) view.UpdateWeapons(1f/60, camera);
+            Vector3 inspected = view.GetWeaponTipWorldPosition(camera);
+            view.BeginReload();
+            if (!view.Reloading || Vector3.Distance(inspected, view.GetWeaponTipWorldPosition(camera)) > .00001f)
+                throw new InvalidDataException($"Inspect-to-reload pose jump in slot {slot}");
+            int ticks = 0;
+            while (view.Reloading && ticks < 120)
+            {
+                view.UpdateWeapons(1f/60, camera);
+                ticks++;
+            }
+            if (ticks != (int)MathF.Round(duration * 60) || view.Reloading)
+                throw new InvalidDataException($"Reload duration in slot {slot}: {ticks} ticks");
+            Console.WriteLine($"[AUTOTEST] Slot {slot}: continuous inspect-to-reload transition, {ticks} ticks at 60 Hz");
+        }
     }
 
     private static unsafe void CheckFpsGameplay(Action<string> capture)
@@ -1008,19 +1029,19 @@ public static partial class Program
         Require(burst==12,"held LMB burst: "+burst);
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false);
         Tick(40); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
-        capture("reload_uzi.png"); Tick(45); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
+        capture("reload_uzi.png"); Tick(49); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
         Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false);
         Mouse(true); Tick(); Mouse(false); Tick(27); Require(_weapons.Ammo==1,"shotgun first shell");
         Mouse(true); Tick(); Mouse(false); Require(_weapons.Ammo==0 && _weapons.Reloading,"shotgun auto reload");
         Tick(43); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
-        capture("reload_shotgun.png"); Tick(47); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
+        capture("reload_shotgun.png"); Tick(52); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
         Mouse(true); Tick(); Mouse(false); Tick();
-        Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(89);
+        Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(95);
         Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
         Key(KeyboardKey.Three,true); Tick(); Key(KeyboardKey.Three,false);
         Mouse(true); Tick(156); Mouse(false);
         Require(_weapons.Ammo==0 && _weapons.Reloading,"Uzi empty auto reload");
-        Tick(83); Require(_weapons.Ammo==32,"empty Uzi refill");
+        Tick(89); Require(_weapons.Ammo==32,"empty Uzi refill");
         Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 20->32; shotgun 2->1->0->2, two ejected hulls");
 
         ResetNewGameFloor();

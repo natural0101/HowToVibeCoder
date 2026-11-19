@@ -308,7 +308,7 @@ internal static unsafe partial class VisualEngine3D
             ApplyShaderToModel(model);
             string name = Path.GetFileNameWithoutExtension(path);
             imports.Add(name, model);
-            if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
+            if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
         }
     }
 
@@ -359,9 +359,10 @@ internal static unsafe partial class VisualEngine3D
             }
             index += count;
         }
-        if (index != meshCount || (asset.StartsWith("fps_hands_", StringComparison.Ordinal) ? leftArm.Count * rightArm.Count == 0 : partnerPropMeshes.Count != 3))
+        bool isFpsArm = asset.StartsWith("fps_hands_", StringComparison.Ordinal) || asset.StartsWith("fps_left_", StringComparison.Ordinal);
+        if (index != meshCount || (isFpsArm ? leftArm.Count * rightArm.Count == 0 : partnerPropMeshes.Count != 3))
             throw new InvalidDataException("Incomplete first-person arm mesh");
-        if (asset.StartsWith("fps_hands_", StringComparison.Ordinal)) armGroups.Add(asset, (leftArm, rightArm));
+        if (isFpsArm) armGroups.Add(asset, (leftArm, rightArm));
     }
 
     public static void Arm(bool right, Vector3 wrist, string handAsset = "fps_hands_cs2", Matrix4x4? assemblyTransform = null,float grip=0)
@@ -383,7 +384,11 @@ internal static unsafe partial class VisualEngine3D
             Vector3 end=sleeveEnds[(handAsset,right)], axis=end-bind;
             // Keep the cuff on the authored wrist. The far end of the sleeve
             // follows an offscreen elbow while the hand turns with the prop.
-            Vector3 anchor=new(right ? .34f : -.18f,-.395f,.23f);
+            Vector3 anchor=new(right ? .56f : -.18f,-.395f,.23f);
+            // The left sleeve enters from the lower-left edge, including when
+            // the animated wrist passes through the middle of the frame.
+            if (!right && (handAsset is "fps_hands_uzi" or "fps_hands_shotgun" || handAsset.StartsWith("fps_left_", StringComparison.Ordinal)))
+                anchor.X = -.44f;
             Matrix4x4.Invert(transform,out var inverse);
             Vector3 target=Vector3.Transform(anchor,inverse)-bind;
             Raylib.SetShaderValue(shader,wristLoc,bind,ShaderUniformDataType.Vec3);
