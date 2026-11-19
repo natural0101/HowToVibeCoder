@@ -636,6 +636,8 @@ def polymer_fit(p):
         nz = cz + (p.z - cz) / r4
         ny = p.y - (0.42 * (p.z - nz) if p.y > -0.165 and nz < p.z else 0.0)
         p = V((cx + (p.x - cx) / r4, ny, nz))
+    if p.y < -0.204 and 0.595 < p.z < 0.634 and p.x > -0.195:
+        p = V((-0.195, p.y, min(p.z, 0.624)))
     return p
 
 
