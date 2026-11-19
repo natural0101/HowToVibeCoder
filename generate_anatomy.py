@@ -1261,6 +1261,14 @@ def export(kind, filename):
         import build_vibe_coders
         build_vibe_coders.export_vibe_coder(sys.modules[__name__], kind, filename)
         return
+    if kind == "seer":
+        import sys
+        office_dir = str(Path(__file__).resolve().parent / "assets/external_cc0/office")
+        if office_dir not in sys.path:
+            sys.path.insert(0, office_dir)
+        import build_hr_veronika
+        build_hr_veronika.export_all_veronika_models(sys.modules[__name__])
+        return
     bpy.ops.wm.read_factory_settings(use_empty=True)
     MATS.clear()
     pieces=human(kind)
@@ -1548,7 +1556,7 @@ def game_prop():
 
 
 if __name__ == "__main__":
-    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv and "--net-and-bare-only" not in __import__("sys").argv:
+    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv and "--net-and-bare-only" not in __import__("sys").argv and "--veronika-only" not in __import__("sys").argv:
         game_prop()
     for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
                            ("coder","char_vibe_coder"),("partner","char_partner_90s"),
@@ -1556,7 +1564,9 @@ if __name__ == "__main__":
                            ("fps_bare","fps_hands_bare"),("fps_net","fps_hands_net"),
                            ("fps_belt","fps_hands_belt"),("fps_solder","fps_hands_solder"),
                            ("fps_uzi","fps_hands_uzi"),("fps_shotgun","fps_hands_shotgun")]:
-        if "--net-and-bare-only" in __import__("sys").argv:
+        if "--veronika-only" in __import__("sys").argv:
+            if kind == "seer": export(kind,filename)
+        elif "--net-and-bare-only" in __import__("sys").argv:
             if kind in ("fps_bare","fps_net"): export(kind,filename)
         elif "--solder-only" in __import__("sys").argv:
             if kind == "fps_solder": export(kind,filename)

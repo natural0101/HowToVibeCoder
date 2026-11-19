@@ -47,7 +47,7 @@ internal sealed class PartnerAvatar
         if(delta.LengthSquared()>11*11) eye=world.ResolvePlayerCollision(new(goal.X,1.72f,goal.Z));
         else if(delta.LengthSquared()>.25f)
             eye=world.ResolvePlayerCollision(eye+Vector3.Normalize(delta)*Math.Min(delta.Length(),dt*6.8f));
-        Vector3? target=world.ElevatorBoss.IsActive ? world.ElevatorBoss.Position+Vector3.UnitY*1.35f :
+        Vector3? target=world.BossInCombat ? world.ElevatorBoss.Position+Vector3.UnitY*1.35f :
             world.ActiveCoders.Where(c=>c.State!=CoderAIState.Subdued).OrderBy(c=>Vector3.DistanceSquared(c.Position,eye))
                 .Select(c=>(Vector3?)c.CombatCenter).FirstOrDefault();
         Vector3 aim=target.HasValue ? Vector3.Normalize(target.Value-eye) : player.Forward;

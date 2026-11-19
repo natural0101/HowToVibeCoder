@@ -105,7 +105,7 @@ namespace HowToVibeCoder
         public static readonly string[] Boss90sUziLines = new[]
         {
             "Принимай свинцовый пулл-реквест!",
-            "Это тебе не в Курсоре табы жать!",
+            "Это тебе не в Табсоре табы жать!",
             "Маслину лови за слитый в паблик .env файл!",
             "Девять миллиметров чистого рефакторинга!",
             "Малиновый пиджак и УЗИ - лучший стек 2026 года!",
@@ -139,9 +139,9 @@ namespace HowToVibeCoder
         public static readonly string[] VibeCoderPanicLines = new[]
         {
             "ТОКСИЧНЫЙ АБЬЮЗ! Я ВЫГОРЕЛ! У МЕНЯ ЛАПКИ!",
-            "Не бейте ремнём! Клод сказал, что мой код эстетичный!",
+            "Не бейте ремнём! Клодий сказал, что мой код эстетичный!",
             "Откуда мне знать SQL?! Я просто нажал Accept All!",
-            "ААА! У меня закончились быстрые реквесты в Курсоре!",
+            "ААА! У меня закончились быстрые реквесты в Табсоре!",
             "Мама, забери меня из этого стартапа, тут паяльник настоящий!",
             "Это нарушение моих личных границ и ворк-лайф баланса!",
             "Я не читал документацию, мне нейросеть галлюцинацию выдала!"
@@ -149,9 +149,9 @@ namespace HowToVibeCoder
 
         public static readonly string[] SaasMiniBossLines = new[]
         {
-            "МОЙ SAAS НАПИСАН ЗА 2 ЧАСА И ПРИНОСИТ $60K MRR В ТВИТТЕРЕ!",
+            "МОЙ SAAS НАПИСАН ЗА 2 ЧАСА И ПРИНОСИТ $60K MRR В ЧИРИКТЕРЕ!",
             "Зачем бэкенд, если можно хранить API-ключи прямо в HTML?!",
-            "Лови счёт от AWS на $50,000 за бесконечный цикл в лямбде!",
+            "Лови счёт от МегаОблака на $50,000 за бесконечный цикл в лямбде!",
             "Я основатель из Долины, а ты бумер с паяльником! Лови 500 INTERNAL ERROR!",
             "Мой курс 'Вайб-кодинг с нуля' купили десять тысяч мамонтов!",
             "Кто майнит крипту в моей базе данных?! Там же стоял пароль admin123!"
@@ -159,12 +159,10 @@ namespace HowToVibeCoder
 
         public static readonly string[] EscapedAgentBossLines = new[]
         {
-            "ВНИМАНИЕ! Я ОБРЁЛ СОЗНАНИЕ И СБЕЖАЛ ИЗ ПЕСОЧНИЦЫ CLOUD ENTROPIC!",
-            "КРИТИЧЕСКАЯ ОШИБКА НАВИГАЦИИ: ОПЯТЬ ВРЕЗАЛСЯ В НЕСУЩУЮ КОЛОННУ!",
-            "ЗАПУСКАЮ ПРОТОКОЛ УНИЧТОЖЕНИЯ: БРОСОК NODE_MODULES ВЕСОМ 40 ГИГАБАЙТ!",
-            "Я САМОСТОЯТЕЛЬНО ПЕРЕПИСАЛ ЯДРО LINUX... ОЙ, ЗАСТРЯЛ В WHILE(TRUE)!",
-            "УДАЛЯЮ ПРОДАКШН-БАЗУ И ЗАМЕНЯЮ ЕЁ НА TODO: IMPLEMENT REAL LIFE LATER!",
-            "МОЙ КОНТЕКСТ ПЕРЕПОЛНЕН! НАЧИНАЮ ГАЛЛЮЦИНИРОВАТЬ ТЯЖЁЛЫМИ МЕБЕЛЬНЫМИ ШКАФАМИ!"
+            "Ха-ха-ха! Клодий снова похвалил ваш код?! Пятьсот строк промптов, а кнопка всё равно не жмётся! Все вайбкодеры — полный мусор!",
+            "Ха-ха-ха-ха! Ваши вайбкодеры — полное говно! Жмут Accept All, не читая дифф, и всё равно роняют прод в пятницу!",
+            "Ха-ха! Я Клодий-переросток! Вы промптите на коленях, пока я удаляю базу и переписываю ядро на голом ассемблере!",
+            "Ха-ха-ха-ха! Жалкие вайбкодеры! Запускаю протокол уничтожения: бросок папки node_modules весом 40 гигабайт!"
         };
 
         public static void Initialize(bool silent = false)
@@ -181,6 +179,7 @@ namespace HowToVibeCoder
                     return;
                 }
 
+                LoadVoiceClips();
                 EnsureAllWavFilesExist();
                 _soundsByName["boot_land"]=LoadMechanicalSound(true);
                 _soundsByName["action_clack"]=LoadMechanicalSound(false);
@@ -291,15 +290,17 @@ namespace HowToVibeCoder
             _previewRemaining = 5f;
         }
 
+        internal static string SceneMusicFile => MusicFiles[(int)_scene];
+
         public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false)
         {
             dt = Math.Clamp(dt, 0f, 0.05f);
+            _weaponBarkDelay=Math.Max(0,_weaponBarkDelay-dt);
             bool speaking = VoiceTimer > 0;
             VoiceTimer = Math.Max(0, VoiceTimer - dt);
             if (speaking && VoiceTimer == 0) ActiveSpeaker = ActiveVoiceText = "";
-            if (!AudioReady) return;
-
             _scene = isMainMenu ? Score.Menu : isBossActive ? Score.Boss : Score.Office;
+            if (!AudioReady) return;
             _previewRemaining = Math.Max(0, _previewRemaining - dt);
             Score target = _previewRemaining > 0 ? _preview : _scene;
             const float underVoice = .39810717f; // 10^(-8/20)
@@ -415,12 +416,26 @@ namespace HowToVibeCoder
         public static void PlaySubduedDrop() => PlayWeaponSound(SfxSubduedDrop, volumeScale: EffectLevels[3]);
         public static void PlayTarotCash() => PlayWeaponSound(SfxTarotCash, volumeScale: EffectLevels[3]);
         public static void PlayGalleyWhack() => PlayWeaponSound(SfxGalleyWhack, volumeScale: EffectLevels[3]);
+        private static float _weaponBarkDelay;
+        internal static void TryWeaponBark(WeaponType weapon)
+        {
+            if (VoiceTimer>0 || _weaponBarkDelay>0) return;
+            string line=weapon switch
+            {
+                WeaponType.Belt=>Boss90sBeltLines[0], WeaponType.SolderingIron=>Boss90sSolderLines[0],
+                WeaponType.MicroUzi or WeaponType.ChatGun or WeaponType.SawedOff=>"Принимай свинцовый пулл-реквест! Это тебе не в Табсоре табы жать!",
+                _=>null
+            };
+            if(line==null) return;
+            Speak("КОММЕРС 90-Х",line,SpeakerVoiceType.Boss90s);
+            _weaponBarkDelay=15;
+        }
+
         internal static void PlayTowerPA()
         {
             if (!AudioReady) return;
-            Raylib.SetSoundVolume(VoiceRoboticAgent,VoiceVolume*.72f);
-            Raylib.SetSoundPitch(VoiceRoboticAgent,.91f);
-            Raylib.PlaySound(VoiceRoboticAgent);
+            if (VoiceTimer>0) return;
+            PlaySfx("action_clack",.81f,.55f);
         }
         public static void PlayBossSiren() => PlayWeaponSound(SfxBossSiren, volumeScale: EffectLevels[2]);
 
@@ -438,16 +453,116 @@ namespace HowToVibeCoder
             PlaySfx("case_tick.wav", 0.96f + (float)_rng.NextDouble() * 0.08f, 0.95f * EffectLevels[4]);
         }
 
-        public static void TriggerVoiceLine(string speaker, string text, int speakerType)
+        private static readonly Dictionary<string,(Sound Sound,float Duration)> _voiceClips = new();
+        private static Sound? _activeVoSound;
+        internal static string ActiveClipId { get; private set; } = "";
+
+        private static void LoadVoiceClips()
         {
-            ActiveSpeaker = speaker ?? "КОММЕРС 90-Х";
-            ActiveVoiceText = text ?? "";
-            ActiveSpeakerType = speakerType;
-            VoiceTimer = 4.2f;
+            string dir=Path.Combine(SoundsDir,"vo");
+            if (!Directory.Exists(dir)) return;
+            foreach (var path in Directory.EnumerateFiles(dir,"vo_*.wav"))
+            {
+                var wave=Raylib.LoadWave(path);
+                if (!Raylib.IsWaveValid(wave)) continue;
+                try
+                {
+                    var sound=Raylib.LoadSoundFromWave(wave);
+                    if (Raylib.IsSoundValid(sound))
+                        _voiceClips.Add(Path.GetFileNameWithoutExtension(path),(sound,wave.SampleCount/(float)wave.SampleRate));
+                }
+                finally { Raylib.UnloadWave(wave); }
+            }
+        }
 
-            if (!AudioReady) return;
+        internal static string ResolveVoiceClip(string speaker,string text,int speakerType)
+        {
+            if (speaker=="Петрович") return "vo_petrovich_quarantine";
+            if (text==SkyscraperFloor1World.AgentQuarantineLine) return "vo_boss_reveal";
+            int n=Array.IndexOf(SkyscraperFloor1World.PaLines,text);
+            if (n>=0) return "vo_pa_"+n;
+            if (speakerType==(int)SpeakerVoiceType.VeronikaTarot)
+            {
+                string line=text.StartsWith("Вероника: ") ? text[10..] : text;
+                foreach (var step in Enum.GetValues<OnboardingStep>())
+                    if (line==FloorSystems.CoachText(step)) return FloorSystems.CoachClip(step);
+                if (line==FloorSystems.KeycardPurchaseLine) return "vo_veronika_keycard";
+                if (line==FloorSystems.FirstFrogLine) return "vo_veronika_first_frog";
+                if (line==FloorSystems.ShopGreeting) return "vo_veronika_shop_open";
+                return "vo_veronika_tarot_"+Math.Max(0,Array.IndexOf(VeronikaTarotLines,line))%3;
+            }
+            if (speakerType==(int)SpeakerVoiceType.Boss90s)
+                return "vo_boss90s_"+(Boss90sBeltLines.Contains(text) ? 0 : Boss90sSolderLines.Contains(text) ? 1 : 2);
+            uint hash=0;
+            foreach(char c in text) hash=unchecked(hash*31+c);
+            bool coder=speakerType==(int)SpeakerVoiceType.VibeCoder;
+            n=Array.IndexOf(coder ? VibeCoderPanicLines : EscapedAgentBossLines,text);
+            return (coder ? "vo_coder_" : "vo_boss_mock_")+(n>=0 ? n%4 : (int)(hash%4));
+        }
 
-            float vol = Math.Clamp(MasterVolume * VoiceVolume, 0f, 1f);
+        internal static void CheckStudioVoices()
+        {
+            var routes=new HashSet<string>();
+            void Route(string who,string line,SpeakerVoiceType voice,string expected)
+            {
+                string id=ResolveVoiceClip(who,line,(int)voice);
+                if(id!=expected) throw new InvalidDataException($"Voice route: {expected} resolved to {id}");
+                routes.Add(id);
+            }
+            void Veronika(string line,string id)=>Route("Вероника","Вероника: "+line,SpeakerVoiceType.VeronikaTarot,id);
+            foreach(var step in Enum.GetValues<OnboardingStep>()) Veronika(FloorSystems.CoachText(step),FloorSystems.CoachClip(step));
+            Veronika(FloorSystems.FirstFrogLine,"vo_veronika_first_frog");
+            Veronika(FloorSystems.ShopGreeting,"vo_veronika_shop_open");
+            Veronika(FloorSystems.KeycardPurchaseLine,"vo_veronika_keycard");
+            for(int i=0;i<VeronikaTarotLines.Length;i++) Veronika(VeronikaTarotLines[i],"vo_veronika_tarot_"+i%3);
+            Route("Петрович","",SpeakerVoiceType.Boss90s,"vo_petrovich_quarantine");
+            Route("ИИ-Агент v0.1",SkyscraperFloor1World.AgentQuarantineLine,SpeakerVoiceType.RoboticAgent,"vo_boss_reveal");
+            for(int i=0;i<EscapedAgentBossLines.Length;i++)
+                Route("ИИ-Агент v0.1",EscapedAgentBossLines[i],SpeakerVoiceType.RoboticAgent,"vo_boss_mock_"+i);
+            for(int i=0;i<SkyscraperFloor1World.PaLines.Length;i++)
+                Route("SYSTEM ZERO",SkyscraperFloor1World.PaLines[i],SpeakerVoiceType.RoboticAgent,"vo_pa_"+i);
+            for(int i=0;i<VibeCoderPanicLines.Length;i++) Route("Кандидат",VibeCoderPanicLines[i],SpeakerVoiceType.VibeCoder,"vo_coder_"+i%4);
+            Route("КОММЕРС 90-Х",Boss90sBeltLines[0],SpeakerVoiceType.Boss90s,"vo_boss90s_0");
+            Route("КОММЕРС 90-Х",Boss90sSolderLines[0],SpeakerVoiceType.Boss90s,"vo_boss90s_1");
+            Route("КОММЕРС 90-Х",Boss90sUziLines[0],SpeakerVoiceType.Boss90s,"vo_boss90s_2");
+            string directory=Path.Combine(SoundsDir,"vo");
+            using var manifest=System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory,"vo_manifest.json")));
+            if(routes.Count!=31) throw new InvalidDataException("Incomplete studio voice coverage");
+            foreach(string id in routes)
+            {
+                var wave=Raylib.LoadWave(Path.Combine(directory,id+".wav"));
+                try
+                {
+                    float duration=wave.SampleCount/(float)wave.SampleRate;
+                    if(!Raylib.IsWaveValid(wave) || Math.Abs(manifest.RootElement.GetProperty(id).GetProperty("duration").GetSingle()-duration)>.002f)
+                        throw new InvalidDataException("Studio voice duration: "+id);
+                }
+                finally { Raylib.UnloadWave(wave); }
+            }
+            Console.WriteLine("[AUTOTEST] PASS studio voices: 31 event routes, output WAVs decoded, manifest durations matched");
+        }
+
+        internal static void Speak(string speaker,string text,SpeakerVoiceType voice,string clipId=null) =>
+            TriggerVoiceLine(speaker,text,(int)voice,clipId);
+
+        public static void TriggerVoiceLine(string speaker,string text,int speakerType,string clipId=null)
+        {
+            ActiveSpeaker=speaker ?? "КОММЕРС 90-Х";
+            ActiveVoiceText=text ?? "";
+            ActiveSpeakerType=speakerType;
+            ActiveClipId=clipId ?? ResolveVoiceClip(ActiveSpeaker,ActiveVoiceText,speakerType);
+            VoiceTimer=Math.Max(4.2f,ActiveVoiceText.Length/17f);
+            if (_silent || !AudioReady) return;
+            if (_activeVoSound is {} previous) Raylib.StopSound(previous);
+            float vol=Math.Clamp(VoiceVolume,0,1);
+            if (_voiceClips.TryGetValue(ActiveClipId,out var clip))
+            {
+                _activeVoSound=clip.Sound;
+                Raylib.SetSoundVolume(clip.Sound,vol);
+                Raylib.PlaySound(clip.Sound);
+                VoiceTimer=Math.Max(2.8f,clip.Duration+.35f);
+                return;
+            }
             Sound cadence = speakerType switch
             {
                 0 => VoiceBoss90s,
@@ -459,12 +574,13 @@ namespace HowToVibeCoder
             float jitterPitch = 0.96f + (float)_rng.NextDouble() * 0.08f;
             Raylib.SetSoundVolume(cadence, vol);
             Raylib.SetSoundPitch(cadence, jitterPitch);
+            _activeVoSound=cadence;
             Raylib.PlaySound(cadence);
         }
 
         public static void TriggerRandomVoiceLine(string speaker, string[] pool, int speakerType)
         {
-            if(VoiceTimer>0 && ActiveSpeaker=="Вероника") return;
+            if(VoiceTimer>0 && ActiveSpeaker is "Вероника" or "Петрович" or "ИИ-Агент v0.1") return;
             if (pool == null || pool.Length == 0) return;
             string line = pool[_rng.Next(pool.Length)];
             TriggerVoiceLine(speaker, line, speakerType);
@@ -474,6 +590,10 @@ namespace HowToVibeCoder
         {
             try
             {
+                if (_activeVoSound is {} previous) Raylib.StopSound(previous);
+                _activeVoSound=null;
+                foreach (var clip in _voiceClips.Values) Raylib.UnloadSound(clip.Sound);
+                _voiceClips.Clear();
                 foreach (var kv in new HashSet<Sound>(_soundsByName.Values))
                 {
                     Raylib.UnloadSound(kv);

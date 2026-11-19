@@ -47,8 +47,9 @@ internal sealed partial class FloorSystems
 
     internal static readonly WeaponType[] WeaponOrder = [WeaponType.CaptureNet,
         WeaponType.Belt, WeaponType.SolderingIron, WeaponType.MicroUzi, WeaponType.SawedOff];
+    internal static readonly string[] WeaponModels=["weapon_net_90s","weapon_belt_90s","weapon_solder_90s","weapon_uzi_90s","weapon_shotgun_90s"];
     internal static readonly Gear[] Weapons = [
-        new("Сачок-ловушка","Урон 12. До 3 Джава-жаб ($1–$8) и стажёры",3),
+        new("Сачок-ловушка","Урон 12. До 3 Джаба-жаб ($1–$8) и стажёры",3),
         new("Ремень 90-х","Урон 24. Ломает выдержку вайб-кодеров под NDA",25),
         new("Паяльник 90-х","Урон 42. Пробивает броню и чинит щиток Северного лифта",90,FixedPrice:true),
         new("Микро-Узи 90-х","Урон 18/выстр. Плавит щиты босса и рейды СБ",240),
@@ -57,6 +58,7 @@ internal sealed partial class FloorSystems
     internal static readonly Gear ElevatorKeycard = new("Ключ-карта СБ (2-й этаж)",
         "Вероника перепрошьёт дубликат пропуска СБ для Северного лифта",1000,FixedPrice:true);
     internal static readonly Gear[] Arsenal = [.. Weapons, ElevatorKeycard];
+    internal const string ShopGreeting="Заходи в арсенал, выбирай инструмент по душе — весь товар прямо на витрине.";
     internal const string KeycardPurchaseLine = "Дубликат прошит — держи Ключ-карту СБ. Теперь перепаяй щиток у Северного лифта [E]!";
     internal static readonly int ClassicMask=WeaponOrder.Aggregate(1<<(int)WeaponType.BareHands,(mask,w)=>mask | (1<<(int)w));
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
@@ -68,34 +70,36 @@ internal sealed partial class FloorSystems
     internal string Objective(bool carrying) => Onboarding switch
     {
         OnboardingStep.TalkToVeronika => "Подойди к стойке и поговори с Вероникой [E]",
-        OnboardingStep.CatchFrogs => $"Поймай Джава-жаб у стойки [E]  ({FrogProgress}/3)",
-        OnboardingStep.DepositFrogs => "Сдай Джава-жаб в Баг-трекер [E]",
+        OnboardingStep.CatchFrogs => $"Поймай Джаба-жаб у стойки [E]  ({FrogProgress}/3)",
+        OnboardingStep.DepositFrogs => "Сдай Джаба-жаб в Баг-трекер [E]",
         OnboardingStep.BuyNet => "Купи Сачок-ловушку ($3) у Вероники [E]",
-        OnboardingStep.ActivateBait => "Запусти Макбук-приманку в центре [E]",
+        OnboardingStep.ActivateBait => "Запусти ЯблоБук-приманку в центре [E]",
         OnboardingStep.CaptureFirstCoder => carrying ? "Отнеси вайбкодера Веронике или на стол Галеры [E]" :
             "Оглуши вайбкодера (ЛКМ), освободи руки и подними [E]",
         _ => ""
     };
 
-    internal void Coach()
-    {
-        string line=Onboarding switch
+    internal static string CoachText(OnboardingStep step) => step switch
         {
             OnboardingStep.TalkToVeronika => "О, хозяин вернулся! Подойди ко мне на стойку [E] — введу в курс дела за минуту.",
-            OnboardingStep.CatchFrogs => "Касса пуста — $0. Вайбкодеры попрятались, но из серверной по полу скачут Джава-жабы. Схвати 3 штуки руками [E] или ЛКМ — они по $1–$2.",
+            OnboardingStep.CatchFrogs => "Касса пуста — $0. Вайбкодеры попрятались, но из серверной по полу скачут Джаба-жабы. Схвати 3 штуки руками [E] или ЛКМ — они по $1–$2.",
             OnboardingStep.DepositFrogs => "Отличный улов! Скинь жаб в Баг-трекер рядом со стойкой [E] — он сразу выдаст наличку.",
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
-            OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к Макбуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
+            OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к ЯблоБуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
             OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком (ЛКМ), убери сачок повторным [1] и подними вайбкодера голыми руками [E]!",
             _ => "Дело пошло! Чтобы уехать на 2-й этаж, перепаяй Северный лифт Паяльником и сними замок СБ — могу перепрошить Ключ-карту за $1000 у меня [E], либо отбери оригинал у СБ."
         };
-        SpeakCoaching(line);
-    }
-
-    internal static void SpeakCoaching(string line)
+    internal static string CoachClip(OnboardingStep step) => "vo_veronika_"+(step switch
     {
-        AudioMusicSystem.TriggerVoiceLine("Вероника", "Вероника: "+line, (int)SpeakerVoiceType.VeronikaTarot);
-        AudioMusicSystem.VoiceTimer=Math.Max(4.2f,line.Length/17f);
+        OnboardingStep.TalkToVeronika=>"intro", OnboardingStep.CatchFrogs=>"frogs",
+        OnboardingStep.DepositFrogs=>"deposit", OnboardingStep.BuyNet=>"buynet",
+        OnboardingStep.ActivateBait=>"bait", OnboardingStep.CaptureFirstCoder=>"capture", _=>"done"
+    });
+    internal void Coach() => SpeakCoaching(CoachText(Onboarding),CoachClip(Onboarding));
+
+    internal static void SpeakCoaching(string line,string? clipId=null)
+    {
+        AudioMusicSystem.TriggerVoiceLine("Вероника", "Вероника: "+line, (int)SpeakerVoiceType.VeronikaTarot,clipId);
     }
 
     internal void UpdateOnboarding(SkyscraperFloor1World world,int cash)
@@ -117,7 +121,8 @@ internal sealed partial class FloorSystems
             CheerFirstFrog();
         }
     }
-    internal static void CheerFirstFrog() => SpeakCoaching("Есть первая! Ещё пару штук — и хватит на Сачок.");
+    internal const string FirstFrogLine="Есть первая! Ещё пару штук — и хватит на Сачок.";
+    internal static void CheerFirstFrog() => SpeakCoaching(FirstFrogLine);
     internal bool HasWeapon(WeaponType w) => (OwnedWeaponsMask & (1<<(int)w))!=0;
     internal string BuyWeapon(int row,Func<int,bool> spend)
     {
@@ -242,7 +247,7 @@ internal sealed partial class FloorSystems
 
     internal string Deploy(SkyscraperFloor1World world)
     {
-        if(!world.IsMacBookTrapActive) return "Сначала включи Макбук-приманку";
+        if(!world.IsMacBookTrapActive) return "Сначала включи ЯблоБук-приманку";
         if(Friday>0) return $"Деплой уже идёт: {MathF.Ceiling(Friday)} с";
         CrewLost=false;
         Friday=45;
@@ -428,10 +433,10 @@ internal sealed partial class FloorSystems
 
 public sealed partial class SkyscraperFloor1World
 {
-    private static readonly string[] PaLines=[
+    internal static readonly string[] PaLines=[
         "Объявление Башни: уровень выгорания ниже квартального плана. Просьба проявить инициативу.",
         "Объявление Башни: в зоне кофе-пойнта обнаружена несанкционированная пицца. Просим оформить тикет.",
-        "Объявление Башни: стойка B12 перегрелась. Просим не кормить сбежавших Джава-жаб.",
+        "Объявление Башни: стойка B12 перегрелась. Просим не кормить сбежавших Джаба-жаб.",
         "Объявление Башни: напоминаем — пятничный релиз продлевает рабочий день, но укрепляет корпоративный дух.",
         "Объявление Башни: доступ на 2-й этаж временно ограничен отделом СБ. Хорошего спринта!"];
     private float nextAnnouncement=52;
@@ -445,7 +450,6 @@ public sealed partial class SkyscraperFloor1World
            ElevatorBoss.State is ElevatorBossState.IntroSpeech or ElevatorBossState.Repairing) return;
         string line=PaLines[announcementIndex%PaLines.Length];
         AudioMusicSystem.Speak("SYSTEM ZERO",line,SpeakerVoiceType.RoboticAgent);
-        AudioMusicSystem.VoiceTimer=Math.Max(4.5f,line.Length/17f);
         nextAnnouncement=45+(++announcementIndex*13%21);
     }
 }
@@ -520,8 +524,17 @@ public static partial class Program
         quiet=DossierPrint.Quiet, rule=DossierPrint.Stone;
     private static FloorSystems Floor => _world.Systems;
 
+    private static double nextShopGreeting,shopOpenedAt;
     private static void OpenFloorPanel(FloorPanel panel)
     {
+        if(panel==FloorPanel.Upgrades && floorPanel!=panel) shopOpenedAt=Raylib.GetTime();
+        if(panel==FloorPanel.Upgrades && floorPanel!=panel && Raylib.GetTime()>=nextShopGreeting &&
+            !(AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeaker=="Вероника" &&
+              (AudioMusicSystem.ActiveClipId=="vo_veronika_first_frog" || AudioMusicSystem.ActiveClipId==FloorSystems.CoachClip(Floor.Onboarding))))
+        {
+            FloorSystems.SpeakCoaching(FloorSystems.ShopGreeting);
+            nextShopGreeting=Raylib.GetTime()+15;
+        }
         floorPanel=panel; floorRow=firstShopRow=0; sidegrades=false; panelMessage="";
         if(panel==FloorPanel.None) Raylib.DisableCursor();
         else Raylib.EnableCursor();
@@ -590,8 +603,8 @@ public static partial class Program
 
     private static float PanelScale => Math.Min(Raylib.GetScreenWidth()/1280f,Raylib.GetScreenHeight()/720f);
     private static Vector2 PanelOffset => (new Vector2(Raylib.GetScreenWidth(),Raylib.GetScreenHeight())-new Vector2(1280,720)*PanelScale)/2;
-    private static Rectangle ArsenalTab(int i) => new(105+i*355,164,350,35);
-    private static Rectangle FloorRowRect(int i) => sidegrades ? new(102,204+35*(i-firstShopRow),1076,34) : new(102,204+55*i,1076,51);
+    private static Rectangle ArsenalTab(int i) => new(105+i*302,164,302,35);
+    private static Rectangle FloorRowRect(int i) => sidegrades ? new(102,204+35*(i-firstShopRow),654,34) : new(102,204+55*i,floorPanel==FloorPanel.Upgrades ? 654 : 1076,51);
 
     private const int VisibleUpgradeRows=10;
 
@@ -652,8 +665,9 @@ public static partial class Program
         for(int i=firstShopRow;i<count && (!sidegrades || i<firstShopRow+VisibleUpgradeRows);i++)
         {
             if(!shop && Key(KeyboardKey.One+i)) floorRow=i;
-            if(Raylib.CheckCollisionPointRec(mouse,FloorRowRect(i)) && Raylib.IsMouseButtonPressed(MouseButton.Left))
-            { floorRow=i; confirm=true; }
+            bool click=Raylib.IsMouseButtonPressed(MouseButton.Left);
+            if(Raylib.CheckCollisionPointRec(mouse,FloorRowRect(i)) && (click || shop && Raylib.GetMouseDelta()!=Vector2.Zero))
+            { floorRow=i; confirm|=click; }
         }
         if(confirm)
         {
@@ -810,19 +824,44 @@ public static partial class Program
         Print("[Enter]  Следующий контракт       [E]  Вернуться на этаж", 165, 613, 19, ink);
     }
 
+    private static readonly string[] UpgradeModels=["weapon_shotgun_90s","weapon_shotgun_90s","weapon_solder_90s",
+        "weapon_uzi_90s","weapon_belt_90s","prop_bug_terminal","weapon_solder_90s","prop_xerox_printer",
+        "prop_hr_reception_desk","prop_extinguisher","weapon_belt_90s"];
+
+    private static void DrawShopCard(Texture2D preview)
+    {
+        Gear item=sidegrades ? FloorSystems.GearList[floorRow] : FloorSystems.Arsenal[floorRow];
+        bool owned=sidegrades ? Floor.Has((Sidegrade)floorRow) : item==FloorSystems.ElevatorKeycard ?
+            _world.HasElevatorKey : Floor.HasWeapon(FloorSystems.WeaponOrder[floorRow]);
+        Raylib.DrawRectangle(788,164,416,420,new(39,37,41,255));
+        Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),new(788,164,416,244),Vector2.Zero,0,Color.White);
+        TypeAt(item.Title,808,425,22,paper,true);
+        int y=464;
+        foreach(var line in LoreAndMenusUI.Wrap(item.Detail,372,17))
+        { TypeAt(line,808,y,17,quiet); y+=21; }
+        TypeAt($"${Floor.Price(item)}",808,549,20,paper);
+        TypeAt(owned ? "В арсенале" : "[Enter] Купить",997,549,19,paper);
+    }
+
     private static void DrawFloorPanel()
     {
         Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), DossierPrint.Studio);
-        Raylib.BeginMode2D(new Camera2D { Zoom = PanelScale, Offset = PanelOffset });
         bool shop = floorPanel == FloorPanel.Upgrades;
+        Texture2D preview=default;
+        if(shop)
+        {
+            string model=sidegrades ? UpgradeModels[floorRow] :
+                floorRow<FloorSystems.WeaponModels.Length ? FloorSystems.WeaponModels[floorRow] : "keycard";
+            preview=LoreAndMenusUI.RenderShopExhibit(model,65+(float)((Raylib.GetTime()-shopOpenedAt)*19%360),PanelScale*2);
+        }
+        Raylib.BeginMode2D(new Camera2D { Zoom = PanelScale, Offset = PanelOffset });
         if (floorPanel is FloorPanel.Audit or FloorPanel.BossFinale) DrawDecision();
         else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
         else
         {
             Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
-            TypeAt(shop ? "Арсенал смены" : "Доска контрактов", 102, 66, 43, DossierPrint.Ivory, true);
+            TypeAt(shop ? "Арсенал Вероники" : "Доска контрактов", 102, 66, 43, DossierPrint.Ivory, true);
             TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01", 970, 87, 15, quiet);
-            if(!shop) Raylib.DrawLine(104, 124, 1177, 124, rule);
             string info=shop ? $"Общак  ${_playerCash}     /     Приманка: {SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier).Name}" :
                 Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Floor.Progress : "Срок отсчитывается с момента подписи";
             TypeAt(info,105,shop ? 133 : 149,shop ? 18 : 22,paper);
@@ -831,31 +870,33 @@ public static partial class Program
                 {
                     var tabRect=ArsenalTab(tab);
                     var activeTab = sidegrades==(tab==1);
-                    TypeAt(tab==0 ? "[1] ОРУЖИЕ И ДОСТУП" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab ? Color.White : quiet, activeTab);
+                    bool hovered=Raylib.CheckCollisionPointRec((Raylib.GetMousePosition()-PanelOffset)/PanelScale,tabRect);
+                    TypeAt(tab==0 ? "[1] ОРУЖИЕ И ДОСТУП" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab || hovered ? Color.White : quiet, activeTab);
                 }
             int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
             for(int i=firstShopRow;i<count && (!sidegrades || i<firstShopRow+VisibleUpgradeRows);i++)
             {
                 Rectangle row=FloorRowRect(i);
                 bool selected=i==floorRow;
-                if(selected && !shop)
+                if(selected)
                 {
                     Raylib.DrawRectangleRec(row, DossierPrint.Selected);
                 }
                 else if(!shop) Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
                 Color ink=selected ? Color.White : paper;
-                if(shop && selected) TypeAt("Выбрано",row.X+982,row.Y+(sidegrades ? 7 : 14),15,quiet);
                 var gear=shop ? (sidegrades ? FloorSystems.GearList[i] : FloorSystems.Arsenal[i]) : null;
                 var job=shop ? null : FloorSystems.Jobs[i];
                 TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+(sidegrades ? 4 : 11),sidegrades ? 19 : 21,ink,true);
-                TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+(sidegrades ? 7 : 15),16,selected ? paper : quiet);
+                if(!shop) TypeAt(job!.Objective,row.X+342,row.Y+(sidegrades ? 7 : 15),16,selected ? paper : quiet);
                 string value=gear==FloorSystems.ElevatorKeycard ? (_world.HasElevatorKey ? "Получена" : $"${gear.Price}") : shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
                     (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${Floor.Price(gear!)}" : $"{job!.Seconds} с    ${job.Base}";
-                TypeAt(value,shop ? 980 : 1041,row.Y+(sidegrades ? 7 : 14),17,ink);
+                TypeAt(value,shop ? 630 : 1041,row.Y+(sidegrades ? 7 : 14),17,ink);
             }
+            if(shop) DrawShopCard(preview);
             string hint=shop ? "[B]  Сменить приманку      [G]  Вызвать Крышу" :
                 Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
-            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,sidegrades ? 566 : 550,18,quiet);
+            bool greeting=shop && AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveClipId=="vo_veronika_shop_open";
+            TypeAt(panelMessage.Length>0 ? panelMessage : greeting ? FloorSystems.ShopGreeting : hint,106,shop ? 585 : 550,18,quiet);
             TypeAt(shop ? "[W/S]  Выбор       [Enter]  Купить / снарядить       [Esc]  На этаж" :
                 "[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж",106,610,19,paper);
         }

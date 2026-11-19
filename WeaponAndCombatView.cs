@@ -406,6 +406,7 @@ public class WeaponAndCombatView
 
     private void StartDraw(float amount)
     {
+        _netSwingTime=0;
         _draw.Start(amount);
         _kick=_muzzleRotation=_bore=default;
         _pendingClimb=Vector3.Zero;
@@ -437,7 +438,8 @@ public class WeaponAndCombatView
         _inspectTimer = 0;
         if(CurrentWeapon is WeaponType.CaptureNet or WeaponType.BareHands)
         {
-            _catchSpring.Impulse(CurrentWeapon==WeaponType.CaptureNet ? 26 : 36);
+            if(CurrentWeapon==WeaponType.CaptureNet) _netSwingTime=NetSwingDuration;
+            else _catchSpring.Impulse(36);
             if(hitEnemy) ShowImpact(camera,receiverCenter ?? hitWorldPoint ?? camera.Target,damageDealt,isCritical);
             return;
         }
@@ -708,6 +710,14 @@ public class WeaponAndCombatView
     public void UpdateWeapons(float dt, Camera3D camera, bool isMoving = false, bool holdingFire = false)
     {
         _animClock += dt;
+        float remaining=_netSwingTime;
+        _netSwingTime=Math.Max(0,remaining-dt);
+        if(remaining>NetSwingDuration*.69f && _netSwingTime<=NetSwingDuration*.69f)
+        {
+            Vector3 ahead=Vector3.Normalize(camera.Target-camera.Position);
+            SpawnBurstSparks(camera.Position+ahead*.95f-Vector3.UnitY*.19f,ahead,6,
+                new(135,225,211,255),new(176,235,217,255),.3f,1.1f,false);
+        }
         _catchSpring.Advance(0,dt,18,.62f);
         _flash=Math.Max(0,_flash-dt);
         TickReload(dt,camera);
@@ -1143,15 +1153,35 @@ public class WeaponAndCombatView
     // =========================================================================
     // SLOT 1: ОТЦОВСКИЙ КОЖАНЫЙ РЕМЕНЬ (`WeaponType.Belt`)
     // =========================================================================
+    private const float NetSwingDuration=.42f;
+    private float _netSwingTime;
     private SpringFloat _catchSpring;
+
+    private Matrix4x4 NetPose(Vector3 grip)
+    {
+        float t=1-_netSwingTime/NetSwingDuration;
+        float wind=0,sweep=0;
+        static float Ease(float x)=>x*x*(3-2*x);
+        if(t<.22f) wind=Ease(t/.22f);
+        else if(t<.56f) { sweep=Ease((t-.22f)/.34f); wind=1-sweep; }
+        else
+        {
+            float recovery=(t-.56f)/.44f;
+            sweep=(1-Ease(recovery))*MathF.Cos(recovery*2.45f);
+        }
+        Vector3 travel=wind*new Vector3(.08f,.06f,-.05f)+sweep*new Vector3(-.24f,-.10f,.28f);
+        const float rad=MathF.PI/180;
+        return Matrix4x4.CreateTranslation(-grip)*Matrix4x4.CreateRotationY(-.52f+rad*(24*wind-58*sweep))
+            *Matrix4x4.CreateRotationX(-.25f-rad*(18*wind-32*sweep))*Matrix4x4.CreateRotationZ(rad*(-14*wind+26*sweep))
+            *Matrix4x4.CreateTranslation(grip+travel)*ToolStance(grip);
+    }
+
     private void DrawCaptureTool(Vector3 offset,bool net)
     {
         float reach=Math.Clamp(_catchSpring.Value,-.2f,1.2f);
         string hands=net ? "fps_hands_net" : "fps_hands_bare";
         Vector3 grip=offset+new Vector3(.18f,-.15f,.62f);
-        var pose=Matrix4x4.CreateTranslation(-grip)*Matrix4x4.CreateRotationY(net ? -.52f-reach*1.1f : 0)
-            *Matrix4x4.CreateRotationX(net ? -.25f+.28f*reach : 0)
-            *Matrix4x4.CreateTranslation(grip+new Vector3(0,.04f*reach,.13f*reach))*ToolStance(grip);
+        var pose=net ? NetPose(grip) : Matrix4x4.CreateTranslation(new Vector3(0,.04f*reach,.13f*reach))*ToolStance(grip);
         foreach(bool right in new[]{false,true})
         {
             Vector3 slide=offset+(net ? Vector3.Zero : new Vector3(right ? -.09f*reach : .02f*reach,0,(right ? .34f : -.09f)*reach));

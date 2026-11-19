@@ -208,7 +208,7 @@ public static class MainMenuAndPauseUI
         new ModEntryInfo
         {
             Id = "lore_leaked_slack_expansion",
-            Name = "Lore & Leaked Slack Chats Expansion v1.1",
+            Name = "Lore & Leaked Work Chats Expansion v1.1",
             Version = "v1.1",
             Author = "Cloud Entropic Insiders",
             Description = "Слитые рабочие чаты вайб-кодеров, дневник HR-Таролога и словарь авторитета внутри игры.",
@@ -367,7 +367,6 @@ public static class MainMenuAndPauseUI
             CurrentWeaponSlot = 0,
             EquippedSkinId = LoreAndMenusUI.LastWonSkin?.Id ?? 0,
             SeatedGalleyCoders = 1,
-            HasElevatorKey = cash >= 1000,
             MiniBossDefeated = false,
             ElevatorBossDefeated = false,
             FloorProgressLabel = "Этаж 1 - Опенспейс (Cloud Entropic Tower)"

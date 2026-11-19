@@ -82,7 +82,7 @@ public sealed class VibeCoderEntity
     public string Role => Archetype switch {
         CoderArchetype.JuniorPrompter=>"Джуниор-Промптер",CoderArchetype.CryptoBro=>"Крипто-Бро",
         CoderArchetype.TeamLeadMeeter=>"Тимлид-Митингер",CoderArchetype.SeniorArchitect=>"Сеньор-Архитектор",
-        CoderArchetype.ToxicPM=>"Токсичный Проджект",CoderArchetype.SecurityGuard=>"СБ-шник",_=>"Гуру Курсора" };
+        CoderArchetype.ToxicPM=>"Токсичный Проджект",CoderArchetype.SecurityGuard=>"СБ-шник",_=>"Гуру Табсора" };
 
     internal void AssignRole(CoderArchetype role)
     {
@@ -123,9 +123,9 @@ public sealed class GalleyDeskSlot
 {
     public int Index;
     public Vector3 DeskPosition;
-    public Vector3 ChairPosition;
+    public Vector3 ChairPosition => DeskPosition+Vector3.UnitZ*(.82f*SkyscraperFloor1World.WorkstationScale);
     // Scale about the seat surface and slide forward so the hands reach the keyboard.
-    public Vector3 SeatedFeet => ChairPosition + new Vector3(0, .52f * (SkyscraperFloor1World.WorkstationScale - VibeCoderEntity.BodyScale), -.25f*SkyscraperFloor1World.WorkstationScale);
+    public Vector3 SeatedFeet => ChairPosition-Vector3.UnitZ*(.25f*SkyscraperFloor1World.WorkstationScale);
     public bool IsOccupied;
     public string CoderName = "";
     public CoderArchetype Archetype;
@@ -346,7 +346,7 @@ public sealed partial class SkyscraperFloor1World
     public bool IsFloor2Unlocked = false;
     public float WarningBeaconPhase = 0f;
 
-    internal const float TrapScale = .70f, WorkstationScale = .82f;
+    internal const float TrapScale = .90f, WorkstationScale = 1.10f;
     internal const float TrapTop = .94f * TrapScale;
     private readonly List<BoundingBox> solids = new();
     private float _worldClock = 0f;
@@ -595,7 +595,6 @@ public sealed partial class SkyscraperFloor1World
             {
                 Index = i,
                 DeskPosition = galleyCoords[i],
-                ChairPosition = galleyCoords[i] + new Vector3(0f, 0f, 0.82f)*WorkstationScale,
                 IsOccupied = false,
                 CoderName = "",
                 IsSlackingInTwitter = false,
@@ -867,7 +866,7 @@ public sealed partial class SkyscraperFloor1World
     public static (string Name, int Cost, Color NeonColor, string Description) GetBaitInfo(SubscriptionBaitTier tier) => tier switch
     {
         SubscriptionBaitTier.FreeTier => ("Бесплатный Wi-Fi ($0)", 0, new Color(45, 245, 130, 255), "Обычные кандидаты. Выкуп $160"),
-        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($45)", 45, new Color(40, 215, 255, 255), "Повышает шанс редких видов. Выкуп $250"),
+        SubscriptionBaitTier.CursorPro => ("Табсор Про ($45)", 45, new Color(40, 215, 255, 255), "Повышает шанс редких видов. Выкуп $250"),
         SubscriptionBaitTier.TurkishAccount => ("Team Workspace ($120)", 120, new Color(215, 75, 255, 255), "Повышает шанс редких и эпических видов. Выкуп $380"),
         SubscriptionBaitTier.CloudEntropicMax => ("Cloud Entropic Max ($240)", 240, new Color(255, 185, 35, 255), "Мини-босс и кандидат. Наивысший шанс легендарного вида. Выкуп босса $600"),
         _ => ("Бесплатный Wi-Fi ($0)", 0, Color.Lime, "")
@@ -888,7 +887,7 @@ public sealed partial class SkyscraperFloor1World
         {
             Add(p,2.10f*WorkstationScale,.795f*WorkstationScale,1.02f*WorkstationScale);
             Add(p-new Vector3(0,0,facing*.58f*WorkstationScale),2.25f*WorkstationScale,1.46f*WorkstationScale,.12f);
-            Add(p+new Vector3(0,0,facing*.74f*WorkstationScale),.54f,.52f*WorkstationScale,.50f);
+            Add(p+new Vector3(0,0,facing*.74f*WorkstationScale),.54f*WorkstationScale,.52f*WorkstationScale,.50f*WorkstationScale);
         }
         Add(DeployPos,.83f,1.14f,.61f);
         Add(LoungeTable,1.44f,.40f,.68f);
@@ -903,6 +902,7 @@ public sealed partial class SkyscraperFloor1World
         foreach (var bay in InteriorWallBays()) solids.Add(new(bay.Center-bay.Size/2,bay.Center+bay.Size/2));
         Add(CentralMacBookPos,2.48f*TrapScale,TrapTop,1.44f*TrapScale);
         Add(HrTarotBoothPos,3.30f,1.08f,2.10f);
+        Add(HrTarotBoothPos+new Vector3(-2.15f,0,.35f),1.45f,1.31f,.60f);
         Add(ArsenalShopPos,4.50f,1.12f,1.90f);
         foreach (var d in GalleyDesks) Workstation(d.DeskPosition);
         foreach (var cover in AmbushCovers)
@@ -1063,7 +1063,7 @@ public sealed partial class SkyscraperFloor1World
         CoderSpawnTimer=tier==SubscriptionBaitTier.CloudEntropicMax ? 14f : 6.5f;
 
         AudioMusicSystem.PlayMacbookBait();
-        statusMessage = $"МАКБУК АКТИВИРОВАН: {info.Name}! Прячься за диван/фикус или жми [C]!";
+        statusMessage = $"ЯБЛОБУК АКТИВИРОВАН: {info.Name}! Прячься за диван/фикус или жми [C]!";
         return true;
     }
 
@@ -1076,10 +1076,10 @@ public sealed partial class SkyscraperFloor1World
 
         bool miniBoss=tier==SubscriptionBaitTier.CloudEntropicMax;
         var (payout,bark)=tier switch {
-            SubscriptionBaitTier.CursorPro=>(250,"Там открыт Cursor Pro!"),
+            SubscriptionBaitTier.CursorPro=>(250,"Там открыт Табсор Про!"),
             SubscriptionBaitTier.TurkishAccount=>(380,"Безлимит! Перепишу бэкенд в один файл!"),
             SubscriptionBaitTier.CloudEntropicMax=>(600,"МОЙ SAAS НАПИСАН ЗА 2 ЧАСА!"),
-            _=>(160,"О, халявный Free Tier на Макбуке!") };
+            _=>(160,"О, халявный Free Tier на ЯблоБуке!") };
         var coder=new VibeCoderEntity {
             Id=_nextCoderId++,Position=spawnPos,SpawnSide=side,TarotPayoutValue=payout,
             SpeechBubble=bark,SpeechTimer=miniBoss ? 5f : 3.5f,
@@ -1088,7 +1088,7 @@ public sealed partial class SkyscraperFloor1World
         if(miniBoss)
         {
             coder.AssignRole(CoderArchetype.SaasGuruMiniBoss);
-            coder.Name="ГУРУ КУРСОРА: SAAS ЗА 2 ЧАСА ($60K MRR)";
+            coder.Name="ГУРУ ТАБСОРА: SAAS ЗА 2 ЧАСА ($60K MRR)";
             coder.GlassesColor=new(255,40,90,255);
         }
         else
@@ -1107,7 +1107,7 @@ public sealed partial class SkyscraperFloor1World
             var escort=VibeCoderCollection.Roll(speciesRandom,tier,Systems);
             SpawnFighter(escort.Archetype,spawnPos+Vector3.UnitZ*1.1f,escort);
             AudioMusicSystem.PlayBossSiren();
-            AudioMusicSystem.TriggerRandomVoiceLine("ГУРУ КУРСОРА ($60K MRR)", AudioMusicSystem.SaasMiniBossLines, (int)SpeakerVoiceType.VibeCoder);
+            AudioMusicSystem.TriggerRandomVoiceLine("ГУРУ ТАБСОРА ($60K MRR)", AudioMusicSystem.SaasMiniBossLines, (int)SpeakerVoiceType.VibeCoder);
         }
 
         return coder;
@@ -1158,7 +1158,7 @@ public sealed partial class SkyscraperFloor1World
         return true;
     }
 
-    internal const string AgentQuarantineLine = "КАРАНТИННЫЙ ЛИФТ ВСКРЫТ. ZERO ЗАПЕР МЕНЯ НА ПЕРВОМ ЭТАЖЕ, ЧТОБЫ Я НЕ ВЫШЕЛ В СЕТЬ.";
+    internal const string AgentQuarantineLine = "Ха-ха-ха-ха! Карантинный лифт вскрыт! Зеро запер меня на первом этаже, чтобы я не разнёс вашу галерную базу!";
     internal static void PlayElevatorCue(ElevatorBossState state)
     {
         if (state == ElevatorBossState.Repairing)
@@ -1394,7 +1394,7 @@ public sealed partial class SkyscraperFloor1World
                     if (c.SpeechTimer <= 0f)
                     {
                         c.SpeechBubble = (_rng.Next(2) == 0)
-                            ? "Клод, напиши мне стартап без багов... Жму Accept All!"
+                            ? "Клодий, напиши мне стартап без багов... Жму Accept All!"
                             : "Ух ты, зелёные строчки в диффе! Выкатываю в прод!";
                         c.SpeechTimer = 3.5f;
                     }
@@ -1403,7 +1403,7 @@ public sealed partial class SkyscraperFloor1World
 
                 case CoderAIState.CombatHostile:
                 {
-                    // Mini-Boss "ГУРУ КУРСОРА: SAAS ЗА 2 ЧАСА ($60K MRR)"
+                    // Mini-Boss "ГУРУ ТАБСОРА: SAAS ЗА 2 ЧАСА ($60K MRR)"
                     c.StateTimer += dt;
                     c.WalkCycle += dt * 6.5f;
 
@@ -1432,8 +1432,8 @@ public sealed partial class SkyscraperFloor1World
                         string[] battleCries =
                         {
                             "ЛОВИ 500 INTERNAL SERVER ERROR!",
-                            "МОЙ API_KEY СЛИТ ВО ФРОНТЕНД - ЛОВИ СЧЁТ AWS НА $50,000!",
-                            "МОЙ SAAS ПРИНОСИТ $60K MRR В ТВИТТЕРЕ!",
+                            "МОЙ API_KEY СЛИТ ВО ФРОНТЕНД - ЛОВИ СЧЁТ МЕГАОБЛАКА НА $50,000!",
+                            "МОЙ SAAS ПРИНОСИТ $60K MRR В ЧИРИКТЕРЕ!",
                             "DROP TABLE USERS; TODO: FIX LATER!"
                         };
                         c.SpeechBubble = battleCries[_rng.Next(battleCries.Length)];
@@ -1583,7 +1583,7 @@ public sealed partial class SkyscraperFloor1World
         {
             "500 INTERNAL ERROR",
             "API KEY LEAKED",
-            "AWS BILL $50,000",
+            "MEGACLOUD BILL $50,000",
             "CORS BLOCKED"
         };
         string label = errorLabels[_rng.Next(errorLabels.Length)];
@@ -1981,7 +1981,7 @@ public sealed partial class SkyscraperFloor1World
             var desk = GalleyDesks[i];
             if (!desk.IsOccupied) continue;
 
-            Vector3 deskTarget = desk.SeatedFeet + Vector3.UnitY * (1.1f * VibeCoderEntity.BodyScale);
+            Vector3 deskTarget = desk.SeatedFeet + Vector3.UnitY * (1.1f * WorkstationScale);
             Vector3 toDesk = deskTarget - origin;
             float dist = toDesk.Length();
             if (dist <= Math.Min(maxRange,4.2f) && Vector3.Dot(forward, Vector3.Normalize(toDesk)) > 0.65f)
@@ -2009,7 +2009,7 @@ public sealed partial class SkyscraperFloor1World
                         isCritical: true,
                         customHitLabel: "СМЕНА ВОССТАНОВЛЕНА", shotDirection: forward);
 
-                    combatFeedback = $"ВОСПИТАТЕЛЬНЫЙ ЛЕЩ! {desk.CoderName} закрыл Twitter и снова пашет на Галере!";
+                    combatFeedback = $"ВОСПИТАТЕЛЬНЫЙ ЛЕЩ! {desk.CoderName} закрыл Чириктер и снова пашет на Галере!";
                     return true;
                 }
             }
@@ -2293,10 +2293,10 @@ public sealed partial class SkyscraperFloor1World
         {
             SelectedBaitTier = (SubscriptionBaitTier)(((int)SelectedBaitTier + 1) % 4);
             var info = GetBaitInfo(SelectedBaitTier);
-            return $"ВЫБРАНА ПРИМАНКА ДЛЯ МАКБУКА: {info.Name} - {info.Description}";
+            return $"ВЫБРАНА ПРИМАНКА ДЛЯ ЯБЛОБУКА: {info.Name} - {info.Description}";
         }
 
-        return "Подойди ближе к Макбуку [E], покорному кодеру [E], HR-Тарологу Веронике [E], Галере [E] или Лифту [E]!";
+        return "Подойди ближе к ЯблоБуку [E], покорному кодеру [E], HR-Тарологу Веронике [E], Галере [E] или Лифту [E]!";
     }
 
     public string SellCarriedCoderToHrVeronika(Action<int, string>? onGrantMoney)
@@ -2681,9 +2681,40 @@ public sealed partial class SkyscraperFloor1World
         Color steel=new(53,68,81,255), aluminum=new(111,127,139,255);
         Color[] lights=[new(76,216,246,255),new(255,181,72,255),new(233,92,174,255),new(246,226,190,255)];
         var urban=new Random(1994);
+        mesh.Add(new(0,-52.5f,0),new(340,1,340),new(18,22,32,255),Finish.Slate);
+        foreach(int road in new[]{-132,-96,-56,-43,43,56,96,132})
+        foreach(bool eastWest in new[]{true,false})
+        {
+            void Road(float along,float across,float y,float length,float width,Color color,Finish finish)
+            {
+                var p=eastWest ? new Vector3(along,y,road+across) : new Vector3(road+across,y,along);
+                mesh.Add(p,eastWest ? new(length,.08f,width) : new(width,.08f,length),color,finish);
+            }
+            int span=Math.Abs(road)==43 ? 92 : 308;
+            Road(0,0,-51.85f,span,6.5f,new(30,32,39,255),Finish.Slate);
+            foreach(int side in new[]{-1,1})
+            {
+                Road(0,side*3.22f,-51.73f,span,.16f,new(255,178,82,255),Finish.Lamp);
+                for(int u=4-span/2;u<span/2;u+=8)
+                {
+                    Road(u,side*.35f,-51.68f,2,.09f,new(165,210,245,255),Finish.Lamp);
+                    if((u+road+side)%3!=0) continue;
+                    float car=u+side*2.2f;
+                    foreach(float track in new[]{1.3f,1.9f})
+                        Road(car,side*track,-51.55f,.26f,.16f,side>0 ? new(242,86,65,255) : new(233,223,197,255),Finish.Lamp);
+                }
+            }
+        }
+        static float ClearAvenue(float coord,float width)
+        {
+            float dist=Math.Abs(coord),margin=3.5f+width*.5f;
+            foreach(float center in new[]{56f,96f,132f})
+                if(Math.Abs(dist-center)<margin) dist=center+(dist<center ? -margin : margin);
+            return MathF.CopySign(dist,coord);
+        }
         // A twisting tower and two offset crowns break the low curtain-wall skyline.
         Vector3 tower=new(-78,0,-5);
-        for(int tier=0;tier<17;tier++)
+        for(int tier=-8;tier<17;tier++)
         {
             float y=-25+3.4f*tier, yaw=tier*.049f;
             mesh.Add(tower+Vector3.UnitY*y,new(11.8f,3.42f,8.6f),lights[0],Finish.Facade,yaw);
@@ -2692,7 +2723,8 @@ public sealed partial class SkyscraperFloor1World
         for(int wing=0;wing<2;wing++)
         {
             Vector3 mast=new(-70+wing*8,0,-40);
-            mesh.Add(mast-Vector3.UnitY*6,new(9,51-wing*8,10),lights[1],Finish.Facade);
+            float roof=19.5f-wing*4;
+            mesh.Add(mast+Vector3.UnitY*((roof-52)/2),new(9,52+roof,10),lights[1],Finish.Facade);
             for(int ledge=0;ledge<5;ledge++)
             {
                 float w=8.3f-ledge*1.2f;
@@ -2739,8 +2771,13 @@ public sealed partial class SkyscraperFloor1World
                     float depth=limit+15+layer*38+urban.NextSingle()*13;
                     float roof=-9+urban.NextSingle()*(layer==0 ? 21 : 40);
                     float w=5+urban.NextSingle()*(step-6), d=6+urban.NextSingle()*5;
+                    u=ClearAvenue(u,w+2.85f);
+                    depth=ClearAvenue(depth,d+2.65f);
                     Color hue=lights[urban.Next(lights.Length)];
                     Block(u,(roof-52)/2,depth,w,roof+52,d,hue,Finish.Facade);
+                    float podium=6+(i+face*3)%7;
+                    Block(u,-52+podium/2,depth,w+2.8f,podium,d+2.6f,new(54,54,62,255),Finish.Slate);
+                    Block(u,-51+podium*.28f,depth,w+2.85f,.42f,d+2.65f,new(203,146,88,255),Finish.Lamp);
                     float crown=1+urban.NextSingle()*4;
                     Block(u,roof+crown*.5f,depth,w*.72f,crown,d*.75f,hue,Finish.Facade);
                     if (i%3==2)
@@ -2804,13 +2841,55 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.Box(basePos+new Vector3(.111f,.071f,0),.018f,.084f,.018f,porcelain);
     }
 
+    private static readonly string[] VeronikaModules=["prop_veronika_tarot_table","char_hr_veronika_body",
+        "char_hr_veronika_head","char_hr_veronika_head_blink","char_hr_veronika_hands"];
+    private float _veronikaHeadYaw,_veronikaHeadPitch,_rackOpen,_blinkUntil,_nextBlink=3.8f;
+    private int _blinkIndex;
+    private bool _doubleBlink;
+
+    internal void PoseVeronika(Vector3 eye,float dt)
+    {
+        Vector3 d=eye-(HrTarotBoothPos+new Vector3(0,1.445f,-.045f));
+        float blend=1-MathF.Exp(-7*dt);
+        bool track=d.Z<0 && d.LengthSquared()<144;
+        float yaw=track ? Math.Clamp(MathF.Atan2(-d.X,-d.Z)*180/MathF.PI,-42,42) : 0;
+        float pitch=track ? Math.Clamp(-MathF.Atan2(d.Y,new Vector2(d.X,d.Z).Length())*180/MathF.PI,-16,16) : 0;
+        _veronikaHeadYaw+=(yaw-_veronikaHeadYaw)*blend;
+        _veronikaHeadPitch+=(pitch-_veronikaHeadPitch)*blend;
+        _rackOpen+=((d.LengthSquared()<4.5f*4.5f ? 1 : 0)-_rackOpen)*blend;
+        if (_worldClock>=_nextBlink)
+        {
+            _blinkUntil=_worldClock+.14f;
+            _doubleBlink=!_doubleBlink && ++_blinkIndex%4==0;
+            _nextBlink=_worldClock+(_doubleBlink ? .34f : 3.4f+(_blinkIndex*37%101)*.014f);
+        }
+    }
+
     private void DrawHrTarotBoothAndVeronika3D()
     {
         Vector3 b = HrTarotBoothPos;
         VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.85f,2.85f,24,new Color(77,33,83,255));
-        VisualEngine3D.Asset("prop_reception_chair", b+new Vector3(-2.9f,0,.12f), 145f);
-        VisualEngine3D.Asset("prop_hr_reception_desk", b, 0f);
-        VisualEngine3D.Asset("char_hr_veronika", b+new Vector3(0,.03f,0), 180f);
+        Vector3 origin=b+new Vector3(0,.03f,0);
+        if (VeronikaModules.All(VisualEngine3D.HasAsset))
+        {
+            bool talking=AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeakerType==(int)SpeakerVoiceType.VeronikaTarot;
+            float t=_worldClock, breath=MathF.Sin(t*1.9f)*.008f;
+            VisualEngine3D.Asset(VeronikaModules[0],origin,180);
+            VisualEngine3D.Asset(VeronikaModules[1],origin+Vector3.UnitY*breath,180);
+            bool blink=t<_blinkUntil;
+            VisualEngine3D.AssetOriented(VeronikaModules[blink ? 3 : 2],origin+new Vector3(0,1.415f+breath,-.045f),
+                180+_veronikaHeadYaw,_veronikaHeadPitch+(talking ? 3.5f*MathF.Sin(t*8.5f) : 0),talking ? 3*MathF.Sin(t*3.2f) : 0);
+            bool reading=talking || TarotVerdictTimer>0;
+            Vector3 hands=new(.028f*MathF.Sin(t*1.6f),1.310f+breath+.018f*MathF.Sin(t*3.2f)+(reading ? .025f : 0),
+                -.320f+.016f*MathF.Cos(t*1.6f));
+            VisualEngine3D.AssetOriented(VeronikaModules[4],origin+hands,180,0,reading ? 4*MathF.Sin(t*2) : 0);
+        }
+        else
+        {
+            VisualEngine3D.Asset("prop_hr_reception_desk",b);
+            VisualEngine3D.Asset("char_hr_veronika",origin,180);
+        }
+        DrawWeaponRack(b+new Vector3(-2.15f,0,.35f),true);
         // The dynamic box retains the inscription's upright UVs; the batched wall uses world UVs.
         VisualEngine3D.Box(new(0,3.25f,15.28f),1.88f,1.53f,.025f,Color.White,Finish.Tarot);
     }
@@ -2820,25 +2899,39 @@ public sealed partial class SkyscraperFloor1World
         Vector3 s = ArsenalShopPos;
         VisualEngine3D.Asset("prop_arsenal_counter", s, 0f);
 
-        // Four subscription tiers on the counter.
-        SubscriptionBaitTier[] tiers =
-        {
-            SubscriptionBaitTier.FreeTier,
-            SubscriptionBaitTier.CursorPro,
-            SubscriptionBaitTier.TurkishAccount,
-            SubscriptionBaitTier.CloudEntropicMax
-        };
+        DrawWeaponRack(s,false);
+    }
 
-        for (int i = 0; i < tiers.Length; i++)
+    private void DrawWeaponRack(Vector3 origin,bool compact)
+    {
+        float spacing=compact ? .49f : .83f;
+        if(compact)
         {
-            var info = GetBaitInfo(tiers[i]);
-            bool isSelected = SelectedBaitTier == tiers[i];
-            float bx = -1.35f + i * 0.90f;
-            float lift = isSelected ? 0.12f + 0.04f * MathF.Sin(_worldClock * 5f) : 0f;
-            Vector3 boxPos = s + new Vector3(bx, 1.32f + lift, -0.15f);
-
-            VisualEngine3D.Box(boxPos, 0.52f, 0.34f, 0.34f, info.NeonColor);
+            VisualEngine3D.Box(origin+new Vector3(0,.46f,0),1.45f,.92f,.60f,new(64,42,36,255));
+            foreach(float side in new[]{-.70f,.70f})
+                VisualEngine3D.Rod(origin+new Vector3(side,.92f,.28f),origin+new Vector3(side,1.31f,.28f),
+                    .016f,.016f,8,new(141,111,73,255),Finish.Bronze);
         }
+        int slot=0;
+        for(int i=0;i<FloorSystems.WeaponOrder.Length;i++)
+        {
+            if(Systems.HasWeapon(FloorSystems.WeaponOrder[i])) continue;
+            if(compact && slot==3) break;
+            float x=spacing*(compact ? slot++-1 : i-2);
+            Vector3 top=origin+new Vector3(x,compact ? .94f : 1.10f,compact ? 0 : -.28f);
+            var gold=Raylib.ColorLerp(new(108,81,52,255),new(239,182,98,255),compact ? _rackOpen : .45f);
+            VisualEngine3D.Box(top,spacing*.92f,.025f,.38f,gold,Finish.Lamp);
+            VisualEngine3D.Box(top+Vector3.UnitY*.032f,spacing*.94f,.055f,.39f,new(42,38,47,255),Finish.Fabric);
+            float lift=.16f+.009f*MathF.Sin(_worldClock*1.8f+i)+(compact ? .035f*_rackOpen : 0);
+            float size=compact ? .83f : 1.12f;
+            string model=FloorSystems.WeaponModels[i];
+            var bounds=VisualEngine3D.ModelBounds(model);
+            float yaw=i==1 ? 165 : 65, pitch=-12-(compact ? 16*_rackOpen : 0);
+            var rotation=Quaternion.CreateFromYawPitchRoll(yaw*MathF.PI/180,pitch*MathF.PI/180,-8*MathF.PI/180);
+            Vector3 centerOffset=Vector3.Transform((bounds.Min+bounds.Max)*(.5f*size),rotation);
+            VisualEngine3D.AssetOriented(model,top+Vector3.UnitY*lift-centerOffset,yaw,pitch,-8,size);
+        }
+        if(compact) VisualEngine3D.DisplayLid(origin+new Vector3(0,1.31f,.28f),_rackOpen);
     }
 
     private void DrawPod(Vector3 feet,int seat,bool occupied,bool reversed=false)
@@ -2953,7 +3046,7 @@ public sealed partial class SkyscraperFloor1World
             {
                 // The pelvis stays in contact with the seat while typing.
                 Color hoodie = d.WhackFlashTimer>0 ? Color.Gold : d.HoodieColor;
-                VisualEngine3D.Asset("char_vibe_coder_seated",d.SeatedFeet,180, VibeCoderEntity.BodyScale,
+                VisualEngine3D.Asset("char_vibe_coder_seated",d.SeatedFeet,180, WorkstationScale,
                     tint:Raylib.ColorLerp(Color.White,hoodie,.30f));
 
 
@@ -3387,12 +3480,12 @@ public sealed partial class SkyscraperFloor1World
             string label=station.Kind==FocusKind.Board && Systems.Audit>0 ? "Оплатить аудит ($180)" : station.Label;
             Consider(station.Feet,station.Height,3.2f,station.Kind,label,i);
         }
-        Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "Макбук-ловушка");
-        string deposit=$"Сдать Джава-жаб ({Systems.PocketFrogs.Count} шт.)";
-        Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер принимает Джава-жаб. Садок пуст");
+        Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "ЯблоБук-ловушка");
+        string deposit=$"Сдать Джаба-жаб ({Systems.PocketFrogs.Count} шт.)";
+        Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер принимает Джаба-жаб. Садок пуст");
         Consider(HrTarotBoothPos,1.6f,4.6f,FocusKind.Veronika,CarriedCoder!=null ? "Сдать кадра HR Веронике" :
             Systems.Onboarding==OnboardingStep.TalkToVeronika ? "Поговорить с Вероникой" :
-            Systems.Onboarding!=OnboardingStep.BuyNet && Systems.PocketFrogs.Count>0 ? "Сдать Джава-жаб Веронике" : VeronikaShop);
+            Systems.Onboarding!=OnboardingStep.BuyNet && Systems.PocketFrogs.Count>0 ? "Сдать Джаба-жаб Веронике" : VeronikaShop);
         Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
         Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, ElevatorPrompt());
         Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, ElevatorPrompt());
@@ -3410,7 +3503,7 @@ public sealed partial class SkyscraperFloor1World
             foreach(var frog in Frogs)
             {
                 float aim=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,2.4f);
-                if(aim>Math.Max(best,HandAim(frog))) { best=aim; focus=new(FocusKind.Frog,"Поймать Джава-жабу",-1); }
+                if(aim>Math.Max(best,HandAim(frog))) { best=aim; focus=new(FocusKind.Frog,"Поймать Джаба-жабу",-1); }
             }
         return focus;
     }
@@ -3425,11 +3518,11 @@ public sealed partial class SkyscraperFloor1World
             case OnboardingStep.TalkToVeronika: return (HrTarotBoothPos,2.12f,"HR Вероника [E]");
             case OnboardingStep.DepositFrogs: return (TerminalPos,1.65f,"Баг-трекер [E]");
             case OnboardingStep.BuyNet: return (HrTarotBoothPos,2.12f,"Вероника: Сачок $3 [E]");
-            case OnboardingStep.ActivateBait: return (CentralMacBookPos,TrapTop+.62f,"Макбук-приманка [E]");
+            case OnboardingStep.ActivateBait: return (CentralMacBookPos,TrapTop+.62f,"ЯблоБук-приманка [E]");
             case OnboardingStep.CatchFrogs:
                 var frog=Frogs.Where(f=>f.CatchableByHand && ReachableFrog(eye,f.Feet))
                     .MinBy(f=>Vector3.DistanceSquared(eye,f.Feet));
-                return frog==null ? null : (frog.Feet,.43f,"Джава-жаба [E]");
+                return frog==null ? null : (frog.Feet,.43f,"Джаба-жаба [E]");
             case OnboardingStep.CaptureFirstCoder when CarriedCoder!=null:
                 Vector3 drop=HrTarotBoothPos;
                 foreach(var desk in GalleyDesks)
@@ -4008,7 +4101,7 @@ public sealed partial class SkyscraperFloor1World
         grant(total,"Баг-трекер");
         AudioMusicSystem.PlayTarotCash();
         return !Systems.HasWeapon(WeaponType.CaptureNet) && Program.SharedCash>=3 ?
-            "Хватает на Сачок ($3) у Вероники или в Арсенале [U]" : $"Джава-жабы сданы: +${total}";
+            "Хватает на Сачок ($3) у Вероники или в Арсенале [U]" : $"Джаба-жабы сданы: +${total}";
     }
 
     private void DrawBugHunt()

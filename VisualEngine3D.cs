@@ -657,6 +657,14 @@ internal static unsafe partial class VisualEngine3D
         }
     }
 
+    internal static void AssetOriented(string name,Vector3 pos,float yaw,float pitch,float roll,float scale=1)
+    {
+        const float rad=MathF.PI/180;
+        var transform=Matrix4x4.CreateScale(scale)*Matrix4x4.CreateFromYawPitchRoll(yaw*rad,pitch*rad,roll*rad)
+            *Matrix4x4.CreateTranslation(pos);
+        Asset(name,Vector3.Zero,assemblyTransform:transform);
+    }
+
     public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
                              Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false, Matrix4x4? assemblyTransform = null)
     {
@@ -851,6 +859,15 @@ internal static unsafe partial class VisualEngine3D
 
     public static void Box(Vector3 p,float w,float h,float d,Color tint,Finish f=Finish.Paint)
         => Draw(f is Finish.Paint or Finish.Plaster or Finish.Lamp ? box : bevel,p,new(w,h,d),tint,f,Vector3.UnitY);
+    internal static void DisplayLid(Vector3 hinge,float opening)
+    {
+        float angle=(8+62*opening)*MathF.PI/180;
+        Vector3 center=hinge+new Vector3(0,MathF.Sin(angle),-MathF.Cos(angle))*.29f;
+        Rlgl.DisableDepthMask();
+        Draw(bevel,center,new(1.46f,.018f,.58f),new(166,201,211,68),Finish.Glass,Vector3.UnitX,angle*180/MathF.PI);
+        Rlgl.EnableDepthMask();
+    }
+
     public static void Orb(Vector3 p,float r,Color tint,Finish f=Finish.Paint)
         => Oval(p,new(r),tint,f);
     public static void Oval(Vector3 p,Vector3 radii,Color tint,Finish f=Finish.Paint)
@@ -1003,7 +1020,7 @@ internal static unsafe partial class VisualEngine3D
             bool nda=f==Finish.NdaSheet;
             Raylib.ImageClearBackground(ref img,nda ? new(234,228,207,255) : new(219,224,217,255));
             var ink=new Color(49,55,57,255);
-            Inscription(f==Finish.PitchDeck ? "SEED   2026" : nda ? "NDA" : "JIRA   B12-409",64,44,ink);
+            Inscription(f==Finish.PitchDeck ? "SEED   2026" : nda ? "NDA" : "ЖИРА   B12-409",64,44,ink);
             string[] lines=f==Finish.PitchDeck ? ["Башня Энтропии","План запуска","Раунд инвестиций","Материалы встречи"] : nda ? ["Соглашение","о неразглашении","Отдел кадров","Подпись"] :
                 ["Ошибка сборки","Приоритет   P1","Исполнитель","Шаги повтора"];
             for(int i=0;i<lines.Length;i++)

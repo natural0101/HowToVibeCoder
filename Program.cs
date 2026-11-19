@@ -53,12 +53,13 @@ public static partial class Program
         bool HasFlag(string name) => args.Contains(name, StringComparer.OrdinalIgnoreCase);
         bool autoTest = HasFlag("--autotest") || HasFlag("-autotest");
         bool coopSmoke = HasFlag("--coop-smoke");
+        bool polishTest=HasFlag("--polish-test");
         bool gripTest = HasFlag("--grip-test");
         bool silent = args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
         bool localPair=coopSmoke && !HasFlag("--host") && !HasFlag("--join");
-        fixtureSeed=autoTest || coopSmoke || gripTest ? 6 : null;
+        fixtureSeed=autoTest || coopSmoke || gripTest || polishTest ? 6 : null;
         if (HasFlag("--regenerate-music"))
         {
             AudioMusicSystem.EnsureMusicFiles(Path.Combine(Environment.CurrentDirectory, "assets", "sounds"), force: true);
@@ -136,7 +137,7 @@ public static partial class Program
             }
             finally { if(guest is { HasExited:false }) guest.Kill(); }
         }
-        else if (autoTest || gripTest) RunAutomatedScreenshotSuite(displayPath);
+        else if (autoTest || gripTest || polishTest) RunAutomatedScreenshotSuite(displayPath,polishTest);
         else
         {
             bool shouldExit = false;
@@ -508,7 +509,7 @@ public static partial class Program
                 FloorPanel station=_world.PanelAt(camera,_weapons.CurrentWeapon);
                 if(station!=FloorPanel.None) { OpenFloorPanel(station); return; }
             }
-            if(_weapons.CurrentWeapon==WeaponType.BareHands && _world.FocusPrompt(camera)=="Поймать Джава-жабу")
+            if(_weapons.CurrentWeapon==WeaponType.BareHands && _world.FocusPrompt(camera)=="Поймать Джаба-жабу")
             {
                 UpdateTrigger(dt,false,true,false,isMoving);
                 TickFloor(dt);
@@ -653,6 +654,7 @@ public static partial class Program
                 aim=Vector3.Normalize(aim+cone*(right*(2*ShotRandom.NextSingle()-1)+Vector3.Cross(right,aim)*(2*ShotRandom.NextSingle()-1)));
             }
             PlayCurrentWeaponAudio(gun);
+            AudioMusicSystem.TryWeaponBark(gun);
             Vector3 disturbance=cam.Position-Vector3.UnitY*(_eyeHeight*.73f);
             _world.Scatter(disturbance+(melee ? aim*.85f : Vector3.Zero),aim,melee ? 2.3f : 3.8f,melee ? 3.9f : 5.4f);
             if(!melee)
@@ -671,7 +673,7 @@ public static partial class Program
                 _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false,shotDirection:aim);
             }
             else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg,aim) && msg.Length>0) SetHudBanner(msg,1.3f,foreground:capture);
-            float kick=gun==WeaponType.SawedOff ? .077f : melee ? .009f : .023f;
+            float kick=gun==WeaponType.SawedOff ? .077f : gun==WeaponType.CaptureNet ? .022f : melee ? .009f : .023f;
             // Impulse the spring velocity. The camera starts at the firing sightline.
             float yawKick=(2*ShotRandom.NextSingle()-1)*kick*steady;
             if (melee) { _recoilPitch+=kick*steady; _recoilYaw+=yawKick*.38f; }
@@ -716,6 +718,7 @@ public static partial class Program
 
     private static void BeginLitWorld(SkyscraperFloor1World world,Camera3D camera)
     {
+        world.PoseVeronika(camera.Position,Math.Min(.05f,Raylib.GetFrameTime()));
         if(VisualEngine3D.BeginShadowPass(new(camera.Position.X,3,camera.Position.Z)))
         {
             world.DrawWorld3D(camera);
@@ -1326,7 +1329,7 @@ public static partial class Program
         Check(LoreAndMenusUI.IsLoreOpen,"frog dossier opens");
         int frogIndex=Array.FindIndex(VibeCoderCollection.All,s=>s.Id=="frog_hopper");
         for(int i=0;i<frogIndex;i++) Key(KeyboardKey.Down);
-        Check(LoreAndMenusUI.CollectionEntry(frogIndex)=="Джава-жаба v0.9","deposited frog dossier");
+        Check(LoreAndMenusUI.CollectionEntry(frogIndex)=="Джаба-жаба v0.9","deposited frog dossier");
         for (int frame = 0; frame < 45; frame++) UpdateFrame(1f / 60, ref exit);
         capture("10_java_frog.png");
         Key(KeyboardKey.Down);
@@ -1721,7 +1724,7 @@ public static partial class Program
         if(_world.FocusPrompt(BuildPlayerCamera())!="Сдать кадра HR Веронике") throw new InvalidDataException("HR candidate priority");
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
         if(_world.CarriedCoder!=null || Floor.PocketFrogs.Count!=1 || _playerCash<=0 ||
-            _world.FocusPrompt(BuildPlayerCamera())!="Сдать Джава-жаб Веронике") throw new InvalidDataException("HR tarot payout");
+            _world.FocusPrompt(BuildPlayerCamera())!="Сдать Джаба-жаб Веронике") throw new InvalidDataException("HR tarot payout");
         if(Floor.Onboarding!=OnboardingStep.Done || _world.OnboardingWaypoint(_playerPos)!=null || !AudioMusicSystem.ActiveVoiceText.Contains("Дело пошло"))
             throw new InvalidDataException("HR delivery completes onboarding");
         int wallet=_playerCash;
@@ -1956,10 +1959,11 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS Living office: navigation, four rendered GLBs, 30 loose items, sprint, shotgun, steam, CO2, electric discharge, settling and intercom priority");
     }
 
-    private static void RunAutomatedScreenshotSuite(string displayPath)
+    private static void RunAutomatedScreenshotSuite(string displayPath,bool polishOnly)
     {
         CheckViewmodelRates();
         AudioMusicSystem.CheckMovementSounds();
+        AudioMusicSystem.CheckStudioVoices();
         CheckElevatorNameplates();
         LoreAndMenusUI.CheckMixerControls();
         string projectScreenshotsDir = Environment.GetEnvironmentVariable("VIBECODER_SCREENSHOTS")
@@ -2010,6 +2014,36 @@ public static partial class Program
             Raylib.UnloadImage(img);
             Console.WriteLine($"[AUTOTEST] Saved screenshot: {path1}");
         }
+
+        void CapturePolish()
+        {
+            MainMenuAndPauseUI.OpenMainMenu();
+            ResetNewGameFloor(greet:false);
+            MainMenuAndPauseUI.IsInMainMenu=false;
+            Vector3 booth=_world.HrTarotBoothPos;
+            Camera3D Shot(Vector3 eye,Vector3 target,float fov) => new() { Position=eye,Target=target,Up=Vector3.UnitY,FovY=fov };
+            FloorSystems.SpeakCoaching(FloorSystems.ShopGreeting);
+            _world.AdvanceLighting(.9f);
+            CaptureShot("25_veronika_animated_closeup.png",sceneCamera:Shot(booth+new Vector3(.90f,1.74f,-1.92f),
+                booth+new Vector3(-.48f,1.31f,-.12f),40));
+            OpenFloorPanel(FloorPanel.Upgrades);
+            floorRow=3;
+            CaptureShot("26_shop_3d_showcase.png");
+            OpenFloorPanel(FloorPanel.None);
+            CaptureShot("27_window_city_ground.png",sceneCamera:Shot(new(-37.55f,1.72f,2),new(-69,-42,-8),63));
+            var station=_world.GalleyDesks[0].DeskPosition;
+            _playerPos=station+new Vector3(1.65f,1.72f,1.95f);
+            LookAtTarget(station+new Vector3(0,1.04f,-.15f));
+            CaptureShot("28_workstation_human_scale.png",hideHud:true);
+            Floor.BuyWeapon(0,_=>true);
+            _weapons.Equip(WeaponType.CaptureNet);
+            if(_weapons.CurrentWeapon!=WeaponType.CaptureNet) throw new InvalidDataException("Net grip fixture");
+            for(int i=0;i<60;i++) _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
+            _playerPos=booth+new Vector3(1,1.72f,-4);
+            LookAtTarget(booth+Vector3.UnitY*1.3f);
+            CaptureShot("29_net_grip_fixed.png",hideHud:true);
+        }
+        if(polishOnly) { CapturePolish(); return; }
 
         // 0. 00_main_menu_classic.png - Classic PC Main Menu over live 3D Skyscraper Floor 1
         ResetClassicFixture();
@@ -2066,7 +2100,7 @@ public static partial class Program
         walkingCoder.Position = new Vector3(-1.55f, 0f, 4.65f);
         walkingCoder.FacingYaw = .46f;
         walkingCoder.Anxiety = 38f;
-        walkingCoder.SpeechBubble = "Ого, халявный Cursor Pro на Макбуке! Бегу жать Accept All!";
+        walkingCoder.SpeechBubble = "Ого, халявный Табсор Про на ЯблоБуке! Бегу жать Accept All!";
         walkingCoder.SpeechTimer = 5.0f;
         _world.UpdateAmbushState(_playerPos, _isCrouching);
         _weapons.UpdateWeapons(0.16f, BuildPlayerCamera(), isMoving: false, holdingFire: true);
@@ -2159,7 +2193,7 @@ public static partial class Program
         {
             Id = 99,
             Archetype = CoderArchetype.SaasGuruMiniBoss,
-            Name = "Гуру Курсора ($60K MRR)",
+            Name = "Гуру Табсора ($60K MRR)",
             TarotPayoutValue = 600,
             HoodieColor = new Color(245, 190, 25, 255)
         };
@@ -2223,6 +2257,7 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = true;
         LoreAndMenusUI.IsCaseOpen = false;
         CaptureShot("07_settings_mixer_and_mods.png");
+        CapturePolish();
 
     }
 

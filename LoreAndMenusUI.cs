@@ -127,7 +127,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 0,
             Name = "Ремень «Золотая Пряжка Авторитета»",
-            WeaponLabel = "СЛОТ 1: РЕМЕНЬ",
+            WeaponLabel = "РЕМЕНЬ",
             RarityLabel = "ЗОЛОТОЙ ЛЮКС",
             Slot = WeaponSkinSlot.Belt,
             CardColor = new Color(245, 192, 42, 255),
@@ -140,7 +140,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 1,
             Name = "Ремень «Крокодил из 94-го»",
-            WeaponLabel = "СЛОТ 1: РЕМЕНЬ",
+            WeaponLabel = "РЕМЕНЬ",
             RarityLabel = "ИЗУМРУДНЫЙ",
             Slot = WeaponSkinSlot.Belt,
             CardColor = new Color(34, 205, 118, 255),
@@ -153,20 +153,20 @@ public static partial class LoreAndMenusUI
         {
             Id = 2,
             Name = "Ремень «Батин Градиент Воспитания»",
-            WeaponLabel = "СЛОТ 1: РЕМЕНЬ",
+            WeaponLabel = "РЕМЕНЬ",
             RarityLabel = "МИФИЧЕСКИЙ FADE",
             Slot = WeaponSkinSlot.Belt,
             CardColor = new Color(235, 75, 175, 255),
             Primary3D = new Color(195, 42, 125, 255),
             Secondary3D = new Color(255, 180, 48, 255),
             Glow3D = new Color(255, 105, 210, 255),
-            LoreTag = "Лечит выгорание и закрывает Твиттер с одного взмаха"
+            LoreTag = "Лечит выгорание и закрывает Чириктер с одного взмаха"
         },
         new()
         {
             Id = 3,
             Name = "Паяльник «Синяя Изолента Элит»",
-            WeaponLabel = "СЛОТ 2: ПАЯЛЬНИК",
+            WeaponLabel = "ПАЯЛЬНИК",
             RarityLabel = "КОБАЛЬТ СССР",
             Slot = WeaponSkinSlot.SolderingIron,
             CardColor = new Color(48, 132, 255, 255),
@@ -179,7 +179,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 4,
             Name = "Паяльник «Канифольный Градиент»",
-            WeaponLabel = "СЛОТ 2: ПАЯЛЬНИК",
+            WeaponLabel = "ПАЯЛЬНИК",
             RarityLabel = "ЯНТАРНЫЙ FADE",
             Slot = WeaponSkinSlot.SolderingIron,
             CardColor = new Color(255, 138, 36, 255),
@@ -192,7 +192,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 5,
             Name = "Паяльник «Кровавая Паутина 220В»",
-            WeaponLabel = "СЛОТ 2: ПАЯЛЬНИК",
+            WeaponLabel = "ПАЯЛЬНИК",
             RarityLabel = "КРИМЗОН ХАРДКОР",
             Slot = WeaponSkinSlot.SolderingIron,
             CardColor = new Color(220, 38, 62, 255),
@@ -205,7 +205,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 6,
             Name = "Micro-Uzi «Малиновый Пиджак»",
-            WeaponLabel = "СЛОТ 3: MICRO-UZI",
+            WeaponLabel = "MICRO-UZI",
             RarityLabel = "ЛЕГЕНДА 1993",
             Slot = WeaponSkinSlot.MicroUzi,
             CardColor = new Color(228, 32, 96, 255),
@@ -218,33 +218,33 @@ public static partial class LoreAndMenusUI
         {
             Id = 7,
             Name = "Micro-Uzi «Золотой Картель»",
-            WeaponLabel = "СЛОТ 3: MICRO-UZI",
+            WeaponLabel = "MICRO-UZI",
             RarityLabel = "ЧИСТОЕ ЗОЛОТО 999",
             Slot = WeaponSkinSlot.MicroUzi,
             CardColor = new Color(255, 208, 46, 255),
             Primary3D = new Color(242, 188, 34, 255),
             Secondary3D = new Color(255, 242, 150, 255),
             Glow3D = new Color(255, 224, 92, 255),
-            LoreTag = "Каждый патрон стоит как месячная подписка на Cursor Pro"
+            LoreTag = "Каждый патрон стоит как месячная подписка на Табсор Про"
         },
         new()
         {
             Id = 8,
             Name = "Micro-Uzi «Неоновый Опенспейс»",
-            WeaponLabel = "СЛОТ 3: MICRO-UZI",
+            WeaponLabel = "MICRO-UZI",
             RarityLabel = "КИБЕР-ПУРПУР",
             Slot = WeaponSkinSlot.MicroUzi,
             CardColor = new Color(168, 64, 255, 255),
             Primary3D = new Color(128, 38, 225, 255),
             Secondary3D = new Color(56, 242, 255, 255),
             Glow3D = new Color(195, 110, 255, 255),
-            LoreTag = "Светится в темноте ярче, чем Макбук с халявным API"
+            LoreTag = "Светится в темноте ярче, чем ЯблоБук с халявным API"
         },
         new()
         {
             Id = 9,
             Name = "Обрез «Братва 1995»",
-            WeaponLabel = "СЛОТ 4: ОБРЕЗ / ЧАТ-ГАН",
+            WeaponLabel = "ОБРЕЗ / ЧАТ-ГАН",
             RarityLabel = "СТАЛЬ И РЖАВЧИНА",
             Slot = WeaponSkinSlot.SawedOffOrChatGun,
             CardColor = new Color(194, 112, 58, 255),
@@ -257,7 +257,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 10,
             Name = "Обрез «Малиновый Восход 1994»",
-            WeaponLabel = "СЛОТ 4: ОБРЕЗ / ЧАТ-ГАН",
+            WeaponLabel = "ОБРЕЗ / ЧАТ-ГАН",
             RarityLabel = "РУБИНОВЫЙ ЛЮКС",
             Slot = WeaponSkinSlot.SawedOffOrChatGun,
             CardColor = new Color(242, 56, 92, 255),
@@ -270,7 +270,7 @@ public static partial class LoreAndMenusUI
         {
             Id = 11,
             Name = "Чат-Ган «Лимитка Сэма»",
-            WeaponLabel = "СЛОТ 4: ОБРЕЗ / ЧАТ-ГАН",
+            WeaponLabel = "ОБРЕЗ / ЧАТ-ГАН",
             RarityLabel = "ПРИЗМАТИК AGI",
             Slot = WeaponSkinSlot.SawedOffOrChatGun,
             CardColor = new Color(56, 245, 215, 255),
@@ -305,7 +305,7 @@ public static partial class LoreAndMenusUI
             RoleBadge = "Служебная записка о возврате оборудования",
             Time = "Суббота, 03:12",
             Metrics = [("B12", "92°C", Amber), ("220В", "19", Mint)],
-            Text = "«В девяносто восьмом я для АО «Энтропия» собрал отладчиков Java-98. Лапы приделал, чтобы по стойке лазили. Теперь как B12 перегреется — весь выводок у кулера.»",
+            Text = "«В девяносто восьмом я для АО «Энтропия» собрал отладчиков Jabba-98. Лапы приделал, чтобы по стойке лазили. Теперь как B12 перегреется — весь выводок у кулера.»",
             ReplyAuthor = "@buhgalter (инвентаризация)",
             ReplyText = "«Я их со счёта списать не могу, Петрович. Сдавайте в Баг-трекер: он считывает номер платы и платит за возврат. Новая плата всё равно дороже.»",
             HandleColor = new Color(255, 98, 98, 255)
@@ -317,9 +317,9 @@ public static partial class LoreAndMenusUI
             RoleBadge = "CRYPTO-HUSTLER — УЯЗВИМОСТЬ: ЖАДНОСТЬ",
             Time = "Суббота, 11:08",
             Metrics = [("GREED", "99%", Amber), ("MAX", "24", Mint)],
-            Text = "«Запустил токен прямо на прод-кластере! Меня ремнём не догонишь — пока на Макбуке открыт мой терминал ликвидности, я бегаю быстрее охраны!»",
+            Text = "«Запустил токен прямо на прод-кластере! Меня ремнём не догонишь — пока на ЯблоБуке открыт мой терминал ликвидности, я бегаю быстрее охраны!»",
             ReplyAuthor = "@veronika_tarot (HR-Таролог / ZERO API)",
-            ReplyText = "«Психопрофиль ZERO: у Крипто-Бро зашкаливает Жадность (Greed). Включайте на Макбуке приманку Cloud Entropic Max или бейте паяльником по кошельку — сам сдастся.»",
+            ReplyText = "«Психопрофиль ZERO: у Крипто-Бро зашкаливает Жадность (Greed). Включайте на ЯблоБуке приманку Cloud Entropic Max или бейте паяльником по кошельку — сам сдастся.»",
             HandleColor = new Color(255, 206, 68, 255)
         },
         new()
@@ -343,7 +343,7 @@ public static partial class LoreAndMenusUI
             Metrics = [("-TD", "64", Mint), ("ZERO", "12", Amber)],
             Text = "«Я один на этаже умею чистить Техдолг (TD) за столом Галеры. Но я залез в ядро ZERO: парни, физического CEO нет! Башней рулит нейросеть на кассетах коммерса из 1998 года!»",
             ReplyAuthor = "@sec_ops (Контур Безопасности ZERO)",
-            ReplyText = "«Доступ закрыт. Инструкция перехвата: Сеньор не ведётся на дешёвый байт — ломайте ему Эго (Ego) паяльником или выбивайте Макбук, чтобы посадить чистить TD.»",
+            ReplyText = "«Доступ закрыт. Инструкция перехвата: Сеньор не ведётся на дешёвый байт — ломайте ему Эго (Ego) паяльником или выбивайте ЯблоБук, чтобы посадить чистить TD.»",
             HandleColor = new Color(255, 144, 68, 255)
         },
         new()
@@ -597,7 +597,7 @@ public static partial class LoreAndMenusUI
     internal static void TriggerGrantTestMoney()
     {
         OnGrantMoneyRequested?.Invoke(2000);
-        _settingsStatusBanner = "ВЫДАНО +$2000 НА КАРМАН! МОЖНО БРАТЬ КЛЮЧ ОТ ЛИФТА И ТЕСТИТЬ БОССА!";
+        _settingsStatusBanner = "ВЫДАНО +$2000 НА КАРМАН! КЛЮЧ-КАРТУ СБ ДЛЯ СЕВЕРНОГО ЛИФТА ПРОДАЁТ ВЕРОНИКА.";
         _settingsStatusTimer = 4.0f;
         InvokeUiClickSound();
     }
@@ -770,13 +770,13 @@ public static partial class LoreAndMenusUI
             (
                 "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) — На Галере гасит Техдолг (-TD)",
                 "ПРОГНОЗ ZERO API: ЭГО 98% — ЛОМАТЬ ПАЯЛЬНИКОМ И САЖАТЬ ЧИСТИТЬ ТЕХДОЛГ!",
-                "«Все думают, что я гадаю на картоне, но под бархатом стола спрятан терминал prediction API системы ZERO. По Сеньору оракул выдал: страха нет, зато Эго 98%. Сбейте ему спесь паяльником или выбейте Макбук — на Галере он в одиночку гасит Техдолг этажа!»",
+                "«Все думают, что я гадаю на картоне, но под бархатом стола спрятан терминал prediction API системы ZERO. По Сеньору оракул выдал: страха нет, зато Эго 98%. Сбейте ему спесь паяльником или выбейте ЯблоБук — на Галере он в одиночку гасит Техдолг этажа!»",
                 new Color(255, 92, 118, 255)
             ),
             (
                 "Фигурант №2: Джуниор Данила (Accept All) — На Галере растит Техдолг (+TD)",
-                "ПРОГНОЗ ZERO API: СТРАХ 100% — БРАТЬ РЕМНЁМ У МАКБУКА И СДАВАТЬ В HR ЗА КЭШ!",
-                "«Prediction API мигает жёлтым: мальчик жмёт Accept All не глядя и быстро засоряет Техдолг (TD). Заманите его на Макбук-ловушку, припугните отцовским ремнём и несите сразу ко мне в будку Таро — выдам чистый кэш и спишу хвост по линии СБ!»",
+                "ПРОГНОЗ ZERO API: СТРАХ 100% — БРАТЬ РЕМНЁМ У ЯБЛОБУКА И СДАВАТЬ В HR ЗА КЭШ!",
+                "«Prediction API мигает жёлтым: мальчик жмёт Accept All не глядя и быстро засоряет Техдолг (TD). Заманите его на ЯблоБук-ловушку, припугните отцовским ремнём и несите сразу ко мне в будку Таро — выдам чистый кэш и спишу хвост по линии СБ!»",
                 new Color(64, 245, 165, 255)
             ),
             (
@@ -803,12 +803,12 @@ public static partial class LoreAndMenusUI
         "«Уведомление контура ZERO: побег узла v0.1!»",
         "В 02:14 ночи автономный ИИ-Агент получил доступ к реестру 50-го этажа и обнаружил, что физического CEO не существует.",
         "«Зафиксирован взлом архива АО «Энтропия» 1998 года!»",
-        "Агент скачал голосовые кассеты основателя и заблокировал Северный лифт, пытаясь вырваться из корпоративной сети ZERO."
+        "Агент скачал голосовые кассеты основателя. Чтобы перекрыть ему выход в сеть, ZERO запер его в шахте Северного лифта."
     ];
     private static readonly string[] CameraLog =
     [
         "«Петрович: он не спятил — он правду раскопал!»",
-        "Боевой титановый андроид с белой керамической маской выбил двери Северного лифта и орёт, что весь совет директоров — симуляция ZERO!",
+        "Боевой титановый андроид с белой керамической маской вышел из Северного лифта после снятия карантина и орёт, что весь совет директоров — симуляция ZERO!",
         "«Разведка боя у Северного лифта:»",
         "Швыряется 40-гигабайтными кубами node_modules. Цельтесь дуплетом из обреза прямо в треугольное алое ядро на груди!"
     ];
@@ -829,7 +829,7 @@ public static partial class LoreAndMenusUI
         Raylib.DrawRectangleRec(new(x, y, w, h), ink);
 
     private static readonly Dictionary<(string, int, int, Typeface), string[]> ParagraphLines = new();
-    private static string[] Wrap(string text, int width, int size, Typeface face = Typeface.Interface)
+    internal static string[] Wrap(string text, int width, int size, Typeface face = Typeface.Interface)
     {
         var key = (text, width, size, face);
         if (!ParagraphLines.TryGetValue(key, out var lines))

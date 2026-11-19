@@ -12,7 +12,7 @@
     <Content Include="assets\fonts\Onest-Medium.ttf;assets\fonts\Onest-Bold.ttf;assets\fonts\Unbounded-Bold.ttf;assets\fonts\Onest-OFL.txt;assets\fonts\Unbounded-OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="assets\models\**\*.glb" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Update="assets/sounds/*.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="assets/sounds/*.wav;assets/sounds/vo/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="assets/ui/*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Raylib-cs" Version="7.0.1" />
   </ItemGroup>

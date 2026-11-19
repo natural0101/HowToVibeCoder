@@ -184,7 +184,7 @@ public static partial class LoreAndMenusUI
             _ => ("Обычный", Muted)
         };
         Field("Редкость", rarity, 0, 0, ink);
-        Field("Категория", species.Id=="ai_agent_v01" ? "ИИ-агент" : species.IsFrog ? "Джава-жаба" : "Вайбкодер", 1, 0, Ink);
+        Field("Категория", species.Id=="ai_agent_v01" ? "ИИ-агент" : species.IsFrog ? "Джаба-жаба" : "Вайбкодер", 1, 0, Ink);
         Field("Выплата", species.IsFrog ? $"${species.SalePrice}" : $"+${species.BonusPayout}", 0, 1, Ink);
         if(species.Id=="ai_agent_v01" && Program.AgentOutcome!=AgentVerdict.Pending)
             Field("Решение",Program.AgentOutcome==AgentVerdict.Contained ? "Контейнирован" : "Отпущен",1,1,Ink);
@@ -200,7 +200,7 @@ public static partial class LoreAndMenusUI
             var oblique = Matrix4x4.Identity;
             oblique.M12 = -.16f;
             Rlgl.MultMatrixf(oblique);
-            Paragraph("Справка цеха: серверные микроботы-отладчики 1998 г. (Java-98), сбегающие из перегретых стоек.", 0, 0, TextWidth - 8, 15, 18, Muted);
+            Paragraph("Справка цеха: серверные микроботы-отладчики 1998 г. (Jabba-98), сбегающие из перегретых стоек.", 0, 0, TextWidth - 8, 15, 18, Muted);
             Rlgl.PopMatrix();
         }
     }
@@ -251,16 +251,35 @@ public static partial class LoreAndMenusUI
         }
     }
 
-    private static void RenderExhibit()
+    private static void EnsureExhibitTarget(int w,int h)
     {
-        Rectangle dst = ArchiveScreen(Exhibit);
-        int w = Math.Max(1, (int)MathF.Ceiling(dst.Width * 2)), h = Math.Max(1, (int)MathF.Ceiling(dst.Height * 2));
         if (_exhibitTexture.Texture.Width != w || _exhibitTexture.Texture.Height != h)
         {
             if (_exhibitTexture.Id != 0) Raylib.UnloadRenderTexture(_exhibitTexture);
             _exhibitTexture = Raylib.LoadRenderTexture(w, h);
             Raylib.SetTextureFilter(_exhibitTexture.Texture, TextureFilter.Bilinear);
         }
+    }
+
+    internal static Texture2D RenderShopExhibit(string model,float yaw,float density)
+    {
+        EnsureExhibitTarget(Math.Max(1,(int)(416*density)),Math.Max(1,(int)(244*density)));
+        Camera3D cam=new() { Position=new(0,1.26f,3),Target=new(0,.55f,0),Up=Vector3.UnitY,
+            FovY=1.48f,Projection=CameraProjection.Orthographic };
+        Raylib.BeginTextureMode(_exhibitTexture);
+        Raylib.ClearBackground(new(35,33,37,255));
+        Raylib.BeginMode3D(cam);
+        VisualEngine3D.DrawArchiveModel(model,1,yaw,false,cam.Position,shop:true);
+        Raylib.EndMode3D();
+        Raylib.EndTextureMode();
+        return _exhibitTexture.Texture;
+    }
+
+    private static void RenderExhibit()
+    {
+        Rectangle dst = ArchiveScreen(Exhibit);
+        int w = Math.Max(1, (int)MathF.Ceiling(dst.Width * 2)), h = Math.Max(1, (int)MathF.Ceiling(dst.Height * 2));
+        EnsureExhibitTarget(w,h);
         string model = ExhibitModel;
         bool tool = model == SolderModel;
         float scale = model=="prop_bug_frog" ? 3.1f : model == AgentModel ? .72f : model == TarotModel ? .84f : tool ? 4.3f : 1f;
@@ -355,11 +374,18 @@ internal static unsafe partial class VisualEngine3D
 {
     private static Shader dossierShader;
     private static int dossierEye, dossierSurface;
+    private static readonly Dictionary<string,BoundingBox> shopBounds=new();
+    internal static BoundingBox ModelBounds(string asset)
+    {
+        if(!shopBounds.TryGetValue(asset,out var bounds))
+            shopBounds[asset]=bounds=Raylib.GetModelBoundingBox(imports[asset]);
+        return bounds;
+    }
     private static Model stageCylinder;
 
     // The exhibit borrows each loaded mesh and its material maps. The stage shader
     // is applied to a value copy so the world keeps its current lighting pass.
-    internal static void DrawArchiveModel(string asset, float scale, float yaw, bool tool, Vector3 eye,VibeCoderSpecies? species=null,bool hidden=false)
+    internal static void DrawArchiveModel(string asset, float scale, float yaw, bool tool, Vector3 eye,VibeCoderSpecies? species=null,bool hidden=false,bool shop=false)
     {
         if (dossierShader.Id == 0)
         {
@@ -436,6 +462,42 @@ internal static unsafe partial class VisualEngine3D
             Matrix4x4.CreateRotationX(-1.22f) * Matrix4x4.CreateRotationZ(-.48f) : Matrix4x4.Identity;
         transform *= Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationY(yaw * MathF.PI / 180)
                    * Matrix4x4.CreateTranslation(0, tool ? .55f : 0, 0);
+        if(shop)
+        {
+            if(asset=="keycard")
+            {
+                Rlgl.PushMatrix();
+                Rlgl.Translatef(0,.64f,0);
+                Rlgl.Rotatef(yaw,0,1,0);
+                Rlgl.Rotatef(-9,0,0,1);
+                Raylib.DrawCube(Vector3.Zero,.99f,.64f,.052f,new(146,44,54,255));
+                foreach(int side in new[]{-1,1})
+                {
+                    float z=side*.029f;
+                    Raylib.DrawCube(new(-.26f,.01f,z),.20f,.17f,.012f,new(228,184,104,255));
+                    // Raised Cyrillic СБ on both faces of the badge.
+                    void LetterStroke(float x,float y,float w,float h) =>
+                        Raylib.DrawCube(new(side*x,y,z),w,h,.014f,new(236,213,173,255));
+                    foreach(float x in new[]{.04f,.23f})
+                    {
+                        LetterStroke(x-.06f,0,.024f,.20f);
+                        LetterStroke(x,.09f,.14f,.023f);
+                        LetterStroke(x,-.09f,.14f,.023f);
+                    }
+                    LetterStroke(.23f,0,.14f,.023f);
+                    LetterStroke(.29f,-.045f,.024f,.10f);
+                    Raylib.DrawCube(new(0,.24f,z),.15f,.033f,.014f,new(39,35,35,255));
+                }
+                Rlgl.PopMatrix();
+                return;
+            }
+            var bounds=ModelBounds(asset);
+            Vector3 extent=bounds.Max-bounds.Min;
+            float fit=1.16f/Math.Max(extent.X,Math.Max(extent.Y,extent.Z));
+            transform=Matrix4x4.CreateTranslation(-(bounds.Max+bounds.Min)/2)*Matrix4x4.CreateScale(fit)
+                *Matrix4x4.CreateRotationZ(-.16f)*Matrix4x4.CreateRotationY(yaw*MathF.PI/180)
+                *Matrix4x4.CreateTranslation(0,.64f,0);
+        }
         bool partner = asset == "char_partner_90s";
         void DrawParts(string name, Matrix4x4 pose, bool hideHolsteredProp = false)
         {
@@ -469,6 +531,7 @@ internal static unsafe partial class VisualEngine3D
 
     internal static void UnloadArchiveShader()
     {
+        shopBounds.Clear();
         if (stageCylinder.MeshCount > 0) Raylib.UnloadModel(stageCylinder);
         stageCylinder = default;
         if (dossierShader.Id != 0) Raylib.UnloadShader(dossierShader);
