@@ -189,6 +189,8 @@ public static partial class Program
             _weapons.TriggerHitmarker(impact.IsCritical);
             AudioMusicSystem.PlayHitmarker();
         }
+        else if(Net.Guest && message.Kind=="keycard-purchased")
+            FloorSystems.SpeakCoaching(FloorSystems.KeycardPurchaseLine);
         else if(Net.Guest && message is {Kind:"status", Text:{} status})
         {
             panelMessage=status;
@@ -277,7 +279,7 @@ public static partial class Program
     {
         if(!guest) ResetNewGameFloor();
         var timer=System.Diagnostics.Stopwatch.StartNew();
-        int sent=0; bool deposited=false, ordered=false, hostSawPocket=false;
+        int sent=0; bool deposited=false, ordered=false, hostSawPocket=false, guardStaged=false, guardHit=false;
         double settled=0;
         while(timer.Elapsed.TotalSeconds<20)
         {
@@ -304,7 +306,17 @@ public static partial class Program
                 {
                     _weapons.SelectOwnedSlot(1);
                     if(_weapons.CurrentWeapon!=WeaponType.CaptureNet) throw new InvalidDataException("Guest net slot");
-                    Console.WriteLine("COOP PASS guest: three shared catches, terminal deposit, collection and net purchase"); return;
+                    var guard=_world.ActiveCoders.Find(c=>c.Archetype==CoderArchetype.SecurityGuard);
+                    if(guard!=null && !guardHit)
+                    {
+                        _playerPos=guard.Position+new Vector3(0,1.35f,1.1f);
+                        LookAtTarget(guard.CombatCenter);
+                        Fire(BuildPlayerCamera()); guardHit=true;
+                    }
+                    if(guardHit && _world.HasElevatorKey && Floor.Notice==SkyscraperFloor1World.KeycardDrop)
+                    {
+                        Console.WriteLine("COOP PASS guest: shared catches, net purchase, free guard keycard and loot notice"); return;
+                    }
                 }
             }
             if(!guest)
@@ -313,9 +325,15 @@ public static partial class Program
                 if(hostSawPocket && _playerCash==1 && Floor.PocketFrogs.Count==0 && Floor.HasWeapon(WeaponType.CaptureNet)
                     && Floor.DiscoveredSpecies.GetValueOrDefault("frog_hopper")==3)
                 {
-                    if(settled==0) settled=timer.Elapsed.TotalSeconds;
-                    if(timer.Elapsed.TotalSeconds-settled>.65)
-                    { Console.WriteLine("COOP PASS host: shared catches, single payout, net unlocked"); return; }
+                    if(!guardStaged)
+                    {
+                        var guard=_world.SpawnFighter(CoderArchetype.SecurityGuard,new Vector3(24,0,17));
+                        guard.Hp=12;
+                        guardStaged=true;
+                    }
+                    if(_world.HasElevatorKey && settled==0) settled=timer.Elapsed.TotalSeconds;
+                    if(settled>0 && timer.Elapsed.TotalSeconds-settled>.65)
+                    { Console.WriteLine("COOP PASS host: shared catches, single payout, net unlocked, free guard keycard"); return; }
                 }
             }
             DrawFrame();

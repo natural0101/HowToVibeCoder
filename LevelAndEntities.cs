@@ -971,28 +971,32 @@ public sealed partial class SkyscraperFloor1World
         if (ElevatorBoss.IsDefeated) return "Лифт на 2-й этаж открыт";
         if (ElevatorBoss.State == ElevatorBossState.Repairing) return "Питание восстановлено. Карантинный замок снят";
         if (ElevatorBoss.IsActive) return "Шахта заблокирована до конца боя";
-        bool funded = HasElevatorKey || Program.SharedCash >= 1000;
-        if (!Systems.HasWeapon(WeaponType.SolderingIron))
+        return (HasElevatorKey, Systems.HasWeapon(WeaponType.SolderingIron)) switch
         {
-            int price=Systems.Price(FloorSystems.Weapons[2]);
-            return funded ? $"Сломанный лифт — купи Паяльник (${price}) у Вероники" : $"Сломанный лифт — нужен Паяльник (${price}) и $1000";
-        }
-        if (!funded) return "Сломанный лифт — нужно $1000 на обход защиты";
-        return HasElevatorKey ? "Починить щиток и запустить лифт" : "Починить щиток и запустить лифт ($1000)";
+            (false, false) => "Щиток сгорел и заперт СБ — нужны Паяльник ($90) и Ключ-карта СБ",
+            (false, true) => "Замок СБ — купи Ключ-карту ($1000) у Вероники или отбери у СБ",
+            (true, false) => "Щиток сгорел — купи Паяльник ($90) у Вероники",
+            (true, true) => "Перепаять щиток и приложить Ключ-карту СБ"
+        };
     }
 
-    public bool TrySummonElevatorBoss(Func<int, bool> trySpendMoney, out string message)
+    public bool TrySummonElevatorBoss(out string message)
     {
         message = ElevatorPrompt();
         if (ElevatorBoss.IsDefeated) return true;
-        if (ElevatorBoss.IsActive || !Systems.HasWeapon(WeaponType.SolderingIron)) return false;
-        if (!HasElevatorKey && !trySpendMoney(1000))
+        if (ElevatorBoss.IsActive) return false;
+        if (!HasElevatorKey)
         {
-            message = "Сломанный лифт — нужно $1000 на обход защиты";
+            message = "Замок СБ не пускает. Купи дубликат Ключ-карты СБ ($1000) у Вероники [E] или отбери у СБ-шника.";
+            return false;
+        }
+        if (!Systems.HasWeapon(WeaponType.SolderingIron))
+        {
+            message = "Ключ-карта есть, но щиток сгорел. Купи Паяльник ($90) у Вероники [E].";
             return false;
         }
 
-        HasElevatorKey = ElevatorRepaired = true;
+        ElevatorRepaired = true;
         ElevatorGlassOpacity = 1f;
         ElevatorDoorOpenAmount = 0f;
         ElevatorBoss = new() {
@@ -1146,7 +1150,7 @@ public sealed partial class SkyscraperFloor1World
                 c.HitStaggerTimer = Math.Max(0,c.HitStaggerTimer-dt);
                 continue;
             }
-            if(c.State==CoderAIState.Subdued) continue;
+            if(c.State==CoderAIState.Subdued) { LootElevatorKey(c); continue; }
             if(c.TimidIntern)
             {
                 Vector3 away=c.Position-playerPos; away.Y=0;
@@ -1993,6 +1997,7 @@ public sealed partial class SkyscraperFloor1World
                 if(burnedOut) KillCoder(target,onGrantMoney);
                 feedback=burnedOut ? "Кандидат выбыл от ожогов. СБ +14" : target.State==CoderAIState.Subdued ? "Кандидат сломлен. Подпиши NDA [E]" :
                     disarm ? "Ноутбук выбит. Эго -40" : $"Выдержка {target.Composure:F0}   Эго {target.Ego:F0}";
+                if(target.State==CoderAIState.Subdued) LootElevatorKey(target);
                 Impact(hitPt,target.CombatCenter,salt ? 0 : dmg,disarm);
                 if(tool==WeaponType.CaptureNet && target.TimidIntern && target.State==CoderAIState.Subdued &&
                     Systems.Has(Sidegrade.CarbonNda) && CarriedCoder==null) feedback=PickUp(target,onGrantMoney);
@@ -2128,7 +2133,7 @@ public sealed partial class SkyscraperFloor1World
         float distBtnSouth = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(SouthElevatorButtonPos.X, SouthElevatorButtonPos.Z));
         if (distElevNorth <= 5.5f || distElevSouth <= 5.2f || distBtnNorth <= 4.0f || distBtnSouth <= 4.0f)
         {
-            TrySummonElevatorBoss(trySpendMoney, out string msg);
+            TrySummonElevatorBoss(out string msg);
             return msg;
         }
 
@@ -3038,6 +3043,7 @@ public sealed partial class SkyscraperFloor1World
             Systems.Discover(species,grant);
         }
         c.IdentityRevealed=true;
+        LootElevatorKey(c);
         ActiveCoders.Remove(c);
         if(c.Archetype==CoderArchetype.SecurityGuard)
         { Systems.Protection=true; return "Начальник СБ прикрывает смену. −1,2 СБ/с"; }
@@ -3098,7 +3104,7 @@ public sealed partial class SkyscraperFloor1World
                 ActivateMacBookTrap(SelectedBaitTier,spend,out string trap);
                 return trap;
             case FocusKind.Elevator:
-                TrySummonElevatorBoss(spend,out string lift);
+                TrySummonElevatorBoss(out string lift);
                 return lift;
             case FocusKind.Shop:
                 SelectedBaitTier=(SubscriptionBaitTier)(((int)SelectedBaitTier+1)%4);
@@ -3489,6 +3495,16 @@ public sealed partial class SkyscraperFloor1World
         return true;
     }
 
+    internal const string KeycardDrop = "Получена Ключ-карта СБ — можно открыть Северный лифт без оплаты Веронике!";
+
+    private void LootElevatorKey(VibeCoderEntity coder)
+    {
+        if (HasElevatorKey || coder.State != CoderAIState.Subdued) return;
+        if (coder.Archetype != CoderArchetype.SecurityGuard && !coder.IsMiniBoss) return;
+        HasElevatorKey = true;
+        Systems.Announce(KeycardDrop, 6);
+    }
+
     private void KillCoder(VibeCoderEntity c,Action<int,string>? pay)
     {
         c.State=CoderAIState.Subdued; c.KnockedOutAlive=false; c.Hp=0; c.KnockoutTime=0; c.SpeechTimer=0;
@@ -3496,6 +3512,7 @@ public sealed partial class SkyscraperFloor1World
         Systems.Risk(security:14); Systems.Earned+=cash;
         SpawnCashBurst(c.CombatCenter,8,$"+${cash}"); pay?.Invoke(cash,"Кандидат");
         AudioMusicSystem.PlaySubduedDrop();
+        LootElevatorKey(c);
     }
 
     private void DrawStations()

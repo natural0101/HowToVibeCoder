@@ -779,6 +779,8 @@ public static partial class Program
         Color white = new(250,249,245,255), dark = new(22,24,38,142);
         string money = "$" + _playerCash;
         ShadowText(_serif, money, 36, sh - 92, 26, white);
+        if(_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated)
+            ShadowText(_uiFont, "Ключ-карта СБ", 36, sh - 110, 15, WorldLabelLayout.Ivory);
         if(Floor.PocketFrogs.Count>0)
         {
             float mw = GameFonts.Measure(_serif, money, 26).X;
@@ -829,7 +831,7 @@ public static partial class Program
             float width=GameFonts.Measure(_serif,prompt,19).X;
             GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
         }
-        else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && !CoachingSubtitle)
+        else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && (_foregroundBanner || !CoachingSubtitle))
         {
             var face = GameFonts.Get(Typeface.InterfaceBold, 20);
             float width=Math.Min(sw-24,GameFonts.Measure(face,_hudStatusBanner,20).X+28);
@@ -1071,6 +1073,24 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 2-6");
     }
 
+    private static unsafe void PressTestKey(KeyboardKey key)
+    {
+        bool exit=false;
+        AutomationEvent e=new() {Type=2}; e.Params[0]=(int)key;
+        Raylib.PlayAutomationEvent(e); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+        e.Type=1; Raylib.PlayAutomationEvent(e); Raylib.PollInputEvents();
+    }
+
+    private static void OpenKeycardRow()
+    {
+        _playerPos=_world.HrTarotBoothPos+new Vector3(0,1.72f,2);
+        LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.6f);
+        PressTestKey(KeyboardKey.E);
+        if(floorPanel!=FloorPanel.Upgrades || sidegrades) throw new InvalidDataException("Expected Veronika's arsenal");
+        PressTestKey(KeyboardKey.Up);
+        if(FloorSystems.Arsenal[floorRow]!=FloorSystems.ElevatorKeycard) throw new InvalidDataException("Expected keycard row");
+    }
+
     private static unsafe void CheckZeroToEmpire(Action<string> capture)
     {
         void Check(bool ok,string step)
@@ -1078,12 +1098,7 @@ public static partial class Program
             if(!ok) throw new InvalidDataException("Zero-to-Empire: "+step);
         }
         bool exit=false;
-        void Key(KeyboardKey key)
-        {
-            AutomationEvent e=new() {Type=2}; e.Params[0]=(int)key;
-            Raylib.PlayAutomationEvent(e); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
-            e.Type=1; Raylib.PlayAutomationEvent(e); Raylib.PollInputEvents();
-        }
+        void Key(KeyboardKey key) => PressTestKey(key);
         void Approach(Vector3 point,float gap=1.25f)
         {
             _playerPos=_world.ResolvePlayerCollision(new(point.X,1.48f,point.Z+gap));
@@ -1193,7 +1208,6 @@ public static partial class Program
         Guided(OnboardingStep.BuyNet,"Наличка");
         Approach(_world.HrTarotBoothPos+Vector3.UnitY*1.6f,-2.3f);
         Key(KeyboardKey.E); Check(floorPanel==FloorPanel.Upgrades && !sidegrades,"HR weapon shop");
-        capture("14_arsenal.png");
         Key(KeyboardKey.Tab); Check(sidegrades,"upgrade tab");
         Key(KeyboardKey.One); Key(KeyboardKey.Enter);
         Guided(OnboardingStep.ActivateBait,"Сачок в руках");
@@ -1704,18 +1718,28 @@ public static partial class Program
         _world.AdvanceLighting(.105f);
         capture("21_broken_elevator_secret.png");
         AimPanel();
-        Check(Prompt()=="Сломанный лифт — нужен Паяльник ($90) и $1000" && Use()==Prompt(),"both requirements missing");
-        _playerCash=1000;
-        Check(Prompt()=="Сломанный лифт — купи Паяльник ($90) у Вероники" && Use()==Prompt() &&
-            _world.BrokenElevator && _playerCash==1000 && !_world.HasElevatorKey,"missing iron preserves money");
+        const string noCard="Замок СБ не пускает. Купи дубликат Ключ-карты СБ ($1000) у Вероники [E] или отбери у СБ-шника.";
+        Check(Prompt()=="Щиток сгорел и заперт СБ — нужны Паяльник ($90) и Ключ-карта СБ" && Use()==noCard,"both requirements missing");
+        _playerCash=2090;
         Floor.BuyWeapon(2,TrySpendCash);
-        Check(_playerCash==910 && Prompt()=="Сломанный лифт — нужно $1000 на обход защиты" && Use()==Prompt() &&
-            _world.BrokenElevator && !_world.HasElevatorKey,"missing lock fee");
-        _playerCash=1000;
-        Check(Prompt()=="Починить щиток и запустить лифт ($1000)","cash prompt");
+        Check(Prompt()=="Замок СБ — купи Ключ-карту ($1000) у Вероники или отбери у СБ" && Use()==noCard &&
+            _world.BrokenElevator && _playerCash==2000 && !_world.HasElevatorKey,"cash cannot open the reader");
+        OpenKeycardRow();
+        capture("14_arsenal.png");
+        _playerCash=999;
+        PressTestKey(KeyboardKey.Enter);
+        Check(!_world.HasElevatorKey && _playerCash==999,"unaffordable card");
+        _playerCash=2000;
+        PressTestKey(KeyboardKey.Enter);
+        Check(_world.HasElevatorKey && _playerCash==1000 && AudioMusicSystem.ActiveVoiceText=="Вероника: "+FloorSystems.KeycardPurchaseLine,"buy duplicate at HR");
+        PressTestKey(KeyboardKey.Enter);
+        Check(_playerCash==1000 && panelMessage.Contains("уже получена"),"single purchase");
+        PressTestKey(KeyboardKey.Escape);
+        AimPanel();
+        Check(Prompt()=="Перепаять щиток и приложить Ключ-карту СБ","ready to repair");
         Use();
         Check(_world.ElevatorBoss.State==ElevatorBossState.Repairing && _world.ElevatorRepaired && _world.HasElevatorKey &&
-            _playerCash==0 && _world.ElevatorGlassOpacity==1 && _world.ElevatorDoorOpenAmount==0 &&
+            _playerCash==1000 && _world.ElevatorGlassOpacity==1 && _world.ElevatorDoorOpenAmount==0 &&
             AudioMusicSystem.ActiveSpeaker=="Петрович","panel repair and warning");
         Use();
         FrameDoors();
@@ -1756,13 +1780,30 @@ public static partial class Program
         capture("22_elevator_repair_reveal.png");
         FinishElevatorIntro();
         Check(_world.ElevatorBoss.State==ElevatorBossState.ChargingPlayer,"charge after walkout");
-        ResetClassicFixture();
-        _world.HasElevatorKey=true; _playerCash=0;
-        AimPanel();
-        Check(Prompt()=="Починить щиток и запустить лифт","owned key prompt");
-        Use();
-        Check(_world.ElevatorRepaired && _world.ElevatorBoss.State==ElevatorBossState.Repairing && _playerCash==0,"owned key bypasses fee");
-        Console.WriteLine("[AUTOTEST] PASS broken elevator secret, repair gates, snapshot, reveal, score, shield and charge");
+        foreach(bool miniboss in new[]{false,true})
+        {
+            ResetNewGameFloor(greet:false);
+            Floor.Onboarding=OnboardingStep.Done;
+            var feet=new Vector3(24,0,17);
+            var carrier=miniboss ? _world.SpawnCoderForTier(SubscriptionBaitTier.CloudEntropicMax) :
+                _world.SpawnFighter(CoderArchetype.SecurityGuard,feet);
+            carrier.Position=feet;
+            carrier.Hp=6;
+            _playerPos=feet+new Vector3(0,1.35f,1.1f);
+            LookAtTarget(carrier.CombatCenter);
+            if(miniboss)
+            {
+                Floor.BuyWeapon(3,_=>true);
+                _weapons.Equip(WeaponType.MicroUzi);
+            }
+            _world.ProcessPlayerAttack(BuildPlayerCamera(),_weapons,GrantCash,out _);
+            Check(_world.HasElevatorKey && Floor.Notice==SkyscraperFloor1World.KeycardDrop &&
+                (miniboss ? carrier.Hp==0 && !carrier.KnockedOutAlive : carrier.CanSignNda && _playerCash==0),"free original from "+carrier.Archetype);
+            AimPanel();
+            Check(Prompt()=="Щиток сгорел — купи Паяльник ($90) у Вероники" && Use()=="Ключ-карта есть, но щиток сгорел. Купи Паяльник ($90) у Вероники [E]." &&
+                _world.BrokenElevator,"card still needs an iron");
+        }
+        Console.WriteLine("[AUTOTEST] PASS elevator: two shop gates, single $1000 purchase, free guard and SaaS cards, repair, reveal and combat");
     }
 
     private static void RunAutomatedScreenshotSuite(string displayPath)
@@ -1986,7 +2027,7 @@ public static partial class Program
         _weapons.SelectSlot(4); // Sawed-Off Shotgun / Chat-Gun
         _weapons.UpdateWeapons(.3f,BuildPlayerCamera());
         _world.HasElevatorKey = true;
-        _world.TrySummonElevatorBoss(TrySpendCash, out _);
+        _world.TrySummonElevatorBoss( out _);
         FinishElevatorIntro();
         _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
         _world.ElevatorDoorOpenAmount=.86f;

@@ -12,7 +12,7 @@ internal enum Incident { Printer, Coffee, Bugs, Audit, Ddos, Burnout, Raid, Fire
 internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2 }
 internal enum StyleAction { Belt, Iron, Uzi, Shotgun, Beam, Parry, Water, Capture }
 internal record Job(string Title, string Objective, int Seconds, int Base);
-internal record Gear(string Title, string Detail, int Price);
+internal record Gear(string Title, string Detail, int Price, bool FixedPrice=false);
 internal record Settlement(int Serial, int Job, bool Success, int Amount, float Greed, float Bonus,
     int Captured, float Peak, string Rank, string Diagnosis);
 
@@ -40,7 +40,7 @@ internal sealed partial class FloorSystems
         new("Пейджер Крыши","Один вызов [G] отзывает рейд и снимает 35 внимания СБ.",180),
         new("Канифольный напалм","Поджигает цель. Перегрев B12 ×2, выше риск потерять кадр.",160),
         new("NDA на копирке","Отлов и подготовка NDA вдвое быстрее. За подпись +6 СБ.",150),
-        new("Печатка Авторитета","Авторитет и страх +30%. Цены арсенала +15%.",210),
+        new("Печатка Авторитета","Авторитет и страх +30%. Цены +15%, кроме паяльника и пропуска.",210),
         new("Карманный CO2-баллон","[Q] Облако дыма и −15 ПРОД. Перезарядка 25 с.",190)
     ];
 
@@ -49,10 +49,14 @@ internal sealed partial class FloorSystems
     internal static readonly Gear[] Weapons = [
         new("Сачок-ловушка","Урон 12. До 3 Джава-жаб ($1–$8) и стажёры",3),
         new("Ремень 90-х","Урон 24. Ломает выдержку вайб-кодеров под NDA",25),
-        new("Паяльник 90-х","Урон 42. Пробивает броню + комбо с кулером и кофе",90),
+        new("Паяльник 90-х","Урон 42. Пробивает броню и чинит щиток Северного лифта",90,FixedPrice:true),
         new("Микро-Узи 90-х","Урон 18/выстр. Плавит щиты босса и рейды СБ",240),
         new("Обрез 12-го калибра","Урон 120. Дуплет по элите, Пятнице и ядру босса",480)
     ];
+    internal static readonly Gear ElevatorKeycard = new("Ключ-карта СБ (2-й этаж)",
+        "Вероника перепрошьёт дубликат пропуска СБ для Северного лифта",1000,FixedPrice:true);
+    internal static readonly Gear[] Arsenal = [.. Weapons, ElevatorKeycard];
+    internal const string KeycardPurchaseLine = "Дубликат прошит — держи Ключ-карту СБ. Теперь перепаяй щиток у Северного лифта [E]!";
     internal static readonly int ClassicMask=WeaponOrder.Aggregate(0,(mask,w)=>mask | (1<<(int)w));
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
     public List<string> PocketFrogs=new();
@@ -82,7 +86,7 @@ internal sealed partial class FloorSystems
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
             OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к Макбуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
             OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком или с руки (ЛКМ), подпиши NDA [E] и тащи ко мне на стойку или на свободный стол Галеры.",
-            _ => "Дело пошло! Документы АО «Энтропия» за 1998 год на втором этаже. У Северного лифта сгорел щиток, шахта на карантине. За паяльником заходи ко мне."
+            _ => "Дело пошло! Чтобы уехать на 2-й этаж, перепаяй Северный лифт Паяльником и сними замок СБ — могу перепрошить Ключ-карту за $1000 у меня [E], либо отбери оригинал у СБ."
         };
         SpeakCoaching(line);
     }
@@ -495,8 +499,18 @@ public static partial class Program
     }
 
     private const int WeaponBuyOffset=30, BuyOffset=10, PagerAction=20, BaitAction=21, RollbackAction=22;
+    private static int KeycardAction => WeaponBuyOffset + FloorSystems.Weapons.Length;
     private static string ApplyFloorAction(int index)
     {
+        if(index==KeycardAction)
+        {
+            if(_world.HasElevatorKey) return "Ключ-карта СБ уже получена";
+            if(!TrySpendCash(FloorSystems.ElevatorKeycard.Price)) return "Для покупки Ключ-карты СБ нужно $1000";
+            _world.HasElevatorKey=true;
+            FloorSystems.SpeakCoaching(FloorSystems.KeycardPurchaseLine);
+            if(Net.Ready) Net.Send(new("keycard-purchased"));
+            return "Вероника: "+FloorSystems.KeycardPurchaseLine;
+        }
         if(index>=WeaponBuyOffset && index<WeaponBuyOffset+FloorSystems.Weapons.Length)
         {
             var result=Floor.BuyWeapon(index-WeaponBuyOffset,TrySpendCash);
@@ -580,7 +594,7 @@ public static partial class Program
         if(shop && Key(KeyboardKey.B)) panelMessage=FloorAction(BaitAction);
         if(shop && Key(KeyboardKey.G)) panelMessage=FloorAction(PagerAction);
         if(!shop && Key(KeyboardKey.R) && Floor.JobId>=0) panelMessage=FloorAction(RollbackAction);
-        int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Weapons.Length) : FloorSystems.Jobs.Length;
+        int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
         if(Key(KeyboardKey.Down) || Key(KeyboardKey.S)) floorRow=(floorRow+1)%count;
         if(Key(KeyboardKey.Up) || Key(KeyboardKey.W)) floorRow=(floorRow+count-1)%count;
         Vector2 mouse=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
@@ -650,9 +664,13 @@ public static partial class Program
         bool repairObjective=!guiding && _world.BrokenElevator;
         if(repairObjective)
         {
-            string task=!Floor.HasWeapon(WeaponType.SolderingIron) ? $"Цель: Купи Паяльник (${Floor.Price(FloorSystems.Weapons[2])}) и накопи $1000 для починки лифта" :
-                !_world.HasElevatorKey && _playerCash<1000 ? "Цель: Накопи $1000 и почини щиток Северного лифта" :
-                "Цель: Почини щиток Северного лифта [E] (выход на 2-й этаж)";
+            string task=(_world.HasElevatorKey, Floor.HasWeapon(WeaponType.SolderingIron)) switch
+            {
+                (false,false) => "Цель: Купи Паяльник ($90) и достань Ключ-карту СБ у Вероники [E] или с СБ",
+                (false,true) => "Цель: Достань Ключ-карту СБ (у Вероники $1000 или с СБ-шника)",
+                (true,false) => "Цель: Купи Паяльник ($90) у Вероники для починки щитка",
+                (true,true) => "Цель: Почини щиток и приложи Ключ-карту у Северного лифта [E]"
+            };
             ShadowText(_uiFont,task,28,77,17,WorldLabelLayout.Ivory);
         }
         string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
@@ -753,7 +771,7 @@ public static partial class Program
             Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
             TypeAt(shop ? "Арсенал смены" : "Доска контрактов", 102, 66, 43, DossierPrint.Ivory, true);
             TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01", 970, 87, 15, quiet);
-            Raylib.DrawLine(104, 124, 1177, 124, rule);
+            if(!shop) Raylib.DrawLine(104, 124, 1177, 124, rule);
             string info=shop ? $"Общак  ${_playerCash}     /     Приманка: {SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier).Name}" :
                 Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Floor.Progress : "Срок отсчитывается с момента подписи";
             TypeAt(info,105,shop ? 133 : 149,shop ? 18 : 22,paper);
@@ -762,26 +780,27 @@ public static partial class Program
                 {
                     var tabRect=ArsenalTab(tab);
                     var activeTab = sidegrades==(tab==1);
-                    TypeAt(tab==0 ? "[1] ОРУЖИЕ (ЦЕПОЧКА)" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab ? Color.White : quiet, activeTab);
+                    TypeAt(tab==0 ? "[1] ОРУЖИЕ И ДОСТУП" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab ? Color.White : quiet, activeTab);
                 }
-            int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Weapons.Length) : FloorSystems.Jobs.Length;
+            int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
             for(int i=0;i<count;i++)
             {
                 Rectangle row=FloorRowRect(i);
                 bool selected=i==floorRow;
-                if(selected)
+                if(selected && !shop)
                 {
                     Raylib.DrawRectangleRec(row, DossierPrint.Selected);
                 }
-                else Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
-                Color ink=selected ? DossierPrint.Ivory : paper;
-                var gear=shop ? (sidegrades ? FloorSystems.GearList[i] : FloorSystems.Weapons[i]) : null;
+                else if(!shop) Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
+                Color ink=selected ? Color.White : paper;
+                if(shop && selected) TypeAt("Выбрано",row.X+982,row.Y+(sidegrades ? 7 : 14),15,quiet);
+                var gear=shop ? (sidegrades ? FloorSystems.GearList[i] : FloorSystems.Arsenal[i]) : null;
                 var job=shop ? null : FloorSystems.Jobs[i];
                 TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+(sidegrades ? 4 : 11),sidegrades ? 19 : 21,ink,true);
                 TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+(sidegrades ? 7 : 15),16,selected ? paper : quiet);
-                string value=shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i+1]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
+                string value=gear==FloorSystems.ElevatorKeycard ? (_world.HasElevatorKey ? "Получена" : $"${gear.Price}") : shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i+1]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
                     (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${Floor.Price(gear!)}" : $"{job!.Seconds} с    ${job.Base}";
-                TypeAt(value,1041,row.Y+(sidegrades ? 7 : 14),17,ink);
+                TypeAt(value,shop ? 980 : 1041,row.Y+(sidegrades ? 7 : 14),17,ink);
             }
             string hint=shop ? "[B]  Сменить приманку      [G]  Вызвать Крышу" :
                 Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
