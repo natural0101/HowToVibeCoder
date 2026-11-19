@@ -1,11 +1,14 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -16,6 +19,7 @@ internal static class SetupProgram
     [STAThread]
     private static int Main(string[] args)
     {
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
@@ -46,16 +50,23 @@ internal static class SetupProgram
             return 0;
         }
 
-        if (args.Length == 2 && string.Equals(args[0], "--verify-ui", StringComparison.OrdinalIgnoreCase))
+        if (args.Length >= 2 && (string.Equals(args[0], "--verify-ui", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(args[0], "--verify-ui-progress", StringComparison.OrdinalIgnoreCase)))
         {
+            bool showProgress = string.Equals(args[0], "--verify-ui-progress", StringComparison.OrdinalIgnoreCase);
             using var preview = new SetupMainForm();
             preview.ShowInTaskbar = false;
             preview.StartPosition = FormStartPosition.Manual;
             preview.Location = new Point(-20000, -20000);
+            if (showProgress)
+            {
+                preview.ApplyPreviewProgressState(64, "Распаковка файлов игры…");
+            }
             preview.Show();
             Application.DoEvents();
-            using var image = new Bitmap(preview.Width, preview.Height);
+            using var image = new Bitmap(preview.Width, preview.Height, PixelFormat.Format32bppArgb);
             preview.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(args[1]))!);
             image.Save(args[1], ImageFormat.Png);
             preview.Close();
             return 0;
@@ -69,10 +80,10 @@ internal static class SetupProgram
     {
         string appDir = AppContext.BaseDirectory.TrimEnd('\\', '/');
         DialogResult res = MessageBox.Show(
-            $"Удалить игру «How to Vibe Coder — Этаж 1 (Cloud Entropic Tower)» из папки:\n{appDir}\nи очистить ярлыки?",
-            "Деинсталляция How to Vibe Coder",
+            $"Удалить «How to Vibe Coder» из папки:\n{appDir}\nи убрать ярлыки?",
+            "Удаление игры",
             MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning);
+            MessageBoxIcon.Question);
 
         if (res != DialogResult.Yes)
             return;
@@ -105,14 +116,14 @@ internal static class SetupProgram
             });
 
             MessageBox.Show(
-                "Игра «How to Vibe Coder» успешно удалена с компьютера.",
+                "Игра «How to Vibe Coder» удалена.",
                 "Удаление завершено",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Ошибка при удалении: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Не удалось удалить игру: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }
@@ -156,15 +167,22 @@ public static class IconGenerator
         return null;
     }
 
-    public static Bitmap? LoadMenuBannerBitmap()
+    public static Bitmap? LoadInstallerCoverBitmap()
     {
         try
         {
+            Assembly asm = Assembly.GetExecutingAssembly();
+            using Stream? s = asm.GetManifestResourceStream("HowToVibeCoder.InstallerCover.png");
+            if (s != null)
+            {
+                using Image img = Image.FromStream(s);
+                return new Bitmap(img);
+            }
+
             string[] candidatePaths =
             {
-                Path.Combine(AppContext.BaseDirectory, "assets", "menu_banner.png"),
-                @"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder\assets\menu_banner.png",
-                Path.Combine(AppContext.BaseDirectory, "menu_banner.png")
+                Path.Combine(AppContext.BaseDirectory, "installer_cover_editorial.png"),
+                @"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder\Installer\installer_cover_editorial.png"
             };
 
             foreach (string path in candidatePaths)
@@ -175,14 +193,6 @@ public static class IconGenerator
                     using Image img = Image.FromStream(fs);
                     return new Bitmap(img);
                 }
-            }
-
-            Assembly asm = Assembly.GetExecutingAssembly();
-            using Stream? s = asm.GetManifestResourceStream("HowToVibeCoder.MenuBanner.png");
-            if (s != null)
-            {
-                using Image img = Image.FromStream(s);
-                return new Bitmap(img);
             }
         }
         catch
@@ -232,8 +242,8 @@ public static class IconGenerator
         using BinaryWriter bw = new(fs);
 
         int count = IcoFrameSizes.Length;
-        bw.Write((ushort)0); // Reserved
-        bw.Write((ushort)1); // Type = 1 (ICO)
+        bw.Write((ushort)0);
+        bw.Write((ushort)1);
         bw.Write((ushort)count);
 
         uint offset = (uint)(6 + 16 * count);
@@ -243,12 +253,12 @@ public static class IconGenerator
             byte dimByte = sz >= 256 ? (byte)0 : (byte)sz;
             byte[] bytes = pngFrames[i];
 
-            bw.Write(dimByte);   // Width (0 = 256)
-            bw.Write(dimByte);   // Height (0 = 256)
-            bw.Write((byte)0);   // ColorCount
-            bw.Write((byte)0);   // Reserved
-            bw.Write((ushort)1); // Planes
-            bw.Write((ushort)32);// BitCount
+            bw.Write(dimByte);
+            bw.Write(dimByte);
+            bw.Write((byte)0);
+            bw.Write((byte)0);
+            bw.Write((ushort)1);
+            bw.Write((ushort)32);
             bw.Write((uint)bytes.Length);
             bw.Write(offset);
             offset += (uint)bytes.Length;
@@ -259,7 +269,6 @@ public static class IconGenerator
             bw.Write(pngFrames[i]);
         }
 
-        // Also mirror to assets/HowToVibeCoder.ico if in repo
         try
         {
             string assetsIco = @"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder\assets\HowToVibeCoder.ico";
@@ -298,53 +307,10 @@ public static class IconGenerator
         Bitmap bmp = new(size, size, PixelFormat.Format32bppArgb);
         using Graphics g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-
-        // 1. Фон: тёмный киберпанк с малиновым щитом 90-х
-        using (LinearGradientBrush bgBrush = new(
-            new Rectangle(0, 0, size, size),
-            Color.FromArgb(165, 16, 62),
-            Color.FromArgb(24, 14, 38),
-            45f))
-        {
-            g.FillRectangle(bgBrush, 4, 4, size - 8, size - 8);
-        }
-
-        // Золотая рамка авторитета
-        using (Pen goldPen = new(Color.FromArgb(255, 215, 64), Math.Max(2f, size * 0.055f)))
-        {
-            g.DrawRectangle(goldPen, 5, 5, size - 10, size - 10);
-        }
-
-        // 2. Светящийся неоновый Макбук-приманка внизу справа
-        int mbX = (int)(size * 0.42f);
-        int mbY = (int)(size * 0.50f);
-        int mbW = (int)(size * 0.44f);
-        int mbH = (int)(size * 0.30f);
-        using (SolidBrush screenGlow = new(Color.FromArgb(38, 235, 155)))
-        using (Pen screenBorder = new(Color.FromArgb(190, 255, 235), Math.Max(1.5f, size * 0.025f)))
-        {
-            g.FillRectangle(screenGlow, mbX, mbY, mbW, mbH);
-            g.DrawRectangle(screenBorder, mbX, mbY, mbW, mbH);
-            g.FillRectangle(Brushes.Silver, mbX - 4, mbY + mbH, mbW + 8, Math.Max(3, (int)(size * 0.05f)));
-        }
-
-        // 3. Золотой бандитский Micro-Uzi поверх малинового пиджака
-        using (SolidBrush goldFill = new(Color.FromArgb(255, 212, 55)))
-        using (Pen darkOutline = new(Color.FromArgb(20, 12, 28), Math.Max(1.5f, size * 0.025f)))
-        {
-            Rectangle uziBody = new((int)(size * 0.16f), (int)(size * 0.24f), (int)(size * 0.56f), (int)(size * 0.19f));
-            Rectangle uziBarrel = new((int)(size * 0.68f), (int)(size * 0.28f), (int)(size * 0.17f), (int)(size * 0.09f));
-            Rectangle uziGrip = new((int)(size * 0.34f), (int)(size * 0.41f), (int)(size * 0.14f), (int)(size * 0.32f));
-
-            g.FillRectangle(goldFill, uziBarrel);
-            g.DrawRectangle(darkOutline, uziBarrel);
-            g.FillRectangle(goldFill, uziGrip);
-            g.DrawRectangle(darkOutline, uziGrip);
-            g.FillRectangle(goldFill, uziBody);
-            g.DrawRectangle(darkOutline, uziBody);
-        }
-
+        using SolidBrush bg = new(Color.FromArgb(18, 20, 24));
+        g.FillRectangle(bg, 0, 0, size, size);
+        using SolidBrush accent = new(Color.FromArgb(168, 30, 50));
+        g.FillRectangle(accent, size / 6, size / 6, size * 2 / 3, size * 2 / 3);
         return bmp;
     }
 }
@@ -365,13 +331,12 @@ public static class InstallerEngine
         Directory.CreateDirectory(Path.Combine(installDir, "mods"));
         Directory.CreateDirectory(Path.Combine(installDir, "screenshots"));
 
-        progressCallback?.Invoke(8, "Генерация фирменной иконки HowToVibeCoder.ico...");
+        progressCallback?.Invoke(6, "Подготовка папки…");
         string icoPath = Path.Combine(installDir, "HowToVibeCoder.ico");
         using (Stream icon = Assembly.GetExecutingAssembly().GetManifestResourceStream("HowToVibeCoder.Icon.ico")
             ?? throw new InvalidDataException("Installer icon resource is missing."))
         using (FileStream output = File.Create(icoPath)) icon.CopyTo(output);
 
-        // Проверяем вшитый ресурс HowToVibeCoder.Payload.zip
         Assembly asm = Assembly.GetExecutingAssembly();
         using Stream? payloadStream = asm.GetManifestResourceStream("HowToVibeCoder.Payload.zip");
 
@@ -380,11 +345,12 @@ public static class InstallerEngine
             using ZipArchive archive = new(payloadStream, ZipArchiveMode.Read);
             int total = Math.Max(1, archive.Entries.Count);
             int current = 0;
+            int lastPct = 6;
 
             foreach (ZipArchiveEntry entry in archive.Entries)
             {
                 current++;
-                int pct = 12 + (int)((current / (float)total) * 72f);
+                int pct = 10 + (int)((current / (float)total) * 76f);
                 string destPath = Path.GetFullPath(Path.Combine(installDir, entry.FullName));
 
                 if (!destPath.StartsWith(Path.TrimEndingDirectorySeparator(installDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
@@ -397,13 +363,16 @@ public static class InstallerEngine
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                progressCallback?.Invoke(pct, $"Распаковка: {entry.FullName}");
+                if (pct != lastPct)
+                {
+                    lastPct = pct;
+                    progressCallback?.Invoke(pct, "Распаковка файлов игры…");
+                }
                 entry.ExtractToFile(destPath, overwrite: true);
             }
         }
         else
         {
-            // Fallback: если запущен из папки рядом со сборкой игры
             string fallbackSrc = @"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder\bin\Release\net10.0";
             if (!Directory.Exists(fallbackSrc))
             {
@@ -418,30 +387,29 @@ public static class InstallerEngine
                     string rel = Path.GetRelativePath(fallbackSrc, files[i]);
                     string dest = Path.Combine(installDir, rel);
                     Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                    int pct = 12 + (int)(((i + 1) / (float)Math.Max(1, files.Length)) * 72f);
-                    progressCallback?.Invoke(pct, $"Копирование: {rel}");
+                    int pct = 10 + (int)(((i + 1) / (float)Math.Max(1, files.Length)) * 76f);
+                    progressCallback?.Invoke(pct, "Копирование файлов игры…");
                     File.Copy(files[i], dest, overwrite: true);
                 }
             }
         }
 
-        // Создаём Uninstall.bat и Uninstall.exe в папке установки
-        progressCallback?.Invoke(88, "Создание деинсталлятора Uninstall.exe и Uninstall.bat...");
+        progressCallback?.Invoke(90, "Настройка удаления…");
         CreateUninstallerFiles(installDir);
 
         string exePath = Path.Combine(installDir, "HowToVibeCoder.exe");
 
         if (createDesktopShortcut)
         {
-            progressCallback?.Invoke(93, "Создание ярлыка на Рабочем столе...");
+            progressCallback?.Invoke(94, "Создание ярлыка на рабочем столе…");
             string desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             string lnkPath = Path.Combine(desktopDir, "How to Vibe Coder — Этаж 1.lnk");
-            CreateWindowsShortcut(lnkPath, exePath, installDir, icoPath, "How to Vibe Coder — Этаж 1 (Cloud Entropic Tower)");
+            CreateWindowsShortcut(lnkPath, exePath, installDir, icoPath, "How to Vibe Coder — Этаж 1");
         }
 
         if (createStartMenuFolder)
         {
-            progressCallback?.Invoke(97, "Создание папки в меню Пуск...");
+            progressCallback?.Invoke(98, "Добавление в меню «Пуск»…");
             string programsDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Programs),
                 "How to Vibe Coder");
@@ -459,10 +427,10 @@ public static class InstallerEngine
                 Path.Combine(installDir, "Uninstall.exe"),
                 installDir,
                 icoPath,
-                "Удалить игру How to Vibe Coder");
+                "Удалить How to Vibe Coder");
         }
 
-        progressCallback?.Invoke(100, "Установка успешно завершена! Этаж 1 готов к штурму.");
+        progressCallback?.Invoke(100, "Установка завершена");
 
         if (launchAfterInstall && File.Exists(exePath))
         {
@@ -494,12 +462,10 @@ public static class InstallerEngine
         File.WriteAllText(uninstallBat,
             "@echo off\r\n" +
             "chcp 65001 >nul\r\n" +
-            "echo Удаление How to Vibe Coder — Этаж 1 (Cloud Entropic Tower)...\r\n" +
             "if exist \"%~dp0Uninstall.exe\" (\r\n" +
             "    start \"\" \"%~dp0Uninstall.exe\" --uninstall\r\n" +
             ") else (\r\n" +
             "    del /q \"%USERPROFILE%\\Desktop\\How to Vibe Coder — Этаж 1.lnk\" 2>nul\r\n" +
-            "    echo Папка игры: %~dp0\r\n" +
             ")\r\n");
     }
 
@@ -526,169 +492,598 @@ public static class InstallerEngine
     }
 }
 
+internal static class UiDraw
+{
+    public static GraphicsPath RoundedRect(RectangleF bounds, float radius)
+    {
+        GraphicsPath path = new();
+        float d = Math.Max(0.5f, radius * 2f);
+        if (d > bounds.Width) d = bounds.Width;
+        if (d > bounds.Height) d = bounds.Height;
+        path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+        path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+        path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+        path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+}
+
+internal sealed class CleanButton : Control
+{
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color FillColor { get; set; } = Color.FromArgb(26, 30, 37);
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color HoverColor { get; set; } = Color.FromArgb(37, 42, 52);
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color PressedColor { get; set; } = Color.FromArgb(21, 24, 30);
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color DisabledFillColor { get; set; } = Color.FromArgb(24, 27, 33);
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color BorderColor { get; set; } = Color.FromArgb(46, 52, 64);
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color DisabledForeColor { get; set; } = Color.FromArgb(100, 108, 122);
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public float CornerRadius { get; set; } = 5f;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool DrawBorder { get; set; } = true;
+
+    private bool _hovered;
+    private bool _pressed;
+
+    public CleanButton()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        Cursor = Cursors.Hand;
+        ForeColor = Color.FromArgb(230, 234, 240);
+        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _hovered = true;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hovered = false;
+        _pressed = false;
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left && Enabled)
+        {
+            _pressed = true;
+            Invalidate();
+        }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (_pressed)
+        {
+            _pressed = false;
+            Invalidate();
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+        using (SolidBrush parentBg = new(Parent?.BackColor ?? Color.FromArgb(18, 20, 24)))
+        {
+            g.FillRectangle(parentBg, ClientRectangle);
+        }
+
+        Color bg = !Enabled ? DisabledFillColor : _pressed ? PressedColor : _hovered ? HoverColor : FillColor;
+        RectangleF r = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+
+        using GraphicsPath path = UiDraw.RoundedRect(r, CornerRadius);
+        using (SolidBrush fill = new(bg))
+        {
+            g.FillPath(fill, path);
+        }
+
+        if (DrawBorder)
+        {
+            Color bCol = Enabled ? BorderColor : Color.FromArgb(34, 38, 46);
+            using Pen pen = new(bCol, 1f);
+            g.DrawPath(pen, path);
+        }
+
+        TextRenderer.DrawText(
+            g,
+            Text,
+            Font,
+            ClientRectangle,
+            Enabled ? ForeColor : DisabledForeColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+}
+
+internal sealed class CleanCheckBox : Control
+{
+    private bool _checked = true;
+    private bool _hovered;
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Checked
+    {
+        get => _checked;
+        set
+        {
+            if (_checked != value)
+            {
+                _checked = value;
+                Invalidate();
+            }
+        }
+    }
+
+    public CleanCheckBox()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        Cursor = Cursors.Hand;
+        ForeColor = Color.FromArgb(212, 218, 228);
+        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+        Size = new Size(420, 26);
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _hovered = true;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hovered = false;
+        Invalidate();
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        base.OnClick(e);
+        if (Enabled)
+        {
+            Checked = !Checked;
+        }
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (Enabled && (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter))
+        {
+            Checked = !Checked;
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+        using (SolidBrush parentBg = new(Parent?.BackColor ?? Color.FromArgb(18, 20, 24)))
+        {
+            g.FillRectangle(parentBg, ClientRectangle);
+        }
+
+        const int boxSize = 17;
+        int boxY = (Height - boxSize) / 2;
+        RectangleF boxRect = new(0.5f, boxY + 0.5f, boxSize - 1f, boxSize - 1f);
+
+        using GraphicsPath boxPath = UiDraw.RoundedRect(boxRect, 4f);
+        if (_checked)
+        {
+            Color fillCol = !Enabled
+                ? Color.FromArgb(88, 38, 46)
+                : _hovered ? Color.FromArgb(190, 38, 60) : Color.FromArgb(168, 30, 50);
+            using SolidBrush fill = new(fillCol);
+            g.FillPath(fill, boxPath);
+
+            using Pen tick = new(Enabled ? Color.White : Color.FromArgb(190, 195, 205), 1.85f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+                LineJoin = LineJoin.Round
+            };
+            PointF[] pts =
+            {
+                new(4.2f, boxY + 8.9f),
+                new(7.4f, boxY + 12.1f),
+                new(12.9f, boxY + 5.6f)
+            };
+            g.DrawLines(tick, pts);
+        }
+        else
+        {
+            using SolidBrush fill = new(Color.FromArgb(24, 27, 34));
+            g.FillPath(fill, boxPath);
+            Color borderCol = !Enabled
+                ? Color.FromArgb(40, 45, 54)
+                : _hovered ? Color.FromArgb(105, 114, 130) : Color.FromArgb(62, 69, 82);
+            using Pen pen = new(borderCol, 1.1f);
+            g.DrawPath(pen, boxPath);
+        }
+
+        Rectangle textRect = new(boxSize + 11, 0, Width - (boxSize + 11), Height);
+        Color textCol = Enabled ? (_hovered ? Color.FromArgb(240, 243, 248) : ForeColor) : Color.FromArgb(105, 112, 124);
+        TextRenderer.DrawText(
+            g,
+            Text,
+            Font,
+            textRect,
+            textCol,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+}
+
+internal sealed class WindowChromeButton : Control
+{
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool IsClose { get; init; }
+    private bool _hovered;
+
+    public WindowChromeButton()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        Size = new Size(40, 32);
+        Cursor = Cursors.Hand;
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _hovered = true;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hovered = false;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        Color bg = _hovered
+            ? (IsClose ? Color.FromArgb(184, 38, 52) : Color.FromArgb(32, 36, 44))
+            : (Parent?.BackColor ?? Color.FromArgb(18, 20, 24));
+
+        using (SolidBrush fill = new(bg))
+        {
+            g.FillRectangle(fill, ClientRectangle);
+        }
+
+        Color fg = _hovered ? Color.White : Color.FromArgb(132, 141, 156);
+        using Pen pen = new(fg, 1.35f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+
+        float cx = Width / 2f;
+        float cy = Height / 2f;
+        if (IsClose)
+        {
+            const float r = 4.6f;
+            g.DrawLine(pen, cx - r, cy - r, cx + r, cy + r);
+            g.DrawLine(pen, cx + r, cy - r, cx - r, cy + r);
+        }
+        else
+        {
+            g.DrawLine(pen, cx - 5f, cy + 0.5f, cx + 5f, cy + 0.5f);
+        }
+    }
+}
+
 public sealed class SetupMainForm : Form
 {
+    private const int LeftPanelWidth = 268;
+    private const int ContentX = 304;
+    private const int ContentW = 420;
+    private const int WM_NCLBUTTONDOWN = 0xA1;
+    private const int HT_CAPTION = 0x2;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUND = 2;
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    private readonly Panel _pathFrame;
     private readonly TextBox _pathTextBox;
-    private readonly Button _browseButton;
-    private readonly CheckBox _chkDesktopShortcut;
-    private readonly CheckBox _chkStartMenu;
-    private readonly CheckBox _chkLaunchGame;
-    private readonly Button _installButton;
-    private readonly Button _exitButton;
-    private readonly Label _statusLabel;
-    private readonly Panel _progressPanel;
-    private readonly Bitmap? _bannerBitmap;
-    private readonly Bitmap? _headerIconBitmap;
-    private int _progressPercent = 0;
-    private bool _isInstalling = false;
-    private bool _installFinished = false;
+    private readonly CleanButton _browseButton;
+    private readonly Label _diskSpaceLabel;
+    private readonly CleanCheckBox _chkDesktopShortcut;
+    private readonly CleanCheckBox _chkStartMenu;
+    private readonly CleanCheckBox _chkLaunchGame;
+    private readonly CleanButton _installButton;
+    private readonly CleanButton _cancelButton;
+    private readonly WindowChromeButton _minButton;
+    private readonly WindowChromeButton _closeButton;
+    private readonly Bitmap? _coverBitmap;
+
+    private bool _pathFocused;
+    private bool _isInstalling;
+    private bool _installFinished;
+    private bool _showProgressArea;
+    private int _progressPercent;
+    private string _statusMessage = "";
+    private string _installedExePath = "";
+
+    private static readonly Color BgRight = Color.FromArgb(20, 18, 17);
+    private static readonly Color SurfaceInput = Color.FromArgb(29, 26, 24);
+    private static readonly Color BorderSubtle = Color.FromArgb(52, 47, 43);
+    private static readonly Color BorderFocus = Color.FromArgb(110, 100, 92);
+    private static readonly Color AccentCrimson = Color.FromArgb(168, 30, 50);
+    private static readonly Color AccentCrimsonHover = Color.FromArgb(192, 37, 60);
+    private static readonly Color AccentCrimsonPressed = Color.FromArgb(142, 24, 41);
+    private static readonly Color AccentSuccess = Color.FromArgb(40, 128, 80);
+    private static readonly Color AccentSuccessHover = Color.FromArgb(48, 148, 93);
 
     public SetupMainForm()
     {
-        Text = "Установка: How to Vibe Coder — Этаж 1 (Cloud Entropic Tower)";
-        ClientSize = new Size(760, 510);
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        Text = "Установка — How to Vibe Coder";
+        ClientSize = new Size(760, 450);
+        FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(12, 10, 20);
-        ForeColor = Color.White;
+        BackColor = BgRight;
+        ForeColor = Color.FromArgb(242, 244, 247);
+        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
         DoubleBuffered = true;
 
         try
         {
             Icon = IconGenerator.CreateMemoryIcon();
-            _bannerBitmap = IconGenerator.LoadMenuBannerBitmap();
-            _headerIconBitmap = IconGenerator.RenderIconBitmap(96);
+            _coverBitmap = IconGenerator.LoadInstallerCoverBitmap();
         }
         catch
         {
         }
 
-        // Поле выбора папки установки
-        Label pathLabel = new()
+        // Window controls (top right)
+        _closeButton = new WindowChromeButton
         {
-            Text = "ПАПКА УСТАНОВКИ ИГРЫ (RAYLIB-CS OPENGL 3D, АУДИО WAV, СОХРАНЕНИЯ И МОДЫ):",
-            Location = new Point(28, 186),
-            Size = new Size(700, 20),
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(255, 218, 85),
-            BackColor = Color.Transparent
+            IsClose = true,
+            Location = new Point(ClientSize.Width - 41, 1)
         };
-        Controls.Add(pathLabel);
+        _closeButton.Click += (_, _) => TryCloseForm();
+        Controls.Add(_closeButton);
+
+        _minButton = new WindowChromeButton
+        {
+            IsClose = false,
+            Location = new Point(ClientSize.Width - 81, 1)
+        };
+        _minButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
+        Controls.Add(_minButton);
+
+        // Input box container
+        _pathFrame = new Panel
+        {
+            Location = new Point(ContentX, 134),
+            Size = new Size(326, 36),
+            BackColor = SurfaceInput
+        };
+        _pathFrame.Paint += OnPathFramePaint;
+        Controls.Add(_pathFrame);
 
         _pathTextBox = new TextBox
         {
             Text = @"C:\Games\HowToVibeCoder",
-            Location = new Point(28, 210),
-            Size = new Size(576, 28),
-            Font = new Font("Consolas", 11f, FontStyle.Bold),
-            BackColor = Color.FromArgb(22, 18, 36),
-            ForeColor = Color.FromArgb(135, 240, 255),
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.None,
+            Location = new Point(11, 9),
+            Size = new Size(304, 19),
+            Font = new Font("Segoe UI", 9.75f, FontStyle.Regular),
+            BackColor = SurfaceInput,
+            ForeColor = Color.FromArgb(234, 238, 244)
         };
-        Controls.Add(_pathTextBox);
+        _pathTextBox.GotFocus += (_, _) => { _pathFocused = true; _pathFrame.Invalidate(); };
+        _pathTextBox.LostFocus += (_, _) => { _pathFocused = false; _pathFrame.Invalidate(); };
+        _pathTextBox.TextChanged += (_, _) => UpdateDiskSpaceInfo();
+        _pathFrame.Controls.Add(_pathTextBox);
 
-        _browseButton = new Button
+        _browseButton = new CleanButton
         {
-            Text = "ОБЗОР...",
-            Location = new Point(614, 208),
-            Size = new Size(118, 30),
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-            BackColor = Color.FromArgb(148, 20, 62),
-            ForeColor = Color.FromArgb(255, 238, 155),
-            Cursor = Cursors.Hand
+            Text = "Обзор",
+            Location = new Point(ContentX + 334, 134),
+            Size = new Size(86, 36),
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Regular),
+            FillColor = Color.FromArgb(32, 29, 27),
+            HoverColor = Color.FromArgb(44, 40, 37),
+            PressedColor = Color.FromArgb(25, 22, 21),
+            BorderColor = Color.FromArgb(62, 56, 51),
+            ForeColor = Color.FromArgb(232, 227, 218)
         };
-        _browseButton.FlatAppearance.BorderColor = Color.FromArgb(255, 212, 72);
         _browseButton.Click += OnBrowseClicked;
         Controls.Add(_browseButton);
 
-        // 3 чекбокса опций установки
-        _chkDesktopShortcut = CreateStyledCheckBox(
-            "Создать ярлык на Рабочем столе («How to Vibe Coder — Этаж 1»)",
-            new Point(32, 254),
-            isChecked: true);
+        _diskSpaceLabel = new Label
+        {
+            Location = new Point(ContentX, 176),
+            Size = new Size(ContentW, 18),
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+            ForeColor = Color.FromArgb(132, 124, 116),
+            BackColor = BgRight
+        };
+        Controls.Add(_diskSpaceLabel);
+
+        // Options
+        _chkDesktopShortcut = new CleanCheckBox
+        {
+            Text = "Создать ярлык на рабочем столе",
+            Location = new Point(ContentX, 212),
+            Checked = true
+        };
         Controls.Add(_chkDesktopShortcut);
 
-        _chkStartMenu = CreateStyledCheckBox(
-            "Создать папку в меню Пуск (включая ярлык быстрого запуска и Uninstall)",
-            new Point(32, 284),
-            isChecked: true);
+        _chkStartMenu = new CleanCheckBox
+        {
+            Text = "Добавить ярлык в меню «Пуск»",
+            Location = new Point(ContentX, 244),
+            Checked = true
+        };
         Controls.Add(_chkStartMenu);
 
-        _chkLaunchGame = CreateStyledCheckBox(
-            "Запустить игру сразу после завершения установки",
-            new Point(32, 314),
-            isChecked: true);
+        _chkLaunchGame = new CleanCheckBox
+        {
+            Text = "Запустить игру после установки",
+            Location = new Point(ContentX, 276),
+            Checked = true
+        };
         Controls.Add(_chkLaunchGame);
 
-        // Статус и прогресс-бар
-        _statusLabel = new Label
+        // Footer action buttons
+        _cancelButton = new CleanButton
         {
-            Text = "Готов к установке: HowToVibeCoder.exe + Raylib-cs OpenGL 3D + 19 аудиофайлов WAV + менеджер модов",
-            Location = new Point(28, 356),
-            Size = new Size(704, 22),
+            Text = "Отмена",
+            Location = new Point(ContentX + ContentW - 104 - 172 - 10, 384),
+            Size = new Size(104, 38),
             Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
-            ForeColor = Color.FromArgb(215, 228, 250),
-            BackColor = Color.Transparent
+            FillColor = Color.FromArgb(29, 26, 24),
+            HoverColor = Color.FromArgb(41, 37, 34),
+            PressedColor = Color.FromArgb(23, 21, 19),
+            BorderColor = Color.FromArgb(56, 50, 46),
+            ForeColor = Color.FromArgb(206, 200, 192)
         };
-        Controls.Add(_statusLabel);
+        _cancelButton.Click += (_, _) => TryCloseForm();
+        Controls.Add(_cancelButton);
 
-        _progressPanel = new Panel
+        _installButton = new CleanButton
         {
-            Location = new Point(28, 382),
-            Size = new Size(704, 36),
-            BackColor = Color.FromArgb(20, 16, 32)
+            Text = "Установить",
+            Location = new Point(ContentX + ContentW - 172, 384),
+            Size = new Size(172, 38),
+            Font = new Font("Segoe UI Semibold", 9.75f, FontStyle.Bold),
+            FillColor = AccentCrimson,
+            HoverColor = AccentCrimsonHover,
+            PressedColor = AccentCrimsonPressed,
+            DrawBorder = false,
+            ForeColor = Color.White
         };
-        _progressPanel.Paint += OnProgressPanelPaint;
-        Controls.Add(_progressPanel);
-
-        // Кнопки Установить и Выход
-        _installButton = new Button
-        {
-            Text = "▶ УСТАНОВИТЬ ИГРУ НА ПК",
-            Location = new Point(28, 436),
-            Size = new Size(534, 50),
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
-            BackColor = Color.FromArgb(205, 22, 78),
-            ForeColor = Color.FromArgb(255, 242, 165),
-            Cursor = Cursors.Hand
-        };
-        _installButton.FlatAppearance.BorderColor = Color.FromArgb(255, 215, 68);
-        _installButton.FlatAppearance.BorderSize = 2;
         _installButton.Click += OnInstallClicked;
         Controls.Add(_installButton);
 
-        _exitButton = new Button
-        {
-            Text = "ВЫХОД",
-            Location = new Point(576, 436),
-            Size = new Size(156, 50),
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
-            BackColor = Color.FromArgb(36, 28, 54),
-            ForeColor = Color.White,
-            Cursor = Cursors.Hand
-        };
-        _exitButton.FlatAppearance.BorderColor = Color.FromArgb(135, 115, 175);
-        _exitButton.Click += (_, _) => Close();
-        Controls.Add(_exitButton);
+        UpdateDiskSpaceInfo();
     }
 
-    private static CheckBox CreateStyledCheckBox(string text, Point location, bool isChecked)
+    public void ApplyPreviewProgressState(int percent, string message)
     {
-        return new CheckBox
+        _showProgressArea = true;
+        _isInstalling = true;
+        _progressPercent = Math.Clamp(percent, 0, 100);
+        _statusMessage = message;
+        _installButton.Enabled = false;
+        _installButton.Text = "Установка…";
+        _browseButton.Enabled = false;
+        _pathTextBox.ReadOnly = true;
+        _chkDesktopShortcut.Enabled = false;
+        _chkStartMenu.Enabled = false;
+        _chkLaunchGame.Enabled = false;
+        Invalidate();
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
         {
-            Text = text,
-            Location = location,
-            Size = new Size(690, 24),
-            Checked = isChecked,
-            Font = new Font("Segoe UI", 10f, FontStyle.Regular),
-            ForeColor = Color.FromArgb(245, 240, 255),
-            BackColor = Color.Transparent,
-            Cursor = Cursors.Hand
-        };
+            CreateParams cp = base.CreateParams;
+            cp.ClassStyle |= 0x00020000; // CS_DROPSHADOW
+            return cp;
+        }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        try
+        {
+            int pref = DWMWCP_ROUND;
+            DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
+        }
+        catch
+        {
+        }
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left)
+        {
+            ReleaseCapture();
+            SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HT_CAPTION, IntPtr.Zero);
+        }
+    }
+
+    private void TryCloseForm()
+    {
+        if (_isInstalling && !_installFinished)
+            return;
+        Close();
+    }
+
+    private void UpdateDiskSpaceInfo()
+    {
+        string raw = _pathTextBox.Text.Trim();
+        try
+        {
+            string? root = Path.GetPathRoot(raw);
+            if (!string.IsNullOrEmpty(root))
+            {
+                DriveInfo drive = new(root);
+                if (drive.IsReady)
+                {
+                    double freeGb = drive.AvailableFreeSpace / (1024d * 1024d * 1024d);
+                    string driveName = root.TrimEnd('\\', ':');
+                    _diskSpaceLabel.ForeColor = freeGb < 1.0 ? Color.FromArgb(214, 148, 72) : Color.FromArgb(132, 124, 116);
+                    _diskSpaceLabel.Text = $"Свободно на диске {driveName}: {freeGb:0.0} ГБ";
+                    return;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        _diskSpaceLabel.ForeColor = Color.FromArgb(110, 118, 132);
+        _diskSpaceLabel.Text = "Выберите существующий диск и папку";
+    }
+
+    private void OnPathFramePaint(object? sender, PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        RectangleF r = new(0.5f, 0.5f, _pathFrame.Width - 1.5f, _pathFrame.Height - 1.5f);
+        using GraphicsPath path = UiDraw.RoundedRect(r, 5f);
+        using Pen pen = new(_pathFocused ? BorderFocus : BorderSubtle, 1f);
+        g.DrawPath(pen, path);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -697,157 +1092,119 @@ public sealed class SetupMainForm : Form
         Graphics g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-        const int headerH = 168;
-        Rectangle headerRect = new(0, 0, ClientSize.Width, headerH);
-
-        if (_bannerBitmap != null)
+        // 1. Left visual key-art panel
+        Rectangle leftRect = new(0, 0, LeftPanelWidth, ClientSize.Height);
+        if (_coverBitmap != null)
         {
-            // Cover crop from menu_banner.png (1376x768)
             float scale = Math.Max(
-                headerRect.Width / (float)_bannerBitmap.Width,
-                headerRect.Height / (float)_bannerBitmap.Height);
-            int srcW = Math.Min(_bannerBitmap.Width, (int)(headerRect.Width / scale));
-            int srcH = Math.Min(_bannerBitmap.Height, (int)(headerRect.Height / scale));
-            int srcX = (_bannerBitmap.Width - srcW) / 2;
-            int srcY = Math.Max(0, (_bannerBitmap.Height - srcH) / 3);
-
-            g.DrawImage(
-                _bannerBitmap,
-                headerRect,
-                new Rectangle(srcX, srcY, srcW, srcH),
-                GraphicsUnit.Pixel);
-
-            // Тёмно-малиновая тактическая виньетка слева и снизу для контраста типографики
-            using (LinearGradientBrush leftVignette = new(
-                headerRect,
-                Color.FromArgb(238, 12, 8, 22),
-                Color.FromArgb(95, 24, 10, 32),
-                LinearGradientMode.Horizontal))
-            {
-                g.FillRectangle(leftVignette, headerRect);
-            }
-
-            Rectangle bottomFade = new(0, headerH - 54, ClientSize.Width, 54);
-            using (LinearGradientBrush bottomBrush = new(
-                bottomFade,
-                Color.FromArgb(0, 12, 10, 20),
-                Color.FromArgb(245, 12, 10, 20),
-                LinearGradientMode.Vertical))
-            {
-                g.FillRectangle(bottomBrush, bottomFade);
-            }
+                leftRect.Width / (float)_coverBitmap.Width,
+                leftRect.Height / (float)_coverBitmap.Height);
+            int srcW = Math.Min(_coverBitmap.Width, (int)Math.Round(leftRect.Width / scale));
+            int srcH = Math.Min(_coverBitmap.Height, (int)Math.Round(leftRect.Height / scale));
+            int srcX = Math.Max(0, (_coverBitmap.Width - srcW) / 2);
+            int srcY = Math.Max(0, (_coverBitmap.Height - srcH) / 2);
+            g.DrawImage(_coverBitmap, leftRect, new Rectangle(srcX, srcY, srcW, srcH), GraphicsUnit.Pixel);
         }
         else
         {
-            using LinearGradientBrush headerBrush = new(
-                headerRect,
-                Color.FromArgb(152, 16, 58),
-                Color.FromArgb(28, 16, 42),
+            using LinearGradientBrush fallback = new(
+                leftRect,
+                Color.FromArgb(46, 35, 32),
+                Color.FromArgb(14, 16, 20),
                 LinearGradientMode.Vertical);
-            g.FillRectangle(headerBrush, headerRect);
+            g.FillRectangle(fallback, leftRect);
         }
 
-        // Тонкие CRT-сканлайны поверх баннера
-        using (Pen scanPen = new(Color.FromArgb(26, 0, 0, 0), 1f))
+        // Clean bottom scrim for title contrast
+        Rectangle scrimRect = new(0, ClientSize.Height - 190, LeftPanelWidth, 190);
+        using (LinearGradientBrush scrim = new(
+            scrimRect,
+            Color.FromArgb(0, 12, 14, 18),
+            Color.FromArgb(245, 12, 14, 18),
+            LinearGradientMode.Vertical))
         {
-            for (int sy = 0; sy < headerH; sy += 3)
+            g.FillRectangle(scrim, scrimRect);
+        }
+
+        // Left cover typography (anti-aliased cleanly over image scrim)
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        using (Font titleFont = new("Segoe UI", 18.5f, FontStyle.Bold))
+        using (Font subFont = new("Segoe UI", 9.25f, FontStyle.Regular))
+        using (SolidBrush titleBrush = new(Color.FromArgb(245, 247, 250)))
+        using (SolidBrush subBrush = new(Color.FromArgb(174, 182, 194)))
+        using (SolidBrush barBrush = new(Color.FromArgb(212, 175, 99)))
+        {
+            g.DrawString("HOW TO", titleFont, titleBrush, 22f, ClientSize.Height - 118f);
+            g.DrawString("VIBE CODER", titleFont, titleBrush, 22f, ClientSize.Height - 90f);
+            g.FillRectangle(barBrush, 24f, ClientSize.Height - 52f, 26f, 2f);
+            g.DrawString("Этаж 1 · Белая Акула", subFont, subBrush, 23f, ClientSize.Height - 40f);
+        }
+
+        // Vertical hairline divider between art and workspace
+        using (Pen divPen = new(Color.FromArgb(34, 38, 46), 1f))
+        {
+            g.DrawLine(divPen, LeftPanelWidth, 0, LeftPanelWidth, ClientSize.Height);
+        }
+
+        // 2. Right panel typography
+        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+        using (Font headingFont = new("Segoe UI Semibold", 16f, FontStyle.Bold))
+        using (Font metaFont = new("Segoe UI", 9f, FontStyle.Regular))
+        using (Font labelFont = new("Segoe UI", 9f, FontStyle.Regular))
+        using (SolidBrush headingBrush = new(Color.FromArgb(243, 245, 248)))
+        using (SolidBrush metaBrush = new(Color.FromArgb(124, 132, 146)))
+        using (SolidBrush labelBrush = new(Color.FromArgb(156, 165, 180)))
+        {
+            g.DrawString("Установка игры", headingFont, headingBrush, ContentX - 2f, 38f);
+            g.DrawString("Версия 1.0  ·  Требуется ~420 МБ", metaFont, metaBrush, ContentX, 72f);
+            g.DrawString("Папка установки", labelFont, labelBrush, ContentX, 111f);
+        }
+
+        // 3. Progress area (visible only while installing or completed)
+        if (_showProgressArea)
+        {
+            using Font statusFont = new("Segoe UI", 9f, FontStyle.Regular);
+            using Font pctFont = new("Segoe UI Semibold", 9f, FontStyle.Bold);
+            using SolidBrush statusBrush = new(_installFinished ? Color.FromArgb(116, 204, 152) : Color.FromArgb(196, 203, 214));
+            using SolidBrush pctBrush = new(Color.FromArgb(230, 234, 240));
+
+            g.DrawString(_statusMessage, statusFont, statusBrush, ContentX, 322f);
+
+            string pctStr = $"{_progressPercent}%";
+            SizeF pctSize = g.MeasureString(pctStr, pctFont);
+            g.DrawString(pctStr, pctFont, pctBrush, ContentX + ContentW - pctSize.Width + 2f, 322f);
+
+            RectangleF track = new(ContentX, 346f, ContentW, 4f);
+            using (GraphicsPath trackPath = UiDraw.RoundedRect(track, 2f))
+            using (SolidBrush trackFill = new(Color.FromArgb(34, 38, 47)))
             {
-                g.DrawLine(scanPen, 0, sy, ClientSize.Width, sy);
+                g.FillPath(trackFill, trackPath);
+            }
+
+            float fillW = ContentW * (_progressPercent / 100f);
+            if (fillW > 2f)
+            {
+                RectangleF fillRect = new(ContentX, 346f, fillW, 4f);
+                using GraphicsPath fillPath = UiDraw.RoundedRect(fillRect, 2f);
+                using SolidBrush fillBrush = new(_installFinished ? AccentSuccess : AccentCrimson);
+                g.FillPath(fillBrush, fillPath);
             }
         }
 
-        // Рамка шапки и внешняя тактическая окантовка окна
-        using (Pen crimsonLine = new(Color.FromArgb(235, 34, 92), 3f))
-        using (Pen goldLine = new(Color.FromArgb(255, 212, 64), 2f))
+        // Subtle footer divider
+        using (Pen footerDiv = new(Color.FromArgb(30, 34, 42), 1f))
         {
-            g.DrawLine(crimsonLine, 0, headerH - 2, ClientSize.Width, headerH - 2);
-            g.DrawLine(goldLine, 0, headerH, ClientSize.Width, headerH);
-            g.DrawRectangle(goldLine, 3, 3, ClientSize.Width - 6, ClientSize.Height - 6);
+            g.DrawLine(footerDiv, ContentX, 366, ContentX + ContentW, 366);
         }
 
-        // Иконка герба слева в шапке с золотым щитом
-        Rectangle iconBox = new(24, 24, 112, 112);
-        using (SolidBrush iconShadow = new(Color.FromArgb(180, 0, 0, 0)))
-        using (Pen iconBorder = new(Color.FromArgb(255, 215, 68), 2.5f))
+        // Clean outer 1px window border
+        using (Pen outerBorder = new(Color.FromArgb(40, 45, 55), 1f))
         {
-            g.FillRectangle(iconShadow, iconBox.X + 4, iconBox.Y + 5, iconBox.Width, iconBox.Height);
-            if (_headerIconBitmap != null)
-            {
-                g.DrawImage(_headerIconBitmap, iconBox);
-            }
-            else
-            {
-                using Bitmap fallbackBmp = IconGenerator.RenderIconBitmap(112);
-                g.DrawImage(fallbackBmp, iconBox);
-            }
-            g.DrawRectangle(iconBorder, iconBox);
+            g.DrawRectangle(outerBorder, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
         }
-
-        // Бейдж релиза в правом верхнем углу
-        Rectangle badgeRect = new(ClientSize.Width - 192, 18, 168, 26);
-        using (SolidBrush badgeBg = new(Color.FromArgb(225, 185, 20, 68)))
-        using (Pen badgeBorder = new(Color.FromArgb(255, 215, 72), 1.5f))
-        using (Font badgeFont = new("Consolas", 9f, FontStyle.Bold))
-        {
-            g.FillRectangle(badgeBg, badgeRect);
-            g.DrawRectangle(badgeBorder, badgeRect);
-            g.DrawString("BUILD v1.0 // WIN-X64", badgeFont, Brushes.White, badgeRect.X + 10, badgeRect.Y + 5);
-        }
-
-        using Font tagFont = new("Consolas", 9.5f, FontStyle.Bold);
-        using Font titleFont = new("Segoe UI", 21f, FontStyle.Bold);
-        using Font subTitleFont = new("Segoe UI", 11f, FontStyle.Bold);
-        using Font quoteFont = new("Segoe UI", 10f, FontStyle.Italic);
-        using SolidBrush shadowBrush = new(Color.FromArgb(220, 0, 0, 0));
-        using SolidBrush goldBrush = new(Color.FromArgb(255, 222, 82));
-        using SolidBrush crimsonGlow = new(Color.FromArgb(235, 38, 96));
-        using SolidBrush cyanBrush = new(Color.FromArgb(115, 238, 255));
-
-        g.DrawString("CLOUD ENTROPIC TOWER // ОФИЦИАЛЬНЫЙ МАСТЕР УСТАНОВКИ", tagFont, shadowBrush, 153, 25);
-        g.DrawString("CLOUD ENTROPIC TOWER // ОФИЦИАЛЬНЫЙ МАСТЕР УСТАНОВКИ", tagFont, goldBrush, 152, 24);
-
-        g.DrawString("HOW TO VIBE CODER", titleFont, shadowBrush, 152, 47);
-        g.DrawString("HOW TO VIBE CODER", titleFont, crimsonGlow, 151, 46);
-        g.DrawString("HOW TO VIBE CODER", titleFont, Brushes.White, 150, 44);
-
-        Rectangle floorBadge = new(152, 86, 380, 24);
-        using (SolidBrush floorBg = new(Color.FromArgb(210, 148, 18, 56)))
-        using (Pen floorPen = new(Color.FromArgb(255, 208, 68), 1f))
-        {
-            g.FillRectangle(floorBg, floorBadge);
-            g.DrawRectangle(floorPen, floorBadge);
-        }
-        g.DrawString("ЭТАЖ 1: ОПЕНСПЕЙС «БЕЛАЯ АКУЛА» & ЛИФТ ИИ-АГЕНТА", subTitleFont, goldBrush, 160, 88);
-
-        g.DrawString("«Ты решал вопросы паяльником в 94-м. Теперь у тебя IT-галера в 2026-м.»", quoteFont, shadowBrush, 153, 121);
-        g.DrawString("«Ты решал вопросы паяльником в 94-м. Теперь у тебя IT-галера в 2026-м.»", quoteFont, cyanBrush, 152, 120);
-    }
-
-    private void OnProgressPanelPaint(object? sender, PaintEventArgs e)
-    {
-        Graphics g = e.Graphics;
-        Rectangle r = _progressPanel.ClientRectangle;
-
-        int fillW = (int)((r.Width - 4) * (_progressPercent / 100f));
-        if (fillW > 0)
-        {
-            Rectangle fillRect = new(2, 2, fillW, r.Height - 4);
-            using LinearGradientBrush barBrush = new(
-                fillRect,
-                Color.FromArgb(215, 28, 82),
-                Color.FromArgb(255, 205, 58),
-                LinearGradientMode.Horizontal);
-            g.FillRectangle(barBrush, fillRect);
-        }
-
-        using Pen borderPen = new(Color.FromArgb(255, 212, 72), 2f);
-        g.DrawRectangle(borderPen, 1, 1, r.Width - 2, r.Height - 2);
-
-        string pctText = $"{_progressPercent}%";
-        using Font f = new("Segoe UI", 10f, FontStyle.Bold);
-        SizeF sz = g.MeasureString(pctText, f);
-        g.DrawString(pctText, f, Brushes.White, (r.Width - sz.Width) / 2f, (r.Height - sz.Height) / 2f);
     }
 
     private void OnBrowseClicked(object? sender, EventArgs e)
@@ -855,7 +1212,7 @@ public sealed class SetupMainForm : Form
         if (_isInstalling) return;
         using FolderBrowserDialog dlg = new()
         {
-            Description = "Выберите папку для установки How to Vibe Coder — Этаж 1",
+            Description = "Выберите папку для установки",
             SelectedPath = _pathTextBox.Text,
             UseDescriptionForTitle = true
         };
@@ -870,6 +1227,21 @@ public sealed class SetupMainForm : Form
     {
         if (_installFinished)
         {
+            if (!_chkLaunchGame.Checked && !string.IsNullOrEmpty(_installedExePath) && File.Exists(_installedExePath))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = _installedExePath,
+                        WorkingDirectory = Path.GetDirectoryName(_installedExePath)!,
+                        UseShellExecute = true
+                    });
+                }
+                catch
+                {
+                }
+            }
             Close();
             return;
         }
@@ -880,14 +1252,23 @@ public sealed class SetupMainForm : Form
         string targetDir = _pathTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(targetDir))
         {
-            MessageBox.Show("Укажите корректный путь установки!", "Внимание", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Укажите папку для установки.", "Установка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         _isInstalling = true;
+        _showProgressArea = true;
+        _progressPercent = 2;
+        _statusMessage = "Подготовка…";
         _installButton.Enabled = false;
+        _installButton.Text = "Установка…";
+        _cancelButton.Enabled = false;
         _browseButton.Enabled = false;
         _pathTextBox.ReadOnly = true;
+        _chkDesktopShortcut.Enabled = false;
+        _chkStartMenu.Enabled = false;
+        _chkLaunchGame.Enabled = false;
+        Invalidate();
 
         bool desktopLnk = _chkDesktopShortcut.Checked;
         bool startMenu = _chkStartMenu.Checked;
@@ -909,29 +1290,49 @@ public sealed class SetupMainForm : Form
                             BeginInvoke(new Action(() =>
                             {
                                 _progressPercent = Math.Clamp(pct, 0, 100);
-                                _statusLabel.Text = msg;
-                                _progressPanel.Invalidate();
+                                _statusMessage = msg;
+                                Invalidate(new Rectangle(ContentX - 4, 316, ContentW + 8, 44));
                             }));
                         }
                     });
             });
 
             _progressPercent = 100;
-            _progressPanel.Invalidate();
-            _statusLabel.Text = $"УСТАНОВКА ЗАВЕРШЕНА В {targetDir}! Создан Uninstall.exe и ярлыки.";
-            _installButton.Text = "✔ ГОТОВО (ЗАКРЫТЬ УСТАНОВЩИК)";
-            _installButton.BackColor = Color.FromArgb(28, 148, 86);
-            _installButton.Enabled = true;
+            _statusMessage = "Установка завершена";
             _installFinished = true;
+            _installedExePath = Path.Combine(Path.GetFullPath(targetDir), "HowToVibeCoder.exe");
+            _installButton.Text = launchAfter ? "Готово" : "Запустить игру";
+            _installButton.FillColor = AccentSuccess;
+            _installButton.HoverColor = AccentSuccessHover;
+            _installButton.PressedColor = Color.FromArgb(32, 106, 66);
+            _installButton.Enabled = true;
+            _cancelButton.Text = "Закрыть";
+            _cancelButton.Enabled = true;
+            Invalidate();
         }
         catch (Exception ex)
         {
-            _statusLabel.Text = $"Ошибка установки: {ex.Message}";
-            MessageBox.Show($"Ошибка во время установки:\n{ex}", "Ошибка установки", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _statusMessage = "Ошибка установки";
+            _isInstalling = false;
             _installButton.Enabled = true;
+            _installButton.Text = "Установить";
+            _cancelButton.Enabled = true;
             _browseButton.Enabled = true;
             _pathTextBox.ReadOnly = false;
-            _isInstalling = false;
+            _chkDesktopShortcut.Enabled = true;
+            _chkStartMenu.Enabled = true;
+            _chkLaunchGame.Enabled = true;
+            Invalidate();
+            MessageBox.Show($"Не удалось установить игру:\n{ex.Message}", "Ошибка установки", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _coverBitmap?.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

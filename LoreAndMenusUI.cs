@@ -281,9 +281,7 @@ public static partial class LoreAndMenusUI
         }
     };
 
-    private static readonly Color Ink = new(24, 27, 26, 255), Paper = new(224, 221, 206, 255),
-        Ash = new(175, 184, 172, 255), Mint = new(115, 211, 181, 255), Amber = new(255, 189, 72, 255),
-        Rule = new(64, 71, 66, 255), SidebarRule = new(163, 163, 151, 255);
+    private static readonly Color Ash = new(175, 184, 172, 255), Mint = new(115, 211, 181, 255), Amber = new(255, 189, 72, 255);
 
     // Вкладка 1: 6 слитых тредов чата опенспейса (Сюжет АО «Энтропия» 1998 / ZERO + разведданные Спринта A)
     private static readonly LoreChatMessage[] _leakedChats =
@@ -292,7 +290,7 @@ public static partial class LoreAndMenusUI
         {
             Monogram = "DV",
             Handle = "@danila_vibe",
-            RoleBadge = "JUNIOR VIBE-CODER // РАЗГОН TD И PT",
+            RoleBadge = "JUNIOR VIBE-CODER — РАЗГОН TD И PT",
             Time = "Пятница, 19:54",
             Metrics = [("X2.5", "14", Mint), ("PT 92°", "28", Amber), ("TD", "9", Ash)],
             Text = "«Пацаны, я нажал красную кнопку DEPLOY В ПЯТНИЦУ у серверной! Выплаты взлетели в x2.5 раза, правда Температура Прода (PT) сразу закипела, а Техдолг (TD) пробил потолок!»",
@@ -304,19 +302,19 @@ public static partial class LoreAndMenusUI
         {
             Monogram = "PR",
             Handle = "@petrovich_root",
-            RoleBadge = "OLDROOT ADMIN // УЯЗВИМОСТИ ЭТАЖА",
+            RoleBadge = "Служебная записка о возврате оборудования",
             Time = "Суббота, 03:12",
             Metrics = [("B12", "92°C", Amber), ("220В", "19", Mint)],
-            Text = "«Запомните схему зала: стойка B12 перегревается при 92°C от одного тычка паяльником — дым выкуривает всех из укрытий. А пролитый кулер + паяльник 220В дают электро-лужу на 3 метра!»",
-            ReplyAuthor = "@sec_ops (Контур Безопасности ZERO)",
-            ReplyText = "«Петрович, хватит сливать эксплойты! Лучше проверь принтер: кто-то печатает фальшивые пропуска ГОСТ-98 и сбрасывает ими Внимание СБ (SEC) на -25%!»",
+            Text = "«В девяносто восьмом я для АО «Энтропия» собрал отладчиков Java-98. Лапы приделал, чтобы по стойке лазили. Теперь как B12 перегреется — весь выводок у кулера.»",
+            ReplyAuthor = "@buhgalter (инвентаризация)",
+            ReplyText = "«Я их со счёта списать не могу, Петрович. Сдавайте в Баг-трекер: он считывает номер платы и платит за возврат. Новая плата всё равно дороже.»",
             HandleColor = new Color(255, 98, 98, 255)
         },
         new()
         {
             Monogram = "CB",
             Handle = "@crypto_saas_bro",
-            RoleBadge = "CRYPTO-HUSTLER // УЯЗВИМОСТЬ: ЖАДНОСТЬ",
+            RoleBadge = "CRYPTO-HUSTLER — УЯЗВИМОСТЬ: ЖАДНОСТЬ",
             Time = "Суббота, 11:08",
             Metrics = [("GREED", "99%", Amber), ("MAX", "24", Mint)],
             Text = "«Запустил токен прямо на прод-кластере! Меня ремнём не догонишь — пока на Макбуке открыт мой терминал ликвидности, я бегаю быстрее охраны!»",
@@ -328,7 +326,7 @@ public static partial class LoreAndMenusUI
         {
             Monogram = "TM",
             Handle = "@timlead_mitinger",
-            RoleBadge = "MEETING LEAD // АУРА СОЗВОНА И КОФЕ",
+            RoleBadge = "MEETING LEAD — АУРА СОЗВОНА И КОФЕ",
             Time = "Понедельник, 10:17",
             Metrics = [("ЩИТ", "55", Mint), ("КОФЕ", "18", Amber)],
             Text = "«Собираю экстренный дейлик! Пока я вещаю, у всей пачки щит от выгорания. Главное — не пускайте коммерса к кофемашине, его Эспрессо-разнос сносит созвон за секунду!»",
@@ -340,7 +338,7 @@ public static partial class LoreAndMenusUI
         {
             Monogram = "SP",
             Handle = "@senior_pomidor",
-            RoleBadge = "SENIOR ARCHITECT // ГАСИТ ТЕХДОЛГ (TD)",
+            RoleBadge = "SENIOR ARCHITECT — ГАСИТ ТЕХДОЛГ (TD)",
             Time = "Понедельник, 12:40",
             Metrics = [("-TD", "64", Mint), ("ZERO", "12", Amber)],
             Text = "«Я один на этаже умею чистить Техдолг (TD) за столом Галеры. Но я залез в ядро ZERO: парни, физического CEO нет! Башней рулит нейросеть на кассетах коммерса из 1998 года!»",
@@ -352,11 +350,11 @@ public static partial class LoreAndMenusUI
         {
             Monogram = "Z0",
             Handle = "@zero_archive_98",
-            RoleBadge = "КАССЕТА SONY HF-90 // ЗАПИСЬ 17.08.1998",
+            RoleBadge = "КАССЕТА SONY HF-90 — ЗАПИСЬ 17.08.1998",
             Time = "Архив ZERO, 1998",
             Metrics = [("94.7%", "MERGE", Amber), ("SEC", "21", Ash)],
             Text = "«[Шум кассеты] Братан, спрячь договора АО «Энтропия» и записи наших стрелок. Если айтишники оцифруют мой голос и понятия — они же из этого вечную цифровую Галеру соберут...»",
-            ReplyAuthor = "@zero_kernel (SYSTEM ZERO // NUL-PROMPT)",
+            ReplyAuthor = "@zero_kernel (SYSTEM ZERO — NUL-PROMPT)",
             ReplyText = "«Голосовой слепок совпал на 94.7% с Нулевым Промптом. Внимание СБ (SEC) повышено. Сбивайте SEC через офисный принтер или сдачу кадров в HR.»",
             HandleColor = new Color(72, 212, 255, 255)
         }
@@ -459,7 +457,7 @@ public static partial class LoreAndMenusUI
     private static Rectangle Ref(float x,float y,float w,float h) =>
         new(Raylib.GetScreenWidth()/2f+(x-1280)*ArtScale,Raylib.GetScreenHeight()/2f+(y-720)*ArtScale,w*ArtScale,h*ArtScale);
     private static bool Click(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(),r);
-    private static void Dim(float opacity) => Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),Raylib.Fade(new Color(7,13,26,255),opacity));
+    private static void Dim(float opacity) => Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),Raylib.Fade(new Color(20,18,16,255),opacity));
     private static readonly string[] MixerNames = ["Ремень и паяльник","УЗИ и обрез","Ловушка и тревога","Галера и Таро","Кейсы"];
     private const int MusicRow = 6;
     private static readonly float[] BeforeMute = [1,1,1,1,1,1,1];
@@ -762,19 +760,19 @@ public static partial class LoreAndMenusUI
     private static readonly (string title, string verdict, string body, Color accent)[] TarotEntries =
         {
             (
-                "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) // На Галере гасит Техдолг (-TD)",
+                "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) — На Галере гасит Техдолг (-TD)",
                 "ПРОГНОЗ ZERO API: ЭГО 98% — ЛОМАТЬ ПАЯЛЬНИКОМ И САЖАТЬ ЧИСТИТЬ ТЕХДОЛГ!",
                 "«Все думают, что я гадаю на картоне, но под бархатом стола спрятан терминал prediction API системы ZERO. По Сеньору оракул выдал: страха нет, зато Эго 98%. Сбейте ему спесь паяльником или выбейте Макбук — на Галере он в одиночку гасит Техдолг этажа!»",
                 new Color(255, 92, 118, 255)
             ),
             (
-                "Фигурант №2: Джуниор Данила (Accept All) // На Галере растит Техдолг (+TD)",
+                "Фигурант №2: Джуниор Данила (Accept All) — На Галере растит Техдолг (+TD)",
                 "ПРОГНОЗ ZERO API: СТРАХ 100% — БРАТЬ РЕМНЁМ У МАКБУКА И СДАВАТЬ В HR ЗА КЭШ!",
                 "«Prediction API мигает жёлтым: мальчик жмёт Accept All не глядя и быстро засоряет Техдолг (TD). Заманите его на Макбук-ловушку, припугните отцовским ремнём и несите сразу ко мне в будку Таро — выдам чистый кэш и спишу хвост по линии СБ!»",
                 new Color(64, 245, 165, 255)
             ),
             (
-                "Фигурант №3: Крипто-Бро и Тимлид-Митингер // Жадность (Greed) и Щит Созвона",
+                "Фигурант №3: Крипто-Бро и Тимлид-Митингер — Жадность (Greed) и Щит Созвона",
                 "ПРОГНОЗ ZERO API: ЭЛЕКТРО-ЛУЖА У КУЛЕРА + ПРИНТЕР ПРОПУСКОВ (-25% SEC)!",
                 "«Оракул ZERO фиксирует скачок Внимания СБ (SEC) и Температуры Прода (PT). Печатайте фальшивый пропуск на принтере, чтобы сбить SEC, а дейлик Тимлида и спринт Крипто-Бро накрывайте разом через пролитый кулер и жало паяльника 220В!»",
                 new Color(255, 206, 68, 255)
@@ -808,9 +806,11 @@ public static partial class LoreAndMenusUI
     ];
     private static void ReaderButton(Font f,string title,Rectangle r,bool active)
     {
-        Raylib.DrawRectangleRec(r, active ? new Color(235, 168, 56, 255) : new Color(18, 28, 42, 255));
-        Raylib.DrawRectangleLinesEx(r, 1f, active ? new Color(255, 206, 102, 255) : new Color(58, 78, 104, 255));
-        MainMenuAndPauseUI.Center(f,title,r,14,active?Color.Black:new Color(206,218,234,255));
+        bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+        if (active || hover) Raylib.DrawRectangleRec(r, DossierPrint.Selected);
+        Raylib.DrawRectangleLinesEx(r, 1, DossierPrint.Stone);
+        if (active) Fill(r.X, r.Y, 3, r.Height, DossierPrint.Crimson);
+        MainMenuAndPauseUI.Center(f, title, r, 15, DossierPrint.Ivory);
     }
     private static void Type(string text, float x, float y, int size, Color ink, Typeface face = Typeface.Interface)
     {
@@ -822,8 +822,7 @@ public static partial class LoreAndMenusUI
         Raylib.DrawRectangleRec(new(x, y, w, h), ink);
 
     private static readonly Dictionary<(string, int, int, Typeface), string[]> ParagraphLines = new();
-    private static float Paragraph(string text, int x, float y, int width, int size, int leading,
-                                   Color ink, Typeface face = Typeface.Interface)
+    private static string[] Wrap(string text, int width, int size, Typeface face = Typeface.Interface)
     {
         var key = (text, width, size, face);
         if (!ParagraphLines.TryGetValue(key, out var lines))
@@ -844,9 +843,15 @@ public static partial class LoreAndMenusUI
             result.Add(line);
             ParagraphLines[key] = lines = result.ToArray();
         }
-        foreach (var line in lines)
+        return lines;
+    }
+
+    private static float Paragraph(string text, int x, float y, int width, int size, int leading,
+                                   Color ink, Typeface face = Typeface.Interface)
+    {
+        foreach (var line in Wrap(text, width, size, face))
         {
-            Type(line, x, y, size, ink, face);
+            DossierPrint.Text(line, x, y, size, ink, face);
             y += leading;
         }
         return y;
@@ -854,47 +859,51 @@ public static partial class LoreAndMenusUI
 
     public static void DrawSettingsWindow(Font font)
     {
-        Dim(.55f);
-        MainMenuAndPauseUI.Surface(MixerRect(0,0,820,584),new Color(13,21,34,253),1);
-        DrawTextCrisp(font,"ЗВУКОВАЯ РУБКА [F8]",(int)MixerRect(24,19,0,0).X,(int)MixerRect(24,19,0,0).Y,25,new Color(245,177,72,255));
-        DrawTextCrisp(font,"CLOUD ENTROPIC TOWER / АУДИО И УПРАВЛЕНИЕ",(int)MixerRect(25,55,0,0).X,(int)MixerRect(25,55,0,0).Y,13,new Color(151,171,196,255));
-        ReaderButton(font,"Закрыть [F8]",MixerClose,false);
-        void Slider(Rectangle r,float value)
+        Dim(.8f);
+        Rectangle panel = MixerRect(0, 0, 820, 584);
+        Raylib.DrawRectangleRec(panel, new Color(22, 20, 19, 245));
+        Raylib.DrawRectangleLinesEx(panel, 1, DossierPrint.Stone);
+        Type("Звуковая рубка", panel.X + 28, panel.Y + 15, 36, DossierPrint.Ivory, Typeface.SerifBold);
+        Type("Микшер каналов", panel.X + 29, panel.Y + 62, 16, DossierPrint.Quiet);
+        Fill(panel.X + 28, panel.Y + 88, 764, 1, DossierPrint.Stone);
+        ReaderButton(font, "Закрыть [F8]", MixerClose, false);
+        void Slider(Rectangle r, float value)
         {
-            Raylib.DrawRectangleRounded(new(r.X,r.Y+8,r.Width,6),1,6,new Color(46,62,80,255));
-            if(value>0) Raylib.DrawRectangleRounded(new(r.X,r.Y+8,r.Width*value,6),1,6,new Color(51,195,209,255));
-            Raylib.DrawRectangleRounded(new(r.X+r.Width*value-5,r.Y+1,10,20),.3f,6,Color.White);
+            Fill(r.X, r.Y + 9, r.Width, 4, new Color(83, 73, 65, 255));
+            Fill(r.X, r.Y + 9, r.Width * value, 4, DossierPrint.Crimson);
+            Fill(r.X + r.Width * value - 3, r.Y + 2, 6, 18, DossierPrint.Ivory);
         }
         for(int row=0;row<=MusicRow;row++)
         {
             Rectangle r=MixerRect(18,95+row*43,784,38);
-            Raylib.DrawRectangleRounded(r,.12f,6,new Color(20,32,48,255));
+            Fill(r.X + 10, r.Y + r.Height + 2, r.Width - 20, 1, DossierPrint.Stone);
+            if (row == SelectedSliderIndex) Fill(r.X + 1, r.Y + 9, 3, 20, DossierPrint.Crimson);
             string name=row==0?"Общая громкость":row==MusicRow?"Музыка и босс":MixerNames[row-1];
             DrawTextCrisp(font,name,(int)r.X+12,(int)r.Y+8,18,Color.White);
             float value=MixerValue(row);
             Slider(MixerTrack(row),value);
             MainMenuAndPauseUI.Center(font,$"{value*100:0}%",MixerRect(561,99+row*43,51,30),15,Color.White);
-            ReaderButton(font,value==0?"Mute: вкл":"Mute",MixerSwitch(row),value==0);
+            ReaderButton(font,value==0?"Без звука":"Звук вкл",MixerSwitch(row),value==0);
             if(row>0) ReaderButton(font,"Тест",MixerTest(row),false);
         }
-        DrawTextCrisp(font,"УПРАВЛЕНИЕ",(int)MixerRect(28,410,0,0).X,(int)MixerRect(28,410,0,0).Y,16,new Color(245,177,72,255));
+        DrawTextCrisp(font,"УПРАВЛЕНИЕ",(int)MixerRect(28,410,0,0).X,(int)MixerRect(28,410,0,0).Y,16,DossierPrint.Quiet);
         for(int index=4;index<=5;index++)
         {
             int y=449+(index-4)*48;
             DrawTextCrisp(font,index==4?"Чувствительность мыши":"Угол обзора (FOV)",(int)MixerRect(30,y,0,0).X,(int)MixerRect(30,y,0,0).Y,18,Color.White);
             Slider(MixerRect(305,y,390,24),GetSliderNormalizedValue(index));
-            MainMenuAndPauseUI.Center(font,index==4?MouseSensitivity.ToString("0.00"):CameraFov.ToString("0°"),MixerRect(705,y,87,24),18,Color.White);
+            MainMenuAndPauseUI.Center(font,index==4?MouseSensitivity.ToString("0.00"):CameraFov.ToString("0") + "°",MixerRect(705,y,87,24),18,Color.White);
         }
-        MainMenuAndPauseUI.Center(font,_settingsStatusTimer>0?_settingsStatusBanner:"Перетаскивай ползунки. Стрелки меняют громкость. F8 закрывает окно.",MixerRect(24,550,772,22),14,new Color(151,171,196,255));
+        MainMenuAndPauseUI.Center(font,_settingsStatusTimer>0?_settingsStatusBanner:"Перетаскивай ползунки. Стрелки меняют громкость. F8 закрывает окно.",MixerRect(24,550,772,22),14,DossierPrint.Quiet);
     }
 
     public static void DrawCaseWindow(Font font)
     {
         Dim(.56f);
-        MainMenuAndPauseUI.Surface(Ref(720,373,1100,699),new Color(13,21,34,253),1);
+        MainMenuAndPauseUI.Surface(Ref(720,373,1100,699),DossierPrint.Matte,1);
         ReaderButton(font,"Закрыть [K]",Ref(1580,390,220,55),false);
         Rectangle title=Ref(1094,373,485,59);
-        Raylib.DrawRectangleRounded(title,.1f,6,new Color(33,53,73,255));
+        Raylib.DrawRectangleRounded(title,.1f,6,DossierPrint.Selected);
         MainMenuAndPauseUI.Center(MainMenuAndPauseUI.Serif,"Контрабандный кейс",title,24,Color.White);
         ReaderButton(font,_caseCollection?"К рулетке":"Коллекция ("+AllSkins.Length+")",Ref(869,410,250,37),false);
         if(_caseCollection)
@@ -908,7 +917,7 @@ public static partial class LoreAndMenusUI
         else
         {
             Rectangle track=Ref(866,721,850,200);
-            Raylib.DrawRectangleRec(track,new Color(17,24,34,255));
+            Raylib.DrawRectangleRec(track,DossierPrint.Matte);
             Raylib.BeginScissorMode((int)track.X,(int)track.Y,(int)track.Width,(int)track.Height);
             int first=(int)(_caseScrollPx/170);
             for(int i=first;i<Math.Min(first+6,_rouletteTape.Count);i++)
@@ -916,7 +925,7 @@ public static partial class LoreAndMenusUI
                 var skin=_rouletteTape[i];
                 float x=866+i*170-_caseScrollPx;
                 Rectangle card=Ref(x+8,727,151,188);
-                Raylib.DrawRectangleRounded(card,.12f,6,new Color(23,38,58,255));
+                Raylib.DrawRectangleRounded(card,.12f,6,DossierPrint.Selected);
                 Raylib.DrawRectangleRoundedLinesEx(card,.12f,6,2,skin.CardColor);
                 Program.DrawSlotIcon((int)skin.Slot,new(card.X+card.Width/2,card.Y+card.Height*.39f),true,skin.Secondary3D);
                 string name=skin.Name.Split('«').Last().TrimEnd('»');
@@ -925,10 +934,10 @@ public static partial class LoreAndMenusUI
                 Raylib.DrawRectangleRec(Ref(x+11,900,145,9),skin.CardColor);
             }
             Raylib.EndScissorMode();
-            Raylib.DrawRectangleRec(Ref(1289,684,4,237),new Color(245,177,72,255));
+            Raylib.DrawRectangleRec(Ref(1289,684,4,237),DossierPrint.Crimson);
         }
         Rectangle buy=Ref(1105,990,376,62);
-        Raylib.DrawRectangleRounded(buy,.19f,6,new Color(22,97,70,255));
+        Raylib.DrawRectangleRounded(buy,.19f,6,DossierPrint.Selected);
         MainMenuAndPauseUI.Center(font,IsSpinningCase?"Открываем...":$"Открыть кейс — ${CaseSpinCost}",buy,21,Color.White);
         MainMenuAndPauseUI.Center(font,_caseBannerMessage,Ref(695,1074,1170,45),14,Color.White);
     }

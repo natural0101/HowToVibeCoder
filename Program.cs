@@ -43,7 +43,8 @@ public static partial class Program
     private static float _energy = 100;
     private static Font _serif;
     private static float _weaponFireCooldown = 0f;
-    private static string _hudStatusBanner = "ДОБРО ПОЖАЛОВАТЬ В CLOUD ENTROPIC TOWER (ЭТАЖ 1)! Включи Макбук [E] и лови вайб-кодеров!";
+    private const string FrogOnboarding = "Серверная плюётся Джава-жабами. Хватай [E] и сдавай в Баг-трекер. Сачок стоит $3.";
+    private static string _hudStatusBanner = FrogOnboarding;
     private static float _hudStatusTimer = 6.0f;
     private static bool _foregroundBanner;
 
@@ -200,7 +201,7 @@ public static partial class Program
             return true;
         };
 
-        MainMenuAndPauseUI.OnStartNewGameRequested = () => { ResetNewGameFloor(); StartHosting(); };
+        MainMenuAndPauseUI.OnStartNewGameRequested = () => { ResetNewGameFloor(); StartHosting(newShift: true); };
         MainMenuAndPauseUI.OnStartGameRequested = () =>
         {
             Raylib.DisableCursor();
@@ -294,7 +295,7 @@ public static partial class Program
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _damageFlash = 0;
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _lastHudHp=100;
         _sprinting=_toggleCrouch=_exhausted=false;
-        SetHudBanner("Поймай баг руками [ЛКМ] и сдай его в баг-трекер [E]");
+        SetHudBanner(FrogOnboarding, 7f, foreground: true);
     }
 
     private static bool TrySpendCash(int cost)
@@ -768,9 +769,11 @@ public static partial class Program
         }
         else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner))
         {
-            float width=Math.Min(sw-24,GameFonts.Measure(_serif,_hudStatusBanner,18).X+28);
-            Rectangle plate=new(cx-width/2,cy+22,width,28);
-            MainMenuAndPauseUI.Center(_serif,_hudStatusBanner,plate,18,new Color(245,214,128,255));
+            var face = GameFonts.Get(Typeface.InterfaceBold, 20);
+            float width=Math.Min(sw-24,GameFonts.Measure(face,_hudStatusBanner,20).X+28);
+            Rectangle plate=new(cx-width/2,cy+22,width,32);
+            Raylib.DrawRectangleRec(plate, new Color(24,22,20,215));
+            MainMenuAndPauseUI.Center(face,_hudStatusBanner,plate,20,DossierPrint.Ivory);
         }
         for(int i=0;i<4;i++)
         {
@@ -896,7 +899,7 @@ public static partial class Program
         Console.WriteLine($"[AUTOTEST] Lift nameplate collision cases passed: {trials}");
     }
 
-    private static unsafe void CheckArchiveControls()
+    private static unsafe void CheckArchiveControls(Action<string> capture)
     {
         bool exit = false;
         void Input(uint type, int first, int second = 0)
@@ -954,9 +957,9 @@ public static partial class Program
             throw new InvalidDataException("Archive wheel did not start smooth scrolling");
         for (int i = 0; i < 48; i++) Frame();
         if (Math.Abs(LoreAndMenusUI.LoreScrollOffset-limit)>1 ||
-            LoreAndMenusUI.FirstVisibleArchiveEntry!=3 || LoreAndMenusUI.SelectedArchiveEntry!=5)
-            throw new InvalidDataException("Last three archive threads do not fill the viewport");
-        for (int entry = 3; entry <= 5; entry++)
+            LoreAndMenusUI.FirstVisibleArchiveEntry!=1 || LoreAndMenusUI.SelectedArchiveEntry!=5)
+            throw new InvalidDataException("Last five archive threads do not fill the viewport");
+        for (int entry = 1; entry <= 5; entry++)
         {
             ClickCenter(LoreAndMenusUI.ArchiveRowBounds(entry));
             if (LoreAndMenusUI.SelectedArchiveEntry != entry)
@@ -969,6 +972,8 @@ public static partial class Program
             if (LoreAndMenusUI.LoreScrollOffset != 0 || LoreAndMenusUI.SelectedArchiveEntry != 0)
                 throw new InvalidDataException("Archive tab retained another section's offset");
         }
+        ClickCenter(LoreAndMenusUI.ArchiveRowBounds(1));
+        capture("06_petrovich.png");
         ClickCenter(LoreAndMenusUI.ArchiveCloseBounds);
         Expect(-1);
         Key(KeyboardKey.N);
@@ -978,7 +983,7 @@ public static partial class Program
         Key(KeyboardKey.N);
         Key(KeyboardKey.N);
         Expect(-1);
-        Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 4-6");
+        Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 2-6");
     }
 
     private static unsafe void CheckZeroToEmpire(Action<string> capture)
@@ -1049,6 +1054,7 @@ public static partial class Program
         Check(_playerCash==4 && Floor.PocketFrogs.Count==0 && Floor.DiscoveredSpecies["frog_hopper"]==3 &&
             _hudStatusBanner.Contains("Хватает"),"terminal payout plus one discovery");
         Key(KeyboardKey.U); Check(floorPanel==FloorPanel.Upgrades && !sidegrades,"weapon shop");
+        capture("14_arsenal.png");
         Key(KeyboardKey.Tab); Check(sidegrades,"upgrade tab");
         Key(KeyboardKey.One); Key(KeyboardKey.Enter); Key(KeyboardKey.U); Key(KeyboardKey.Two);
         Check(_playerCash==1 && _weapons.CurrentWeapon==WeaponType.CaptureNet && _weapons.Hotbar.Count()==2,"paid net and slot 2");
@@ -1102,8 +1108,9 @@ public static partial class Program
         Key(KeyboardKey.N); Key(KeyboardKey.Three);
         int frogIndex=Array.FindIndex(VibeCoderCollection.All,s=>s.Id=="frog_hopper");
         for(int i=0;i<frogIndex;i++) Key(KeyboardKey.Down);
-        Check(LoreAndMenusUI.CollectionEntry(frogIndex)=="Баг-Попрыгун","deposited frog dossier");
-        DrawFrame();
+        Check(LoreAndMenusUI.CollectionEntry(frogIndex)=="Джава-жаба v0.9","deposited frog dossier");
+        for (int frame = 0; frame < 45; frame++) UpdateFrame(1f / 60, ref exit);
+        capture("10_java_frog.png");
         Key(KeyboardKey.Down);
         Check(LoreAndMenusUI.CollectionEntry(frogIndex+1).StartsWith("???"),"unsold frog dossier");
         DrawFrame(); Key(KeyboardKey.N);
@@ -1451,6 +1458,15 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
 
+        MainMenuAndPauseUI.IsPaused = true;
+        CaptureShot("00_pause.png");
+        MainMenuAndPauseUI.IsSettingsPanelOpen = true;
+        CaptureShot("07_menu_settings.png");
+        MainMenuAndPauseUI.IsSettingsPanelOpen = false;
+        MainMenuAndPauseUI.IsModsPanelOpen = true;
+        CaptureShot("07_mods.png");
+        MainMenuAndPauseUI.IsModsPanelOpen = false;
+        MainMenuAndPauseUI.IsPaused = false;
         CheckZeroToEmpire(name=>CaptureShot(name));
         CheckSprintA(name=>CaptureShot(name));
         CheckFpsGameplay(name=>{ _hudStatusTimer=0; CaptureShot(name); });
@@ -1619,8 +1635,13 @@ public static partial class Program
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
         CaptureShot("06_lore_chats_window_n.png");
+        LoreAndMenusUI.ActiveLoreTab = 1;
+        CaptureShot("06_hr_dossier.png");
+        LoreAndMenusUI.ActiveLoreTab = 3;
+        CaptureShot("06_dictionary.png");
+        LoreAndMenusUI.ActiveLoreTab = 0;
         LoreAndMenusUI.IsLoreOpen = false;
-        CheckArchiveControls();
+        CheckArchiveControls(name => CaptureShot(name));
 
         // 7. 07_settings_mixer_and_mods.png (and 07_settings_mixer_and_cases.png) - Settings / Audio Mixer [F8]
         LoreAndMenusUI.IsLoreOpen = false;
@@ -1678,6 +1699,7 @@ public static partial class Program
         Check(!Raylib.IsAudioDeviceReady() || Raylib.GetMasterVolume()==0,"native audio muted");
         Check(roles.Select(c=>(c.Composure,c.Ego,c.Fear,c.Greed)).Distinct().Count()==4,"four psychological profiles");
         Key(KeyboardKey.J); Check(floorPanel==FloorPanel.Contracts,"J opens board");
+        capture("15_contracts.png");
         Key(KeyboardKey.Enter); Check(Floor.JobId==0 && Floor.TD>0 && Floor.PT>0,"MVP accepted");
         At(new(24,1.72f,20),new(24,2,28));
         for(int i=0;i<9;i++) Strike(WeaponType.MicroUzi,new(24,2,28));

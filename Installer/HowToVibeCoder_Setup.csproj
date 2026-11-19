@@ -15,7 +15,7 @@
   <ItemGroup>
     <EmbeddedResource Include="payload.zip" LogicalName="HowToVibeCoder.Payload.zip" Condition="Exists('payload.zip')" />
     <EmbeddedResource Include="HowToVibeCoder.ico" LogicalName="HowToVibeCoder.Icon.ico" Condition="Exists('HowToVibeCoder.ico')" />
+    <EmbeddedResource Include="installer_cover_editorial.png" LogicalName="HowToVibeCoder.InstallerCover.png" Condition="Exists('installer_cover_editorial.png')" />
     <EmbeddedResource Include="..\assets\app_icon.png" LogicalName="HowToVibeCoder.AppIcon.png" Condition="Exists('..\assets\app_icon.png')" />
-    <EmbeddedResource Include="..\assets\menu_banner.png" LogicalName="HowToVibeCoder.MenuBanner.png" Condition="Exists('..\assets\menu_banner.png')" />
   </ItemGroup>
 </Project>

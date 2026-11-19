@@ -1215,7 +1215,7 @@ public sealed partial class SkyscraperFloor1World
                             "ЛОВИ 500 INTERNAL SERVER ERROR!",
                             "МОЙ API_KEY СЛИТ ВО ФРОНТЕНД - ЛОВИ СЧЁТ AWS НА $50,000!",
                             "МОЙ SAAS ПРИНОСИТ $60K MRR В ТВИТТЕРЕ!",
-                            "DROP TABLE USERS; // TODO: FIX LATER!"
+                            "DROP TABLE USERS; TODO: FIX LATER!"
                         };
                         c.SpeechBubble = battleCries[_rng.Next(battleCries.Length)];
                         c.SpeechTimer = 2.4f;
@@ -2864,8 +2864,8 @@ public sealed partial class SkyscraperFloor1World
             Consider(station.Feet,station.Height,3.2f,station.Kind,label,i);
         }
         Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "Макбук-ловушка");
-        string deposit=$"Сдать багов ({Systems.PocketFrogs.Count} шт.)";
-        Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер: садок пуст");
+        string deposit=$"Сдать Джава-жаб ({Systems.PocketFrogs.Count} шт.)";
+        Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер принимает Джава-жаб. Садок пуст");
         Consider(HrTarotBoothPos,1.6f,4.6f,FocusKind.Veronika,Systems.PocketFrogs.Count>0 ? deposit : "HR Вероника");
         Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
         Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, "Центральный лифт");
@@ -2884,7 +2884,7 @@ public sealed partial class SkyscraperFloor1World
             foreach(var frog in Frogs)
             {
                 float aim=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,2.4f);
-                if(aim>Math.Max(best,HandAim(frog))) { best=aim; focus=new(FocusKind.Frog,"Поймать баг",-1); }
+                if(aim>Math.Max(best,HandAim(frog))) { best=aim; focus=new(FocusKind.Frog,"Поймать Джава-жабу",-1); }
             }
         return focus;
     }
@@ -3430,7 +3430,7 @@ public sealed partial class SkyscraperFloor1World
         grant(total,"Баг-трекер");
         AudioMusicSystem.PlayTarotCash();
         return !Systems.HasWeapon(WeaponType.CaptureNet) && Program.SharedCash>=3 ?
-            "Хватает на Сачок ($3) — открой Арсенал [U]" : $"Баги сданы: +${total}";
+            "Хватает на Сачок ($3) — открой Арсенал [U]" : $"Джава-жабы сданы: +${total}";
     }
 
     private void DrawBugHunt()

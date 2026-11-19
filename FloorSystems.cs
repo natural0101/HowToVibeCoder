@@ -42,7 +42,7 @@ internal sealed class FloorSystems
     internal static readonly WeaponType[] WeaponOrder = [WeaponType.BareHands, WeaponType.CaptureNet,
         WeaponType.Belt, WeaponType.SolderingIron, WeaponType.MicroUzi, WeaponType.SawedOff];
     internal static readonly Gear[] Weapons = [
-        new("Сачок-ловушка","Широкий захват прыгающих багов и пугливых стажёров",3),
+        new("Сачок-ловушка","Для Джава-жаб и пугливых стажёров. До трёх жаб за взмах.",3),
         new("Ремень 90-х","Ломает выдержку вайб-кодеров для NDA и Галеры",25),
         new("Паяльник 90-х","Пробивает эго и запускает электролужи с кулером",90),
         new("Микро-Узи 90-х","Скорострельный огнестрел против боевых кодеров и рейдов",240),
@@ -413,7 +413,7 @@ public static partial class Program
     private static int floorRow, seenReport;
     private static string panelMessage="";
     private static readonly Color paper=new(234,227,201,255), amber=new(232,192,110,255),
-        carbon=new(19,25,28,255), quiet=new(161,174,171,255), rule=new(74,88,87,255);
+        quiet=DossierPrint.Quiet, rule=DossierPrint.Stone;
     private static FloorSystems Floor => _world.Systems;
 
     private static void OpenFloorPanel(FloorPanel panel)
@@ -590,57 +590,80 @@ public static partial class Program
         if(Floor.DiscoveryTime<=0) return;
         var species=VibeCoderCollection.All.FirstOrDefault(s=>s.Id==Floor.DiscoveryId);
         if(species==null) return;
-        float fade=Math.Clamp(Math.Min((4-Floor.DiscoveryTime)*5,Floor.DiscoveryTime*2),0,1);
-        float center=Raylib.GetScreenWidth()*.5f, y=(center<525 ? 115 : 34)+(1-fade)*6;
-        Color accent=Raylib.Fade(VibeCoderCollection.Ink(species.Rarity),fade);
-        void Center(Font font,string line,float top,int size,Color color) =>
-            ShadowText(font,line,center-GameFonts.Measure(font,line,size).X*.5f,top,size,color);
-        Raylib.DrawLineEx(new(center-38,y-7),new(center+38,y-7),1,accent);
-        Center(small,(Floor.FirstDiscovery ? "НОВЫЙ В КОЛЛЕКЦИИ" : "ПОВТОРНЫЙ ЗАХВАТ")+"    "+VibeCoderCollection.Tag(species.Rarity),y,13,accent);
-        Center(display,species.Name,y+18,25,Raylib.Fade(paper,fade));
-        Center(small,$"{Discoveries.Count} / {VibeCoderCollection.All.Length}"+(Floor.FirstDiscovery ? $"    +${species.BonusPayout}" : ""),y+50,14,accent);
+        float fade = Math.Clamp(Floor.DiscoveryTime * 5, 0, 1);
+        string title = species.Name;
+        string note = (Floor.FirstDiscovery ? "Новый вид" : "Повторный захват") + $"    {Discoveries.Count}/{VibeCoderCollection.All.Length}";
+        if (Floor.FirstDiscovery) note += $"    +${species.BonusPayout}";
+        string rarity = VibeCoderCollection.Tag(species.Rarity);
+        float width = Math.Max(GameFonts.Measure(display, title, 26).X,
+            GameFonts.Measure(small, rarity + "    " + note, 15).X) + 36;
+        float xToast = (Raylib.GetScreenWidth() - width) / 2;
+        const int top = 18;
+        Raylib.DrawRectangleRec(new(xToast, top, width, 56), new Color(24, 22, 20, (int)(215 * fade)));
+        Raylib.DrawRectangleRec(new(xToast, top, 3, 56), Raylib.Fade(DossierPrint.Crimson, fade));
+        DossierPrint.Text(rarity + "    " + note, xToast + 15, top + 4, 15, Raylib.Fade(amber, fade), Typeface.InterfaceBold);
+        DossierPrint.Text(title, xToast + 15, top + 22, 26, Raylib.Fade(DossierPrint.Ivory, fade), Typeface.SerifBold);
+    }
+
+    private static void DrawPayroll()
+    {
+        var r = Floor.Report!;
+        var job = FloorSystems.Jobs[r.Job];
+        Color ink = DossierPrint.Ink, muted = DossierPrint.Muted, ruleInk = DossierPrint.Rule, red = DossierPrint.RedInk;
+        DossierPrint.Sheet(new(126, 52, 1028, 615));
+        void Print(string value, float x, float y, int size, Color color, Typeface face = Typeface.Interface)
+            => DossierPrint.Text(value, x, y, size, color, face);
+        void Line(int y, Color color) => Raylib.DrawLine(164, y, 1116, y, color);
+        Line(79, red);
+        Line(83, red);
+        Print("БЕЛАЯ АКУЛА IT     Бухгалтерия первого этажа", 164, 98, 17, muted);
+        Print("Ведомость расчёта", 161, 133, 51, ink, Typeface.SerifBold);
+        Print(job.Title, 165, 205, 25, ink, Typeface.InterfaceBold);
+        Print(r.Success ? "Работа принята заказчиком" : "Контракт сорван", 165, 240, 19, muted);
+
+        Rectangle stamp = new(947, 104, 166, 106);
+        Raylib.DrawRectangleLinesEx(stamp, 3, red);
+        Raylib.DrawRectangleLinesEx(new(stamp.X + 5, stamp.Y + 5, stamp.Width - 10, stamp.Height - 10), 1, red);
+        float middle = stamp.X + stamp.Width / 2;
+        void StampText(string value, int y, int size, Typeface face)
+            => Print(value, middle - GameFonts.Measure(GameFonts.Get(face, size), value, size).X / 2, y, size, red, face);
+        StampText(r.Rank, 111, 51, Typeface.SerifBold);
+        StampText("АВТОРИТЕТ", 177, 16, Typeface.InterfaceBold);
+
+        Line(283, ruleInk);
+        Print(r.Success ? "К ВЫПЛАТЕ" : "К УДЕРЖАНИЮ", 165, 306, 15, red, Typeface.InterfaceBold);
+        Print($"{(r.Success ? "+" : "-")}${Math.Abs(r.Amount)}", 161, 328, 68, red, Typeface.SerifBold);
+        string basis = r.Success ? $"Ставка ${job.Base}   ×   риск {r.Greed:0.00}   ×   бонус {r.Bonus:0.00}"
+            : "Штраф $350 и половина стоимости доставленных кадров";
+        Print(basis, 165, 433, 19, ink);
+        void Stat(int y, string label, string value)
+        {
+            Print(label, 756, y, 19, muted);
+            float w = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 23), value, 23).X;
+            Print(value, 1114 - w, y - 3, 23, ink, Typeface.InterfaceBold);
+            Raylib.DrawLine(756, y + 37, 1116, y + 37, ruleInk);
+        }
+        Stat(320, "Доставлено кадров", r.Captured.ToString());
+        Stat(382, "Пиковый риск", r.Peak.ToString("0.0"));
+        Line(483, ruleInk);
+        Print("ЗАПИСЬ ДИСПЕТЧЕРА", 165, 505, 15, muted, Typeface.InterfaceBold);
+        Print(r.Diagnosis, 165, 532, 24, ink);
+        Line(594, red);
+        Print("[Enter]  Следующий контракт       [E]  Вернуться на этаж", 165, 613, 19, ink);
     }
 
     private static void DrawFloorPanel()
     {
-        Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),new Color(10,16,18,218));
-        Raylib.BeginMode2D(new Camera2D { Zoom=PanelScale, Offset=PanelOffset });
-        Raylib.DrawRectangle(76,52,1128,615,carbon);
-        Raylib.DrawRectangleLinesEx(new(76,52,1128,615),1,rule);
-        foreach(int x in new[]{76,1203}) foreach(int y in new[]{52,666})
-        {
-            Raylib.DrawLine(x,y,x+(x==76 ? 15 : -15),y,paper);
-            Raylib.DrawLine(x,y,x,y+(y==52 ? 15 : -15),paper);
-        }
-        bool report=floorPanel==FloorPanel.Debrief,shop=floorPanel==FloorPanel.Upgrades;
-        Raylib.DrawRectangle(102,78,1076,45,amber);
-        TypeAt(report ? "ВЕДОМОСТЬ РАСЧЁТА" : shop ? "АРСЕНАЛ СМЕНЫ" : "ДОСКА КОНТРАКТОВ",116,83,26,carbon,true);
-        TypeAt("БЕЛАЯ АКУЛА IT  /  ЭТАЖ 01",956,92,15,carbon);
-        if(report && Floor.Report is {} r)
-        {
-            var job=FloorSystems.Jobs[r.Job];
-            TypeAt(job.Title,105,149,39,paper,true);
-            TypeAt(r.Success ? "Заказчик принял работу" : "Контракт сорван",107,204,21,quiet);
-            Raylib.DrawLine(105,251,1176,251,rule);
-            TypeAt(r.Success ? "ВЫПЛАТА СМЕНЕ" : "НАЧИСЛЕН ШТРАФ",106,278,17,quiet);
-            TypeAt($"{(r.Success ? "+" : "-")}${Math.Abs(r.Amount)}",104,306,61,amber,true);
-            string basis=r.Success ? $"База ${job.Base}   ×   {r.Greed:0.00} риск   ×   {r.Bonus:0.00} бонус" :
-                "Базовый штраф $350 и половина стоимости доставленных кадров";
-            TypeAt(basis,107,397,19,paper);
-            void Stat(int y,string label,string value)
-            {
-                TypeAt(label,751,y,19,quiet); TypeAt(value,1030,y-5,24,paper,true);
-                Raylib.DrawLine(751,y+35,1167,y+35,rule);
-            }
-            Stat(277,"Ранг авторитета",r.Rank); Stat(339,"Доставлено кадров",r.Captured.ToString());
-            Stat(401,"Пиковый риск",r.Peak.ToString("0.0"));
-            Raylib.DrawLine(105,476,1176,476,rule);
-            TypeAt("ЗАПИСЬ ДИСПЕТЧЕРА",106,497,16,quiet);
-            TypeAt(r.Diagnosis,106,524,24,paper);
-            TypeAt("[Enter]  Следующий контракт       [E]  Вернуться на этаж",107,607,19,amber);
-        }
+        Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), DossierPrint.Studio);
+        Raylib.BeginMode2D(new Camera2D { Zoom = PanelScale, Offset = PanelOffset });
+        bool shop = floorPanel == FloorPanel.Upgrades;
+        if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
         else
         {
+            Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
+            TypeAt(shop ? "Арсенал смены" : "Доска контрактов", 102, 66, 43, DossierPrint.Ivory, true);
+            TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01", 970, 87, 15, quiet);
+            Raylib.DrawLine(104, 124, 1177, 124, rule);
             string info=shop ? $"Общак  ${_playerCash}     /     Приманка: {SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier).Name}" :
                 Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Floor.Progress : "Срок отсчитывается с момента подписи";
             TypeAt(info,105,shop ? 133 : 149,shop ? 18 : 22,paper);
@@ -648,29 +671,33 @@ public static partial class Program
                 for(int tab=0;tab<2;tab++)
                 {
                     var tabRect=ArsenalTab(tab);
-                    var ink=sidegrades==(tab==1) ? amber : quiet;
+                    var ink=sidegrades==(tab==1) ? paper : quiet;
                     TypeAt(tab==0 ? "[1] ОРУЖИЕ (ЦЕПОЧКА)" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,ink);
-                    if(sidegrades==(tab==1)) Raylib.DrawLineEx(new(tabRect.X,tabRect.Y+32),new(tabRect.X+286,tabRect.Y+32),2,ink);
+                    if(sidegrades==(tab==1)) Raylib.DrawLineEx(new(tabRect.X,tabRect.Y+32),new(tabRect.X+286,tabRect.Y+32),3,DossierPrint.Crimson);
                 }
             int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Weapons.Length) : FloorSystems.Jobs.Length;
             for(int i=0;i<count;i++)
             {
                 Rectangle row=FloorRowRect(i);
                 bool selected=i==floorRow;
-                if(selected) Raylib.DrawRectangleRec(row,paper);
+                if(selected)
+                {
+                    Raylib.DrawRectangleRec(row, DossierPrint.Selected);
+                    Raylib.DrawRectangleRec(new(row.X, row.Y, 4, row.Height), DossierPrint.Crimson);
+                }
                 else Raylib.DrawLine((int)row.X,(int)row.Y+50,1178,(int)row.Y+50,rule);
-                Color ink=selected ? carbon : paper;
+                Color ink=selected ? DossierPrint.Ivory : paper;
                 var gear=shop ? (sidegrades ? FloorSystems.GearList[i] : FloorSystems.Weapons[i]) : null;
                 var job=shop ? null : FloorSystems.Jobs[i];
                 TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+11,21,ink,true);
-                TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+15,16,selected ? carbon : quiet);
+                TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+15,16,selected ? paper : quiet);
                 string value=shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i+1]) ? "Куплено" : $"${gear!.Price}") : shop ? Floor.Has((Sidegrade)i) ?
                     (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${gear!.Price}" : $"{job!.Seconds} с    ${job.Base}";
                 TypeAt(value,1041,row.Y+14,17,ink);
             }
             string hint=shop ? "[B]  Сменить приманку      [G]  Вызвать Крышу" :
                 Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
-            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,550,18,amber);
+            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,550,18,quiet);
             TypeAt(shop ? "[W/S]  Выбор       [Enter]  Купить / снарядить       [Esc]  На этаж" :
                 "[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж",106,610,19,paper);
         }

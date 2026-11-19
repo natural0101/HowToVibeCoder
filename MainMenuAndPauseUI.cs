@@ -93,7 +93,7 @@ public static class MainMenuAndPauseUI
     private static string? _infoPage;
     private static readonly Dictionary<string, Texture2D> Art = new();
     internal static Font Serif;
-    internal static readonly Color Edge = new(210, 220, 232, 230);
+    internal static readonly Color Edge = DossierPrint.Quiet;
     internal static void LoadArt(Font serif)
     {
         Serif = serif;
@@ -799,7 +799,7 @@ public static class MainMenuAndPauseUI
         NativeButton("Назад",new(x+678,y+14,118,38));
         DrawTextCrisp(font,"Адрес друга (IPv4:порт)",x,y+70,18,Edge);
         var field=CoopRow(0);
-        Surface(field,coopFocus==0 ? new Color(34,53,77,255) : new Color(26,41,63,255));
+        Surface(field,coopFocus==0 ? new Color(44,38,34,255) : new Color(32,28,25,255));
         DrawTextCrisp(font,address+(coopFocus==0 && (_menuClock%1)<.55f ? "|" : ""),x+15,(int)field.Y+8,23,Color.White);
         NativeButton("ПОДКЛЮЧИТЬСЯ К ИГРЕ ДРУГА",CoopRow(1),coopFocus==1);
         NativeButton("ВЫЗВАТЬ БРАТАНА В КООП (НАПАРНИК)",CoopRow(2),coopFocus==2);
@@ -1034,14 +1034,13 @@ public static class MainMenuAndPauseUI
 
     public static void DrawMainMenu(Font font, int screenW, int screenH)
     {
-        Color accent = new(95,226,217,255);
         int fadeEnd = (int)MathF.Round(screenW * .64f);
         const int slices = 64;
         static Color Scrim(float t)
         {
             float u = Math.Clamp((t - .18f) / .82f, 0f, 1f);
             float opacity = 1f - u * u * (3f - 2f * u);
-            return new Color(8, 16, 26, (int)MathF.Round(244f * opacity));
+            return new Color(20, 17, 15, (int)MathF.Round(244f * opacity));
         }
         for (int s = 0; s < slices; s++)
         {
@@ -1050,27 +1049,20 @@ public static class MainMenuAndPauseUI
             Raylib.DrawRectangleGradientH(x0, 0, x1 - x0, screenH,
                 Scrim(x0 / (float)fadeEnd), Scrim(x1 / (float)fadeEnd));
         }
-        DrawTextCrisp(font,"// CLOUD ENTROPIC TOWER //",56,64,15,accent);
+        DrawTextCrisp(font,"МОСКВА-СИТИ, 2026",56,64,16,DossierPrint.Quiet);
         DrawTextCrisp(GameFonts.Get(Typeface.SerifBold,58),"HOW TO",52,100,58,Color.White);
         DrawTextCrisp(GameFonts.Get(Typeface.SerifBold,58),"VIBE CODER",52,156,58,Color.White);
-        DrawTextCrisp(font,"ЭТАЖ 01 : БЕЛАЯ АКУЛА IT",56,236,20,new Color(242,205,154,255));
+        DrawTextCrisp(font,"Этаж 01. Белая Акула IT",56,236,20,new Color(242,205,154,255));
         for(int i=0;i<MainMenuButtonLabels.Length;i++)
         {
             Rectangle r=MainButton(i);
             bool selected=i==_selectedMainIndex;
-            if(selected)
-            {
-                Raylib.DrawRectangleRec(r,new Color(235,204,132,244));
-                Raylib.DrawRectangleLinesEx(r,1f,new Color(255,236,184,255));
-            }
-            string label = selected ? $"▶  {MainMenuButtonLabels[i]}" : MainMenuButtonLabels[i];
-            DrawTextCrisp(selected ? GameFonts.Get(Typeface.InterfaceBold,21) : font, label, (int)r.X+14, (int)r.Y+6, 21,
-                selected ? new Color(12,18,24,255) : new Color(212,223,231,255));
+            DrawMenuItem(MainMenuButtonLabels[i], r, selected);
         }
         if (_infoPage != null)
         {
-            Raylib.DrawRectangle(0,0,screenW,screenH,new Color(5,10,24,134));
-            Surface(SettingsRect(0,88,686,400),new Color(42,71,108,250));
+            Raylib.DrawRectangle(0,0,screenW,screenH,new Color(18,15,13,185));
+            Surface(SettingsRect(0,88,686,400),new Color(26,23,21,250));
             Center(Serif,_infoPage,SettingsRect(30,114,626,68),44,Color.White);
             string body = _infoPage == "Персонаж" ? "Коммерс в малиновом пиджаке" : "How to Vibe Coder";
             Center(Serif,body,SettingsRect(40,220,606,60),32,Edge);
@@ -1081,17 +1073,35 @@ public static class MainMenuAndPauseUI
 
     private static void NativeButton(string label, Rectangle r, bool selected = false)
     {
-        Surface(r, selected ? new Color(84,125,165,250) : new Color(42,69,109,245));
-        Center(Serif,label,r,23,Color.White);
+        bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+        Raylib.DrawRectangleRec(r, selected || hover ? DossierPrint.Selected : DossierPrint.Matte);
+        Raylib.DrawRectangleLinesEx(r, 1, DossierPrint.Stone);
+        if (selected) Raylib.DrawRectangleRec(new(r.X, r.Y, 4, r.Height), DossierPrint.Crimson);
+        Center(GameFonts.Get(Typeface.Interface, 20), label, r, 20, DossierPrint.Ivory);
+    }
+
+    private static void DrawMenuItem(string label, Rectangle r, bool selected)
+    {
+        bool active = selected || Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+        if (active)
+        {
+            Raylib.DrawRectangleRec(r, new Color(44, 38, 34, 90));
+            Raylib.DrawRectangleRec(new(r.X, r.Y, 4, r.Height), new Color(180, 34, 54, 255));
+        }
+        int size = 22;
+        var face = GameFonts.Get(active ? Typeface.InterfaceBold : Typeface.Interface, size);
+        GameFonts.Draw(face, label, new(r.X + 16, r.Y + (r.Height - size) / 2), size,
+            active ? Color.White : DossierPrint.Quiet);
     }
 
     private static void DrawSlateWindow(string title,int width,int height)
     {
         int sw=Raylib.GetScreenWidth(), sh=Raylib.GetScreenHeight();
-        Raylib.DrawRectangle(0,0,sw,sh,new Color(8,15,32,152));
+        Raylib.DrawRectangle(0,0,sw,sh,new Color(20,18,16,210));
         Rectangle panel=new((sw-width)/2,(sh-height)/2,width,height);
-        Surface(panel,new Color(42,66,99,250));
-        Center(Serif,title,new(panel.X+30,panel.Y+13,panel.Width-176,45),title.Length>35 ? 25 : 35,Color.White);
+        Surface(panel,new Color(24,22,20,250));
+        GameFonts.Draw(Serif, title, new(panel.X + 34, panel.Y + 15), title.Length > 35 ? 25 : 35, DossierPrint.Ivory);
+        Raylib.DrawRectangleRec(new(panel.X + 34, panel.Y + 65, panel.Width - 68, 1), DossierPrint.Stone);
     }
 
     public static void DrawPauseOverlay(Font font,int screenW,int screenH)
@@ -1102,7 +1112,7 @@ public static class MainMenuAndPauseUI
             Center(font,Coop.Host ? "Адрес для друга: "+Coop.HostAddress : Coop.Status,
                 new(screenW/2-265,screenH/2-216,530,34),17,Edge);
         for(int i=0;i<PauseButtonLabels.Length;i++)
-            NativeButton(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);
+            DrawMenuItem(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);
     }
 
     private static void DrawSaveLoadSubPanel(Font font,int screenW,int screenH)
@@ -1115,7 +1125,7 @@ public static class MainMenuAndPauseUI
         {
             var data=_cachedSlots[i];
             Rectangle row=new(x+32,y+92+i*98,796,86);
-            Surface(row,i==_selectedSaveSlotIndex ? new Color(69,102,137,251) : new Color(43,68,102,250),1);
+            Surface(row,i==_selectedSaveSlotIndex ? new Color(49,42,37,251) : new Color(29,25,22,250),1);
             string title=i==0 ? "Автосохранение" : $"Слот {i}";
             DrawTextCrisp(Serif,title,(int)row.X+20,(int)row.Y+12,24,Color.White);
             string detail=data==null ? "Пусто" : $"{data.SavedAt}    ${data.Cash}    Галера {data.SeatedGalleyCoders}/4";
@@ -1133,7 +1143,7 @@ public static class MainMenuAndPauseUI
         {
             var mod=InstalledMods[i];
             Rectangle row=new(x+32,y+104+i*94,816,82);
-            Surface(row,new Color(35,56,86,245),1);
+            Surface(row,new Color(31,27,24,245),1);
             DrawTextCrisp(Serif,mod.Name,(int)row.X+15,(int)row.Y+9,22,Color.White);
             DrawTextCrisp(font,mod.Author+"   "+mod.Version,(int)row.X+16,(int)row.Y+37,14,Edge);
             Center(font,mod.Description,new(row.X+10,row.Y+54,644,20),15,Edge);
@@ -1146,12 +1156,12 @@ public static class MainMenuAndPauseUI
 
     private static void DrawSettingsSubPanel(Font font, int screenW, int screenH)
     {
-        Raylib.DrawRectangle(0,0,screenW,screenH,new Color(4,9,22,136));
+        Raylib.DrawRectangle(0,0,screenW,screenH,new Color(20,18,16,215));
         Center(Serif,"Настройки",SettingsRect(0,-26,686,54),48,Color.White);
         for (int i=0;i<4;i++) NativeButton(SettingsTabs[i],SettingsTab(i),i==_settingsTab);
         Rectangle panel = SettingsRect(0,80,686,462);
-        Surface(panel,new Color(44,72,110,246));
-        Raylib.DrawRectangleGradientV((int)panel.X+3,(int)panel.Y+3,680,456,new Color(100,158,195,141),new Color(22,34,78,190));
+        Surface(panel,new Color(22,20,19,245));
+
         Center(Serif,SettingsTabs[_settingsTab],SettingsRect(0,84,686,37),27,Color.White);
         int[] rows = SettingRows[_settingsTab];
         for (int i=0;i<rows.Length;i++)
@@ -1163,11 +1173,11 @@ public static class MainMenuAndPauseUI
             DrawTextCrisp(Serif,SettingNames[id],(int)panel.X+67,(int)y-13,23,Color.White);
             Raylib.DrawLineEx(new(r.X,y),new(r.X+r.Width,y),1.7f,Edge);
             float x=r.X+t*r.Width;
-            Raylib.DrawRectanglePro(new(x,y,10,17),new(5,8),39,Color.White);
-            Raylib.DrawLineEx(new(x+3,y-4),new(x+9,y-11),3,Color.White);
+            Raylib.DrawLineEx(new(r.X,y),new(x,y),4,DossierPrint.Crimson);
+            Raylib.DrawRectangleRec(new(x-3,y-9,6,18),DossierPrint.Ivory);
             float value = id == 4 ? LoreAndMenusUI.MouseSensitivity : id == 5 ? LoreAndMenusUI.CameraFov : t;
             Rectangle val = new(r.X+r.Width+32, y-17,68,34);
-            Surface(val,new Color(35,63,99,112),0);
+            Surface(val,new Color(48,40,34,112),0);
             Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo("ru-RU")),val,22,Edge);
         }
         if (_settingsTab==1) NativeButton(IsFullscreenEnabled ? "Полный экран: вкл" : "Полный экран: выкл",SettingsRect(337,186,279,34));
@@ -1185,8 +1195,8 @@ public static class MainMenuAndPauseUI
         int w = Math.Min(screenW - 80, 760);
         int x = (screenW - w) / 2;
         int y = 44;
-        Raylib.DrawRectangle(x, y, w, 38, new Color(22, 96, 64, 245));
-        Raylib.DrawRectangleLinesEx(new Rectangle(x, y, w, 38), 2f, new Color(255, 225, 88, 255));
+        Raylib.DrawRectangle(x, y, w, 38, new Color(27, 24, 21, 245));
+        Raylib.DrawRectangleLinesEx(new Rectangle(x, y, w, 38), 2f, new Color(83, 73, 65, 255));
         DrawTextCrisp(font, message, x + 18, y + 10, 16, Color.White);
     }
 

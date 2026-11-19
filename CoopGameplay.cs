@@ -12,10 +12,11 @@ public static partial class Program
     internal static int PartnerHp => Net.Guest ? hostHp : Net.Ready ? guestHp : 100;
     private static VibeCoderEntity? guestCarried, peerEscort;
     private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon);
-    private static void StartHosting()
+    private static void StartHosting(bool newShift = false)
     {
-        Net.StartHost(CoopNetworkSystem.DefaultPort);
-        SetHudBanner(Net.Status);
+        bool online = Net.StartHost(CoopNetworkSystem.DefaultPort);
+        if (!newShift) SetHudBanner(Net.Status);
+        else if (!online) Floor.Announce(Net.Status);
     }
 
     private static void ConfigureCoop()
