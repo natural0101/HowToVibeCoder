@@ -19,7 +19,7 @@ namespace HowToVibeCoder
         public static string SoundsDir { get; private set; } = Path.Combine(AppContext.BaseDirectory, "assets", "sounds");
 
         // Volume channels (0..1f) controlled by [F8] Audio Mixer
-        private static float _masterVolume = .85f;
+        private static float _masterVolume = .70f;
         public static float MasterVolume
         {
             get => _masterVolume;
@@ -36,7 +36,7 @@ namespace HowToVibeCoder
             if (_silent) Raylib.SetMasterVolume(0.0f);
             else Raylib.SetMasterVolume(_masterVolume);
         }
-        public static float MusicVolume { get; set; } = 0.55f;
+        public static float MusicVolume { get; set; } = 0.35f;
         public static float WeaponVolume { get; set; } = 0.90f;
         public static float VoiceVolume { get; set; } = 0.90f;
 
@@ -57,6 +57,7 @@ namespace HowToVibeCoder
 
         private enum Score { Menu, Office, Boss }
         private static readonly string[] MusicFiles = ["music_main_menu.wav", "music_office_90s.wav", "music_boss_fight.wav"];
+        private static readonly float[] SceneTrim = [0.20f, 0.38f, 0.48f];
         private static readonly Music[] Streams = new Music[MusicFiles.Length];
         private static readonly float[] Gains = new float[MusicFiles.Length];
         private static float _dialogueGain = 1f;
@@ -292,6 +293,7 @@ namespace HowToVibeCoder
 
         public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false)
         {
+            dt = Math.Clamp(dt, 0f, 0.05f);
             bool speaking = VoiceTimer > 0;
             VoiceTimer = Math.Max(0, VoiceTimer - dt);
             if (speaking && VoiceTimer == 0) ActiveSpeaker = ActiveVoiceText = "";
@@ -304,19 +306,27 @@ namespace HowToVibeCoder
             _dialogueGain += ((speaking ? underVoice : 1f) - _dialogueGain) *
                 (1f - MathF.Exp(-dt / (speaking ? .038f : .36f)));
 
+            float musicCurve = MathF.Pow(Math.Clamp(MusicVolume, 0f, 1f), 1.6f);
             for (int i = 0; i < Streams.Length; i++)
             {
                 bool selected = i == (int)target;
                 float previous = Gains[i];
-                Gains[i] = Math.Clamp(previous + (selected ? dt : -dt) / .8f, 0, 1);
+                float fadeTime = selected && i == (int)Score.Menu ? 2.4f : 0.8f;
+                Gains[i] = Math.Clamp(previous + (selected ? dt : -dt) / fadeTime, 0, 1);
                 Music stream = Streams[i];
                 if (Gains[i] == 0)
                 {
                     if (previous > 0) Raylib.StopMusicStream(stream);
                     continue;
                 }
-                Raylib.SetMusicVolume(stream, Math.Clamp(MusicVolume, 0, 1) * Gains[i] * _dialogueGain);
-                if (previous == 0) Raylib.PlayMusicStream(stream);
+                float easedGain = Gains[i] * Gains[i];
+                float volume = musicCurve * SceneTrim[i] * easedGain * _dialogueGain;
+                if (previous == 0)
+                {
+                    Raylib.SetMusicVolume(stream, 0f);
+                    Raylib.PlayMusicStream(stream);
+                }
+                Raylib.SetMusicVolume(stream, volume);
                 Raylib.UpdateMusicStream(stream);
             }
         }

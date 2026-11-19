@@ -66,7 +66,7 @@ public static partial class LoreAndMenusUI
     public static float LoreScrollOffset { get; private set; }
 
     // Настройки и ползунки [F8]
-    public static float MasterVolume { get; set; } = 0.85f;
+    public static float MasterVolume { get; set; } = 0.70f;
     public static float MusicVolume { get => AudioMusicSystem.MusicVolume; set => AudioMusicSystem.MusicVolume = value; }
     public static float WeaponSfxVolume { get; set; } = 0.90f;
     public static float VoiceVolume { get; set; } = 0.95f;
