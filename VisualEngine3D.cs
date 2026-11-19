@@ -19,7 +19,7 @@ internal static unsafe partial class VisualEngine3D
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static readonly Dictionary<(string Asset,int Mesh),int> handSurfaces=new();
-    private static int handSurfaceLoc;
+    private static int handSurfaceLoc, weaponFinishLoc;
     private static int firstPersonLoc, muzzleLoc, flashLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc;
     private static Finish? activeFinish;
@@ -49,12 +49,19 @@ internal static unsafe partial class VisualEngine3D
             // toward its shoulder, preserving its radius and the rigid wrist opening.
             if (vertexTexCoord.x>1.99 && dot(sleevePull,sleevePull)>.0001) {
                 float t=clamp(vertexTexCoord.y,0.,1.);
-                vec3 a=normalize(sleeveAxis), b=normalize(sleevePull);
-                vec4 target=normalize(vec4(cross(a,b),max(.00001,1.+dot(a,b))));
-                vec4 q=normalize(mix(vec4(0.,0.,0.,1.),target,smoothstep(.08,.42,t)));
-                vec3 v=p-wrist-sleeveAxis*t;
-                p+=2.*cross(q.xyz,cross(q.xyz,v)+q.w*v);
-                p+=(sleevePull-sleeveAxis)*t*smoothstep(.08,.42,t);
+                // Hermite centreline between cuff and elbow. Use its tangent to
+                // turn the complete cloth ring and stitching without flattening it.
+                vec3 a=normalize(sleeveAxis);
+                vec3 tangent0=a*min(length(sleeveAxis),length(sleevePull)*.54);
+                vec3 tangent1=sleevePull*1.34;
+                float t2=t*t, t3=t2*t;
+                vec3 center=(t3-2.*t2+t)*tangent0+(3.*t2-2.*t3)*sleevePull+(t3-t2)*tangent1;
+                vec3 b=normalize((3.*t2-4.*t+1.)*tangent0+6.*t*(1.-t)*sleevePull+(3.*t2-2.*t)*tangent1);
+                float blend=smoothstep(.055,.22,t);
+                vec4 q=normalize(mix(vec4(0.,0.,0.,1.),vec4(cross(a,b),1.+dot(a,b)),blend));
+                vec3 offset=p-wrist-sleeveAxis*t;
+                p+=2.*cross(q.xyz,cross(q.xyz,offset)+q.w*offset);
+                p+=(center-sleeveAxis*t)*blend;
                 n+=2.*cross(q.xyz,cross(q.xyz,n)+q.w*n);
             }
             if(gripAmount!=0.) {
@@ -92,6 +99,7 @@ internal static unsafe partial class VisualEngine3D
         uniform vec3 muzzle;
         uniform int firstPerson;
         uniform int finish,handSurface;
+        uniform vec2 weaponFinish;
         out vec4 color;
         vec3 point(vec3 at, vec3 tint, vec3 n, vec3 v, float gloss) {
             vec3 d=at-pos;
@@ -129,9 +137,13 @@ internal static unsafe partial class VisualEngine3D
                 float opacity=exp(-d*d)*smoothstep(0.,.07,h)*(1.-smoothstep(.18,1.,h));
                 color=vec4(.70,.77,.85,.48*opacity); return;
             }
-            vec3 n=normalize(cross(dFdx(pos), dFdy(pos))), v=normalize(eye-pos);
-            if(dot(n,norm)<0.) n=-n;
-            if((finish==21 || finish==17) && dot(norm,norm)>.01) n=normalize(norm);
+            vec3 v=normalize(eye-pos), flatN=normalize(cross(dFdx(pos),dFdy(pos)));
+            if(dot(flatN,v)<0.) flatN=-flatN;
+            vec3 n=flatN;
+            if((finish==21 || finish==17) && dot(norm,norm)>.01) {
+                n=normalize(norm);
+                if(dot(n,flatN)<0.) n=-n;
+            } else if(dot(n,norm)<0.) n=-n;
             vec2 st=uv;
             if(finish==1) st=pos.xz*.36;
             if(finish==11) st=(abs(n.y)>.6 ? pos.xz : (abs(n.x)>.6 ? pos.zy : pos.xy))*.5;
@@ -208,6 +220,8 @@ internal static unsafe partial class VisualEngine3D
             if(finish==18) base*=.93+.07*cos(pos.z*133.)*cos(pos.x*107.);
             vec3 key=normalize(vec3(-.55,.72,-.42));
             float gloss=finish==1 ? mix(22.,85.,tex.r) : (finish==2 ? 44. : 24.);
+            bool weapon=firstPerson==1 && finish==17 && weaponFinish.y>0.;
+            if(weapon) gloss=mix(96.,18.,weaponFinish.y);
             vec3 light=vec3(.50,.53,.58)+vec3(.96,.89,.74)*max(0.,dot(n,key));
             // Window mullions cast warm bright sunbeams across the office floor.
             float shaft=smoothstep(.28,.94,cos(dot(pos.xz,vec2(.61,-.37)) + pos.y*.7));
@@ -222,6 +236,12 @@ internal static unsafe partial class VisualEngine3D
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
             lit+=vec3(.32,.29,.22)*pow(max(0.,dot(n,normalize(v+key))),gloss)*(.18+tex.r);
+            if(weapon) {
+                // Broad overhead softbox across curved barrels and a softer satin lobe on wood.
+                vec3 r=reflect(-v,n);
+                float strip=pow(max(0.,1.-abs(dot(r,normalize(vec3(.32,.85,.41))))),gloss*.46);
+                lit+=mix(vec3(.045,.036,.028),vec3(.29,.34,.40),weaponFinish.x)*strip;
+            }
             if(finish==22) {
                 vec2 p=vec2(abs(n.x)>.7 ? pos.z : pos.x,pos.y);
                 float vein=p.y*2.9+p.x*1.8+.36*sin(p.x*3.+p.y)+.07*sin(p.y*12.);
@@ -261,7 +281,7 @@ internal static unsafe partial class VisualEngine3D
         if (shader.Id == 0 || shader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
-        handSurfaceLoc=Loc("handSurface");
+        handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
         flashLoc = Loc("flashStrength");
@@ -363,7 +383,7 @@ internal static unsafe partial class VisualEngine3D
             Vector3 end=sleeveEnds[(handAsset,right)], axis=end-bind;
             // Keep the cuff on the authored wrist. The far end of the sleeve
             // follows an offscreen elbow while the hand turns with the prop.
-            Vector3 anchor=new(right ? .55f : -.49f,-.48f,.15f);
+            Vector3 anchor=new(right ? .34f : -.18f,-.395f,.23f);
             Matrix4x4.Invert(transform,out var inverse);
             Vector3 target=Vector3.Transform(anchor,inverse)-bind;
             Raylib.SetShaderValue(shader,wristLoc,bind,ShaderUniformDataType.Vec3);
@@ -436,6 +456,22 @@ internal static unsafe partial class VisualEngine3D
                 * Matrix4x4.CreateScale((stretch ?? Vector3.One)*scale)
                 * Matrix4x4.CreateRotationY(yaw*MathF.PI/180)
                 * Matrix4x4.CreateTranslation(position) * assemblyTransform.Value;
+            if(name.StartsWith("weapon_",StringComparison.Ordinal))
+            {
+                for(int i=0;i<model.MeshCount;i++)
+                {
+                    var material=model.Materials[model.MeshMaterial[i]];
+                    var albedo=material.Maps[0];
+                    material.Maps[0].Color=Raylib.ColorTint(albedo.Color,tint ?? Color.White);
+                    Vector2 finish=new(material.Maps[(int)MaterialMapIndex.Metalness].Value,
+                        Math.Clamp(material.Maps[(int)MaterialMapIndex.Roughness].Value,.12f,1));
+                    Raylib.SetShaderValue(shader,weaponFinishLoc,finish,ShaderUniformDataType.Vec2);
+                    Raylib.DrawMesh(model.Meshes[i],material,Matrix4x4.Transpose(transform));
+                    material.Maps[0]=albedo;
+                }
+                Raylib.SetShaderValue(shader,weaponFinishLoc,Vector2.Zero,ShaderUniformDataType.Vec2);
+                return;
+            }
             model.Transform = Matrix4x4.Transpose(transform);
             Raylib.DrawModelEx(model,Vector3.Zero,Vector3.UnitY,0,Vector3.One,tint ?? Color.White);
             return;

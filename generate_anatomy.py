@@ -1155,6 +1155,9 @@ def export(kind, filename):
 
 
 def game_prop():
+    import runpy
+    runpy.run_path(str(Path(__file__).resolve().parent / "assets/external_cc0/office/build_smooth_uzi.py"), run_name="__main__")
+    return
     # High-contrast 90s IMI Micro-Uzi (weapon_uzi_90s.glb).
     # Note: in first-person view (+X in this local space faces the camera, -Z is muzzle forward).
     bpy.ops.wm.read_factory_settings(use_empty=True)

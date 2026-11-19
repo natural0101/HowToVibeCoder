@@ -105,10 +105,10 @@ public class WeaponAndCombatView
     public int BeltSwingCombo = 0;          // Alternates diagonal slash angle
     public float SolderThrustPhase = 0f;    // 0 = idle, >0 = active thrust & twist (1.0 -> 0.0)
     public float SolderHeatGlow = 0.65f;    // 0.5..1.0 glowing copper tip intensity
-    public float UziRecoilPhase = 0f;       // 0 = idle, >0 = bolt kickback & muzzle flash
-    public float UziBoltOffset = 0f;        // Reciprocating top cocking slider
-    public float ShotgunKickPhase = 0f;     // 0 = idle, >0 = rearward impulse then muzzle climb
-    public float EquipTransition = 0f;      // Smooth raise animation when switching slots 1..4
+    public float UziRecoilPhase => CurrentWeapon==WeaponType.MicroUzi ? -_kick.Value.Z/.045f : 0;
+    public float ShotgunKickPhase => CurrentWeapon!=WeaponType.MicroUzi ? -_kick.Value.Z/.085f : 0;
+    public float UziBoltOffset => _bolt.Value;
+    public float EquipTransition => _draw.Value;
 
     // Hitmarker & screen feedback
     public float HitmarkerTimer = 0f;
@@ -126,38 +126,70 @@ public class WeaponAndCombatView
     public readonly List<FloatingCombatText3D> FloatingTexts = new(64);
 
     private int _uziRounds = 32, _shells = 2, _spentHulls;
-    private float _reloadTime, _flash, _roll;
+    private float _reloadTime, _flash;
     private const float UziFlashTime=.038f, ShotgunFlashTime=.055f;
     private float FlashDuration => CurrentWeapon==WeaponType.MicroUzi ? UziFlashTime : ShotgunFlashTime;
     private float FlashStrength => MathF.Sqrt(Math.Clamp(_flash/FlashDuration,0,1));
     private float _flashAngle;
-    private Quaternion _boreAim=Quaternion.Identity;
+    // Exact underdamped solution of x'' = w*w*(target-x) - 2*z*w*x'.
+    // Split long ticks and retain velocity across changes of target.
+    private struct Spring3
+    {
+        public Vector3 Value, Velocity;
+        public void Advance(Vector3 target, float dt, float frequency, float damping)
+        {
+            float decay=damping*frequency, wave=frequency*MathF.Sqrt(1-damping*damping);
+            while(dt>0)
+            {
+                float h=Math.Min(dt,1f/60), c=MathF.Cos(wave*h), s=MathF.Sin(wave*h)/wave;
+                float e=MathF.Exp(-decay*h);
+                Vector3 x=Value-target, v=Velocity;
+                Value=target+e*(x*c+(v+decay*x)*s);
+                Velocity=e*(v*c-(frequency*frequency*x+decay*v)*s);
+                dt-=h;
+            }
+        }
+    }
+
+    private struct SpringFloat
+    {
+        private Spring3 _state;
+        public float Value => _state.Value.X;
+        public void Start(float value) => _state=new Spring3 { Value=Vector3.UnitX*value };
+        public void Impulse(float velocity) => _state.Velocity.X+=velocity;
+        public void Advance(float target,float dt,float frequency,float damping) =>
+            _state.Advance(Vector3.UnitX*target,dt,frequency,damping);
+    }
+
+    private Spring3 _kick, _muzzleRotation, _stance, _body, _lookLagSpring, _sway, _bore;
+    private SpringFloat _draw, _landing, _walk, _receiverBump, _bolt;
+    private Vector3 _pendingClimb;
+    private float _climbDelay;
+    private bool _wasGrounded=true;
     internal SkyscraperFloor1World BallisticWorld;
     private float _stridePhase;
     private bool _lowStance;
     internal float WalkWeight => _walkWeight;
     internal void SetStance(float stride,bool crouched) { _stridePhase=stride; _lowStance=crouched; }
-    private float sprintWeight, dashWeight, airLift, strafeBank, crouchWeight, landing, landingSpeed;
+    private float sprintWeight => _stance.Value.X;
+    private float crouchWeight => _stance.Value.Y;
+    private float strafeBank => _stance.Value.Z;
+    private float dashWeight => _body.Value.X;
+    private float airLift => _body.Value.Y;
     internal void UpdateMotion(float dt, bool isSprinting, bool isGrounded, float verticalVel,
         float landingImpact, bool isDashing, float strafeTilt)
     {
-        float follow=1-MathF.Exp(-12*dt);
-        sprintWeight=Lerp(sprintWeight,isSprinting && isGrounded ? 1 : 0,follow);
-        dashWeight=Lerp(dashWeight,isDashing ? 1 : 0,follow);
-        strafeBank=Lerp(strafeBank,strafeTilt,follow);
-        crouchWeight=Lerp(crouchWeight,_lowStance ? 1 : 0,follow);
-        airLift=Lerp(airLift,isGrounded ? 0 : Math.Clamp(-verticalVel/8,-1,1),follow);
-        landingSpeed+=Math.Clamp(landingImpact/8,0,1)*2.4f;
-        // Analytic underdamped spring, independent of simulation rate.
-        float decay=MathF.Exp(-13*dt), a=19*dt;
-        float velocity=(landingSpeed+13*landing)/19;
-        float next=landing*MathF.Cos(a)+velocity*MathF.Sin(a);
-        landingSpeed=decay*(19*(velocity*MathF.Cos(a)-landing*MathF.Sin(a))-13*next);
-        landing=next*decay;
+        _stance.Advance(new(isSprinting && isGrounded ? 1 : 0,_lowStance ? 1 : 0,strafeTilt),dt,16,.78f);
+        _body.Advance(new(isDashing ? 1 : 0,isGrounded ? 0 : Math.Clamp(-verticalVel/8,-1,1),0),dt,12,.76f);
+        if (_wasGrounded && !isGrounded && verticalVel>0) _landing.Impulse(.095f*verticalVel);
+        _landing.Impulse(.24f*Math.Clamp(landingImpact,0,12));
+        _landing.Advance(0,dt,17,.64f);
+        _wasGrounded=isGrounded;
     }
+    internal float LandingCompression => _landing.Value*.92f;
     internal int Capacity => CurrentWeapon switch { WeaponType.MicroUzi=>32, WeaponType.SawedOff=>2, _=>0 };
     internal int Ammo => CurrentWeapon switch { WeaponType.MicroUzi=>_uziRounds, WeaponType.SawedOff=>_shells, _=>-1 };
-    internal float ClosingImpulse => CurrentWeapon==WeaponType.SawedOff ? Beat(ReloadProgress,.89f,.095f) : 0;
+    internal float ClosingImpulse => CurrentWeapon==WeaponType.SawedOff ? _receiverBump.Value : 0;
     internal bool Reloading => _reloadTime > 0;
     private float ReloadDuration => CurrentWeapon==WeaponType.MicroUzi ? 1.35f : 1.45f;
     internal float ReloadProgress => Reloading ? 1-_reloadTime/ReloadDuration : 0;
@@ -176,7 +208,7 @@ public class WeaponAndCombatView
 
     private void TickReload(float dt, Camera3D camera)
     {
-        if (!Reloading) return;
+        if (!Reloading) { _receiverBump.Advance(0,dt,26,.64f); return; }
         float before=ReloadProgress;
         _reloadTime=Math.Max(0,_reloadTime-dt);
         float after=1-_reloadTime/ReloadDuration;
@@ -196,9 +228,24 @@ public class WeaponAndCombatView
             _spentHulls=0;
         }
         bool uzi=CurrentWeapon==WeaponType.MicroUzi;
-        float seat=uzi ? .56f : .57f, close=uzi ? .81f : .89f;
-        if(before<seat && after>=seat) AudioMusicSystem.PlayActionClack(uzi ? 1.6f : 1.15f);
-        if(before<close && after>=close) AudioMusicSystem.PlayActionClack(uzi ? 1.05f : .67f);
+        float elapsed=0;
+        void Impact(float phase,float velocity,float sound)
+        {
+            if(before>=phase || after<phase) return;
+            float when=(phase-before)*ReloadDuration;
+            _receiverBump.Advance(0,when-elapsed,26,.64f);
+            elapsed=when;
+            _receiverBump.Impulse(velocity);
+            AudioMusicSystem.PlayActionClack(sound);
+        }
+        if(uzi) { Impact(.56f,22,1.6f); Impact(.81f,-10,1.05f); }
+        else
+        {
+            if(_shells==0) Impact(.57f,7,1.15f);
+            Impact(_shells==1 ? .63f : .68f,8,1.25f);
+            Impact(.89f,34,.67f);
+        }
+        _receiverBump.Advance(0,Math.Max(0,dt-elapsed),26,.64f);
         if (_reloadTime==0)
         {
             if (CurrentWeapon==WeaponType.MicroUzi) _uziRounds=32;
@@ -211,8 +258,9 @@ public class WeaponAndCombatView
     private float _continuousSolderSparkTimer = 0f;
     private float _animClock = 0f;
     private const float _inspectDuration = 2.4f;
-    private float _inspectTimer, _walkWeight;
-    private Vector2 _lookLag;
+    private float _inspectTimer;
+    private float _walkWeight => _walk.Value;
+
     internal bool Inspecting => _inspectTimer > 0;
     private float InspectPhase => Inspecting ? 1 - _inspectTimer / _inspectDuration : 0;
 
@@ -223,8 +271,8 @@ public class WeaponAndCombatView
 
     public void UpdateLookLag(Vector2 angularDelta, float dt)
     {
-        _lookLag = Vector2.Clamp(_lookLag * MathF.Exp(-10f*dt) + angularDelta,
-            new Vector2(-.16f), new Vector2(.16f));
+        Vector2 speed=Vector2.Clamp(angularDelta/Math.Max(dt,.001f),new(-4),new(4));
+        _lookLagSpring.Advance(new Vector3(speed*.045f,0),dt,18,.82f);
     }
 
     private static float Ease(float t)
@@ -270,15 +318,23 @@ public class WeaponAndCombatView
         {
             CurrentWeapon = target;
             _inspectTimer = _reloadTime = _flash = 0;
-            EquipTransition = 1.0f;
+            StartDraw(1);
         }
         else if (slotNumber == 4 && UnlockedChatGun)
         {
             // Toggle between SawedOff and ChatGun on pressing [4] again
             CurrentWeapon = (CurrentWeapon == WeaponType.SawedOff) ? WeaponType.ChatGun : WeaponType.SawedOff;
             _inspectTimer = _reloadTime = _flash = 0;
-            EquipTransition = 1.0f;
+            StartDraw(1);
         }
+    }
+
+    private void StartDraw(float amount)
+    {
+        _draw.Start(amount);
+        _kick=_muzzleRotation=_bore=default;
+        _pendingClimb=Vector3.Zero;
+        _receiverBump=_bolt=default;
     }
 
     public void ApplySkin(string skinName, Color primary, Color accent)
@@ -286,7 +342,7 @@ public class WeaponAndCombatView
         CurrentSkinName = skinName;
         SkinTintPrimary = primary;
         SkinTintAccent = accent;
-        EquipTransition = 0.65f;
+        StartDraw(.65f);
     }
 
     /// <summary>
@@ -309,10 +365,12 @@ public class WeaponAndCombatView
         {
             _flash=FlashDuration;
             _flashAngle=NextFloat()*MathF.Tau;
-            _roll=(NextFloat()-.5f)*.10f*(_lowStance ? .65f : 1);
-            if (CurrentWeapon==WeaponType.MicroUzi) UziRecoilPhase=1;
-            else ShotgunKickPhase=1;
-            AimBore(camera,hitWorldPoint ?? camera.Position+forward*24);
+            bool uzi=CurrentWeapon==WeaponType.MicroUzi;
+            float strength=_lowStance ? .75f : 1;
+            _kick.Velocity+=new Vector3(0,uzi ? .10f : .18f,uzi ? -2.4f : -4.4f)*strength;
+            _pendingClimb+=new Vector3(uzi ? -3.6f : -8.6f,0,(NextFloat()-.5f)*(uzi ? 1.6f : 3.2f))*strength;
+            _climbDelay=FlashDuration;
+            if (uzi) _bolt.Impulse(82);
         }
         Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
@@ -406,8 +464,6 @@ public class WeaponAndCombatView
 
             case WeaponType.MicroUzi:
             {
-                UziBoltOffset = 1.0f;
-
                 Vector3 targetPos = hitWorldPoint ?? (camera.Position + forward * 26f);
                 AddTracer(muzzleWorld,targetPos,.038f,.0045f,.035f,new(255,236,196,132));
                 SpawnPowder(muzzleWorld,forward,3,false);
@@ -563,26 +619,34 @@ public class WeaponAndCombatView
         _flash=Math.Max(0,_flash-dt);
         TickReload(dt,camera);
         _inspectTimer = MathF.Max(0,_inspectTimer-dt);
-        _walkWeight = Lerp(_walkWeight,isMoving ? 1 : 0,1-MathF.Exp(-9*dt));
-
-        // Smoothly decay animation phases
-        if (EquipTransition > 0f)
-            EquipTransition = MathF.Max(0f, EquipTransition - dt * 3.8f);
+        _walk.Advance(isMoving ? 1 : 0,dt,18,.86f);
+        float stride=_walkWeight*(1-.62f*crouchWeight);
+        float width=.017f+.025f*sprintWeight;
+        Vector3 breath=new(.0035f*MathF.Sin(_animClock*1.41f+.7f),
+            .003f*MathF.Sin(_animClock*2.09f)+.0018f*MathF.Sin(_animClock*.83f),.0026f*MathF.Cos(_animClock*1.41f));
+        _sway.Advance(breath+stride*new Vector3(width*MathF.Sin(_stridePhase),
+            width*.58f*MathF.Sin(2*_stridePhase),width*.38f*MathF.Cos(_stridePhase)),dt,30,.78f);
+        _draw.Advance(0,dt,12,.68f);
+        _kick.Advance(Vector3.Zero,dt,23,.69f);
+        _bolt.Advance(0,dt,39,.76f);
+        float lag=Math.Min(dt,_climbDelay);
+        _muzzleRotation.Advance(Vector3.Zero,lag,18,.69f);
+        _climbDelay-=lag;
+        if (_climbDelay<=0)
+        {
+            _muzzleRotation.Velocity+=_pendingClimb;
+            _pendingClimb=Vector3.Zero;
+        }
+        _muzzleRotation.Advance(Vector3.Zero,dt-lag,18,.69f);
+        // Converge before the shot. Firing only changes velocities.
+        if (Capacity>0 || CurrentWeapon==WeaponType.ChatGun)
+            TrackBore(camera,dt);
 
         if (BeltSwingPhase > 0f)
             BeltSwingPhase = MathF.Max(0f, BeltSwingPhase - dt * 3.2f);
 
         if (SolderThrustPhase > 0f)
             SolderThrustPhase = MathF.Max(0f, SolderThrustPhase - dt * 2.8f);
-
-        if (UziRecoilPhase > 0f)
-            UziRecoilPhase = MathF.Max(0f, UziRecoilPhase - dt * 9.5f);
-
-        if (UziBoltOffset > 0f)
-            UziBoltOffset = MathF.Max(0f, UziBoltOffset - dt * 14.0f);
-
-        if (ShotgunKickPhase > 0f)
-            ShotgunKickPhase = MathF.Max(0f, ShotgunKickPhase - dt * 1.85f);
 
         if (HitmarkerTimer > 0f)
             HitmarkerTimer = MathF.Max(0f, HitmarkerTimer - dt);
@@ -757,19 +821,19 @@ public class WeaponAndCombatView
     }
 
     private const float ViewModelFov=54;
-    private float ViewRoll => (-19*Ease(EquipTransition)+_lookLag.X*24-5.5f*strafeBank+4*crouchWeight+20*sprintWeight+12*dashWeight)*MathF.PI/180;
+    private float ViewRoll => (-15*EquipTransition+_lookLagSpring.Value.X*24-5.5f*strafeBank
+        +7*crouchWeight-16*sprintWeight-8*dashWeight+_landing.Value*23)*MathF.PI/180;
 
-    private void AimBore(Camera3D camera,Vector3 target)
+    private void TrackBore(Camera3D camera,float dt)
     {
-        _boreAim=Quaternion.Identity;
-        var gun=GunAssembly(BaseOffset());
-        Matrix4x4.Invert(gun.Pose*GunToWorld(camera),out var toGun);
-        Vector3 boreBase=gun.Receiver+new Vector3(MuzzleOffset.X,MuzzleOffset.Y,0);
-        Vector3 line=Vector3.Transform(target,toGun)-boreBase;
-        // A surface inside the viewmodel cannot be reached by a forward-pointing barrel.
-        if (line.Z<=MuzzleOffset.Z) return;
-        Vector3 dir=Vector3.Normalize(line);
-        _boreAim=Quaternion.Normalize(new Quaternion(Vector3.Cross(Vector3.UnitZ,dir),1+dir.Z));
+        // Only converge the neutral stance. Keep the sprint, reload and recoil rotations additive.
+        bool uzi=CurrentWeapon==WeaponType.MicroUzi;
+        Vector3 receiver=BaseOffset()+(uzi ? new Vector3(.215f,-.10f,.68f) : new Vector3(.18f,-.12f,.66f));
+        Vector3 target=camera.Position+Vector3.Normalize(camera.Target-camera.Position)*24;
+        Matrix4x4.Invert(GunToWorld(camera),out var toLocal);
+        Vector3 line=Vector3.Transform(target,toLocal)-receiver-new Vector3(MuzzleOffset.X,MuzzleOffset.Y,0);
+        Vector3 angles=new(-MathF.Atan2(line.Y,line.Z),MathF.Atan2(line.X,line.Z),0);
+        _bore.Advance(angles,dt,18,.9f);
     }
 
     public Vector3 GetWeaponTipWorldPosition(Camera3D camera)
@@ -1033,7 +1097,7 @@ public class WeaponAndCombatView
             * Matrix4x4.CreateRotationZ(-0.14f)
             * Matrix4x4.CreateRotationY(0.19f)
             * Matrix4x4.CreateRotationX(0.06f + whipExtension * .35f)
-            * Matrix4x4.CreateTranslation(pivotCenter) * GetInspectTransform(1,InspectPhase);
+            * Matrix4x4.CreateTranslation(pivotCenter) * ToolStance(pivotCenter) * GetInspectTransform(1,InspectPhase);
         float tension=InspectLift(InspectPhase);
         Vector3 spread=Vector3.UnitX*(.014f*tension);
         VisualEngine3D.ArmAssembly(false, assembly-spread, "fps_hands_belt", pose);
@@ -1077,7 +1141,7 @@ public class WeaponAndCombatView
         Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
             * Matrix4x4.CreateRotationX(-0.66f)
             * Matrix4x4.CreateRotationY(-0.68f)
-            * Matrix4x4.CreateTranslation(handleBase) * GetInspectTransform(2,InspectPhase);
+            * Matrix4x4.CreateTranslation(handleBase) * ToolStance(handleBase) * GetInspectTransform(2,InspectPhase);
 
         VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
@@ -1096,17 +1160,22 @@ public class WeaponAndCombatView
     // =========================================================================
     // SLOT 3: БАНДИТСКИЙ MICRO-UZI (`WeaponType.MicroUzi`)
     // =========================================================================
+    private float StanceYaw => MathF.PI/180*(-24*sprintWeight-13*EquipTransition);
+    private float StancePitch => MathF.PI/180*(11*sprintWeight+5*airLift+16*EquipTransition);
+
+    private Matrix4x4 ToolStance(Vector3 pivot)
+    {
+        return Matrix4x4.CreateTranslation(-pivot)*Matrix4x4.CreateFromYawPitchRoll(StanceYaw,StancePitch,0)
+            *Matrix4x4.CreateTranslation(pivot);
+    }
+
     private Vector3 BaseOffset()
     {
-        float stride=_walkWeight*(1-.65f*crouchWeight);
-        float swing=.016f+.022f*sprintWeight;
-        float bobX=MathF.Sin(_stridePhase)*swing*stride+.0024f*MathF.Sin(_animClock*1.7f);
-        float bobY=-MathF.Cos(_stridePhase*2)*swing*.70f*stride+.0032f*MathF.Sin(_animClock*2.1f);
-        float equip=Ease(EquipTransition), settle=MathF.Sin(EquipTransition*MathF.Tau)*.013f;
-        return new(bobX-_lookLag.X*.23f-.082f*sprintWeight-.031f*dashWeight+.048f*equip,
-            .024f+bobY-.143f*equip+settle+.026f*airLift-landing-.076f*sprintWeight-.041f*dashWeight-.014f*crouchWeight+_lookLag.Y*.19f,
-            -.074f*equip-.04f*sprintWeight-.025f*dashWeight-.55f*landing);
-
+        float draw=EquipTransition;
+        Vector3 look=_lookLagSpring.Value;
+        return _sway.Value+new Vector3(.035f-.32f*look.X-.065f*sprintWeight+.055f*draw,
+            -.012f+.23f*look.Y-.16f*draw+.045f*airLift-_landing.Value-.060f*sprintWeight-.04f*dashWeight+.030f*crouchWeight,
+            -.105f-.09f*draw-.024f*sprintWeight-.038f*crouchWeight);
     }
 
     private Vector3 MuzzleOffset => CurrentWeapon==WeaponType.MicroUzi
@@ -1115,38 +1184,28 @@ public class WeaponAndCombatView
     private (Vector3 Offset,Matrix4x4 Pose,Vector3 Receiver,Vector3 Tip) GunAssembly(Vector3 baseOffset)
     {
         bool uzi=CurrentWeapon==WeaponType.MicroUzi;
-        float phase=uzi ? UziRecoilPhase : ShotgunKickPhase;
-        float age=(1-phase)/(uzi ? 9.5f : 1.85f);
-        float steady=_lowStance ? .65f : 1;
-        float push=phase*phase*steady;
-        float climbTime=Math.Max(0,age-.035f);
-        float spring=uzi ? 52 : 19;
-        float climb=climbTime*spring*MathF.Exp(1-climbTime*spring)*Ease(phase/.20f)*steady;
         float t=ReloadProgress;
-        float tilt=Ease(t/.18f)*Ease((1-t)/.16f);
-        float impact=uzi ? Beat(t,.56f,.065f) : Beat(t,.89f,.076f);
-        Vector3 offset=baseOffset+new Vector3((uzi ? .035f : 0)-tilt*.032f,
-            tilt*(uzi ? .124f : .033f)+impact*.014f,-(uzi ? .043f : .090f)*push+tilt*.024f);
+        float tilt=Ramp(t,0,.24f)*(1-Ramp(t,.80f,1));
+        Vector3 reloadTravel=uzi ? new(-.188f,.171f,-.067f) : new(.020f,-.006f,-.055f);
+        Vector3 offset=baseOffset+_kick.Value+reloadTravel*tilt+new Vector3(uzi ? .035f : 0,
+            .012f*_receiverBump.Value,-.009f*_receiverBump.Value);
         Vector3 pivot=offset+(uzi ? new Vector3(.18f,-.193f,.6665f) : new Vector3(.18f,-.17f,.60f));
         Vector3 receiver=offset+(uzi ? new Vector3(.18f,-.10f,.68f) : new Vector3(.18f,-.12f,.66f));
         Vector3 muzzle=MuzzleOffset;
-        Vector3 boreBase=receiver+new Vector3(muzzle.X,muzzle.Y,0);
-        var aim=Quaternion.Slerp(Quaternion.Identity,_boreAim,Ease(phase/(uzi ? .55f : .76f)));
-        var pose=Matrix4x4.CreateTranslation(-boreBase)*Matrix4x4.CreateFromQuaternion(aim)
-            * Matrix4x4.CreateTranslation(boreBase-pivot)
-            * Matrix4x4.CreateRotationX(uzi ? -.095f*climb-.16f*tilt-.055f*impact : -.23f*climb-.12f*tilt-.075f*impact)
-            * Matrix4x4.CreateRotationZ(_roll*climb+tilt*(uzi ? .56f : .28f)+impact*.028f)
-            * Matrix4x4.CreateRotationY((uzi ? -.28f : -.27f)-tilt*.31f-.32f*sprintWeight)
-            * Matrix4x4.CreateTranslation(pivot)*GetInspectTransform(uzi ? 3 : 4,InspectPhase);
+        const float rad=MathF.PI/180;
+        float pitch=_bore.Value.X+_muzzleRotation.Value.X-.075f*_receiverBump.Value
+            +StancePitch-.09f*tilt;
+        float yaw=_bore.Value.Y+StanceYaw+rad*(uzi ? 22 : -18)*tilt;
+        float roll=_muzzleRotation.Value.Z+rad*(uzi ? 34 : 20)*tilt+.037f*_receiverBump.Value;
+        var pose=Matrix4x4.CreateTranslation(-pivot)*Matrix4x4.CreateFromYawPitchRoll(yaw,pitch,roll)
+            *Matrix4x4.CreateTranslation(pivot)*GetInspectTransform(uzi ? 3 : 4,InspectPhase);
         return (offset,pose,receiver,Vector3.Transform(receiver+muzzle,pose));
     }
 
-    private static float Ramp(float t,float start,float end) => Ease((t-start)/(end-start));
-
-    private static float Beat(float t,float start,float duration)
+    private static float Ramp(float t,float start,float end)
     {
-        float phase=Math.Clamp((t-start)/duration,0,1);
-        return MathF.Sin(phase*MathF.PI)*MathF.Exp(-2.5f*phase);
+        float x=Math.Clamp((t-start)/(end-start),0,1);
+        return x*x*x*(10+x*(-15+6*x));
     }
 
     // Carry a point inside the authored finger curl to its animated socket.
@@ -1158,35 +1217,37 @@ public class WeaponAndCombatView
     {
         var (assembly,pose,receiverCenter,_)=GunAssembly(baseOffset);
         float t=ReloadProgress;
-        float take=Ramp(t,0,.105f), pull=Ramp(t,.105f,.24f), seat=Ramp(t,.26f,.56f);
-        float reach=Ramp(t,.585f,.705f), recover=Ramp(t,.83f,1);
-        float rack=Ramp(t,.705f,.785f)*(1-Ramp(t,.797f,.827f));
-        // Exchange at the bottom of the frame, then seat the fresh magazine.
-        Vector3 travel=new Vector3(-.055f,-.42f,-.074f)*(pull-seat)
-            +new Vector3(-.035f,0,-.019f)*MathF.Sin(seat*MathF.PI);
+        float take=Ramp(t,.035f,.18f), pull=Ramp(t,.155f,.32f), seat=Ramp(t,.34f,.56f);
+        float reach=Ramp(t,.575f,.72f), recover=Ramp(t,.82f,.985f);
+        float rack=Ramp(t,.72f,.80f)*SpringReturn((t-.80f)*ReloadDuration,62,.73f);
+        // Author the exchange arc in view space so tilting the receiver cannot
+        // swing the hand across the screen. Use the same travel for the magazine.
+        Matrix4x4.Invert(pose,out var inverse);
+        Vector3 arc=new Vector3(-.125f,-.055f,.020f)*(pull-seat)
+            +new Vector3(-.018f,.011f,-.019f)*MathF.Sin(seat*MathF.PI);
+        Vector3 travel=Vector3.TransformNormal(arc,inverse);
         Vector3 socket=assembly+new Vector3(.183f,-.127f,.84f);
         Vector3 well=receiverCenter+new Vector3(0,-.187f,-.01425f);
-        float pullBack=Ramp(t,.705f,.785f)*(1-Ramp(t,.83f,.94f));
-        Vector3 knob=receiverCenter+new Vector3(0,.043f,.02625f-.059f*pullBack);
+        Vector3 knob=receiverCenter+new Vector3(0,.043f,.02625f-.059f*rack);
         Vector3 hand=Vector3.Lerp(socket,well,take)+travel;
         hand=Vector3.Lerp(hand,knob,reach);
         // Approach the top around the outside of the receiver.
-        hand+=new Vector3(-.096f,.049f,-.036f)*MathF.Sin(reach*MathF.PI);
+        hand+=new Vector3(-.060f,.012f,-.017f)*MathF.Sin(reach*MathF.PI);
         hand=Vector3.Lerp(hand,socket,recover)+new Vector3(-.048f,.055f,0)*MathF.Sin(recover*MathF.PI);
         float grip=take*(1-reach), pinch=reach*(1-recover);
-        Quaternion orientation=Quaternion.Slerp(Quaternion.CreateFromYawPitchRoll(-.23f*grip,-.88f*grip,0),
-            Quaternion.CreateFromYawPitchRoll(.96f,.70f,.08f),pinch);
+        Quaternion orientation=Quaternion.Slerp(Quaternion.CreateFromYawPitchRoll(-.23f*grip,-.53f*grip,0),
+            Quaternion.CreateFromYawPitchRoll(.44f,.36f,-.18f),pinch);
         Vector3 pinchSocket=assembly+new Vector3(.174f,-.102f,.852f);
         Vector3 fingerSocket=Vector3.Lerp(socket,pinchSocket,pinch);
         VisualEngine3D.ArmAssembly(false,assembly,"fps_hands_uzi",HandAt(fingerSocket,hand,orientation,pose),
             grip*.21f+pinch*.48f-.14f*MathF.Sin(take*MathF.PI)+.035f*UziRecoilPhase*(1-take));
         VisualEngine3D.ArmAssembly(true,assembly,"fps_hands_uzi",pose,UziRecoilPhase*.075f);
-        if(t>.105f && t<.56f)
+        if(t>.155f && t<.56f)
         {
             // The upper length normally lives inside the opaque grip. Draw it
             // with the same rigid transform, including the folded spine.
             var magazinePose=Matrix4x4.CreateTranslation(well+travel)*pose;
-            VisualEngine3D.MagazineInsert(magazinePose,t>=.25f);
+            VisualEngine3D.MagazineInsert(magazinePose,t>=.33f);
         }
         // The magazine receives exactly the same socket translation in model coordinates.
         VisualEngine3D.PoseReloadPart(true,travel, rack*.059f+.031f*UziBoltOffset);
@@ -1195,7 +1256,20 @@ public class WeaponAndCombatView
         VisualEngine3D.PoseReloadPart(true,Vector3.Zero,0);
     }
 
-    private static float BarrelAngle(float t) => .84f*Ramp(t,.015f,.20f)*(1-Ramp(t,.78f,.89f));
+    // Homogeneous spring response from unit displacement and zero velocity.
+    private static float SpringReturn(float seconds,float frequency,float damping)
+    {
+        if(seconds<=0) return 1;
+        float decay=frequency*damping, wave=frequency*MathF.Sqrt(1-damping*damping);
+        return MathF.Exp(-decay*seconds)*(MathF.Cos(wave*seconds)+decay/wave*MathF.Sin(wave*seconds));
+    }
+
+    private static float BarrelAngle(float t)
+    {
+        float opened=.80f*(1-SpringReturn((t-.035f)*1.45f,20,.72f));
+        float dip=.075f*Ramp(t,.755f,.815f);
+        return (opened+dip)*(1-Ramp(t,.815f,.89f));
+    }
 
     private static (Vector3 Entry,Vector3 Axis) Chamber(Vector3 receiver,float angle,int index)
     {
@@ -1217,19 +1291,21 @@ public class WeaponAndCombatView
         Vector3 socket=assembly+new Vector3(.184f,-.140f,.852f);
         Vector3 hinge=gripTop+new Vector3(0,-.013f,.127f);
         Vector3 support=hinge+Vector3.TransformNormal(socket-hinge,Matrix4x4.CreateRotationX(angle));
-        Vector3 pocket=assembly+new Vector3(-.135f,-.420f,.49f);
+        Vector3 pocket=assembly+new Vector3(-.045f,-.192f,.65f);
         // Stagger the brass heads so the first cartridge bottoms before the second.
         Vector3 center=entry+Vector3.UnitX*(count==1 ? .035f : .0175f);
         float push=count==1 ? .071f*Ramp(t,.46f,.63f) : .040f*push1+.031f*push2;
         Vector3 approach=center-axis*(.072f-push);
-        Vector3 cradle=Vector3.Lerp(Vector3.Lerp(support,pocket,fetch),approach,carry);
+        Vector3 cradle=Vector3.Lerp(Vector3.Lerp(support,pocket,fetch),approach,carry)
+            +new Vector3(-.021f,.009f,-.028f)*MathF.Sin(fetch*MathF.PI);
         cradle+=new Vector3(-.061f,.028f,-.038f)*MathF.Sin(carry*MathF.PI);
         // The heel stays behind the brass heads during insertion.
-        Vector3 palm=cradle+axis*(.018f*fetch);
+        Vector3 gripOffset=new Vector3(-.021f,.005f,-.012f)+axis*.004f;
+        Vector3 palm=cradle+gripOffset*fetch;
         palm=Vector3.Lerp(palm,support,returnGrip)
             +new Vector3(-.083f,-.053f,0)*MathF.Sin(returnGrip*MathF.PI);
         Quaternion onForend=Quaternion.CreateFromAxisAngle(Vector3.UnitX,angle);
-        Quaternion carrying=Quaternion.CreateFromYawPitchRoll(1.02f,-.22f,.22f);
+        Quaternion carrying=Quaternion.CreateFromYawPitchRoll(.58f,-.19f,.26f);
         Quaternion orientation=Quaternion.Slerp(onForend,carrying,fetch*(1-returnGrip));
         Vector3 pinchSocket=assembly+new Vector3(.182f,-.108f,.878f);
         Vector3 fingerSocket=Vector3.Lerp(socket,pinchSocket,fetch*(1-returnGrip));
@@ -1265,7 +1341,7 @@ public class WeaponAndCombatView
                 float seatTime=count==1 ? .63f : i==0 ? .57f : .68f;
                 bool seated=t>=seatTime;
                 Quaternion gripInverse=Quaternion.Conjugate(carrying);
-                Vector3 shellInHand=pinchSocket+Vector3.Transform(offset+stagger-axis*.018f,gripInverse);
+                Vector3 shellInHand=pinchSocket+Vector3.Transform(offset+stagger-gripOffset,gripInverse);
                 Vector3 shellBase=seated ? Vector3.Transform(mouth-axis*.0024f,pose) : Vector3.Transform(shellInHand,handFrame);
                 Vector3 shellAxis=seated ? Vector3.TransformNormal(axis,pose)
                     : Vector3.TransformNormal(Vector3.Transform(axis,gripInverse),handFrame);

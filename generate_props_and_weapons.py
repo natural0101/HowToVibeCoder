@@ -856,7 +856,7 @@ def build_weapon_shotgun():
         data = bpy.data.curves.new(name, 'CURVE')
         data.dimensions = '3D'
         data.bevel_depth = radius
-        data.bevel_resolution = 4
+        data.bevel_resolution = 8
         spline = data.splines.new('BEZIER')
         spline.bezier_points.add(len(points) - 1)
         for p, co in zip(spline.bezier_points, points):
@@ -869,32 +869,59 @@ def build_weapon_shotgun():
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
         bpy.ops.object.convert(target='MESH')
-        return obj
+        return smooth(obj)
 
-    # 1) ERGONOMIC DARK WALNUT PISTOL GRIP WITH FINGER GROOVES & METAL MEDALLION CAP
-    # Rich dark walnut (never orange!), contoured oval cross-section with 3 front finger grooves
-    rings = [
-        # (y,     z,     rx,    rz,    front_groove_indent)
-        (-0.104, 0.098, 0.025, 0.022,  0.002),  # flared pommel swell
-        (-0.092, 0.090, 0.023, 0.021, -0.003),  # finger groove 3 (pinky)
-        (-0.079, 0.080, 0.024, 0.023,  0.002),  # ridge 2
-        (-0.064, 0.068, 0.022, 0.021, -0.0035), # finger groove 2 (ring)
-        (-0.050, 0.057, 0.023, 0.023,  0.002),  # ridge 1
-        (-0.036, 0.044, 0.021, 0.021, -0.0035), # finger groove 1 (middle)
-        (-0.020, 0.027, 0.021, 0.024,  0.000),  # upper wrist waist
-        (-0.004, 0.005, 0.024, 0.027,  0.000),  # receiver tang transition
-        ( 0.008,-0.020, 0.026, 0.029,  0.000),  # action socket join
+    def catmull_rom(p0, p1, p2, p3, t):
+        t2 = t * t
+        t3 = t2 * t
+        return 0.5 * (
+            (2.0 * p1)
+            + (-p0 + p2) * t
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+            + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+        )
+
+    def sample_control_table(ctrl, num_samples):
+        n = len(ctrl)
+        out = []
+        for s in range(num_samples):
+            u = s / (num_samples - 1) * (n - 1)
+            idx = min(int(u), n - 2)
+            frac = u - idx
+            p0 = ctrl[max(0, idx - 1)]
+            p1 = ctrl[idx]
+            p2 = ctrl[min(n - 1, idx + 1)]
+            p3 = ctrl[min(n - 1, idx + 2)]
+            row = tuple(catmull_rom(p0[c], p1[c], p2[c], p3[c], frac) for c in range(len(p1)))
+            out.append(row)
+        return out
+
+    # 1) SILKY-SMOOTH HIGH-POLY DARK WALNUT PISTOL GRIP WITH FLUSH STEEL CAP & BRASS MEDALLION
+    # Single continuous C^inf oval loft (56 rings x 48 segments) with zero bottom step and zero longitudinal creases.
+    grip_ctrl = [
+        # (y,       z,       rx,     rz)
+        (-0.1112,  0.1036, 0.0025, 0.0023),  # flush brass medallion center dome
+        (-0.1104,  0.1029, 0.0108, 0.0100),  # flush brass medallion rim
+        (-0.1086,  0.1014, 0.0182, 0.0168),  # rounded steel grip cap bevel
+        (-0.1042,  0.0980, 0.0230, 0.0206),  # flush steel grip cap border
+        (-0.1000,  0.0950, 0.0231, 0.0207),  # walnut pommel swell (100% flush with steel cap)
+        (-0.0860,  0.0850, 0.0222, 0.0210),  # lower palm curve
+        (-0.0650,  0.0685, 0.0218, 0.0212),  # mid palm swell
+        (-0.0420,  0.0495, 0.0208, 0.0210),  # upper grip finger wrap
+        (-0.0200,  0.0270, 0.0204, 0.0228),  # slender upper wrist waist
+        (-0.0040,  0.0060, 0.0218, 0.0235),  # receiver tang transition
+        ( 0.0090, -0.0080, 0.0212, 0.0215),  # upper wrist crest meeting receiver rear seamlessly
+        ( 0.0185, -0.0220, 0.0195, 0.0180),  # action socket join (tucked inside receiver)
     ]
-    n_circ = 28
+    rings = sample_control_table(grip_ctrl, 56)
+    n_circ = 48
     verts = []
-    for y, z, rx, rz, fg in rings:
+    for y, z, rx, rz in rings:
         for i in range(n_circ):
             ang = i * math.tau / n_circ
-            # Flatten sides slightly for authentic shotgun wrist feel + front finger groove modulation
-            sx = rx * math.cos(ang) * (0.92 + 0.08 * abs(math.sin(ang)))
+            # C^inf smooth oval cross-section (sin^2 instead of abs(sin) eliminates side ridge kink)
+            sx = rx * math.cos(ang) * (0.94 + 0.06 * (math.sin(ang) ** 2))
             sz = rz * math.sin(ang)
-            if math.sin(ang) < -0.35:
-                sz -= fg * ((-math.sin(ang) - 0.35) / 0.65)
             verts.append(rl_pos((sx, y, z + sz)))
     faces = [
         (k * n_circ + i, k * n_circ + (i + 1) % n_circ, (k + 1) * n_circ + (i + 1) % n_circ, (k + 1) * n_circ + i)
@@ -906,113 +933,200 @@ def build_weapon_shotgun():
     mesh.update()
     grip = bpy.data.objects.new('ErgonomicWalnutGrip', mesh)
     bpy.context.collection.objects.link(grip)
-    mesh.materials.append(m_walnut)
-    mesh.materials.append(m_walnut_check)
+    mesh.materials.append(m_walnut)       # 0: oiled walnut
+    mesh.materials.append(m_walnut_check) # 1: dark checkered walnut side panels
+    mesh.materials.append(m_receiver)     # 2: flush blued-steel pistol grip cap
+    mesh.materials.append(m_brass)        # 3: flush inlaid brass medallion
     uv = mesh.uv_layers.new(name="UVMap")
     for face in mesh.polygons:
         for index in face.loop_indices:
             row, column = divmod(mesh.loops[index].vertex_index, n_circ)
-            if face.index < (len(rings)-1)*n_circ and face.index % n_circ == n_circ-1 and column == 0:
+            if face.index < (len(rings) - 1) * n_circ and face.index % n_circ == n_circ - 1 and column == 0:
                 column = n_circ
-            uv.data[index].uv = (.20 + .60*column/n_circ, .12 + .72*row/(len(rings)-1))
-    # Assign dark checkered walnut material directly to the flush side-panel polygons of the grip
-    # so the silhouette stays 100% sleek and anatomical without protruding pegs!
-    for k in range(1, len(rings) - 2):
+            uv.data[index].uv = (.20 + .60 * column / n_circ, .12 + .72 * row / (len(rings) - 1))
+
+    n_ring_quads = (len(rings) - 1) * n_circ
+    for k in range(len(rings) - 1):
+        u_ring = k / (len(rings) - 1)
         for i in range(n_circ):
-            ang = i * math.tau / n_circ
-            if abs(math.cos(ang)) > 0.72 and abs(math.sin(ang)) < 0.62:
-                poly_idx = k * n_circ + i
-                if poly_idx < len(mesh.polygons):
-                    mesh.polygons[poly_idx].material_index = 1
-    smooth(grip)
+            poly_idx = k * n_circ + i
+            ang = (i + 0.5) * math.tau / n_circ
+            if k < 4:
+                mesh.polygons[poly_idx].material_index = 3  # flush brass medallion center
+            elif k < 10:
+                mesh.polygons[poly_idx].material_index = 2  # flush steel pommel cap
+            elif u_ring >= 0.78 and math.sin(ang) < -0.90:
+                mesh.polygons[poly_idx].material_index = 2  # flush-inlaid upper steel tang on top of wrist
+            elif 0.24 <= u_ring <= 0.78 and abs(math.cos(ang)) > 0.74 and abs(math.sin(ang)) < 0.58:
+                mesh.polygons[poly_idx].material_index = 1  # flush checkered side panel
+    mesh.polygons[n_ring_quads].material_index = 3  # bottom medallion cap
+    for poly in mesh.polygons:
+        poly.use_smooth = True
 
     # Subtle flush brass grip escutcheon pin on the side of the dark walnut wrist
-    add_rod("GripEscutcheonPin", (-0.0205, -0.056, 0.062), (0.0205, -0.056, 0.062), 0.0028, 0.0028, m_brass, 12)
+    smooth(add_rod("GripEscutcheonPin", (-0.0196, -0.056, 0.062), (0.0196, -0.056, 0.062), 0.0024, 0.0024, m_brass, 16))
 
-    # Polished steel pommel buttcap (стальной тыльник) + golden brass medallion (латунный медальон)
-    smooth(add_rod("SteelPommelCap", (0, -0.102, 0.096), (0, -0.111, 0.104), 0.0255, 0.0225, m_receiver, 24))
-    smooth(add_rod("PommelBezelRing", (0, -0.103, 0.097), (0, -0.106, 0.100), 0.0265, 0.0262, m_steel_dark, 24))
-    smooth(add_rod("BrassGripMedallion", (0, -0.110, 0.103), (0, -0.1135, 0.1065), 0.0125, 0.0105, m_brass, 18))
+    # 2) LOW-PROFILE SCULPTED STEEL BOXLOCK RECEIVER (NO CARTOON BALLS, NO REAR STEP!)
+    # Smoothly lofted 36-slice x 48-seg receiver body that matches the twin barrels at the standing breech
+    # (z = -0.092) and tapers flush into the walnut stock wrist (z = 0.004). All z >= -0.092 so it stays stationary.
+    rec_slices = 36
+    rec_circ = 48
+    rec_verts = []
+    for s in range(rec_slices):
+        u = s / (rec_slices - 1)
+        z = -0.092 + u * 0.096  # -0.092 (standing breech) -> +0.004 (flush stock wrist join)
+        t_morph = min(1.0, max(0.0, (u - 0.14) / 0.86))
+        blend = 0.5 - 0.5 * math.cos(math.pi * t_morph)
+        for i in range(rec_circ):
+            ang = i * math.tau / rec_circ
+            ca, sa = math.cos(ang), math.sin(ang)
+            # Front standing breech profile (matches twin barrels at x = +-0.0175, y = 0.024, r = 0.0170)
+            top_mask = max(0.0, sa)
+            scallop = 1.0 - 0.13 * (math.cos(2.0 * ang) ** 2) * (top_mask ** 1.5)
+            bx_front = ca * (0.0246 + 0.0086 * (top_mask ** 0.85))
+            by_front = (0.0135 + 0.0265 * sa) * scallop
+            if sa < 0.0:
+                by_front = 0.0105 + 0.0225 * sa * (0.86 + 0.14 * (ca ** 2))
+            # Rear oval wrist profile (matches ErgonomicWalnutGrip at z = +0.004 seamlessly with zero step)
+            rear_taper = 1.0 - 0.16 * (max(0.0, (u - 0.82) / 0.18) ** 2)
+            bx_rear = 0.0214 * ca * (0.94 + 0.06 * (sa ** 2)) * rear_taper
+            by_rear = 0.0010 + (0.0185 if sa >= 0.0 else 0.0215) * sa * rear_taper
+            x = (1.0 - blend) * bx_front + blend * bx_rear
+            y = (1.0 - blend) * by_front + blend * by_rear
+            rec_verts.append(rl_pos((x, y, z)))
+    rec_faces = [
+        (k * rec_circ + i, k * rec_circ + (i + 1) % rec_circ, (k + 1) * rec_circ + (i + 1) % rec_circ, (k + 1) * rec_circ + i)
+        for k in range(rec_slices - 1) for i in range(rec_circ)
+    ]
+    rec_faces += [tuple(reversed(range(rec_circ))), tuple(range(len(rec_verts) - rec_circ, len(rec_verts)))]
+    rec_mesh = bpy.data.meshes.new('ReceiverActionBody')
+    rec_mesh.from_pydata(rec_verts, [], rec_faces)
+    rec_mesh.update()
+    rec_obj = bpy.data.objects.new('ReceiverActionBody', rec_mesh)
+    bpy.context.collection.objects.link(rec_obj)
+    rec_mesh.materials.append(m_receiver)
+    smooth(rec_obj)
 
-    # 2) MACHINED STEEL BOXLOCK RECEIVER WITH SIDE CHEEKS, SCREWS & EXTERNAL HAMMERS
-    # Main sculpted steel receiver block
-    add_box("ReceiverCoreBlock", (0, 0.011, -0.056), (0.048, 0.044, 0.082), m_receiver, bevel=0.008)
     for side in (-1, 1):
-        # Hemispherical breech balls (яблоки колодки)
-        smooth(add_sphere(f"BreechFence_{side}", (side * 0.0175, 0.023, -0.048), 1.0, m_receiver,
-                          scale=(0.019, 0.026, 0.036), segments=24, ring_count=14))
-        # Teardrop sidelock cheek plates (боковые фигурные щеки колодки)
-        add_box(f"SideCheekPlate_{side}", (side * 0.0245, 0.008, -0.042), (0.004, 0.026, 0.074), m_receiver, bevel=0.003)
-        add_box(f"SideCheekBorder_{side}", (side * 0.0258, 0.008, -0.042), (0.002, 0.020, 0.064), m_steel_dark, bevel=0.0015)
-
-        # Visible slotted gunsmith screws & brass hinge pin on the side cheeks
+        # Smooth organic teardrop sidelock cheek plates (no rectangular corners clipping the wood!)
+        cheek = add_sphere(f"SideCheekPlate_{side}", (side * 0.0228, 0.0075, -0.048), 1.0, m_receiver,
+                           scale=(0.0026, 0.0115, 0.033), segments=32, ring_count=18)
+        smooth(cheek)
+        # Flush gunsmith pins & brass hinge pin rosette on the side cheeks
         for s_idx, (sy, sz, s_rad, s_mat) in enumerate([
-            (0.012, -0.022, 0.0038, m_steel_dark),
-            (0.004, -0.052, 0.0034, m_steel_dark),
-            (0.006, -0.078, 0.0052, m_brass),  # Main hinge pin rosette
+            (0.009, -0.028, 0.0024, m_steel_dark),
+            (0.005, -0.052, 0.0024, m_steel_dark),
+            (0.005, -0.076, 0.0038, m_brass),  # Main hinge pin rosette
         ]):
-            sx_in  = side * 0.024
-            sx_out = side * 0.0285
-            add_rod(f"ReceiverScrew_{side}_{s_idx}", (sx_in, sy, sz), (sx_out, sy, sz), s_rad, s_rad, s_mat, 14)
-            add_box(f"ScrewSlot_{side}_{s_idx}", (sx_out, sy, sz), (0.0015, s_rad * 1.6, 0.0012), m_bore)
+            sx_in  = side * 0.0220
+            sx_out = side * 0.0250
+            smooth(add_rod(f"ReceiverScrew_{side}_{s_idx}", (sx_in, sy, sz), (sx_out, sy, sz), s_rad, s_rad, s_mat, 18))
 
-    # Upper & lower steel tangs gripping the dark walnut wrist
-    curve("UpperSteelTang", [(0, 0.034, -0.040), (0, 0.025, -0.010), (0, 0.010, 0.020), (0, -0.005, 0.044)], 0.0055, m_receiver)
-    add_rod("TangScrew", (0, 0.008, 0.024), (0, 0.013, 0.027), 0.0032, 0.0032, m_steel_dark, 12)
+    # Sleek, flat, low-profile Westley Richards top locking lever hugging the receiver top slope (no sticking-out pipe!)
+    lev_ctrl = [
+        # (x,      y,      z,      rx,     ry)
+        (0.0000, 0.0365, -0.062, 0.0046, 0.0018),
+        (0.0005, 0.0352, -0.050, 0.0038, 0.0017),
+        (0.0018, 0.0315, -0.035, 0.0030, 0.0016),
+        (0.0035, 0.0262, -0.020, 0.0032, 0.0016),
+        (0.0048, 0.0218, -0.010, 0.0052, 0.0018),
+        (0.0052, 0.0202, -0.004, 0.0038, 0.0015),
+    ]
+    lev_rings = sample_control_table(lev_ctrl, 20)
+    lev_circ = 24
+    lev_verts = []
+    for lx, ly, lz, lrx, lry in lev_rings:
+        for i in range(lev_circ):
+            ang = i * math.tau / lev_circ
+            lev_verts.append(rl_pos((lx + lrx * math.cos(ang), ly + lry * math.sin(ang), lz)))
+    lev_faces = [
+        (k * lev_circ + i, k * lev_circ + (i + 1) % lev_circ, (k + 1) * lev_circ + (i + 1) % lev_circ, (k + 1) * lev_circ + i)
+        for k in range(len(lev_rings) - 1) for i in range(lev_circ)
+    ]
+    lev_faces += [tuple(reversed(range(lev_circ))), tuple(range(len(lev_verts) - lev_circ, len(lev_verts)))]
+    lev_mesh = bpy.data.meshes.new('TopLockingLever')
+    lev_mesh.from_pydata(lev_verts, [], lev_faces)
+    lev_mesh.update()
+    lev_obj = bpy.data.objects.new('TopLockingLever', lev_mesh)
+    bpy.context.collection.objects.link(lev_obj)
+    lev_mesh.materials.append(m_steel_dark)
+    smooth(lev_obj)
 
-    # Top Westley Richards locking lever
-    curve("TopLockingLever", [(0, 0.042, -0.058), (0.004, 0.049, -0.040), (0.009, 0.048, -0.014), (0.014, 0.039, 0.010)], 0.0038, m_steel_dark)
-    smooth(add_sphere("LeverThumbPaddle", (0.014, 0.039, 0.012), 1.0, m_receiver, scale=(0.008, 0.004, 0.012), segments=18))
-
-    # Twin cocked external hammers (взведенные курки с насечкой)
+    # Single-piece sculpted S-curve forged external hammers (continuous loft, zero disconnected parts!)
     for side in (-1, 1):
-        hx = side * 0.0275
-        smooth(add_rod(f"HammerBoss_{side}", (hx - side * 0.003, 0.014, -0.036), (hx + side * 0.003, 0.014, -0.036), 0.0072, 0.0072, m_receiver, 20))
-        add_rod(f"HammerPivotScrew_{side}", (hx - side * 0.004, 0.014, -0.036), (hx + side * 0.004, 0.014, -0.036), 0.0035, 0.0035, m_brass, 12)
-        curve(f"ExternalHammer_{side}", [(hx, 0.014, -0.036), (hx, 0.034, -0.022), (hx, 0.056, -0.016), (hx, 0.064, -0.034)], 0.0042, m_steel_dark)
-        smooth(add_sphere(f"HammerSpur_{side}", (hx, 0.060, -0.010), 1.0, m_receiver, scale=(0.0055, 0.0038, 0.011), segments=18))
+        hx = side * 0.0242
+        smooth(add_rod(f"HammerBoss_{side}", (hx - side * 0.0020, 0.012, -0.042), (hx + side * 0.0020, 0.012, -0.042), 0.0054, 0.0054, m_receiver, 24))
+        smooth(add_rod(f"HammerPivotScrew_{side}", (hx - side * 0.0025, 0.012, -0.042), (hx + side * 0.0025, 0.012, -0.042), 0.0024, 0.0024, m_brass, 16))
+        ham_ctrl = [
+            # (y,      z,      rx,     rz)
+            (0.0120, -0.0420, 0.0017, 0.0045),  # pivot base
+            (0.0210, -0.0455, 0.0017, 0.0042),  # lower S-neck
+            (0.0295, -0.0525, 0.0018, 0.0052),  # striker breast near firing pin bolster
+            (0.0355, -0.0440, 0.0018, 0.0040),  # upper hammer crest
+            (0.0395, -0.0345, 0.0022, 0.0032),  # swept-back thumb spur mid
+            (0.0415, -0.0275, 0.0024, 0.0020),  # thumb spur tip
+        ]
+        ham_rings = sample_control_table(ham_ctrl, 24)
+        ham_circ = 20
+        ham_verts = []
+        for hy, hz, hrx, hrz in ham_rings:
+            for i in range(ham_circ):
+                ang = i * math.tau / ham_circ
+                ham_verts.append(rl_pos((hx + hrx * math.cos(ang), hy + 0.0015 * math.sin(ang), hz + hrz * math.sin(ang))))
+        ham_faces = [
+            (k * ham_circ + i, k * ham_circ + (i + 1) % ham_circ, (k + 1) * ham_circ + (i + 1) % ham_circ, (k + 1) * ham_circ + i)
+            for k in range(len(ham_rings) - 1) for i in range(ham_circ)
+        ]
+        ham_faces += [tuple(reversed(range(ham_circ))), tuple(range(len(ham_verts) - ham_circ, len(ham_verts)))]
+        ham_mesh = bpy.data.meshes.new(f"ForgedHammer_{side}")
+        ham_mesh.from_pydata(ham_verts, [], ham_faces)
+        ham_mesh.update()
+        ham_obj = bpy.data.objects.new(f"ForgedHammer_{side}", ham_mesh)
+        bpy.context.collection.objects.link(ham_obj)
+        ham_mesh.materials.append(m_steel_dark)
+        smooth(ham_obj)
 
-    # Sculpted trigger guard & twin curved triggers
-    curve("TriggerGuardBow", [(0, -0.014, -0.078), (0, -0.044, -0.072), (0, -0.052, -0.042),
-                              (0, -0.043, -0.010), (0, -0.018,  0.006)], 0.0034, m_steel_dark)
+    # Sculpted trigger guard & twin curved triggers (anchored solidly into bottom of receiver)
+    curve("TriggerGuardBow", [(0, -0.006, -0.076), (0, -0.044, -0.072), (0, -0.052, -0.042),
+                              (0, -0.043, -0.010), (0, -0.012,  0.006)], 0.0032, m_steel_dark)
     for t_idx, (tx, tz) in enumerate([(-0.0045, -0.056), (0.0045, -0.034)]):
-        curve(f"ShotgunTrigger_{t_idx}", [(tx, -0.014, tz), (tx, -0.032, tz + 0.005), (tx, -0.040, tz - 0.002)], 0.0024, m_brass if t_idx == 0 else m_receiver)
+        curve(f"ShotgunTrigger_{t_idx}", [(tx, -0.006, tz), (tx, -0.032, tz + 0.005), (tx, -0.040, tz - 0.002)], 0.0022, m_brass if t_idx == 0 else m_receiver)
 
-    # 3) SCULPTED DARK WALNUT SPLINTER FOREND WITH CHECKERING & STEEL DEELEY LATCH
-    forend = smooth(add_sphere("DarkWalnutForend", (0, -0.003, -0.205), 1.0, m_walnut,
-                      scale=(0.028, 0.019, 0.110), segments=28, ring_count=16))
+    # 3) SILKY-SMOOTH DARK WALNUT SPLINTER FOREND WITH FLUSH CHECKERING & STEEL DEELEY LATCH
+    forend = add_sphere("DarkWalnutForend", (0, -0.003, -0.205), 1.0, m_walnut,
+                        scale=(0.028, 0.019, 0.110), segments=48, ring_count=28)
+    forend.data.materials.append(m_walnut_check)
     for loop in forend.data.loops:
         x, y, z = forend.data.vertices[loop.vertex_index].co
-        forend.data.uv_layers.active.data[loop.index].uv = (.5 + x*3.7 + z*5.1, .5 + y*4)
-    for side in (-1, 1):
-        # Finger grooves along the upper side of the walnut forend
-        add_rod(f"ForendFingerGroove_{side}", (side * 0.023, 0.007, -0.140), (side * 0.021, 0.007, -0.270), 0.0032, 0.0028, m_walnut_check, 10)
-        for f_row in range(5):
-            fz = -0.155 - f_row * 0.022
-            add_rod(f"ForendCheck_{side}_{f_row}", (side * 0.0255, -0.004, fz - 0.006), (side * 0.0255, 0.003, fz + 0.006), 0.0020, 0.0020, m_walnut_check, 8)
-    # Bright steel Deeley forend release latch & escutcheon on the bottom of the forend
-    add_box("ForendSteelLatch", (0, -0.021, -0.205), (0.010, 0.004, 0.068), m_receiver, bevel=0.0015)
-    add_rod("ForendIronTip", (0, 0.002, -0.095), (0, 0.002, -0.112), 0.025, 0.026, m_receiver, 20)
+        forend.data.uv_layers.active.data[loop.index].uv = (.5 + x * 3.7 + z * 5.1, .5 + y * 4)
+    for poly in forend.data.polygons:
+        poly.use_smooth = True
+        c = poly.center
+        # Flush checkered side panels on the walnut forend (no protruding rods!)
+        if abs(c.x) > 0.018 and 0.145 <= c.y <= 0.265 and -0.011 <= c.z <= 0.006:
+            poly.material_index = 1
+    # Bright steel Deeley forend release latch & flush oval steel forend iron knuckle (no hanging drum!)
+    smooth(add_box("ForendSteelLatch", (0, -0.021, -0.205), (0.0095, 0.0035, 0.068), m_receiver, bevel=0.0015))
+    smooth(add_sphere("ForendIronTip", (0, -0.001, -0.106), 1.0, m_receiver, scale=(0.0235, 0.0135, 0.018), segments=36, ring_count=20))
 
-    # 4) TWIN BLUED BARRELS WITH VENTILATED SIGHT RIB, HOLLOW BORES & BRASS FRONT BEAD
+    # 4) HIGH-POLY 48-SEGMENT TWIN BLUED BARRELS WITH VENTILATED SIGHT RIB & COMPACT BRASS BEAD
     for side in (-1, 1):
         bx = side * 0.0175
-        smooth(add_rod(f"BluedBarrel_{side}", (bx, 0.024, -0.092), (bx, 0.024, -0.456), 0.0168, 0.0158, m_barrel, 32))
-        smooth(add_rod(f"MuzzleCrown_{side}", (bx, 0.024, -0.456), (bx, 0.024, -0.466), 0.0166, 0.0164, m_receiver, 32))
-        smooth(add_rod(f"HollowBore_{side}",  (bx, 0.024, -0.452), (bx, 0.024, -0.467), 0.0132, 0.0132, m_bore, 24))
-        # Breech decorative reinforcing ring
-        smooth(add_rod(f"BreechBand_{side}",  (bx, 0.024, -0.092), (bx, 0.024, -0.115), 0.0176, 0.0172, m_receiver, 32))
+        smooth(add_rod(f"BluedBarrel_{side}", (bx, 0.024, -0.092), (bx, 0.024, -0.456), 0.0168, 0.0158, m_barrel, 48))
+        smooth(add_rod(f"MuzzleCrown_{side}", (bx, 0.024, -0.456), (bx, 0.024, -0.466), 0.0166, 0.0164, m_receiver, 48))
+        smooth(add_rod(f"HollowBore_{side}",  (bx, 0.024, -0.452), (bx, 0.024, -0.467), 0.0132, 0.0132, m_bore, 36))
+        smooth(add_rod(f"BreechBand_{side}",  (bx, 0.024, -0.092), (bx, 0.024, -0.118), 0.0173, 0.0169, m_receiver, 48))
 
-    # Central joining rib & raised ventilated top sighting rib (вентилируемая прицельная планка)
-    add_box("MidBarrelFiller", (0, 0.024, -0.275), (0.012, 0.012, 0.365), m_barrel)
-    add_box("VentilatedTopRib", (0, 0.0425, -0.276), (0.0095, 0.0035, 0.368), m_barrel, bevel=0.001)
+    # Central joining rib & raised ventilated top sighting rib
+    smooth(add_box("MidBarrelFiller", (0, 0.024, -0.275), (0.012, 0.012, 0.365), m_barrel, bevel=0.0015))
+    smooth(add_box("VentilatedTopRib", (0, 0.0416, -0.276), (0.0092, 0.0032, 0.368), m_barrel, bevel=0.0012))
     for post_i in range(9):
         pz = -0.110 - post_i * 0.042
-        add_box(f"RibBridgePost_{post_i}", (0, 0.0375, pz), (0.0085, 0.007, 0.014), m_receiver if post_i in (0, 8) else m_barrel)
+        smooth(add_box(f"RibBridgePost_{post_i}", (0, 0.0372, pz), (0.0082, 0.0065, 0.014), m_receiver if post_i in (0, 8) else m_barrel, bevel=0.0008))
 
-    # Muzzle rib block + bright golden-brass front bead sight (латунная мушка)
-    add_box("FrontSightBase", (0, 0.044, -0.448), (0.0075, 0.004, 0.014), m_receiver, bevel=0.001)
-    add_sphere("BrassFrontBead", (0, 0.049, -0.448), 0.0055, m_brass, segments=14, ring_count=10)
+    # Muzzle rib block + compact golden-brass front bead sight
+    smooth(add_box("FrontSightBase", (0, 0.0432, -0.450), (0.0062, 0.0028, 0.012), m_receiver, bevel=0.0008))
+    smooth(add_sphere("BrassFrontBead", (0, 0.0462, -0.450), 0.0024, m_brass, segments=18, ring_count=12))
 
     finalize_and_export("weapon_shotgun_90s.glb", preserve_smoothing=True)
 

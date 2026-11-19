@@ -21,7 +21,7 @@ public static partial class Program
     private static float _playerYaw = MathF.PI; // Looking North (-Z) toward Central MacBook & Elevator Core
     private static float _playerPitch = -0.05f;
     private static bool _isCrouching = false;
-    private static float _playerVelY, _coyoteTimer, _jumpBufferTimer, _landDip;
+    private static float _playerVelY, _coyoteTimer, _jumpBufferTimer;
     private static float _eyeHeight = 1.72f, _dashTime, _dashCooldown, _regenDelay, _fovKick;
     private static float _recoilPitch, _recoilYaw, _shake, _crosshairGap = 4, _damageFlash;
     private static float _pitchSpring, _yawSpring;
@@ -223,7 +223,7 @@ public static partial class Program
         LoreAndMenusUI.ActiveWeaponView = _weapons;
         _xp = 412;
         _energy = 100;
-        _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _landDip = _pitchSpring = _yawSpring = 0;
+        _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _pitchSpring = _yawSpring = 0;
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _damageFlash = 0;
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _lastHudHp=100;
         _sprinting=_toggleCrouch=_exhausted=false;
@@ -254,7 +254,7 @@ public static partial class Program
     private static Camera3D BuildPlayerCamera()
     {
         float bob = _isGrounded ? .022f*MathF.Sin(_walkBobPhase*2)*_weapons.WalkWeight : 0;
-        Vector3 eyePos = _playerPos + Vector3.UnitY*(bob-_landDip);
+        Vector3 eyePos = _playerPos + Vector3.UnitY*(bob-_weapons.LandingCompression);
         float pitch = _playerPitch+_recoilPitch+.013f*_weapons.ClosingImpulse+_shake*MathF.Sin(_shake*720);
         float yaw = _playerYaw+_recoilYaw+_shake*MathF.Cos(_shake*860);
         Vector3 forward = new(MathF.Sin(yaw)*MathF.Cos(pitch),MathF.Sin(pitch),MathF.Cos(yaw)*MathF.Cos(pitch));
@@ -414,7 +414,6 @@ public static partial class Program
                 if (!_isGrounded && _playerVelY < -2)
                 {
                     landingImpact=-_playerVelY;
-                    _landDip=Math.Min(.135f,-_playerVelY*.014f);
                     AudioMusicSystem.PlayLanding();
                 }
                 nextFeet=support; _playerVelY=0; _isGrounded=true;
@@ -422,7 +421,6 @@ public static partial class Program
             else _isGrounded=false;
             feet=nextFeet;
         }
-        _landDip*=MathF.Exp(-12*dt);
         _playerPos.Y=feet+_eyeHeight;
         _weapons.SetStance(_walkBobPhase,_isCrouching);
         _weapons.UpdateMotion(dt,_sprinting,_isGrounded,_playerVelY,landingImpact,burst>0,
@@ -859,6 +857,35 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS archive: four tabs, mouse, Tab, N, Escape, smooth scroll to threads 4-6");
     }
 
+    private static void CheckViewmodelRates()
+    {
+        Camera3D camera=new() { Target=Vector3.UnitZ, Up=Vector3.UnitY, FovY=76 };
+        Vector3[] reference=new Vector3[6];
+        float worst=0;
+        foreach(int hz in new[]{60,120,144})
+        {
+            var view=new WeaponAndCombatView();
+            view.SelectSlot(4);
+            float dt=1f/hz;
+            for(int i=0;i<hz;i++) view.UpdateWeapons(dt,camera);
+            Vector3 rest=view.GetWeaponTipWorldPosition(camera);
+            view.TriggerWeaponAttack(camera);
+            if(Vector3.Distance(rest,view.GetWeaponTipWorldPosition(camera))>.00001f)
+                throw new InvalidDataException("Discontinuous viewmodel pose on discharge");
+            for(int sample=0;sample<reference.Length;sample++)
+            {
+                for(int i=0;i<hz/12;i++) view.UpdateWeapons(dt,camera);
+                Vector3 tip=view.GetWeaponTipWorldPosition(camera);
+                if(sample==0 && tip.Z>=rest.Z-.02f)
+                    throw new InvalidDataException("Missing axial recoil");
+                if(hz==60) reference[sample]=tip;
+                else worst=Math.Max(worst,Vector3.Distance(tip,reference[sample]));
+            }
+        }
+        if(worst>.001f) throw new InvalidDataException($"Viewmodel rate deviation {worst:F6} m");
+        Console.WriteLine($"[AUTOTEST] Recoil at 60/120/144 Hz: max muzzle deviation {1000*worst:F3} mm");
+    }
+
     private static unsafe void CheckFpsGameplay(Action<string> capture)
     {
         const float dt=1f/60;
@@ -887,15 +914,12 @@ public static partial class Program
                 {
                     int frame=frameCounts.GetValueOrDefault(sequence);
                     frameCounts[sequence]=frame+1;
-                    if(frame%2==0)
-                    {
-                        DrawFrame(showHud:false);
-                        Image img=Raylib.LoadImageFromScreen();
-                        Raylib.ImageResize(ref img,960,540);
-                        string file=Path.Combine(frameDir,$"{sequence}_{frame/2:D3}.png");
-                        if(!Raylib.ExportImage(img,file)) throw new IOException(file);
-                        Raylib.UnloadImage(img);
-                    }
+                    DrawFrame(showHud:false);
+                    Image img=Raylib.LoadImageFromScreen();
+                    Raylib.ImageResize(ref img,960,540);
+                    string file=Path.Combine(frameDir,$"{sequence}_{frame:D4}.png");
+                    if(!Raylib.ExportImage(img,file)) throw new IOException(file);
+                    Raylib.UnloadImage(img);
                 }
                 Raylib.PollInputEvents();
             }
@@ -905,14 +929,29 @@ public static partial class Program
         {
             ResetNewGameFloor();
             _playerPos=new(24,1.72f,17);
-            Key(KeyboardKey.Four,true); Tick(1,"move"); Key(KeyboardKey.Four,false); Tick(22,"move");
-            Key(KeyboardKey.W,true); Key(KeyboardKey.LeftShift,true); Tick(33,"move");
-            Key(KeyboardKey.Space,true); Tick(1,"move"); Key(KeyboardKey.Space,false);
-            Key(KeyboardKey.LeftShift,false); Key(KeyboardKey.W,false); Tick(56,"move");
-            Key(KeyboardKey.D,true); Tick(16,"move"); Key(KeyboardKey.D,false);
-            Key(KeyboardKey.LeftControl,true); Tick(19,"move"); Key(KeyboardKey.LeftControl,false); Tick(16,"move");
-            Key(KeyboardKey.Q,true); Tick(1,"move"); Key(KeyboardKey.Q,false); Tick(17,"move");
-            Mouse(true); Tick(1,"move"); Mouse(false); Tick(32,"move");
+            // Continuous 60 Hz take from the normal input and rendering paths.
+            const string take="motion";
+            void Select(KeyboardKey slot)
+            {
+                Key(slot,true); Tick(1,take); Key(slot,false); Tick(31,take);
+            }
+            Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false); Tick(45);
+            Tick(12,take);
+            _weapons.UseRound(); _weapons.UseRound(); // Stage both spent hulls for the reload.
+            Key(KeyboardKey.R,true); Tick(1,take); Key(KeyboardKey.R,false); Tick(100,take);
+            Select(KeyboardKey.Three);
+            _weapons.UseRound();
+            Key(KeyboardKey.R,true); Tick(1,take); Key(KeyboardKey.R,false); Tick(94,take);
+            Select(KeyboardKey.Four);
+            Key(KeyboardKey.W,true); Key(KeyboardKey.LeftShift,true); Tick(47,take);
+            Key(KeyboardKey.Space,true); Tick(1,take); Key(KeyboardKey.Space,false);
+            Key(KeyboardKey.LeftShift,false); Key(KeyboardKey.W,false); Tick(66,take);
+            Key(KeyboardKey.LeftControl,true); Tick(28,take); Key(KeyboardKey.LeftControl,false); Tick(18,take);
+            Key(KeyboardKey.A,true); Tick(22,take); Key(KeyboardKey.A,false);
+            Key(KeyboardKey.D,true); Tick(27,take); Key(KeyboardKey.D,false); Tick(21,take);
+            Mouse(true); Tick(1,take); Mouse(false); Tick(45,take);
+            Select(KeyboardKey.Three);
+            Mouse(true); Tick(31,take); Mouse(false); Tick(36,take);
         }
 
         ResetNewGameFloor();
@@ -968,13 +1007,13 @@ public static partial class Program
         int burst=32-_weapons.Ammo;
         Require(burst==12,"held LMB burst: "+burst);
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false);
-        Tick(40,"uzi"); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
-        capture("reload_uzi.png"); Tick(45,"uzi"); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
+        Tick(40); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
+        capture("reload_uzi.png"); Tick(45); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
         Key(KeyboardKey.Four,true); Tick(); Key(KeyboardKey.Four,false);
         Mouse(true); Tick(); Mouse(false); Tick(27); Require(_weapons.Ammo==1,"shotgun first shell");
         Mouse(true); Tick(); Mouse(false); Require(_weapons.Ammo==0 && _weapons.Reloading,"shotgun auto reload");
-        Tick(43,"shotgun"); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
-        capture("reload_shotgun.png"); Tick(47,"shotgun"); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
+        Tick(43); Require(_weapons.BrassShells.Count(b=>b.IsShotgunShell)==2,"two spent hulls");
+        capture("reload_shotgun.png"); Tick(47); Require(_weapons.Ammo==2 && !_weapons.Reloading,"shotgun refill");
         Mouse(true); Tick(); Mouse(false); Tick();
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(89);
         Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
@@ -1047,6 +1086,7 @@ public static partial class Program
 
     private static void RunAutomatedScreenshotSuite()
     {
+        CheckViewmodelRates();
         AudioMusicSystem.CheckMovementSounds();
         CheckElevatorNameplates();
         LoreAndMenusUI.CheckMixerControls();
