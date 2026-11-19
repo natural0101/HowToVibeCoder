@@ -1199,7 +1199,14 @@ internal static unsafe partial class VisualEngine3D
 
     internal static void BeginScene()
     {
-        int w=Math.Max(1,Raylib.GetScreenWidth()),h=Math.Max(1,Raylib.GetScreenHeight());
+        int w=Math.Max(1,Raylib.GetRenderWidth()),h=Math.Max(1,Raylib.GetRenderHeight());
+        var settings=MainMenuAndPauseUI.Display;
+        if(MainMenuAndPauseUI.InteractiveDisplay && settings.DisplayMode==DisplayMode.Fullscreen && settings.ResolutionIndex>0)
+        {
+            var size=DisplaySettings.Sizes[settings.ResolutionIndex];
+            float scale=Math.Min((float)size.Width/w,(float)size.Height/h);
+            w=Math.Max(1,(int)MathF.Round(w*scale)); h=Math.Max(1,(int)MathF.Round(h*scale));
+        }
         if(sceneRt.Texture.Width!=w || sceneRt.Texture.Height!=h)
         {
             ReleaseScene();

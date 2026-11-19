@@ -7,6 +7,7 @@ using Raylib_cs;
 namespace HowToVibeCoder;
 
 internal enum FloorPanel { None, Contracts, Upgrades, Debrief, Audit, BossFinale }
+internal enum OnboardingStep { TalkToVeronika, CatchFrogs, DepositFrogs, BuyNet, ActivateBait, CaptureFirstCoder, Done }
 internal enum Incident { Printer, Coffee, Bugs, Audit, Ddos, Burnout, Raid, Fire }
 internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2 }
 internal enum StyleAction { Belt, Iron, Uzi, Shotgun, Beam, Parry, Water, Capture }
@@ -46,15 +47,72 @@ internal sealed partial class FloorSystems
     internal static readonly WeaponType[] WeaponOrder = [WeaponType.BareHands, WeaponType.CaptureNet,
         WeaponType.Belt, WeaponType.SolderingIron, WeaponType.MicroUzi, WeaponType.SawedOff];
     internal static readonly Gear[] Weapons = [
-        new("Сачок-ловушка","Для Джава-жаб и пугливых стажёров. До трёх жаб за взмах.",3),
-        new("Ремень 90-х","Ломает выдержку вайб-кодеров для NDA и Галеры",25),
-        new("Паяльник 90-х","Пробивает эго и запускает электролужи с кулером",90),
-        new("Микро-Узи 90-х","Скорострельный огнестрел против боевых кодеров и рейдов",240),
-        new("Обрез 12-го калибра","Тяжёлый калибр для элиты, Пятницы и ИИ-босса",480)
+        new("Сачок-ловушка","Урон 12. До 3 Джава-жаб ($1–$8) и стажёры",3),
+        new("Ремень 90-х","Урон 24. Ломает выдержку вайб-кодеров под NDA",25),
+        new("Паяльник 90-х","Урон 42. Пробивает броню + комбо с кулером и кофе",90),
+        new("Микро-Узи 90-х","Урон 18/выстр. Плавит щиты босса и рейды СБ",240),
+        new("Обрез 12-го калибра","Урон 120. Дуплет по элите, Пятнице и ядру босса",480)
     ];
     internal static readonly int ClassicMask=WeaponOrder.Aggregate(0,(mask,w)=>mask | (1<<(int)w));
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
     public List<string> PocketFrogs=new();
+    internal OnboardingStep Onboarding { get; set; }
+    public bool FirstFrogCheered;
+    internal int FrogProgress => Math.Min(3, Math.Max(PocketFrogs.Count, PocketFrogs.Sum(id=>VibeCoderCollection.Frogs[id].SalePrice)));
+
+    internal string Objective(bool carrying) => Onboarding switch
+    {
+        OnboardingStep.TalkToVeronika => "Подойди к стойке и поговори с Вероникой [E]",
+        OnboardingStep.CatchFrogs => $"Поймай Джава-жаб у стойки [E]  ({FrogProgress}/3)",
+        OnboardingStep.DepositFrogs => "Сдай Джава-жаб в Баг-трекер [E]",
+        OnboardingStep.BuyNet => "Купи Сачок-ловушку ($3) у Вероники [E]",
+        OnboardingStep.ActivateBait => "Запусти Макбук-приманку в центре [E]",
+        OnboardingStep.CaptureFirstCoder => carrying ? "Отнеси вайбкодера Веронике или на стол Галеры [E]" :
+            "Оглуши вайбкодера (ЛКМ) и подпиши NDA [E]",
+        _ => ""
+    };
+
+    internal void Coach()
+    {
+        string line=Onboarding switch
+        {
+            OnboardingStep.TalkToVeronika => "О, хозяин вернулся! Подойди ко мне на стойку [E] — введу в курс дела за минуту.",
+            OnboardingStep.CatchFrogs => "Касса пуста — $0. Вайбкодеры попрятались, но из серверной по полу скачут Джава-жабы. Схвати 3 штуки руками [E] или ЛКМ — они по $1–$2.",
+            OnboardingStep.DepositFrogs => "Отличный улов! Скинь жаб в Баг-трекер рядом со стойкой [E] — он сразу выдаст наличку.",
+            OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
+            OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к Макбуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
+            OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком или с руки (ЛКМ), подпиши NDA [E] и тащи ко мне на стойку или на свободный стол Галеры.",
+            _ => "Дело пошло! Бери контракты [J], копи у меня на ремень и паяльник [E] — и готовься к Северному лифту."
+        };
+        SpeakCoaching(line);
+    }
+
+    internal static void SpeakCoaching(string line)
+    {
+        AudioMusicSystem.TriggerVoiceLine("Вероника", "Вероника: "+line, (int)SpeakerVoiceType.VeronikaTarot);
+        AudioMusicSystem.VoiceTimer=Math.Max(4.2f,line.Length/17f);
+    }
+
+    internal void UpdateOnboarding(SkyscraperFloor1World world,int cash)
+    {
+        if(Onboarding==OnboardingStep.Done) return;
+        var next=world.TotalCodersSoldToHr>0 || world.GalleyDesks.Exists(d=>d.IsOccupied) ? OnboardingStep.Done :
+            world.IsMacBookTrapActive ? OnboardingStep.CaptureFirstCoder :
+            HasWeapon(WeaponType.CaptureNet) ? OnboardingStep.ActivateBait :
+            cash>=3 ? OnboardingStep.BuyNet :
+            FrogProgress>=3 ? OnboardingStep.DepositFrogs : Onboarding;
+        if(next>Onboarding)
+        {
+            Onboarding=next;
+            Coach();
+        }
+        else if(Onboarding<=OnboardingStep.CatchFrogs && !FirstFrogCheered && PocketFrogs.Count>0)
+        {
+            FirstFrogCheered=true;
+            CheerFirstFrog();
+        }
+    }
+    internal static void CheerFirstFrog() => SpeakCoaching("Есть первая! Ещё пару штук — и хватит на Сачок.");
     internal bool HasWeapon(WeaponType w) => (OwnedWeaponsMask & (1<<(int)w))!=0;
     internal string BuyWeapon(int row,Func<int,bool> spend)
     {
@@ -183,6 +241,7 @@ internal sealed partial class FloorSystems
 
     internal string Deploy(SkyscraperFloor1World world)
     {
+        if(!world.IsMacBookTrapActive) return "Сначала включи Макбук-приманку";
         if(Friday>0) return $"Деплой уже идёт: {MathF.Ceiling(Friday)} с";
         CrewLost=false;
         Friday=45;
@@ -327,9 +386,10 @@ internal sealed partial class FloorSystems
         if(Raid && !world.ActiveCoders.Exists(c=>c.RaidGuard && c.State!=CoderAIState.Subdued)) Raid=false;
         if((NextIncident-=dt)<=0)
         {
-            List<Incident> options=[Incident.Printer,Incident.Bugs,Incident.Audit];
+            List<Incident> options=[Incident.Printer,Incident.Audit];
+            if(world.IsMacBookTrapActive) options.Add(Incident.Bugs);
             if(staff>0) { options.Add(Incident.Coffee); options.Add(Incident.Ddos); if(R>=40) options.Add(Incident.Burnout); }
-            if(SEC>=55 && !Raid) options.Add(Incident.Raid);
+            if(world.IsMacBookTrapActive && SEC>=55 && !Raid) options.Add(Incident.Raid);
             if(PT>=60 && !FireIncident) options.Add(Incident.Fire);
             options.Remove((Incident)LastIncident);
             IncidentNow(options[Random.Shared.Next(options.Count)],world);
@@ -442,6 +502,12 @@ public static partial class Program
         {
             var result=Floor.BuyWeapon(index-WeaponBuyOffset,TrySpendCash);
             SetHudBanner(result);
+            if(index==WeaponBuyOffset && Floor.Onboarding<OnboardingStep.ActivateBait && Floor.HasWeapon(WeaponType.CaptureNet))
+            {
+                _weapons.Equip(WeaponType.CaptureNet);
+                if(floorPanel==FloorPanel.Upgrades) OpenFloorPanel(FloorPanel.None);
+                Floor.UpdateOnboarding(_world,_playerCash);
+            }
             return result;
         }
         if(index>=0 && index<FloorSystems.Jobs.Length) return Floor.Start(index,_world);
@@ -553,7 +619,7 @@ public static partial class Program
 
     private static void DrawFloorTelemetry()
     {
-        int x=28, right=Raylib.GetScreenWidth()-28;
+        int x=28, right=UiViewport.Width-28;
         var small=GameFonts.Get(Typeface.InterfaceBold,13);
         var display=GameFonts.Get(Typeface.SerifBold,28);
         Color mist=new(220,232,229,255), track=new(188,207,209,85), coral=new(255,115,91,255);
@@ -579,12 +645,14 @@ public static partial class Program
         int seconds=(int)MathF.Ceiling(Floor.Remaining);
         string objective=Floor.JobId>=0 ? $"{seconds/60}:{seconds%60:00}    {progress}" : progress;
         ShadowText(_uiFont,objective,28,54,16,paper);
+        bool guiding=Floor.Onboarding!=OnboardingStep.Done;
+        if(guiding)
+            ShadowText(_uiFont,"Цель: "+Floor.Objective(_world.CarriedCoder!=null),28,77,17,WorldLabelLayout.Ivory);
         string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)
         {
-            Raylib.DrawRectanglePro(new(31,88,5,5),new(2.5f),45,amber);
-            ShadowText(_uiFont,notice,42,78,15,amber);
+            ShadowText(_uiFont,notice,28,guiding ? 102 : 78,15,amber);
         }
         void Right(Font font,string value,int y,int size,Color ink) =>
             ShadowText(font,value,right-GameFonts.Measure(font,value,size).X,y,size,ink);
@@ -614,7 +682,7 @@ public static partial class Program
         string rarity = VibeCoderCollection.Tag(species.Rarity);
         float width = Math.Max(GameFonts.Measure(display, title, 26).X,
             GameFonts.Measure(small, rarity + "    " + note, 15).X) + 36;
-        float xToast = (Raylib.GetScreenWidth() - width) / 2;
+        float xToast = (UiViewport.Width - width) / 2;
         int top = _world.ElevatorBoss.IsActive ? 96 : 18;
         Raylib.DrawRectangleRec(new(xToast, top, width, 56), new Color(24, 22, 20, (int)(225 * fade)));
         DossierPrint.Text(rarity + "    " + note, xToast + 16, top + 5, 15, Raylib.Fade(amber, fade), Typeface.InterfaceBold);

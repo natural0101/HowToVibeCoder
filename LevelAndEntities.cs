@@ -47,7 +47,8 @@ public sealed class VibeCoderEntity
     public string Name = "";
     public string SpeciesId = "";
     public VibeCoderRarity Rarity;
-    public bool IdentityRevealed, TimidIntern;
+    public bool IdentityRevealed, TimidIntern, KnockedOutAlive;
+    internal bool CanSignNda => State==CoderAIState.Subdued && (Hp>0 || KnockedOutAlive);
     internal string MysteryTag => (Rarity==VibeCoderRarity.Common ? "???" : "★ ???") +
         (State==CoderAIState.Subdued ? "  Сломлен" : "");
     public string Subtitle = "";
@@ -85,6 +86,10 @@ public sealed class VibeCoderEntity
     internal void AssignRole(CoderArchetype role)
     {
         Archetype=role;
+        Hp=MaxHp=role switch {
+            CoderArchetype.JuniorPrompter=>50, CoderArchetype.TeamLeadMeeter=>100,
+            CoderArchetype.SeniorArchitect or CoderArchetype.SecurityGuard=>145,
+            CoderArchetype.SaasGuruMiniBoss=>600, _=>90 };
         (Composure,Ego,Fear,Greed,HoodieColor)=role switch {
             CoderArchetype.JuniorPrompter=>(48,28,16,41,new Color(65,180,220,255)),
             CoderArchetype.CryptoBro=>(68,65,9,62,new Color(220,155,47,255)),
@@ -216,12 +221,12 @@ public sealed class EscapedAgentBoss
     public Vector3 Position = new(0f, .16f, -4f);
     public Vector3 Velocity;
     public float FacingYaw;
-    public const float ShieldCapacity=180;
+    public const float ShieldCapacity=160;
     public int Phase=1, TapeLine;
     public float ShieldHp=ShieldCapacity, ShieldDelay, BroadcastTime;
     public Vector3 ChestCore => Position+new Vector3(MathF.Sin(FacingYaw)*.31f,2.08f,MathF.Cos(FacingYaw)*.31f);
-    public float Hp = 2000f;
-    public float MaxHp = 2000f;
+    public float Hp = 600f;
+    public float MaxHp = 600f;
     public ElevatorBossState State = ElevatorBossState.Inactive;
     public float StateTimer;
     public float AttackSubTimer;
@@ -466,11 +471,7 @@ public sealed partial class SkyscraperFloor1World
         MapStations();
         BuildSolids();
         Systems=new();
-        SpawnFighter(CoderArchetype.JuniorPrompter,new(-8,0,5.5f));
-        SpawnFighter(CoderArchetype.CryptoBro,new(12,0,6.5f));
-        SpawnFighter(CoderArchetype.TeamLeadMeeter,new(-7,0,-11));
-        SpawnFighter(CoderArchetype.SeniorArchitect,new(7,0,-12));
-
+        IsMacBookTrapActive=false;
         SeedLobby();
         // Reset Boss & Progression
         ElevatorBoss=new() { Position=CentralElevatorCorePos+Vector3.UnitY*.16f };
@@ -705,11 +706,11 @@ public sealed partial class SkyscraperFloor1World
 
     public static (string Name, int Cost, Color NeonColor, string Description) GetBaitInfo(SubscriptionBaitTier tier) => tier switch
     {
-        SubscriptionBaitTier.FreeTier => ("Бесплатный Wi-Fi ($15)", 15, new Color(45, 245, 130, 255), "Обычные кандидаты. Выкуп $160"),
-        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($60)", 60, new Color(40, 215, 255, 255), "Повышает шанс редких видов. Выкуп $250"),
-        SubscriptionBaitTier.TurkishAccount => ("Team Workspace ($140)", 140, new Color(215, 75, 255, 255), "Повышает шанс редких и эпических видов. Выкуп $380"),
-        SubscriptionBaitTier.CloudEntropicMax => ("Enterprise Unlimited ($260)", 260, new Color(255, 185, 35, 255), "Мини-босс и кандидат. Наивысший шанс легендарного вида. Выкуп босса $600"),
-        _ => ("Бесплатный Wi-Fi ($15)", 15, Color.Lime, "")
+        SubscriptionBaitTier.FreeTier => ("Бесплатный Wi-Fi ($0)", 0, new Color(45, 245, 130, 255), "Обычные кандидаты. Выкуп $160"),
+        SubscriptionBaitTier.CursorPro => ("Cursor Pro ($45)", 45, new Color(40, 215, 255, 255), "Повышает шанс редких видов. Выкуп $250"),
+        SubscriptionBaitTier.TurkishAccount => ("Team Workspace ($120)", 120, new Color(215, 75, 255, 255), "Повышает шанс редких и эпических видов. Выкуп $380"),
+        SubscriptionBaitTier.CloudEntropicMax => ("Cloud Entropic Max ($240)", 240, new Color(255, 185, 35, 255), "Мини-босс и кандидат. Наивысший шанс легендарного вида. Выкуп босса $600"),
+        _ => ("Бесплатный Wi-Fi ($0)", 0, Color.Lime, "")
     };
 
     // =========================================================================
@@ -867,15 +868,35 @@ public sealed partial class SkyscraperFloor1World
     public bool ActivateMacBookTrap(SubscriptionBaitTier tier, Func<int, bool> trySpendMoney, out string statusMessage)
     {
         var info = GetBaitInfo(tier);
+        if(IsMacBookTrapActive && ActiveCoders.Count>=22)
+        {
+            statusMessage="Зал заполнен";
+            return false;
+        }
         if (info.Cost > 0 && !trySpendMoney(info.Cost))
         {
             statusMessage = $"НЕ ХВАТАЕТ БАКЛАЖАНОВ! Нужно ${info.Cost} на подписку {info.Name}!";
             return false;
         }
 
+        bool first=!IsMacBookTrapActive;
         SelectedBaitTier = tier;
         IsMacBookTrapActive = true;
-        CoderSpawnTimer = 0.65f; // Spawn quickly so gameplay feels responsive
+        if(first || tier!=SubscriptionBaitTier.FreeTier || !ActiveCoders.Any(c=>c.State==CoderAIState.WalkingToBait))
+        {
+            SpawnCoderForTier(tier,first ? -1 : 0);
+            if(tier==SubscriptionBaitTier.FreeTier)
+            {
+                var intern=SpawnCoderForTier(tier,1);
+                intern.TimidIntern=intern.IdentityRevealed=intern.LaptopLost=true;
+                intern.Name="Стажёр-Одуванчик";
+                intern.MaxHp=intern.Hp=24;
+                intern.TarotPayoutValue=10;
+            }
+        }
+        if(first && Systems.JobId is 1 or 2)
+            EnsureCandidate(Systems.JobId==1 ? CoderArchetype.SeniorArchitect : CoderArchetype.CryptoBro);
+        CoderSpawnTimer=tier==SubscriptionBaitTier.CloudEntropicMax ? 14f : 6.5f;
 
         AudioMusicSystem.PlayMacbookBait();
         statusMessage = $"МАКБУК АКТИВИРОВАН: {info.Name}! Прячься за диван/фикус или жми [C]!";
@@ -890,13 +911,13 @@ public sealed partial class SkyscraperFloor1World
             : EastSpawnDoorPos + new Vector3(-0.8f, 0f, (_rng.NextSingle() - 0.5f) * 1.4f);
 
         bool miniBoss=tier==SubscriptionBaitTier.CloudEntropicMax;
-        var (hp,payout,bark)=tier switch {
-            SubscriptionBaitTier.CursorPro=>(160,250,"Там открыт Cursor Pro!"),
-            SubscriptionBaitTier.TurkishAccount=>(240,380,"Безлимит! Перепишу бэкенд в один файл!"),
-            SubscriptionBaitTier.CloudEntropicMax=>(600,600,"МОЙ SAAS НАПИСАН ЗА 2 ЧАСА!"),
-            _=>(100,160,"О, халявный Free Tier на Макбуке!") };
+        var (payout,bark)=tier switch {
+            SubscriptionBaitTier.CursorPro=>(250,"Там открыт Cursor Pro!"),
+            SubscriptionBaitTier.TurkishAccount=>(380,"Безлимит! Перепишу бэкенд в один файл!"),
+            SubscriptionBaitTier.CloudEntropicMax=>(600,"МОЙ SAAS НАПИСАН ЗА 2 ЧАСА!"),
+            _=>(160,"О, халявный Free Tier на Макбуке!") };
         var coder=new VibeCoderEntity {
-            Id=_nextCoderId++,Position=spawnPos,SpawnSide=side,MaxHp=hp,Hp=hp,TarotPayoutValue=payout,
+            Id=_nextCoderId++,Position=spawnPos,SpawnSide=side,TarotPayoutValue=payout,
             SpeechBubble=bark,SpeechTimer=miniBoss ? 5f : 3.5f,
             State=miniBoss ? CoderAIState.CombatHostile : CoderAIState.WalkingToBait
         };
@@ -957,8 +978,6 @@ public sealed partial class SkyscraperFloor1World
         ElevatorBoss=new();
         ElevatorBoss.IsActive = true;
         ElevatorBoss.IsDefeated = false;
-        ElevatorBoss.MaxHp = 2000f;
-        ElevatorBoss.Hp = 2000f;
         ElevatorBoss.Position = NorthElevatorPos + new Vector3(0,.16f,-.35f);
         ElevatorBoss.FacingYaw = 3.14159f; // Looking North (-Z) toward North Boss Arena
         ElevatorBoss.State = ElevatorBossState.IntroSpeech;
@@ -970,7 +989,7 @@ public sealed partial class SkyscraperFloor1World
         AudioMusicSystem.PlayBossSiren();
         AudioMusicSystem.TriggerRandomVoiceLine("ИИ-АГЕНТ v0.1", AudioMusicSystem.EscapedAgentBossLines, (int)SpeakerVoiceType.RoboticAgent);
 
-        message = "ТРЕВОГА! ДВЕРИ ЛИФТА ОТКРЫЛИСЬ - ВЫЕХАЛ «СБЕЖАВШИЙ ИИ-АГЕНТ v0.1 [2000 ХП]»!";
+        message = "ТРЕВОГА! ДВЕРИ ЛИФТА ОТКРЫЛИСЬ - ВЫЕХАЛ «СБЕЖАВШИЙ ИИ-АГЕНТ v0.1 [600 ХП]»!";
         return true;
     }
 
@@ -1013,7 +1032,7 @@ public sealed partial class SkyscraperFloor1World
                     activeCount++;
             }
 
-            if (activeCount < 2)
+            if (activeCount < 2 && ActiveCoders.Count<22)
             {
                 CoderSpawnTimer -= dt;
                 if (CoderSpawnTimer <= 0f)
@@ -1084,7 +1103,7 @@ public sealed partial class SkyscraperFloor1World
                 c.Position = ResolvePlayerCollision(c.Position + c.KnockbackVel*dt,.24f);
                 c.KnockbackVel *= MathF.Exp(-8*dt);
             }
-            if (c.Hp<=0 && c.State == CoderAIState.Subdued)
+            if (c.Hp<=0 && !c.KnockedOutAlive && c.State == CoderAIState.Subdued)
             {
                 c.KnockoutTime += dt;
                 if (c.KnockoutTime > 1.3f) ActiveCoders.RemoveAt(i);
@@ -1103,11 +1122,8 @@ public sealed partial class SkyscraperFloor1World
                 {
                     c.Position=ResolvePlayerCollision(c.Position+Vector3.Normalize(away)*dt*1.9f,.24f);
                     c.FacingYaw=MathF.Atan2(away.X,away.Z); c.WalkCycle+=dt*8;
-                    if(c.StateTimer<=0 && !Systems.HasWeapon(WeaponType.CaptureNet))
-                    { Systems.Announce("Пугливый — нужен Сачок ($3)",1.3f); c.StateTimer=3; }
+                    continue;
                 }
-                c.StateTimer=Math.Max(0,c.StateTimer-dt);
-                continue;
             }
             if (c.IsCombatCoder && c.State==CoderAIState.CombatHostile && c.StunTimer<=0)
             {
@@ -1152,7 +1168,7 @@ public sealed partial class SkyscraperFloor1World
                     {
                         c.State = CoderAIState.SittingAtMacBook;
                         c.Anxiety = 0f;
-                        c.Pressure(32,0,0,45);
+                        if(!c.TimidIntern) c.Pressure(32,0,0,45);
                         c.FacingYaw = 0f; // Looking at MacBook screen
                         c.SpeechBubble = "ПОПАЛСЯ НА ХАЛЯВУ! ЖМЁТ ACCEPT ALL НЕ ГЛЯДЯ!";
                         c.SpeechTimer = 6.0f;
@@ -1720,13 +1736,17 @@ public sealed partial class SkyscraperFloor1World
 
         if(weaponSystem.CurrentWeapon is WeaponType.BareHands or WeaponType.CaptureNet)
         {
-            combatFeedback=CatchSweep(camera,weaponSystem.CurrentWeapon==WeaponType.CaptureNet,onGrantMoney);
-            weaponSystem.TriggerWeaponAttack(camera,hitEnemy:combatFeedback.Length>0);
-            return combatFeedback.Length>0;
+            combatFeedback=CatchSweep(camera,weaponSystem.CurrentWeapon==WeaponType.CaptureNet);
+            if(combatFeedback.Length>0 && weaponSystem.CurrentWeapon==WeaponType.BareHands)
+            {
+                weaponSystem.TriggerWeaponAttack(camera,hitEnemy:true);
+                return true;
+            }
         }
 
         float maxRange = weaponSystem.CurrentWeapon switch
         {
+            WeaponType.BareHands => 2.35f, WeaponType.CaptureNet => 3.6f,
             WeaponType.Belt => 3.8f,
             WeaponType.SolderingIron => 5.2f,
             WeaponType.MicroUzi => 26.0f,
@@ -1737,10 +1757,11 @@ public sealed partial class SkyscraperFloor1World
 
         int baseDamage = weaponSystem.CurrentWeapon switch
         {
-            WeaponType.Belt => 42,
-            WeaponType.SolderingIron => 52,
-            WeaponType.MicroUzi => 32,
-            WeaponType.SawedOff => 115,
+            WeaponType.BareHands => 6, WeaponType.CaptureNet => 12,
+            WeaponType.Belt => 24,
+            WeaponType.SolderingIron => 42,
+            WeaponType.MicroUzi => 18,
+            WeaponType.SawedOff => 15,
             WeaponType.ChatGun => 220,
             _ => 35
         };
@@ -1753,7 +1774,8 @@ public sealed partial class SkyscraperFloor1World
         bool negotiator=tool==WeaponType.SawedOff && Systems.Shell==Sidegrade.Negotiator;
         float surfaceDistance = TraceSurface(origin,forward,maxRange+.01f);
         maxRange = Math.Min(maxRange,surfaceDistance);
-        bool melee = weaponSystem.CurrentWeapon is WeaponType.Belt or WeaponType.SolderingIron;
+        bool captureTool=tool is WeaponType.BareHands or WeaponType.CaptureNet;
+        bool melee = captureTool || tool is WeaponType.Belt or WeaponType.SolderingIron;
         // 1. Check if player is whipping a slacking coder on the Galley with the Belt (or any close attack)!
         for (int i = 0; i < GalleyDesks.Count; i++)
         {
@@ -1794,17 +1816,39 @@ public sealed partial class SkyscraperFloor1World
             }
         }
 
-        // 2. Raycast against Floor 1 Elevator Boss ("СБЕЖАВШИЙ ИИ-АГЕНТ v0.1")
-        if (ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
+        Vector3 bossCenter=ElevatorBoss.Position+Vector3.UnitY*1.35f;
+        (int Actor, float Distance) TraceActor(Vector3 direction,float limit)
         {
-            Vector3 bossCenter = ElevatorBoss.Position + new Vector3(0f, 1.35f, 0f);
-            if (TryRaySphereHit(origin, forward, bossCenter, 1.45f, maxRange, out Vector3 hitPt, out _))
+            int actor=-1;
+            if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated &&
+                TryRaySphereHit(origin,direction,bossCenter,1.45f,limit,out _,out float bossDistance))
+            { actor=-2; limit=bossDistance; }
+            for(int i=0;i<ActiveCoders.Count;i++)
             {
-                bool isCrit = _rng.Next(100) < 28 || ElevatorBoss.State == ElevatorBossState.StunnedWallCrash;
-                int dmg = isCrit ? (int)(baseDamage * 1.55f) : baseDamage;
+                var c=ActiveCoders[i];
+                if(c.Hp<=0 && !c.KnockedOutAlive || (melee || salt) && c.State==CoderAIState.Subdued) continue;
+                float radius=.75f*c.ModelScale+(melee ? .28f : 0);
+                if(tool==WeaponType.CaptureNet || tool==WeaponType.Belt && Systems.Has(Sidegrade.DirectorBelt)) radius+=.24f;
+                if(TryRaySphereHit(origin,direction,c.CombatCenter,radius,limit,out _,out float distance))
+                { actor=i; limit=distance; }
+            }
+            return (actor,limit);
+        }
+        void Impact(Vector3 point,Vector3 center,int damage,bool critical)
+        {
+            if(tool==WeaponType.SawedOff)
+                weaponSystem.ShowImpact(camera,center,damage,critical);
+            else weaponSystem.TriggerWeaponAttack(camera,point,true,damage,critical,receiverCenter:center,shotDirection:forward);
+        }
+        string feedback=combatFeedback;
+        void Hit(int actor,Vector3 hitPt,int dmg)
+        {
+            bool isCrit=false;
+            if(actor==-2)
+            {
                 if(salt) dmg=(int)(dmg*.45f);
                 if(negotiator) dmg=(int)(dmg*1.4f);
-                Systems.Style((StyleAction)((int)tool-1));
+                if(!captureTool) Systems.Style((StyleAction)((int)tool-1));
                 UpdateBossPhase();
                 if(ElevatorBoss.Phase==2 && Systems.Puddles.Exists(p=>p.Electric>0 && Vector3.DistanceSquared(p.Position,ElevatorBoss.Position)<=10.24f)) ShortBoss();
                 bool shield=ElevatorBoss.ShieldHp>0;
@@ -1817,12 +1861,14 @@ public sealed partial class SkyscraperFloor1World
                     TryRaySphereHit(origin,forward,ElevatorBoss.ChestCore,.29f,maxRange,out _,out _))
                 { dmg*=3; isCrit=true; }
                 ElevatorBoss.ShieldDelay=5;
-                ElevatorBoss.Hp = MathF.Max(0f, ElevatorBoss.Hp - dmg);
+                // The phase-two firewall must give the final broadcast time to begin.
+                float minimum=ElevatorBoss.Phase==2 ? MathF.Min(ElevatorBoss.Hp,ElevatorBoss.MaxHp*.33f) : 0;
+                ElevatorBoss.Hp=MathF.Max(minimum,ElevatorBoss.Hp-dmg);
                 UpdateBossPhase();
                 ElevatorBoss.HitFlashTimer = 0.16f;
 
                 AudioMusicSystem.PlayHitmarker();
-                weaponSystem.TriggerWeaponAttack(camera, hitPt, hitEnemy: true, damageDealt: dmg, isCritical: isCrit, receiverCenter: bossCenter, shotDirection: forward);
+                Impact(hitPt,bossCenter,dmg,isCrit);
 
                 if (ElevatorBoss.Hp <= 0f)
                 {
@@ -1839,65 +1885,42 @@ public sealed partial class SkyscraperFloor1World
                     Systems.Discover(VibeCoderCollection.All.Single(s=>s.Id=="ai_agent_v01"),onGrantMoney);
                     AudioMusicSystem.PlayTarotCash();
 
-                    combatFeedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен. Подпиши акт утилизации.";
+                    feedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен. Подпиши акт утилизации.";
                 }
                 else
                 {
-                    combatFeedback = shield ? $"Файрвол: {ElevatorBoss.ShieldHp:F0}" : $"ПОПАДАНИЕ ПО ИИ-АГЕНТУ v0.1: -{dmg} ХП (осталось {(int)ElevatorBoss.Hp}/{ElevatorBoss.MaxHp})";
+                    feedback = shield ? $"Файрвол: {ElevatorBoss.ShieldHp:F0}" : $"ПОПАДАНИЕ ПО ИИ-АГЕНТУ v0.1: -{dmg} ХП (осталось {(int)ElevatorBoss.Hp}/{ElevatorBoss.MaxHp})";
                 }
-                return true;
+                return;
             }
-        }
-
-        // 3. Raycast against Active Vibe Coders & SaaS Guru Mini-Boss
-        int bestIdx = -1;
-        float bestDist = maxRange;
-        Vector3 bestHitPoint = origin + forward * 3f;
-
-        for (int i = 0; i < ActiveCoders.Count; i++)
-        {
-            VibeCoderEntity c = ActiveCoders[i];
-            if (c.Hp<=0 || (melee || salt) && c.State==CoderAIState.Subdued) continue;
-
-            Vector3 center = c.CombatCenter;
-            float hitRadius = .75f*c.ModelScale+(melee ? .28f : 0)+(tool==WeaponType.Belt && Systems.Has(Sidegrade.DirectorBelt) ? .24f : 0);
-
-            if (TryRaySphereHit(origin, forward, center, hitRadius, bestDist, out Vector3 hp, out float d))
+            var target=ActiveCoders[actor];
+            isCrit=target.State==CoderAIState.SittingAtMacBook;
+            if(target.IsCombatCoder)
             {
-                bestIdx = i;
-                bestDist = d;
-                bestHitPoint = hp;
-            }
-        }
-
-        if (bestIdx >= 0)
-        {
-            VibeCoderEntity target = ActiveCoders[bestIdx];
-            bool isCrit = (weaponSystem.CurrentWeapon == WeaponType.SawedOff) ||
-                          (target.State == CoderAIState.SittingAtMacBook) ||
-                          (_rng.Next(100) < 25);
-
-            int dmg = isCrit ? (int)(baseDamage * 1.45f) : baseDamage;
-            if (target.IsCombatCoder)
-            {
-                dmg = weaponSystem.CurrentWeapon switch {
-                    WeaponType.MicroUzi => isCrit ? 27 : 22,
-                    WeaponType.Belt => 28, WeaponType.SolderingIron => 32, _ => dmg };
                 target.Aggro = true;
                 target.Windup = 0;
                 target.AttackCooldown = Math.Max(target.AttackCooldown,.45f);
             }
-            float power=Systems.Style((StyleAction)((int)tool-1));
+            float power=captureTool ? 1 : Systems.Style((StyleAction)((int)tool-1));
             if((melee || salt) && Systems.Has(Sidegrade.CarbonNda)) power*=2;
             float fearPower=power*Systems.FearMultiplier;
             var impulse=new Vector3(forward.X,0,forward.Z);
-            target.KnockbackVel=impulse*(melee ? 7 : tool==WeaponType.SawedOff ? 9 : 3.6f);
+            target.KnockbackVel=impulse*(tool==WeaponType.BareHands ? 1.45f : melee ? 7 : tool==WeaponType.SawedOff ? 9 : 3.6f);
             if(tool==WeaponType.Belt && Systems.Coffee>0) target.KnockbackVel*=2;
             target.HitStaggerTimer=melee ? .32f : .18f;
             target.HitFlashTimer=.18f;
             if(melee || salt)
             {
-                float hpBefore=target.Hp;
+                // Blunt and capture tools leave a live candidate available for NDA.
+                if(!salt)
+                {
+                    target.Hp=Math.Max(0,target.Hp-dmg);
+                    if(target.Hp==0)
+                    {
+                        target.State=CoderAIState.Subdued;
+                        target.KnockedOutAlive=true;
+                    }
+                }
                 bool disarm=tool==WeaponType.Belt && !target.LaptopLost;
                 if(disarm) target.LaptopLost=true;
                 if(tool==WeaponType.Belt)
@@ -1913,31 +1936,65 @@ public sealed partial class SkyscraperFloor1World
                                 other.Pressure(28*power,0,34*fearPower);
                     }
                 }
+                else if(captureTool) { target.HitStaggerTimer=.15f; }
                 else if(salt) { target.Pressure(38*power,34*power,48*fearPower); target.StunTimer=1.8f; }
                 else
                 {
                     float tape=Systems.Has(Sidegrade.Tape) ? 1.45f : 1;
-                    if(Systems.Has(Sidegrade.RosinNapalm)) { target.Hp=Math.Max(0,target.Hp-16); target.Ignition=3; }
+                    if(Systems.Has(Sidegrade.RosinNapalm)) { target.KnockedOutAlive=false; target.Hp=Math.Max(0,target.Hp-16); target.Ignition=3; }
                     target.Pressure(14*power,32*power*tape,22*fearPower); target.StunTimer=1.5f*tape;
                 }
-                if(target.Hp<=0) KillCoder(target,onGrantMoney);
-                combatFeedback=target.Hp<=0 ? "Кандидат выбыл от ожогов. СБ +14" : target.State==CoderAIState.Subdued ? "Кандидат сломлен. Подпиши NDA [E]" :
+                bool burnedOut=target.Hp<=0 && !target.KnockedOutAlive;
+                if(burnedOut) KillCoder(target,onGrantMoney);
+                feedback=burnedOut ? "Кандидат выбыл от ожогов. СБ +14" : target.State==CoderAIState.Subdued ? "Кандидат сломлен. Подпиши NDA [E]" :
                     disarm ? "Ноутбук выбит. Эго -40" : $"Выдержка {target.Composure:F0}   Эго {target.Ego:F0}";
-                weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,(int)Math.Ceiling(hpBefore-target.Hp),disarm,receiverCenter:target.CombatCenter,shotDirection:forward);
+                Impact(hitPt,target.CombatCenter,salt ? 0 : dmg,disarm);
+                if(tool==WeaponType.CaptureNet && target.TimidIntern && target.State==CoderAIState.Subdued &&
+                    Systems.Has(Sidegrade.CarbonNda) && CarriedCoder==null) feedback=PickUp(target,onGrantMoney);
             }
             else
             {
-                if(target.Archetype==CoderArchetype.SecurityGuard || target.Archetype==CoderArchetype.SeniorArchitect && target.Ego>45) dmg=(int)(dmg*.73f);
                 if(negotiator && !target.IsMiniBoss) dmg=Math.Max(dmg,(int)MathF.Ceiling(target.Hp));
                 target.Hp=Math.Max(0,target.Hp-dmg);
-                weaponSystem.TriggerWeaponAttack(camera,bestHitPoint,true,dmg,isCrit,receiverCenter:target.CombatCenter,shotDirection:forward);
-                if(target.Hp<=0) { KillCoder(target,onGrantMoney); combatFeedback="Кандидат выбыл. СБ +14"; }
+                Impact(hitPt,target.CombatCenter,dmg,isCrit);
+                if(target.Hp<=0) { KillCoder(target,onGrantMoney); feedback="Кандидат выбыл. СБ +14"; }
             }
             AudioMusicSystem.PlayHitmarker();
-            return true;
         }
 
-        if(surfaceDistance<=maxRange && HitStation(camera,weaponSystem,origin+forward*surfaceDistance,out combatFeedback)) return true;
+        if(tool==WeaponType.SawedOff)
+        {
+            var hits=new Dictionary<int,(int Count,Vector3 Point)>();
+            for(int i=0;i<8;i++)
+            {
+                Vector3 dir=weaponSystem.PelletDirection(forward,i);
+                var (actor,distance)=TraceActor(dir,TraceSurface(origin,dir,12.5f));
+                if(actor!=-1) hits[actor]=(hits.GetValueOrDefault(actor).Count+1,origin+dir*distance);
+            }
+            if(hits.Count>0)
+            {
+                weaponSystem.TriggerWeaponAttack(camera,shotDirection:forward);
+                foreach(var (actor,hit) in hits) Hit(actor,hit.Point,baseDamage*hit.Count);
+                combatFeedback=feedback;
+                return true;
+            }
+        }
+        else
+        {
+            var (actor,distance)=TraceActor(forward,maxRange);
+            if(actor!=-1)
+            {
+                Hit(actor,origin+forward*distance,baseDamage);
+                combatFeedback=feedback;
+                return true;
+            }
+        }
+        if(combatFeedback.Length>0)
+        {
+            weaponSystem.TriggerWeaponAttack(camera,hitEnemy:true);
+            return true;
+        }
+        if(surfaceDistance<=maxRange && !captureTool && HitStation(camera,weaponSystem,origin+forward*surfaceDistance,out combatFeedback)) return true;
 
         // 4. Missed enemy - still fire weapon visuals into world geometry
         weaponSystem.TriggerWeaponAttack(camera, surfaceDistance <= maxRange ? origin+forward*surfaceDistance : null, hitEnemy: false, shotDirection: forward);
@@ -2001,7 +2058,7 @@ public sealed partial class SkyscraperFloor1World
         for (int i = 0; i < ActiveCoders.Count; i++)
         {
             var c = ActiveCoders[i];
-            if (c.Hp>0 && c.State == CoderAIState.Subdued)
+            if (c.CanSignNda)
             {
                 float dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(c.Position.X, c.Position.Z));
                 if (dist <= 3.8f)
@@ -2072,6 +2129,7 @@ public sealed partial class SkyscraperFloor1World
 
         AudioMusicSystem.PlayTarotCash();
         AudioMusicSystem.TriggerRandomVoiceLine("HR-ТАРОЛОГ ВЕРОНИКА", AudioMusicSystem.VeronikaTarotLines, (int)SpeakerVoiceType.VeronikaTarot);
+        Systems.UpdateOnboarding(this,Program.SharedCash);
 
         return $"HR-ТАРОЛОГ ВЕРОНИКА: «{LastTarotCardDrawn} - аура дешёвая, берём!» Выплачено +${payout} наличными!";
     }
@@ -2116,6 +2174,7 @@ public sealed partial class SkyscraperFloor1World
         CarriedCoder = null;
 
         AudioMusicSystem.PlayTarotCash();
+        Systems.UpdateOnboarding(this,Program.SharedCash);
         return $"ПОСАЖЕН НА ГАЛЕРУ #{targetIdx + 1}: {name} в смене. Ставка ${desk.Productivity}/с";
     }
 
@@ -2894,10 +2953,24 @@ public sealed partial class SkyscraperFloor1World
     }
 
     public string Interact(Camera3D camera, Func<int,bool> spend, Action<int,string> grant, WeaponType tool=WeaponType.BareHands)
+        => Interact(camera,spend,grant,tool,null);
+
+    internal string Interact(Camera3D camera,Func<int,bool> spend,Action<int,string> grant,WeaponType tool,Action<FloorPanel>? openPanel)
     {
         Focus focus = FindFocus(camera,tool);
+        FloorPanel panel=FocusedPanel(focus.Kind);
+        if(openPanel!=null && panel!=FloorPanel.None)
+        {
+            openPanel(panel);
+            return "";
+        }
         switch (focus.Kind)
         {
+            case FocusKind.Veronika when CarriedCoder!=null: return SellCarriedCoderToHrVeronika(grant);
+            case FocusKind.Veronika when Systems.Onboarding==OnboardingStep.TalkToVeronika:
+                Systems.Onboarding=OnboardingStep.CatchFrogs;
+                Systems.Coach();
+                return "";
             case FocusKind.Terminal:
             case FocusKind.Veronika when Systems.PocketFrogs.Count>0: return DepositBugs(grant);
             case FocusKind.Frog: return CatchSweep(camera,false);
@@ -2918,7 +2991,7 @@ public sealed partial class SkyscraperFloor1World
             case FocusKind.Deploy: return Systems.Deploy(this);
             case FocusKind.Printer: return Systems.Print();
             case FocusKind.Coder: return PickUp(ActiveCoders[focus.Index],grant);
-            case FocusKind.Veronika: return SellCarriedCoderToHrVeronika(grant);
+            case FocusKind.Veronika: return VeronikaShop;
             case FocusKind.Desk:
                 var desk = GalleyDesks[focus.Index];
                 if (desk.IsOccupied && CarriedCoder!=null) desk.IsOccupied=false; // The outgoing worker ends their shift.
@@ -2936,6 +3009,8 @@ public sealed partial class SkyscraperFloor1World
             default: return HandleInteractKeyE(camera.Position,spend,grant);
         }
     }
+
+    private const string VeronikaShop="HR Вероника — Магазин оружия и апгрейдов";
 
     public string FocusPrompt(Camera3D camera,WeaponType tool=WeaponType.BareHands) => FindFocus(camera,tool).Label;
 
@@ -2960,7 +3035,9 @@ public sealed partial class SkyscraperFloor1World
         Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "Макбук-ловушка");
         string deposit=$"Сдать Джава-жаб ({Systems.PocketFrogs.Count} шт.)";
         Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер принимает Джава-жаб. Садок пуст");
-        Consider(HrTarotBoothPos,1.6f,4.6f,FocusKind.Veronika,Systems.PocketFrogs.Count>0 ? deposit : "HR Вероника");
+        Consider(HrTarotBoothPos,1.6f,4.6f,FocusKind.Veronika,CarriedCoder!=null ? "Сдать кадра HR Веронике" :
+            Systems.Onboarding==OnboardingStep.TalkToVeronika ? "Поговорить с Вероникой" :
+            Systems.Onboarding!=OnboardingStep.BuyNet && Systems.PocketFrogs.Count>0 ? "Сдать Джава-жаб Веронике" : VeronikaShop);
         Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
         Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, "Центральный лифт");
         Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, "Центральный лифт");
@@ -2972,7 +3049,7 @@ public sealed partial class SkyscraperFloor1World
             if(CarriedCoder==null && ActiveCoders[i].Archetype is (CoderArchetype.CryptoBro or CoderArchetype.SecurityGuard) && ActiveCoders[i].State!=CoderAIState.Subdued)
                 Consider(ActiveCoders[i].Position,.82f,2.6f,FocusKind.Offer,ActiveCoders[i].Archetype==CoderArchetype.SecurityGuard ? "Нанять Крышу ($80)" : "Предложить аванс ($80)",i);
         for(int i=0;i<ActiveCoders.Count;i++)
-            if(ActiveCoders[i].Hp>0 && ActiveCoders[i].State==CoderAIState.Subdued)
+            if(ActiveCoders[i].CanSignNda)
                 Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,"Подписать NDA",i);
         if(tool==WeaponType.BareHands)
             foreach(var frog in Frogs)
@@ -2986,9 +3063,59 @@ public sealed partial class SkyscraperFloor1World
     internal static readonly Vector3 LiftSignSize=new(5.78f,1.17f,.08f);
     internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,4.85f,side*.48f);
 
+    internal (Vector3 Position,float Height,string Label)? OnboardingWaypoint(Vector3 eye)
+    {
+        switch(Systems.Onboarding)
+        {
+            case OnboardingStep.TalkToVeronika: return (HrTarotBoothPos,2.12f,"HR Вероника [E]");
+            case OnboardingStep.DepositFrogs: return (TerminalPos,1.65f,"Баг-трекер [E]");
+            case OnboardingStep.BuyNet: return (HrTarotBoothPos,2.12f,"Вероника: Сачок $3 [E]");
+            case OnboardingStep.ActivateBait: return (CentralMacBookPos,TrapTop+.62f,"Макбук-приманка [E]");
+            case OnboardingStep.CatchFrogs:
+                var frog=Frogs.Where(f=>f.CatchableByHand && ReachableFrog(eye,f.Feet))
+                    .MinBy(f=>Vector3.DistanceSquared(eye,f.Feet));
+                return frog==null ? null : (frog.Feet,.43f,"Джава-жаба [E]");
+            case OnboardingStep.CaptureFirstCoder when CarriedCoder!=null:
+                Vector3 drop=HrTarotBoothPos;
+                foreach(var desk in GalleyDesks)
+                    if(!desk.IsOccupied && Vector3.DistanceSquared(eye,desk.DeskPosition)<Vector3.DistanceSquared(eye,drop))
+                        drop=desk.DeskPosition;
+                return (drop,drop==HrTarotBoothPos ? 2.12f : 1.7f,"Сдай Веронике или на Галеру [E]");
+            case OnboardingStep.CaptureFirstCoder:
+                var coder=ActiveCoders.Where(c=>(c.Hp>0 || c.CanSignNda) && c.Archetype!=CoderArchetype.SecurityGuard)
+                    .MinBy(c=>Vector3.DistanceSquared(eye,c.Position));
+                return coder==null ? (CentralMacBookPos,TrapTop+.62f,"Дождись вайбкодера") :
+                    (coder.Position,coder.CanSignNda ? .82f : 1.84f*coder.ModelScale,coder.CanSignNda ? "Подпиши NDA [E]" : "Оглуши ЛКМ → NDA [E]");
+            default: return null;
+        }
+    }
+
+    // A frog around a partition can still be caught from the open side.
+    private bool ReachableFrog(Vector3 eye,Vector3 feet)
+    {
+        Vector3 point=feet+Vector3.UnitY*.15f;
+        bool Clear(Vector3 from,float reach)
+        {
+            var ray=point-from;
+            float length=ray.Length();
+            return length<.01f || length<=reach && TraceSurface(from,ray/length,length)+.02f>=length;
+        }
+        if(Clear(eye,float.PositiveInfinity)) return true;
+        foreach(var side in FrogApproaches)
+        {
+            var stance=ResolvePlayerCollision(new Vector3(feet.X,1.72f,feet.Z)+side);
+            if(Clear(stance,2.4f)) return true;
+        }
+        return false;
+    }
+    private static readonly Vector3[] FrogApproaches=[Vector3.UnitX,-Vector3.UnitX,Vector3.UnitZ,-Vector3.UnitZ];
+
     public void DrawWorldLabelsAndIndicators2D(Camera3D camera, Font font)
     {
         WorldLabelLayout.BeginFrame();
+        var waypoint=OnboardingWaypoint(camera.Position);
+        if(waypoint is {} goal)
+            WorldLabelLayout.DrawWaypoint(camera,goal.Position,goal.Height+.055f*MathF.Sin(_worldClock*2),goal.Label);
         if(camera.Position.Z<NorthElevatorPos.Z)
             WorldLabelLayout.ReserveProjectedBox(camera,LiftSignCenter(NorthElevatorPos,-1),LiftSignSize*.5f);
         if(camera.Position.Z>SouthElevatorDoorPos.Z)
@@ -3016,7 +3143,7 @@ public sealed partial class SkyscraperFloor1World
         void Plate(Vector3 head,string name,float health,Color accent,bool mystery=false)
         {
             if (Vector3.Dot(head-camera.Position,look)<.1f) return;
-            Vector2 screen=Raylib.GetWorldToScreen(head,camera)-new Vector2(0,4);
+            Vector2 screen=UiViewport.Project(head,camera)-new Vector2(0,4);
             Font tag=GameFonts.Get(Typeface.InterfaceBold,16);
             float width=GameFonts.Measure(tag,name,16).X;
             if (!WorldLabelLayout.Place(screen,width,22,out var r)) return;
@@ -3030,20 +3157,22 @@ public sealed partial class SkyscraperFloor1World
         }
         foreach(var frog in Frogs)
         {
+            if(waypoint?.Position==frog.Feet) continue;
             bool rare=frog.Species.Rarity!=VibeCoderRarity.Common;
             float alignment=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,rare ? 8 : 4.5f);
             if(alignment<(rare ? .91f : .98f)) continue;
             string label=Systems.DiscoveredSpecies.ContainsKey(frog.SpeciesId) ? frog.Species.Name : rare ? "★ ???" : "???";
             Plate(frog.Feet+Vector3.UnitY*.38f,label,-1,frog.Species.HoodieColor,true);
         }
-        if(Vector3.DistanceSquared(camera.Position,HrTarotBoothPos)<100 && FindFocus(camera).Kind!=FocusKind.Veronika)
+        if(waypoint?.Position!=HrTarotBoothPos && Vector3.DistanceSquared(camera.Position,HrTarotBoothPos)<100 && FindFocus(camera).Kind!=FocusKind.Veronika)
             Plate(HrTarotBoothPos+Vector3.UnitY*1.87f,"HR Вероника",1f,new Color(168,153,202,255));
         if(Partner is {} ally && Vector3.DistanceSquared(camera.Position,ally.Feet)<400)
             Plate(ally.Feet+Vector3.UnitY*(ally.Pose.Eye.Y<1.4f?1.30f:1.72f),"БРАТАН [КООП]",
                 Program.PartnerHp/100f,new Color(109,202,162,255));
         foreach(var c in ActiveCoders)
         {
-            if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.Hp<=0) continue;
+            if(waypoint?.Position==c.Position && c.Composure>=99) continue;
+            if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.Hp<=0 && !c.KnockedOutAlive) continue;
             Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.Deadline>0 ? $"Дедлайн! {Math.Ceiling(c.Deadline)} с" : c.IdentityRevealed ? c.Name : c.MysteryTag,
                 c.Composure<99 || c.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,c.Position)<56.25f ? c.Composure/100 : -1,
                 VibeCoderCollection.Ink(c.Rarity),true);
@@ -3133,32 +3262,37 @@ public sealed partial class SkyscraperFloor1World
         }
     }
 
-    internal FloorPanel PanelAt(Camera3D camera) => FindFocus(camera).Kind switch {
+    internal FloorPanel PanelAt(Camera3D camera,WeaponType tool) => FocusedPanel(FindFocus(camera,tool).Kind);
+
+    private FloorPanel FocusedPanel(FocusKind kind) => kind switch {
         FocusKind.Board when Systems.Audit<=0=>FloorPanel.Contracts,
+        FocusKind.Veronika when CarriedCoder==null && Systems.Onboarding!=OnboardingStep.TalkToVeronika &&
+            (Systems.PocketFrogs.Count==0 || Systems.Onboarding==OnboardingStep.BuyNet)=>FloorPanel.Upgrades,
         FocusKind.Shop=>FloorPanel.Upgrades,_=>FloorPanel.None };
 
     internal VibeCoderEntity SpawnFighter(CoderArchetype role,Vector3 feet,VibeCoderSpecies? species=null)
     {
-        var c=new VibeCoderEntity { Id=_nextCoderId++, Position=feet, MaxHp=54, Hp=54,
+        var c=new VibeCoderEntity { Id=_nextCoderId++, Position=feet,
             State=CoderAIState.CombatHostile, IsCombatCoder=true, AttackCooldown=.48f,
             GlassesColor=new(236,192,125,255), SpawnSide=feet.X<0 ? -1 : 1 };
         c.AssignRole(role);
         VibeCoderCollection.Dress(c,species ?? VibeCoderCollection.Roll(speciesRandom,SelectedBaitTier,Systems,role));
         c.TarotPayoutValue=role switch { CoderArchetype.SeniorArchitect=>440,CoderArchetype.TeamLeadMeeter=>280,
             CoderArchetype.CryptoBro=>250,_=>160 };
-        if(role==CoderArchetype.SecurityGuard) { c.LaptopLost=true; c.MaxHp=c.Hp=110; }
+        if(role==CoderArchetype.SecurityGuard) c.LaptopLost=true;
         ActiveCoders.Add(c);
         return c;
     }
 
     internal void EnsureCandidate(CoderArchetype role)
     {
-        if(!ActiveCoders.Exists(c=>c.Archetype==role && c.Hp>0))
+        if(IsMacBookTrapActive && !ActiveCoders.Exists(c=>c.Archetype==role && c.Hp>0))
             SpawnFighter(role,EastSpawnDoorPos);
     }
 
     internal void SpawnWave(int count,bool raid=false)
     {
+        if(!IsMacBookTrapActive) return;
         for(int i=0;i<count && (ActiveCoders.Count<22 || raid && i==0);i++)
         {
             float side=i%2==0 ? 1 : -1;
@@ -3260,7 +3394,7 @@ public sealed partial class SkyscraperFloor1World
 
     private void KillCoder(VibeCoderEntity c,Action<int,string>? pay)
     {
-        c.State=CoderAIState.Subdued; c.Hp=0; c.KnockoutTime=0; c.SpeechTimer=0;
+        c.State=CoderAIState.Subdued; c.KnockedOutAlive=false; c.Hp=0; c.KnockoutTime=0; c.SpeechTimer=0;
         int cash=c.IsCombatCoder ? 35 : Math.Max(35,c.TarotPayoutValue/3);
         Systems.Risk(security:14); Systems.Earned+=cash;
         SpawnCashBurst(c.CombatCenter,8,$"+${cash}"); pay?.Invoke(cash,"Кандидат");
@@ -3359,6 +3493,7 @@ public sealed partial class SkyscraperFloor1World
 
 internal sealed class BugFrog
 {
+    internal bool CatchableByHand => SpeciesId is "frog_hopper" or "frog_syntax";
     public string SpeciesId="frog_hopper";
     public Vector3 From, To;
     public float Phase, Rest, Yaw, TargetYaw;
@@ -3378,20 +3513,12 @@ public sealed partial class SkyscraperFloor1World
     {
         Frogs.Clear(); previousDebt=0; refill=4;
         Vector3[] pads=[new(-1,0,10.05f),new(.95f,0,9.4f),new(-.55f,0,8.1f),
-            new(2.1f,0,8.4f),new(-3.1f,0,7.2f),new(1.1f,0,6.7f),new(-1.6f,0,6.8f),new(3.3f,0,9.1f)];
+            new(2.1f,0,8.4f),new(-3.1f,0,7.2f),new(1.1f,0,6.7f),RackPos+new Vector3(-1.3f,0,1.5f),RackPos+new Vector3(1.3f,0,1.5f)];
         for(int i=0;i<pads.Length;i++)
         {
             var frog=SpawnFrog(pads[i],i<3 ? "frog_hopper" : i==3 ? "frog_crash" : i==4 ? "frog_syntax" : null);
             BeginHop(frog,frog.From+Vector3.UnitZ*3);
             frog.Phase=i*.12f; frog.Yaw=frog.TargetYaw;
-        }
-        foreach(Vector3 feet in new Vector3[]{new(-2.9f,0,10.9f),new(3.2f,0,7.3f),new(4.3f,0,10)})
-        {
-            var intern=new VibeCoderEntity {Id=_nextCoderId++,Position=ResolvePlayerCollision(feet,.24f),
-                TimidIntern=true,IdentityRevealed=true,Name="Стажёр-Одуванчик",State=CoderAIState.WalkingToBait,
-                MaxHp=30,Hp=30,TarotPayoutValue=10,LaptopLost=true,GlassesColor=new(188,218,182,255)};
-            intern.AssignRole(CoderArchetype.JuniorPrompter);
-            ActiveCoders.Add(intern);
         }
     }
 
@@ -3483,40 +3610,19 @@ public sealed partial class SkyscraperFloor1World
     }
     private static float HandAim(BugFrog frog)=>frog.SpeciesId=="frog_syntax" ? .987f : .963f;
 
-    private string CatchSweep(Camera3D camera,bool net,Action<int,string>? grant=null)
+    private string CatchSweep(Camera3D camera,bool net)
     {
         var targets=Frogs.Select(f=>(Frog:f,Aim:CatchAim(camera,f.Feet+Vector3.UnitY*.15f,net ? 3.6f : 2.4f)))
             .Where(t=>t.Aim>(net ? .70f : HandAim(t.Frog))).OrderByDescending(t=>t.Aim).Take(net ? 3 : 1).ToArray();
         foreach(var (frog,_) in targets)
         {
-            if(!net && frog.SpeciesId is "frog_crash" or "frog_hotfix")
+            if(!net && !frog.CatchableByHand)
             {
-                var away=frog.Feet-camera.Position; away.Y=0;
-                var ground=frog.Feet; ground.Y=0;
-                if(frog.SpeciesId=="frog_crash" || away.LengthSquared()>.001f &&
-                    ClearHop(ground,ground+Vector3.Normalize(away)*frog.Species.HopDistance))
-                {
-                    BeginHop(frog,camera.Position);
-                    return "Слишком шустрый — нужен Сачок ($3)";
-                }
+                BeginHop(frog,camera.Position);
+                return "Нужен Сачок ($3) у Вероники";
             }
             if(Systems.Has(Sidegrade.CarbonNda)) Systems.Risk(security:6);
             Systems.PocketFrogs.Add(frog.SpeciesId); Frogs.Remove(frog);
-        }
-        if(!net && targets.Length>0) return $"В садке: {Systems.PocketFrogs.Count}";
-        foreach(var c in ActiveCoders)
-        {
-            if(!c.TimidIntern || c.Hp<=0 || c.State==CoderAIState.Subdued ||
-                CatchAim(camera,c.CombatCenter,net ? 3.6f : 2.4f)<(net ? .70f : .94f)) continue;
-            if(!net)
-            {
-                var away=c.Position-camera.Position; away.Y=0;
-                if(away.LengthSquared()>.001f) c.KnockbackVel=Vector3.Normalize(away)*3;
-                return "Пугливый — нужен Сачок ($3)";
-            }
-            c.State=CoderAIState.Subdued; c.Composure=0;
-            if(CarriedCoder==null && Systems.Has(Sidegrade.CarbonNda)) return PickUp(c,grant);
-            return "Стажёр пойман. Подпиши NDA [E]";
         }
         return targets.Length>0 ? $"В садке: {Systems.PocketFrogs.Count}" : "";
     }
@@ -3536,7 +3642,7 @@ public sealed partial class SkyscraperFloor1World
         grant(total,"Баг-трекер");
         AudioMusicSystem.PlayTarotCash();
         return !Systems.HasWeapon(WeaponType.CaptureNet) && Program.SharedCash>=3 ?
-            "Хватает на Сачок ($3) — открой Арсенал [U]" : $"Джава-жабы сданы: +${total}";
+            "Хватает на Сачок ($3) у Вероники или в Арсенале [U]" : $"Джава-жабы сданы: +${total}";
     }
 
     private void DrawBugHunt()

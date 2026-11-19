@@ -12,9 +12,9 @@ namespace HowToVibeCoder;
 internal sealed record FloorSnapshot(int Cash, EscapedAgentBoss Boss, float Door, bool Key, bool Unlocked,
     bool Trap, SubscriptionBaitTier Bait, VibeCoderEntity[] Coders, GalleyDeskSlot[] Desks,
     EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100, FloorSystems? Systems = null,VibeCoderEntity? HostCarried=null, int ProgressionVersion=0,
-    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands);
+    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands, OnboardingStep? OnboardingStep=null);
 
-internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0);
+internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0, FloatingCombatText3D? Impact=null);
 internal sealed record Motion(string Session, long Sequence, PlayerPose Pose);
 
 internal sealed class CoopNetworkSystem : IDisposable
@@ -33,7 +33,8 @@ internal sealed class CoopNetworkSystem : IDisposable
     private int used;
     private double deadline, nextDiscovery, nextPose, nextWorld, lastUdp, nextFallback;
     private IPAddress[] discoveryTargets=[];
-    public string HostAddress {get; private set;}="";
+    private Task<string>? hostAddresses;
+    public string HostAddress => hostAddresses is {IsCompletedSuccessfully:true} ? hostAddresses.Result : "Локальная сеть";
     private static IEnumerable<UnicastIPAddressInformation> Interfaces() =>
         NetworkInterface.GetAllNetworkInterfaces()
             .Where(n=>n.OperationalStatus==OperationalStatus.Up && n.NetworkInterfaceType!=NetworkInterfaceType.Loopback)
@@ -78,7 +79,7 @@ internal sealed class CoopNetworkSystem : IDisposable
             listener=new TcpListener(IPAddress.Any,port);
             listener.Start(2);
             udp=OpenUdp(port);
-            HostAddress=string.Join("   ",Interfaces().Select(ip=>$"{ip.Address}:{port}"));
+            hostAddresses=Task.Run(()=>string.Join("   ",Interfaces().Select(ip=>$"{ip.Address}:{port}")));
             Status=$"Игра открыта: {HostAddress}";
             return true;
         }

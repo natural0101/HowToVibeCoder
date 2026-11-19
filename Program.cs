@@ -17,8 +17,9 @@ public static partial class Program
     private static Font _uiFont;
 
     // Player state
-    private static Vector3 _playerPos = new(0f, 1.72f, 11.5f);
-    private static float _playerYaw = MathF.PI; // Looking North (-Z) toward Central MacBook & Elevator Core
+    private static readonly Vector3 LobbyEntrance = new(.55f,1.72f,7.05f);
+    private static Vector3 _playerPos = LobbyEntrance;
+    private static float _playerYaw;
     private static float _playerPitch = -0.05f;
     private static bool _isCrouching = false;
     private static float _playerVelY, _coyoteTimer, _jumpBufferTimer;
@@ -43,9 +44,8 @@ public static partial class Program
     private static float _energy = 100;
     private static Font _serif;
     private static float _weaponFireCooldown = 0f;
-    private const string FrogOnboarding = "Серверная плюётся Джава-жабами. Хватай [E] и сдавай в Баг-трекер. Сачок стоит $3.";
-    private static string _hudStatusBanner = FrogOnboarding;
-    private static float _hudStatusTimer = 6.0f;
+    private static string _hudStatusBanner = "";
+    private static float _hudStatusTimer;
     private static bool _foregroundBanner;
 
     public static int Main(string[] args)
@@ -65,8 +65,13 @@ public static partial class Program
             return 0;
         }
 
-        Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | (autoTest || gripTest || coopSmoke ? ConfigFlags.HiddenWindow : 0));
+        bool interactive=!fixtureSeed.HasValue;
+        string displayPath=interactive ? Path.Combine(MainMenuAndPauseUI.SavesDirectory,"display_settings.json")
+            : Path.Combine(Path.GetTempPath(),"vibecoder-display-"+Guid.NewGuid().ToString("N")+".json");
+        MainMenuAndPauseUI.LoadDisplay(displayPath,interactive);
+        Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | ConfigFlags.HiddenWindow);
         Raylib.InitWindow(ScreenWidth, ScreenHeight, "HOW TO VIBE CODER - ЭТАЖ 1: CLOUD ENTROPIC TOWER (1994 -> 2026)");
+        if(interactive) MainMenuAndPauseUI.Display.Apply();
         Raylib.SetTargetFPS(60);
         Raylib.SetExitKey(KeyboardKey.Null);
 
@@ -85,8 +90,19 @@ public static partial class Program
         _menuFloor.Partner.Move(new(new(-26.2f,1.72f,5.5f),1.26f,0,WeaponType.MicroUzi));
         _weapons = new WeaponAndCombatView { Inventory=Floor };
 
+        LoadSlotIcons();
+        preparedFloor=_world;
         WireUpSystems();
         ConfigureCoop();
+        if(interactive)
+        {
+            // Warm the first-person hands, HUD font atlases and postprocessing before the start button is live.
+            MainMenuAndPauseUI.IsInMainMenu=false;
+            DrawFrame();
+            MainMenuAndPauseUI.IsInMainMenu=true;
+            DrawFrame();
+            Raylib.ClearWindowState(ConfigFlags.HiddenWindow);
+        }
         int join=Array.IndexOf(args,"--join");
         if(join>=0)
         {
@@ -118,7 +134,7 @@ public static partial class Program
             }
             finally { if(guest is { HasExited:false }) guest.Kill(); }
         }
-        else if (autoTest || gripTest) RunAutomatedScreenshotSuite();
+        else if (autoTest || gripTest) RunAutomatedScreenshotSuite(displayPath);
         else
         {
             bool shouldExit = false;
@@ -130,6 +146,7 @@ public static partial class Program
             }
         }
 
+        if(!interactive) File.Delete(displayPath);
         Net.Dispose();
         LoreAndMenusUI.UnloadArchive();
         CombatSprites.Unload();
@@ -201,7 +218,13 @@ public static partial class Program
             return true;
         };
 
-        MainMenuAndPauseUI.OnStartNewGameRequested = () => { ResetNewGameFloor(); StartHosting(newShift: true); };
+        MainMenuAndPauseUI.OnStartNewGameRequested = () =>
+        {
+            ResetNewGameFloor(preparedFloor);
+            preparedFloor=null;
+            if(MainMenuAndPauseUI.InteractiveDisplay) hostOnNextUpdate=true;
+            else StartHosting(newShift:true);
+        };
         MainMenuAndPauseUI.OnStartGameRequested = () =>
         {
             Raylib.DisableCursor();
@@ -213,6 +236,7 @@ public static partial class Program
         MainMenuAndPauseUI.OnReturnToMainMenuRequested = () =>
         {
             Net.Dispose();
+            preparedFloor=new SkyscraperFloor1World(fixtureSeed);
             Raylib.EnableCursor();
         };
         MainMenuAndPauseUI.OnExitRequested = () =>
@@ -256,7 +280,7 @@ public static partial class Program
 
         MainMenuAndPauseUI.ApplyLoadedGameState = data =>
         {
-            ResetNewGameFloor();
+            ResetNewGameFloor(greet:false);
             StartHosting();
             _playerCash = data.Cash;
             _xp = Math.Max(0,data.Xp); _energy = Math.Clamp(data.Energy,0,100); _playerHp = Math.Clamp(data.Hp,0,100);
@@ -275,15 +299,15 @@ public static partial class Program
         };
     }
 
-    private static void ResetNewGameFloor()
+    private static bool hostOnNextUpdate;
+    private static SkyscraperFloor1World? preparedFloor;
+    private static void ResetNewGameFloor(SkyscraperFloor1World? ready=null,bool greet=true)
     {
         floorPanel=FloorPanel.None; seenReport=0;
         bot=awaitingSpawn=pendingCase=false; guestCarried=peerEscort=null; guestHp=100;
-        _world = new SkyscraperFloor1World(fixtureSeed);
+        _world = ready ?? new SkyscraperFloor1World(fixtureSeed);
         AudioMusicSystem.VoiceTimer = 0;
-        _playerPos = new Vector3(0f, 1.72f, 11.5f);
-        _playerYaw = MathF.PI;
-        _playerPitch = -.20f;
+        _playerPos = _world.ResolvePlayerCollision(LobbyEntrance);
         _isCrouching = false;
         _playerCash = 0;
         _playerHp = 100;
@@ -295,7 +319,9 @@ public static partial class Program
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _damageFlash = 0;
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _lastHudHp=100;
         _sprinting=_toggleCrouch=_exhausted=false;
-        SetHudBanner(FrogOnboarding, 7f, foreground: true);
+        LookAtTarget(_world.HrTarotBoothPos+new Vector3(-.45f,1.26f,0));
+        SetHudBanner("",0);
+        if(greet) Floor.Coach();
     }
 
     private static bool TrySpendCash(int cost)
@@ -340,6 +366,11 @@ public static partial class Program
 
     private static void UpdateFrame(float dt, ref bool shouldExit)
     {
+        if(hostOnNextUpdate)
+        {
+            hostOnNextUpdate=false;
+            StartHosting(newShift:true);
+        }
         Net.Pump(LocalPose,CaptureFloor);
         bool bossFightMusic = _world.ElevatorBoss.IsActive ||
                               _world.ActiveCoders.Exists(c => c.IsMiniBoss && c.State != CoderAIState.Subdued);
@@ -368,7 +399,9 @@ public static partial class Program
             if (LoreAndMenusUI.IsAnyModalOpen && Raylib.IsCursorHidden()) Raylib.EnableCursor();
             return;
         }
+        bool startingFromMenu=MainMenuAndPauseUI.IsInMainMenu;
         MainMenuAndPauseUI.Update(dt, ref shouldExit);
+        if(startingFromMenu && !MainMenuAndPauseUI.IsInMainMenu) return;
         FlushFloorSave();
         if (MainMenuAndPauseUI.IsInMainMenu) _menuTime += dt;
         if (shouldExit || MainMenuAndPauseUI.IsInMainMenu) return;
@@ -451,16 +484,24 @@ public static partial class Program
                 else SetHudBanner(joint);
                 return;
             }
-            FloorPanel station=_world.PanelAt(camera);
-            if(station!=FloorPanel.None) { OpenFloorPanel(station); return; }
-            if(_weapons.CurrentWeapon==WeaponType.BareHands && _world.FocusPrompt(camera)=="Поймать баг")
+            if(Net.Guest)
+            {
+                FloorPanel station=_world.PanelAt(camera,_weapons.CurrentWeapon);
+                if(station!=FloorPanel.None) { OpenFloorPanel(station); return; }
+            }
+            if(_weapons.CurrentWeapon==WeaponType.BareHands && _world.FocusPrompt(camera)=="Поймать Джава-жабу")
             {
                 UpdateTrigger(dt,false,true,false,isMoving);
                 TickFloor(dt);
                 return;
             }
             if(Net.Guest) Net.Send(new("interact",LocalPose));
-            else SetHudBanner(_world.Interact(camera,TrySpendCash,GrantCash,_weapons.CurrentWeapon),2.4f,foreground:true);
+            else
+            {
+                string result=_world.Interact(camera,TrySpendCash,GrantCash,_weapons.CurrentWeapon,OpenFloorPanel);
+                if(floorPanel!=FloorPanel.None) return;
+                SetHudBanner(result,2.4f,foreground:true);
+            }
         }
 
         UpdateTrigger(dt, Raylib.IsMouseButtonDown(MouseButton.Left),Raylib.IsMouseButtonPressed(MouseButton.Left),
@@ -566,7 +607,7 @@ public static partial class Program
         if(trigger && _weaponFireCooldown<=.00001f && !_weapons.Reloading)
         {
             float interval=gun switch {
-                WeaponType.MicroUzi=>1f/12, WeaponType.Belt=>_world.Systems.Coffee>0 ? .19f : .30f, WeaponType.SolderingIron=>_world.Systems.Has(Sidegrade.Tape) ? .26f : .34f,
+                WeaponType.MicroUzi=>.10f, WeaponType.Belt=>_world.Systems.Coffee>0 ? .19f : .30f, WeaponType.SolderingIron=>_world.Systems.Has(Sidegrade.Tape) ? .26f : .34f,
                 WeaponType.SawedOff=>.42f, WeaponType.CaptureNet or WeaponType.BareHands when Floor.Has(Sidegrade.CarbonNda)=>.14f, _=>.28f };
             _weaponFireCooldown=interval+(automatic && !pressed ? _weaponFireCooldown : 0);
             _weapons.UseRound();
@@ -593,7 +634,7 @@ public static partial class Program
             if (Net.Guest)
             {
                 float range=gun switch { WeaponType.SawedOff=>12.5f, WeaponType.ChatGun=>28, WeaponType.MicroUzi=>26,
-                    WeaponType.Belt=>3.8f,_=>5.2f };
+                    WeaponType.BareHands=>2.35f,WeaponType.CaptureNet=>3.6f,WeaponType.Belt=>3.8f,_=>5.2f };
                 _weapons.BallisticWorld=_world;
                 float distance=_world.PelletDistance(cam.Position,aim,range);
                 _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false,shotDirection:aim);
@@ -702,9 +743,11 @@ public static partial class Program
         VisualEngine3D.Composite();
         if(!modalOpen && showHud)
         {
+            UiViewport.Begin();
             _world.DrawWorldLabelsAndIndicators2D(playerCam,_uiFont);
             DrawCombatOverlay(_weapons,playerCam,_uiFont);
             DrawGameplayHud2D();
+            Raylib.EndMode2D();
         }
 
         // 5. Modal Windows ([N] Lore, [F8] Audio Mixer, [K] Case Roulette) & [ESC] Pause Overlay
@@ -721,7 +764,7 @@ public static partial class Program
 
     private static void DrawGameplayHud2D()
     {
-        int sw = Raylib.GetScreenWidth(), sh = Raylib.GetScreenHeight();
+        int sw=UiViewport.Width, sh=UiViewport.Height;
         int cx = sw/2, cy = sh/2;
         Color white = new(250,249,245,255), dark = new(22,24,38,142);
         string money = "$" + _playerCash;
@@ -779,7 +822,7 @@ public static partial class Program
             float width=GameFonts.Measure(_serif,prompt,19).X;
             GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
         }
-        else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner))
+        else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && !CoachingSubtitle)
         {
             var face = GameFonts.Get(Typeface.InterfaceBold, 20);
             float width=Math.Min(sw-24,GameFonts.Measure(face,_hudStatusBanner,20).X+28);
@@ -808,7 +851,24 @@ public static partial class Program
             Raylib.DrawRectangleGradientH(0,0,52,sh,red,Color.Blank);
             Raylib.DrawRectangleGradientH(sw-52,0,52,sh,Color.Blank,red);
         }
-        if (AudioMusicSystem.VoiceTimer>0)
+        if(CoachingSubtitle)
+        {
+            var face=GameFonts.Get(Typeface.InterfaceBold,18);
+            float limit=Math.Min(sw-100,940);
+            var lines=new List<string>();
+            string row="";
+            foreach(var word in AudioMusicSystem.ActiveVoiceText.Split(' '))
+            {
+                string next=row.Length==0 ? word : row+" "+word;
+                if(row.Length>0 && GameFonts.Measure(face,next,18).X>limit)
+                { lines.Add(row); row=word; }
+                else row=next;
+            }
+            lines.Add(row);
+            for(int i=0;i<lines.Count;i++)
+                ShadowText(face,lines[i],cx-GameFonts.Measure(face,lines[i],18).X/2,sh-125-(lines.Count-1-i)*23,18,white);
+        }
+        else if (AudioMusicSystem.VoiceTimer>0)
         {
             string line=AudioMusicSystem.ActiveVoiceText;
             float width=Math.Min(sw-24,GameFonts.Measure(_uiFont,line,16).X+22);
@@ -819,11 +879,13 @@ public static partial class Program
 
     }
 
-    private static Texture2D[]? _slotIcons;
+    private static bool CoachingSubtitle => AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeaker=="Вероника";
 
-    internal static void DrawSlotIcon(int index, Vector2 center, bool unlocked, Color? accent = null)
+    private static Texture2D[] _slotIcons=[];
+
+    private static void LoadSlotIcons()
     {
-        if (_slotIcons == null)
+        if (_slotIcons.Length==0)
         {
             string[] files =
             [
@@ -847,6 +909,10 @@ public static partial class Program
             }
         }
 
+    }
+
+    internal static void DrawSlotIcon(int index, Vector2 center, bool unlocked, Color? accent = null)
+    {
         Color whiteIcon=accent ?? Color.White;
         int idx = Math.Clamp(index, 0, _slotIcons.Length - 1);
         Texture2D icon = _slotIcons[idx];
@@ -1020,11 +1086,18 @@ public static partial class Program
         {
             _weaponFireCooldown=0;
             UpdateTrigger(1f/60,true,true,false,false);
+            TickFloor(1f/60);
+        }
+        void Guided(OnboardingStep step,string words)
+        {
+            Check(Floor.Onboarding==step && CoachingSubtitle && AudioMusicSystem.ActiveVoiceText.Contains(words),"coaching "+step);
+            Check((_world.OnboardingWaypoint(_playerPos)!=null)==(step!=OnboardingStep.Done),"beacon "+step);
         }
         void RoundTrip()
         {
             var data=MainMenuAndPauseUI.CaptureCurrentGameState!();
             var equipped=_weapons.CurrentWeapon;
+            var step=Floor.Onboarding;
             int wallet=_playerCash, mask=Floor.OwnedWeaponsMask;
             var pocket=Floor.PocketFrogs.ToArray(); var discoveries=Floor.DiscoveredSpecies.ToArray();
             string path=Path.GetTempFileName();
@@ -1032,16 +1105,40 @@ public static partial class Program
             {
                 File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(data));
                 WriteFloorSave(data,path,pendingShift!);
-                ResetNewGameFloor();
+                ResetNewGameFloor(greet:false);
                 var saved=System.Text.Json.JsonSerializer.Deserialize<GameSaveData>(File.ReadAllText(path))!;
                 _playerCash=saved.Cash;
                 RestoreFloorSave(saved,path);
-                Check(mask==Floor.OwnedWeaponsMask && equipped==_weapons.CurrentWeapon && _playerCash==wallet &&
+                Check(Floor.Onboarding==step && !CoachingSubtitle && mask==Floor.OwnedWeaponsMask && equipped==_weapons.CurrentWeapon && _playerCash==wallet &&
                     pocket.SequenceEqual(Floor.PocketFrogs) && discoveries.SequenceEqual(Floor.DiscoveredSpecies),"slot round-trip");
             }
             finally { pendingShift=null; pendingFloorSave=null; File.Delete(path); }
         }
         ResetNewGameFloor();
+        var bait=_world.CentralMacBookPos+Vector3.UnitY*(SkyscraperFloor1World.TrapTop+.13f);
+        Approach(bait,2); Key(KeyboardKey.E);
+        Guided(OnboardingStep.CaptureFirstCoder,"Пошли клиенты");
+        Check(_playerCash==0 && _world.ActiveCoders.Any(c=>c.TimidIntern && c.Hp==24) &&
+            _world.ActiveCoders.Any(c=>!c.TimidIntern && c.Archetype==CoderArchetype.JuniorPrompter && c.Hp==50),"instant free bait wave");
+        ResetNewGameFloor();
+        Floor.PocketFrogs.AddRange(["frog_hopper","frog_syntax"]);
+        TickFloor(1f/60); Guided(OnboardingStep.DepositFrogs,"Отличный улов");
+        ResetNewGameFloor();
+        GrantCash(3,"Тест"); TickFloor(1f/60); Guided(OnboardingStep.BuyNet,"Наличка");
+        ResetNewGameFloor();
+        Floor.BuyWeapon(0,_=>true); TickFloor(1f/60); Guided(OnboardingStep.ActivateBait,"Сачок в руках");
+        ResetNewGameFloor();
+        Guided(OnboardingStep.TalkToVeronika,"хозяин вернулся");
+        var cam=BuildPlayerCamera();
+        var hr=_world.HrTarotBoothPos+Vector3.UnitY*2.12f;
+        Check(_playerPos==LobbyEntrance && WorldLabelLayout.WaypointProjection(cam,hr,180).Direction==Vector2.Zero,"safe spawn facing HR");
+        float hrDistance=Vector3.Distance(hr,cam.Position);
+        Check(_world.PelletDistance(cam.Position,Vector3.Normalize(hr-cam.Position),hrDistance)+.02f>=hrDistance,"unobstructed HR beacon");
+        var back=cam.Position-(cam.Target-cam.Position)*5;
+        var right=Vector3.Normalize(Vector3.Cross(cam.Target-cam.Position,cam.Up));
+        Check(WorldLabelLayout.WaypointProjection(cam,back-right,180).Direction.X<0 &&
+            WorldLabelLayout.WaypointProjection(cam,back+right,180).Direction.X>0,"turn toward offscreen beacon");
+        capture("19_onboarding_veronika.png");
         Check(_playerCash==0 && _weapons.Hotbar.SequenceEqual(new[]{WeaponType.BareHands}) &&
             _weapons.CurrentWeapon==WeaponType.BareHands && Floor.OwnedWeaponsMask==1,"starting inventory");
         _weapons.CurrentWeapon=WeaponType.MicroUzi;
@@ -1049,26 +1146,59 @@ public static partial class Program
         Check(!Floor.HasWeapon(WeaponType.CaptureNet) && !TrySpendCash(3),"zero budget");
         Check(_weapons.CurrentWeapon==WeaponType.BareHands,"locked weapon");
         RoundTrip();
-        Check(_world.Frogs.Count is >=7 and <=10 && _world.ActiveCoders.Count(c=>c.TimidIntern) is >=2 and <=3,"visible lobby population");
+        Check(_world.Frogs.Count is >=7 and <=9 && _world.ActiveCoders.Count==0,"visible lobby population");
         Check(_world.Frogs.Any(f=>f.Feet.Y>.15f),"jumping frogs at spawn");
         capture("12_bare_start_frogs.png");
+        AutomationEvent forward=new() {Type=2}; forward.Params[0]=(int)KeyboardKey.W;
+        Raylib.PlayAutomationEvent(forward);
+        for(int frame=0;frame<22;frame++)
+        {
+            UpdateFrame(1f/60,ref exit);
+            Raylib.PollInputEvents();
+        }
+        forward.Type=1; Raylib.PlayAutomationEvent(forward); Raylib.PollInputEvents();
+        Check(_world.FocusPrompt(BuildPlayerCamera())=="Поговорить с Вероникой","HR greeting prompt");
+        Key(KeyboardKey.E);
+        Guided(OnboardingStep.CatchFrogs,"Касса пуста");
+        var frogTarget=_world.OnboardingWaypoint(_playerPos);
+        Check(_world.Frogs.Any(f=>f.CatchableByHand && f.Feet==frogTarget?.Position),"hand-catchable frog waypoint");
+        Check(floorPanel==FloorPanel.None,"HR briefing stays in world");
+        Check(_world.FocusPrompt(BuildPlayerCamera())=="HR Вероника — Магазин оружия и апгрейдов","HR shop prompt after briefing");
+        Key(KeyboardKey.E); Check(floorPanel==FloorPanel.Upgrades,"empty hands can revisit HR shop"); Key(KeyboardKey.Escape);
+
         for(int i=0;i<3;i++)
         {
             var frog=_world.Frogs.First(f=>f.SpeciesId=="frog_hopper");
             Approach(frog.Feet+Vector3.UnitY*.15f);
             if(i==2) { _weaponFireCooldown=0; Key(KeyboardKey.E); } else Attack();
             Check(Floor.PocketFrogs.Count==i+1,"bare catch "+i);
+            if(i==0) Guided(OnboardingStep.CatchFrogs,"Есть первая");
         }
+        Guided(OnboardingStep.DepositFrogs,"Отличный улов");
+        Check(_world.OnboardingWaypoint(_playerPos)?.Position==SkyscraperFloor1World.TerminalPos,"terminal waypoint");
+        RoundTrip();
         Check(Floor.DiscoveredSpecies.Count==0,"blind pocket");
         Approach(SkyscraperFloor1World.TerminalPos+Vector3.UnitY*1.08f);
         Check(_world.FocusPrompt(BuildPlayerCamera()).Contains("(3 шт.)"),"terminal focus");
         Key(KeyboardKey.E);
         Check(_playerCash==4 && Floor.PocketFrogs.Count==0 && Floor.DiscoveredSpecies["frog_hopper"]==3 &&
             _hudStatusBanner.Contains("Хватает"),"terminal payout plus one discovery");
-        Key(KeyboardKey.U); Check(floorPanel==FloorPanel.Upgrades && !sidegrades,"weapon shop");
+        Guided(OnboardingStep.BuyNet,"Наличка");
+        Approach(_world.HrTarotBoothPos+Vector3.UnitY*1.6f,-2.3f);
+        Key(KeyboardKey.E); Check(floorPanel==FloorPanel.Upgrades && !sidegrades,"HR weapon shop");
         capture("14_arsenal.png");
         Key(KeyboardKey.Tab); Check(sidegrades,"upgrade tab");
-        Key(KeyboardKey.One); Key(KeyboardKey.Enter); Key(KeyboardKey.U); Key(KeyboardKey.Two);
+        Key(KeyboardKey.One); Key(KeyboardKey.Enter);
+        Guided(OnboardingStep.ActivateBait,"Сачок в руках");
+        Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.CentralMacBookPos,"bait waypoint");
+        Check(floorPanel==FloorPanel.None && _weapons.CurrentWeapon==WeaponType.CaptureNet,"net ready in world");
+        LookAtTarget(bait);
+        capture("20_onboarding_bait_beacon.png");
+        Approach(bait,2); Key(KeyboardKey.E);
+        Guided(OnboardingStep.CaptureFirstCoder,"Пошли клиенты");
+        Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.ActiveCoders.MinBy(c=>Vector3.DistanceSquared(_playerPos,c.Position))?.Position,"nearest candidate");
+        Check(_world.IsMacBookTrapActive && _world.ActiveCoders.Any(c=>c.TimidIntern),"guided free wave");
+        Key(KeyboardKey.Two);
         Check(_playerCash==1 && _weapons.CurrentWeapon==WeaponType.CaptureNet && _weapons.Hotbar.Count()==2,"paid net and slot 2");
         _playerPos=new(.2f,1.72f,11.5f); LookAtTarget(new(.25f,.75f,7.4f));
         for(int i=0;i<32;i++) _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
@@ -1076,7 +1206,7 @@ public static partial class Program
         var crash=_world.Frogs.First(f=>f.SpeciesId=="frog_crash");
         Approach(crash.Feet+Vector3.UnitY*.15f);
         _weapons.SelectOwnedSlot(0); Attack();
-        Check(_world.Frogs.Contains(crash) && Floor.PocketFrogs.Count==0 && _hudStatusBanner.Contains("Слишком шустрый"),"crash dodge");
+        Check(_world.Frogs.Contains(crash) && Floor.PocketFrogs.Count==0 && _hudStatusBanner=="Нужен Сачок ($3) у Вероники","crash dodge");
         _weapons.SelectOwnedSlot(1);
         Approach(crash.Feet+Vector3.UnitY*.15f); Attack();
         Check(Floor.PocketFrogs.Contains("frog_crash"),"net catches crash");
@@ -1089,13 +1219,19 @@ public static partial class Program
         Approach(cluster+Vector3.UnitY*.15f,1.7f); Attack();
         Check(Floor.PocketFrogs.Count==carried+3 && _world.Frogs.Count(f=>f.From.X>22)==1,"three per sweep");
         var intern=_world.ActiveCoders.First(c=>c.TimidIntern);
+        intern.Position=new(24,0,14);
         Approach(intern.CombatCenter);
+        Attack(); Check(intern.Hp==12 && intern.State!=CoderAIState.Subdued,"first net swipe");
+        LookAtTarget(intern.CombatCenter);
         Attack(); Check(intern.State==CoderAIState.Subdued,"net subdues intern");
         Approach(intern.Position+Vector3.UnitY*.45f); Key(KeyboardKey.E);
         Check(_world.CarriedCoder==intern,"intern NDA");
+        Check(_world.OnboardingWaypoint(_playerPos)?.Label.Contains("Галеру")==true &&
+            Floor.Objective(true).StartsWith("Отнеси"),"carried candidate destination");
         Approach(_world.GalleyDesks[0].DeskPosition+Vector3.UnitY*.9f*SkyscraperFloor1World.WorkstationScale,1.9f);
         Key(KeyboardKey.E);
         Check(_world.GalleyDesks[0].IsOccupied,"intern payroll");
+        Guided(OnboardingStep.Done,"Дело пошло");
         for(int i=1;i<FloorSystems.Weapons.Length;i++)
         {
             int price=FloorSystems.Weapons[i].Price;
@@ -1117,7 +1253,14 @@ public static partial class Program
         }
         Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask && VibeCoderCollection.All.Length==24,"full arsenal and catalogue");
         RoundTrip();
+        if(Floor.Audit>0)
+        {
+            UpdateFrame(1f/60,ref exit);
+            Check(floorPanel==FloorPanel.Audit,"payroll audit");
+            Key(KeyboardKey.Three);
+        }
         Key(KeyboardKey.N); Key(KeyboardKey.Three);
+        Check(LoreAndMenusUI.IsLoreOpen,"frog dossier opens");
         int frogIndex=Array.FindIndex(VibeCoderCollection.All,s=>s.Id=="frog_hopper");
         for(int i=0;i<frogIndex;i++) Key(KeyboardKey.Down);
         Check(LoreAndMenusUI.CollectionEntry(frogIndex)=="Джава-жаба v0.9","deposited frog dossier");
@@ -1130,15 +1273,30 @@ public static partial class Program
         try
         {
             File.WriteAllText(oldSlot,"{}"); ResetNewGameFloor(); RestoreFloorSave(legacy,oldSlot);
-            Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask,"legacy slot migration");
+            Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask && Floor.Onboarding==OnboardingStep.Done,"legacy slot migration");
+            var root=System.Text.Json.JsonSerializer.SerializeToNode(MainMenuAndPauseUI.CaptureCurrentGameState!())!;
+            var oldShift=System.Text.Json.JsonSerializer.SerializeToNode(new SavedShift(CaptureFloor()),FloorJson)!;
+            oldShift["Floor"]!.AsObject().Remove("OnboardingStep");
+            root["Shift"]=oldShift; File.WriteAllText(oldSlot,root.ToJsonString());
+            pendingFloorSave=null; pendingShift=null;
+            ResetNewGameFloor(greet:false); RestoreFloorSave(legacy,oldSlot);
+            Check(Floor.Onboarding==OnboardingStep.Done && !CoachingSubtitle,"previous snapshot without onboarding");
         }
         finally { File.Delete(oldSlot); }
+        Console.WriteLine("[AUTOTEST] PASS Guided Floor 1: six steps, live beacons, early skips, save/load and legacy slots");
         Console.WriteLine("[AUTOTEST] PASS Zero-to-Empire: $0, hand and E catches, terminal, net, intern NDA, payroll, all six slots and save migration");
     }
 
     private static void ResetClassicFixture()
     {
-        ResetNewGameFloor();
+        ResetNewGameFloor(greet:false);
+        Floor.Onboarding=OnboardingStep.Done;
+        _world.IsMacBookTrapActive=true;
+        _world.CoderSpawnTimer=600;
+        _world.SpawnFighter(CoderArchetype.JuniorPrompter,new(-8,0,5.5f));
+        _world.SpawnFighter(CoderArchetype.CryptoBro,new(12,0,6.5f));
+        _world.SpawnFighter(CoderArchetype.TeamLeadMeeter,new(-7,0,-11));
+        _world.SpawnFighter(CoderArchetype.SeniorArchitect,new(7,0,-12));
         Floor.OwnedWeaponsMask=FloorSystems.ClassicMask;
         _playerCash=450;
         _weapons.Equip(WeaponType.Belt);
@@ -1326,9 +1484,9 @@ public static partial class Program
         Key(KeyboardKey.Five,true); Tick(); Key(KeyboardKey.Five,false);
         Mouse(true); Tick(60); Mouse(false); Tick();
         int burst=32-_weapons.Ammo;
-        Require(burst==12,"held LMB burst: "+burst);
+        Require(burst==10,"held LMB burst: "+burst);
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false);
-        Tick(40); Require(_weapons.Reloading && _weapons.Ammo==20,"Uzi R animation");
+        Tick(40); Require(_weapons.Reloading && _weapons.Ammo==22,"Uzi R animation");
         capture("reload_uzi.png"); Tick(49); Require(_weapons.Ammo==32 && !_weapons.Reloading,"Uzi refill");
         Key(KeyboardKey.Six,true); Tick(); Key(KeyboardKey.Six,false);
         Mouse(true); Tick(); Mouse(false); Tick(27); Require(_weapons.Ammo==1,"shotgun first shell");
@@ -1339,15 +1497,16 @@ public static partial class Program
         Key(KeyboardKey.R,true); Tick(); Key(KeyboardKey.R,false); Tick(95);
         Require(_weapons.Ammo==2 && !_weapons.Reloading,"single-shell manual reload");
         Key(KeyboardKey.Five,true); Tick(); Key(KeyboardKey.Five,false);
-        Mouse(true); Tick(156); Mouse(false);
+        Mouse(true); Tick(190); Mouse(false);
         Require(_weapons.Ammo==0 && _weapons.Reloading,$"Uzi empty auto reload (ammo {_weapons.Ammo}, weapon {_weapons.CurrentWeapon}, stun {Floor.HostStun}, panel {floorPanel})");
         Tick(89); Require(_weapons.Ammo==32,"empty Uzi refill");
-        Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 20->32; shotgun 2->1->0->2, two ejected hulls");
+        Console.WriteLine($"[AUTOTEST] Uzi held 1s={burst} shots, R 22->32; shotgun 2->1->0->2, two ejected hulls");
 
         ResetClassicFixture();
         var fighters=_world.ActiveCoders.Where(c=>c.IsCombatCoder).ToArray();
-        Require(fighters.Length==4 && fighters.All(c=>c.MaxHp is >=40 and <=55),"weak fighters");
+        Require(fighters.Select(c=>c.MaxHp).SequenceEqual(new float[]{50,90,100,145}),"fighter HP by role");
         var enemy=fighters[0];
+        enemy.BaitTaken=true;
         // Keep the test lane clear of the nearby architectural pillar.
         _playerPos=new(-5.6f,1.72f,5.6f);
         enemy.Position=new(-5.6f,0,10.4f);
@@ -1382,7 +1541,7 @@ public static partial class Program
         Tick(90); Require(!_world.ActiveCoders.Contains(enemy),"KO cleanup");
         Require(Math.Abs(_recoilPitch)<.0001f && Math.Abs(_recoilYaw)<.0001f,"camera spring recovery");
         foreach(var (weapon,hits,target) in new[] {
-            (WeaponType.Belt,2,fighters[1]),(WeaponType.SolderingIron,2,fighters[2]),(WeaponType.SawedOff,1,fighters[3]) })
+            (WeaponType.Belt,2,fighters[1]),(WeaponType.SolderingIron,2,fighters[2]),(WeaponType.SawedOff,2,fighters[3]) })
         {
             _playerPos=new(23,1.72f,17); target.Position=new(23,0,15.15f);
             _weapons.SelectSlot((int)weapon);
@@ -1390,9 +1549,10 @@ public static partial class Program
             {
                 LookAtTarget(target.CombatCenter);
                 Mouse(true); Tick(); Mouse(false); Tick(29);
-                if(weapon==WeaponType.SawedOff) Require(target.Hp==0,"lethal buckshot");
+                if(weapon==WeaponType.SawedOff) Require(target.Hp==(i==0 ? 25 : 0),$"buckshot against senior, shot {i+1}, HP {target.Hp}");
                 else Require(target.Hp>0 && (target.Fear>6 || target.State==CoderAIState.Subdued),"non-lethal pressure "+weapon);
             }
+            target.Position=new(26,0,-28);
         }
         var wallTarget=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
         wallTarget.Position=new(0,0,-2);
@@ -1406,7 +1566,100 @@ public static partial class Program
         Console.WriteLine($"[AUTOTEST] Fighters={fighters.Length} HP={enemy.MaxHp} cube={pr.Velocity.Length():F0}m/s damage=7 slap=6 knockback={knockback:F2}m KO={shots} rounds cash=+35 XP=+7");
     }
 
-    private static void RunAutomatedScreenshotSuite()
+    private static unsafe void CheckDisplayAndStart(string path)
+    {
+        bool exit=false;
+        void Input(uint type,int a,int b=0)
+        {
+            AutomationEvent e=new() { Type=type }; e.Params[0]=a; e.Params[1]=b; Raylib.PlayAutomationEvent(e);
+        }
+        void Click(int x,int y)
+        {
+            Input(7,x,y); Input(6,0); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+            Input(5,0); Raylib.PollInputEvents();
+        }
+        void Require(bool value,string step)
+        { if(!value) throw new InvalidDataException("Display/start: "+step); }
+        try
+        {
+            MainMenuAndPauseUI.LoadDisplay(path,false);
+            Require(MainMenuAndPauseUI.Display==new DisplaySettings(),"default");
+            Click(150,ScreenHeight-370+3*45+18);
+            Require(MainMenuAndPauseUI.IsSettingsPanelOpen,"main menu settings");
+            for(int mode=0;mode<2;mode++)
+            {
+                Click(770,235);
+                for(int resolution=1;resolution<=5;resolution++)
+                {
+                    Click(770,292);
+                    var expected=new DisplaySettings(mode==0 ? DisplayMode.Windowed : DisplayMode.Fullscreen,resolution%5);
+                    Require(DisplaySettings.Load(path)==expected && MainMenuAndPauseUI.Display==expected,"persist selectors");
+                }
+            }
+            Click(380,650);
+            Click(150,ScreenHeight-370+18);
+            Require(!MainMenuAndPauseUI.IsMenuBlockingGameplay && Raylib.IsCursorHidden() && _world.ActiveCoders.Count==0,"single click starts and captures");
+            MainMenuAndPauseUI.OpenMainMenu();
+            Input(2,(int)KeyboardKey.Enter); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+            Input(1,(int)KeyboardKey.Enter); Raylib.PollInputEvents();
+            Require(!MainMenuAndPauseUI.IsInMainMenu && Raylib.IsCursorHidden(),"Enter starts and captures");
+            var before=_playerPos;
+            Input(2,(int)KeyboardKey.W); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+            Input(1,(int)KeyboardKey.W); Raylib.PollInputEvents();
+            Require(Vector3.Distance(before,_playerPos)>.05f,"movement on next frame");
+            Net.Dispose();
+            Require(Raylib.IsWindowState(ConfigFlags.HiddenWindow) && Raylib.GetRenderWidth()==1280 && Raylib.GetRenderHeight()==720 &&
+                VisualEngine3D.MatchesViewport(1280,720),"fixed hidden test viewport");
+        }
+        finally { File.Delete(path); }
+    }
+
+    private static void CheckDamageLadder()
+    {
+        ResetClassicFixture();
+        int[] expected=[6,12,24,42,18,120];
+        for(int i=0;i<expected.Length;i++)
+        {
+            var target=_world.SpawnFighter(CoderArchetype.SeniorArchitect,new(24,0,17));
+            _weapons.Equip(FloorSystems.WeaponOrder[i]);
+            _playerPos=target.Position+new Vector3(0,1.72f,1.65f);
+            LookAtTarget(target.CombatCenter);
+            _weaponFireCooldown=0;
+            UpdateTrigger(1f/60,true,true,false,false);
+            if(target.Hp!=145-expected[i] || _weapons.FloatingTexts.LastOrDefault().Text!="-"+expected[i] || _weapons.HitmarkerTimer<=0)
+                throw new InvalidDataException("LMB damage: "+_weapons.CurrentWeapon+" HP "+target.Hp);
+            _world.ActiveCoders.Remove(target);
+        }
+        ResetNewGameFloor();
+        _world.ActivateMacBookTrap(SubscriptionBaitTier.FreeTier,TrySpendCash,out _);
+        var intern=_world.ActiveCoders.Single(c=>c.TimidIntern);
+        intern.Position=new(24,0,17);
+        _playerPos=new(24,1.72f,18.6f);
+        for(int hit=1;hit<=4;hit++)
+        {
+            LookAtTarget(intern.CombatCenter); _weaponFireCooldown=0;
+            UpdateTrigger(1f/60,true,true,false,false);
+            if(intern.Hp!=24-6*hit || intern.CanSignNda!=(hit==4) || _weapons.FloatingTexts[^1].Text!="-6")
+                throw new InvalidDataException("Four-punch intern capture");
+        }
+        LookAtTarget(intern.Position+Vector3.UnitY*.45f);
+        _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+        Floor.PocketFrogs.Add("frog_hopper");
+        _playerPos=_world.HrTarotBoothPos+new Vector3(0,1.72f,2);
+        LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.6f);
+        if(_world.FocusPrompt(BuildPlayerCamera())!="Сдать кадра HR Веронике") throw new InvalidDataException("HR candidate priority");
+        _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+        if(_world.CarriedCoder!=null || Floor.PocketFrogs.Count!=1 || _playerCash<=0 ||
+            _world.FocusPrompt(BuildPlayerCamera())!="Сдать Джава-жаб Веронике") throw new InvalidDataException("HR tarot payout");
+        if(Floor.Onboarding!=OnboardingStep.Done || _world.OnboardingWaypoint(_playerPos)!=null || !AudioMusicSystem.ActiveVoiceText.Contains("Дело пошло"))
+            throw new InvalidDataException("HR delivery completes onboarding");
+        int wallet=_playerCash;
+        _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+        if(_playerCash<=wallet || Floor.PocketFrogs.Count!=0) throw new InvalidDataException("HR frog deposit");
+        Console.WriteLine("[AUTOTEST] PASS LMB hits and damage numbers: 6, 12, 24, 42, 18, 8 x 15");
+    }
+
+    private static void RunAutomatedScreenshotSuite(string displayPath)
     {
         CheckViewmodelRates();
         AudioMusicSystem.CheckMovementSounds();
@@ -1462,18 +1715,7 @@ public static partial class Program
         MainMenuAndPauseUI.IsSettingsPanelOpen = false;
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         CaptureShot("00_main_menu_classic.png");
-        try
-        {
-            Raylib.SetWindowSize(961,643); Raylib.PollInputEvents();
-            DrawFrame();
-            if(!VisualEngine3D.MatchesViewport(961,643)) throw new InvalidDataException("HDR resize failed");
-        }
-        finally
-        {
-            Raylib.SetWindowSize(ScreenWidth,ScreenHeight); Raylib.PollInputEvents();
-            DrawFrame();
-        }
-
+        CheckDisplayAndStart(displayPath);
         // Switch into active 3D gameplay
         MainMenuAndPauseUI.IsInMainMenu = false;
         LoreAndMenusUI.IsLoreOpen = false;
@@ -1490,6 +1732,7 @@ public static partial class Program
         MainMenuAndPauseUI.IsModsPanelOpen = false;
         MainMenuAndPauseUI.IsPaused = false;
         CheckZeroToEmpire(name=>CaptureShot(name));
+        CheckDamageLadder();
         CheckSprintA(name=>CaptureShot(name));
         CheckSprintB(name=>CaptureShot(name));
         CheckFpsGameplay(name=>{ _hudStatusTimer=0; CaptureShot(name); });
@@ -1593,8 +1836,8 @@ public static partial class Program
         LookAtTarget(miniBoss.CombatCenter);
         float hpBeforeShot = miniBoss.Hp;
         UpdateTrigger(1f/60,true,true,false,false);
-        if (_weapons.Ammo!=31 || hpBeforeShot-miniBoss.Hp != 46 || !_weapons.HitmarkerIsCrit ||
-            _weapons.FloatingTexts.LastOrDefault().Text != "-46")
+        if (_weapons.Ammo!=31 || hpBeforeShot-miniBoss.Hp != 18 || !_weapons.HitmarkerIsCrit ||
+            _weapons.FloatingTexts.LastOrDefault().Text != "-18")
             throw new InvalidDataException("Critical hit on the scaled coder did not produce the expected damage number");
         UpdateTrigger(.012f,false,false,false,false);
         _hudStatusTimer = AudioMusicSystem.VoiceTimer = 0;
@@ -1639,7 +1882,7 @@ public static partial class Program
         _world.TrySummonElevatorBoss(_ => true, out _);
         _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
         _world.ElevatorDoorOpenAmount=.86f;
-        _world.ElevatorBoss.Hp = 1480f;
+        _world.ElevatorBoss.Hp = 480f;
         _world.ElevatorBoss.ShieldHp=0; _world.ElevatorBoss.ShieldDelay=5;
         _world.ElevatorBoss.FacingYaw = 3.14159f; // Facing North toward player in North Boss Arena
         _world.SpawnNodeModulesCube(new Vector3(3.35f, 1.15f, -8.1f), new Vector3(0f, 1.5f, -18.5f));
@@ -1647,7 +1890,7 @@ public static partial class Program
         _playerPos = new Vector3(-1.35f, 1.72f, -14.2f);
         LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.15f,0));
         UpdateTrigger(1f/60,true,true,false,false);
-        if (_weapons.Ammo!=1 || _world.ElevatorBoss.Hp>=1480) throw new InvalidDataException("Shotgun boss shot failed");
+        if (_weapons.Ammo!=1 || _world.ElevatorBoss.Hp>=480) throw new InvalidDataException("Shotgun boss shot failed");
         UpdateTrigger(.018f,false,false,false,false);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
@@ -1737,7 +1980,7 @@ public static partial class Program
         var junior=roles[0];
         junior.Position=new(24,0,17); At(new(24,1.72f,19),junior.CombatCenter);
         Strike(WeaponType.Belt,junior.CombatCenter);
-        Check(junior.State==CoderAIState.Subdued && junior.Hp==junior.MaxHp && junior.LaptopLost,"belt breaks resolve at full HP");
+        Check(junior.State==CoderAIState.Subdued && junior.Hp==junior.MaxHp-24 && junior.LaptopLost,"belt damage and live NDA");
         before=Floor.SEC;
         Use(junior.Position,.45f);
         Check(_world.CarriedCoder==junior && Floor.SEC>before && Floor.SEC-before<1,"live NDA");

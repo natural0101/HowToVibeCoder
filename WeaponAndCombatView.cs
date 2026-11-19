@@ -403,7 +403,7 @@ public class WeaponAndCombatView
         if(CurrentWeapon is WeaponType.CaptureNet or WeaponType.BareHands)
         {
             _catchSpring.Impulse(CurrentWeapon==WeaponType.CaptureNet ? 26 : 36);
-            if(hitEnemy) TriggerHitmarker();
+            if(hitEnemy) ShowImpact(camera,receiverCenter ?? hitWorldPoint ?? camera.Target,damageDealt,isCritical);
             return;
         }
         Vector3 forward = shotDirection ?? Vector3.Normalize(camera.Target-camera.Position);
@@ -540,14 +540,9 @@ public class WeaponAndCombatView
             {
                 bool isChat = (CurrentWeapon == WeaponType.ChatGun);
                 float range=isChat ? 28 : 12.5f;
-                float pattern=NextFloat()*MathF.Tau;
                 for (int i=0;i<8;i++)
                 {
-                    // Alternate outer and inner rays. Only outer pellets catch the light.
-                    float a=pattern+i*MathF.Tau/8+(NextFloat()-.5f)*.30f;
-                    float radius=i==0 ? 0 : ((i%2==1 ? .054f : .024f)+NextFloat()*.017f);
-                    var spread=(right*MathF.Cos(a)+up*MathF.Sin(a))*radius*(_lowStance ? .65f : 1);
-                    var direction=Vector3.Normalize(forward+spread);
+                    var direction=PelletDirection(forward,i);
                     float length=BallisticWorld?.PelletDistance(camera.Position,direction,range) ?? range;
                     var end=i==0 && hitWorldPoint.HasValue ? impactPoint : camera.Position+direction*length;
                     if (i%2==1)
@@ -612,6 +607,22 @@ public class WeaponAndCombatView
         LastCombatBannerText = text;
         LastCombatBannerColor = color;
         LastCombatBannerTimer = duration;
+    }
+
+    internal Vector3 PelletDirection(Vector3 forward,int pellet)
+    {
+        if(pellet==0) return forward;
+        Vector3 right=Vector3.Normalize(Vector3.Cross(forward,Vector3.UnitY));
+        Vector3 up=Vector3.Cross(right,forward);
+        float angle=pellet*MathF.Tau/7;
+        float radius=(pellet%2==1 ? .066f : .030f)*(_lowStance ? .65f : 1);
+        return Vector3.Normalize(forward+(right*MathF.Cos(angle)+up*MathF.Sin(angle))*radius);
+    }
+
+    internal void ShowImpact(Camera3D camera,Vector3 center,int damage,bool critical)
+    {
+        TriggerHitmarker(critical);
+        if(damage>0) SpawnFloatingText(center,Vector3.Normalize(Vector3.Cross(camera.Target-camera.Position,Vector3.UnitY)),damage,critical);
     }
 
     private void SpawnFloatingText(Vector3 center, Vector3 right, int damage, bool isCritical)
@@ -1108,7 +1119,7 @@ public class WeaponAndCombatView
             *Matrix4x4.CreateTranslation(grip+new Vector3(0,.04f*reach,.13f*reach))*ToolStance(grip);
         foreach(bool right in new[]{false,true})
         {
-            Vector3 slide=offset+(net ? Vector3.Zero : new Vector3((right ? -1 : 1)*.18f*reach,0,0));
+            Vector3 slide=offset+(net ? Vector3.Zero : new Vector3(right ? -.09f*reach : .02f*reach,0,(right ? .34f : -.09f)*reach));
             if(VisualEngine3D.HasAsset(hands)) VisualEngine3D.ArmAssembly(right,slide,hands,pose);
             else VisualEngine3D.Arm(right,new Vector3(right ? .20f : -.20f,-.22f,right ? .56f : .65f)+slide,"fps_hands_cs2",pose);
         }
@@ -1470,8 +1481,8 @@ public class WeaponAndCombatView
     // =========================================================================
     private void DrawCombatFloatingTextsAndHitmarker2D(Camera3D worldCamera, Font uiFont = default)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
+        int sw=UiViewport.Width;
+        int sh=UiViewport.Height;
         int cx = sw / 2;
         int cy = sh / 2;
 
@@ -1498,7 +1509,7 @@ public class WeaponAndCombatView
             if (Vector3.Dot(camForward, toPoint) <= 0.1f)
                 continue;
 
-            Vector2 screenPos = Raylib.GetWorldToScreen(ft.WorldPos, worldCamera);
+            Vector2 screenPos = UiViewport.Project(ft.WorldPos,worldCamera);
             if (screenPos.X < -100 || screenPos.X > sw + 100 || screenPos.Y < -100 || screenPos.Y > sh + 100)
                 continue;
 

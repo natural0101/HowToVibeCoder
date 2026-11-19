@@ -52,7 +52,25 @@ public static class MainMenuAndPauseUI
     public static bool IsSaveMode { get; set; } = false; // false = ЗАГРУЗИТЬ ИГРУ, true = СОХРАНИТЬ ИГРУ
     public static bool IsModsPanelOpen { get; set; } = false;
     public static bool IsSettingsPanelOpen { get; set; } = false;
-    public static bool IsFullscreenEnabled { get; set; } = false;
+    internal static DisplaySettings Display { get; private set; }=new();
+    internal static bool InteractiveDisplay { get; private set; }
+    private static string displayPath="";
+    internal static void LoadDisplay(string path,bool interactive)
+    {
+        displayPath=path;
+        InteractiveDisplay=interactive;
+        Display=DisplaySettings.Load(path);
+    }
+    internal static void CycleDisplay(bool mode)
+    {
+        var next=mode ? Display with { DisplayMode=Display.DisplayMode==DisplayMode.Fullscreen ? DisplayMode.Windowed : DisplayMode.Fullscreen }
+            : Display with { ResolutionIndex=(Display.ResolutionIndex+1)%DisplaySettings.Sizes.Length };
+        try { next.Save(displayPath); }
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException)
+        { Notify("Не удалось сохранить настройки экрана"); return; }
+        Display=next;
+        if(InteractiveDisplay) Display.Apply();
+    }
 
     public static bool IsMenuBlockingGameplay =>
         IsInMainMenu || IsPaused || IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen || LoreAndMenusUI.IsAnyModalOpen;
@@ -89,7 +107,7 @@ public static class MainMenuAndPauseUI
         coopFocus=0; addressEdited=false; selectAddress=true;
         Coop.Discover();
     }
-    private static int _settingsTab = 2;
+    private static int _settingsTab = 1;
     private static string? _infoPage;
     private static readonly Dictionary<string, Texture2D> Art = new();
     internal static Font Serif;
@@ -130,16 +148,17 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangleRounded(rect, rounding, 8, fill);
         if (border > 0) Raylib.DrawRectangleRoundedLinesEx(rect, rounding, 8, border, Edge);
     }
-    private static Rectangle MainButton(int i) => new(56, Raylib.GetScreenHeight() - 370 + i * 45, 310, 36);
+    private static Rectangle MainButton(int i) => new(56, UiViewport.Height - 370 + i * 45, 310, 36);
     private static Rectangle SettingsRect(float x, float y, float w, float h) =>
-        new(Raylib.GetScreenWidth() / 2f - 343 + x, Raylib.GetScreenHeight() / 2f - 276 + y, w, h);
+        new(UiViewport.Width / 2f - 343 + x, UiViewport.Height / 2f - 276 + y, w, h);
     private static Rectangle SettingsTab(int i) => SettingsRect(i * 173, 32, 166, 39);
-    private static Rectangle SettingsTrack(int row) => SettingsRect(373, 136 + row * 47 + (row == 3 ? 45 : 0), 172, 20);
+    private static Rectangle DisplayButton(int row) => SettingsRect(337,132+row*56,279,40);
+    private static Rectangle SettingsTrack(int row) => SettingsRect(373, (_settingsTab==1 ? 260 : 136) + row * 47 + (row == 3 ? 45 : 0), 172, 20);
     private static readonly int[][] SettingRows = [[4], [5], [0, 1, 2, 3], []];
     private static readonly string[] SettingNames = ["Общая громкость", "Громкость музыки", "Громкость эффектов", "Громкость речи", "Чувствительность мыши", "Поле зрения"];
-    private static bool Clicked(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
-    private static Rectangle ModAction(int i) => new(Raylib.GetScreenWidth()/2 - 95 + i*249, Raylib.GetScreenHeight()/2 + 213, 240, 40);
-    private static Rectangle ModMixer => new(Raylib.GetScreenWidth()/2 - 408, Raylib.GetScreenHeight()/2 + 213, 275, 40);
+    private static bool Clicked(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
+    private static Rectangle ModAction(int i) => new(UiViewport.Width/2 - 95 + i*249, UiViewport.Height/2 + 213, 240, 40);
+    private static Rectangle ModMixer => new(UiViewport.Width/2 - 408, UiViewport.Height/2 + 213, 275, 40);
 
     // 7 кнопок Меню Паузы (по ESC в игре)
     private static readonly string[] PauseButtonLabels =
@@ -411,9 +430,8 @@ public static class MainMenuAndPauseUI
         LoreAndMenusUI.IsCaseOpen = false;
         IsInMainMenu = false;
         IsPaused = false;
-        PlayUiSound();
-        OnStartNewGameRequested?.Invoke();
         OnStartGameRequested?.Invoke();
+        OnStartNewGameRequested?.Invoke();
     }
 
     public static void ResumeFromPause()
@@ -539,7 +557,7 @@ public static class MainMenuAndPauseUI
 
     private static void UpdateMainMenuInput(float dt)
     {
-        Vector2 mp = Raylib.GetMousePosition();
+        Vector2 mp = UiViewport.Pointer;
         bool mouseClicked = Raylib.IsMouseButtonPressed(MouseButton.Left);
 
         if (Raylib.IsKeyPressed(KeyboardKey.Down) || Raylib.IsKeyPressed(KeyboardKey.S))
@@ -626,9 +644,9 @@ public static class MainMenuAndPauseUI
 
     private static void UpdatePauseMenuInput(float dt)
     {
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
-        Vector2 mp = Raylib.GetMousePosition();
+        int sw = UiViewport.Width;
+        int sh = UiViewport.Height;
+        Vector2 mp = UiViewport.Pointer;
         bool mouseClicked = Raylib.IsMouseButtonPressed(MouseButton.Left);
 
         if (Raylib.IsKeyPressed(KeyboardKey.Down) || Raylib.IsKeyPressed(KeyboardKey.S))
@@ -741,7 +759,7 @@ public static class MainMenuAndPauseUI
 
     private static Rectangle CoopRow(int row)
     {
-        float x=Raylib.GetScreenWidth()/2-388, y=Raylib.GetScreenHeight()/2-270;
+        float x=UiViewport.Width/2-388, y=UiViewport.Height/2-270;
         return row switch {
             0 => new(x,y+100,776,42), 1 => new(x,y+156,776,44), 2 => new(x,y+210,776,44),
             _ => new(x,y+324+(row-3)*56,776,48)
@@ -750,7 +768,7 @@ public static class MainMenuAndPauseUI
 
     private static void UpdateJoinPanel()
     {
-        Rectangle back=new(Raylib.GetScreenWidth()/2+290,Raylib.GetScreenHeight()/2-256,118,38);
+        Rectangle back=new(UiViewport.Width/2+290,UiViewport.Height/2-256,118,38);
         if(Clicked(back) || Raylib.IsKeyPressed(KeyboardKey.Escape))
         {
             Coop.Dispose(); IsSaveLoadPanelOpen=false; return;
@@ -794,7 +812,7 @@ public static class MainMenuAndPauseUI
 
     private static void DrawJoinPanel(Font font)
     {
-        int x=Raylib.GetScreenWidth()/2-388,y=Raylib.GetScreenHeight()/2-270;
+        int x=UiViewport.Width/2-388,y=UiViewport.Height/2-270;
         DrawSlateWindow("КООПЕРАТИВ (ВОЙТИ К ДРУГУ) / ЗАГРУЗКА",860,540);
         NativeButton("Назад",new(x+678,y+14,118,38));
         DrawTextCrisp(font,"Адрес друга (IPv4:порт)",x,y+70,18,Edge);
@@ -823,8 +841,8 @@ public static class MainMenuAndPauseUI
             return;
         }
 
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
+        int sw = UiViewport.Width;
+        int sh = UiViewport.Height;
         int winW = 860;
         int winH = 540;
         int wx = (sw - winW) / 2;
@@ -849,7 +867,7 @@ public static class MainMenuAndPauseUI
 
         if (Raylib.IsMouseButtonPressed(MouseButton.Left))
         {
-            Vector2 mp = Raylib.GetMousePosition();
+            Vector2 mp = UiViewport.Pointer;
             Rectangle closeBtn = new(wx + winW - 160, wy + 14, 140, 38);
             if (Raylib.CheckCollisionPointRec(mp, closeBtn))
             {
@@ -902,8 +920,8 @@ public static class MainMenuAndPauseUI
             return;
         }
 
-        int sw = Raylib.GetScreenWidth();
-        int sh = Raylib.GetScreenHeight();
+        int sw = UiViewport.Width;
+        int sh = UiViewport.Height;
         int winW = 880;
         int winH = 540;
         int wx = (sw - winW) / 2;
@@ -911,7 +929,7 @@ public static class MainMenuAndPauseUI
 
         if (Raylib.IsMouseButtonPressed(MouseButton.Left))
         {
-            Vector2 mp = Raylib.GetMousePosition();
+            Vector2 mp = UiViewport.Pointer;
             Rectangle closeBtn = new(wx + winW - 160, wy + 14, 140, 38);
             if (Raylib.CheckCollisionPointRec(mp, closeBtn))
             {
@@ -950,10 +968,10 @@ public static class MainMenuAndPauseUI
         }
         for (int i = 0; i < SettingsTabs.Length; i++)
             if (Clicked(SettingsTab(i))) { _settingsTab = i; _draggingSettingSlider = -1; }
-        if (_settingsTab == 1 && Clicked(SettingsRect(337, 186, 279, 34)))
+        if (_settingsTab==1)
         {
-            Raylib.ToggleFullscreen();
-            IsFullscreenEnabled = Raylib.IsWindowFullscreen();
+            if(Clicked(DisplayButton(0))) { CycleDisplay(true); return; }
+            if(Clicked(DisplayButton(1))) { CycleDisplay(false); return; }
         }
         if (_settingsTab == 2 && Clicked(SettingsRect(140, 478, 406, 36))) LoreAndMenusUI.IsSettingsOpen = true;
         if (!Raylib.IsMouseButtonDown(MouseButton.Left)) _draggingSettingSlider = -1;
@@ -962,7 +980,7 @@ public static class MainMenuAndPauseUI
         {
             Rectangle r = SettingsTrack(i);
             if (Clicked(r)) _draggingSettingSlider = rows[i];
-            if (_draggingSettingSlider == rows[i]) ApplySettingValue(rows[i], (Raylib.GetMouseX() - r.X) / r.Width);
+            if (_draggingSettingSlider == rows[i]) ApplySettingValue(rows[i], (UiViewport.Pointer.X - r.X) / r.Width);
         }
     }
 
@@ -1002,6 +1020,13 @@ public static class MainMenuAndPauseUI
     }
 
     public static void Draw(Font font, int screenW, int screenH)
+    {
+        UiViewport.Begin();
+        DrawPanels(font,(int)MathF.Round(screenW/UiViewport.Scale),(int)MathF.Round(screenH/UiViewport.Scale));
+        Raylib.EndMode2D();
+    }
+
+    private static void DrawPanels(Font font,int screenW,int screenH)
     {
         if (IsInMainMenu)
         {
@@ -1073,7 +1098,7 @@ public static class MainMenuAndPauseUI
 
     private static void NativeButton(string label, Rectangle r, bool selected = false)
     {
-        bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+        bool hover = Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
         Raylib.DrawRectangleRec(r, selected || hover ? DossierPrint.Selected : DossierPrint.Matte);
         Raylib.DrawRectangleLinesEx(r, 1, selected ? DossierPrint.Ivory : DossierPrint.Stone);
         Center(GameFonts.Get(Typeface.Interface, 20), label, r, 20, selected || hover ? Color.White : DossierPrint.Ivory);
@@ -1081,7 +1106,7 @@ public static class MainMenuAndPauseUI
 
     private static void DrawMenuItem(string label, Rectangle r, bool selected)
     {
-        bool active = selected || Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+        bool active = selected || Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
         if (active)
         {
             Raylib.DrawRectangleRec(r, new Color(44, 38, 34, 130));
@@ -1094,7 +1119,7 @@ public static class MainMenuAndPauseUI
 
     private static void DrawSlateWindow(string title,int width,int height)
     {
-        int sw=Raylib.GetScreenWidth(), sh=Raylib.GetScreenHeight();
+        int sw=UiViewport.Width, sh=UiViewport.Height;
         Raylib.DrawRectangle(0,0,sw,sh,new Color(20,18,16,210));
         Rectangle panel=new((sw-width)/2,(sh-height)/2,width,height);
         Surface(panel,new Color(24,22,20,250));
@@ -1178,7 +1203,15 @@ public static class MainMenuAndPauseUI
             Surface(val,new Color(48,40,34,112),0);
             Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo("ru-RU")),val,22,Edge);
         }
-        if (_settingsTab==1) NativeButton(IsFullscreenEnabled ? "Полный экран: вкл" : "Полный экран: выкл",SettingsRect(337,186,279,34));
+        if (_settingsTab==1)
+        {
+            for(int i=0;i<2;i++)
+            {
+                var r=DisplayButton(i);
+                DrawTextCrisp(Serif,i==0 ? "Режим экрана" : "Разрешение",(int)panel.X+67,(int)r.Y+6,23,Color.White);
+                NativeButton(i==1 ? Display.ResolutionLabel : Display.DisplayMode==DisplayMode.Fullscreen ? "На весь экран" : "В окне",r);
+            }
+        }
         if (_settingsTab==2)
         {
             Center(Serif,"Голоса персонажей",SettingsRect(0,257,686,42),26,Color.White);

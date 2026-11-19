@@ -464,6 +464,7 @@ namespace HowToVibeCoder
 
         public static void TriggerRandomVoiceLine(string speaker, string[] pool, int speakerType)
         {
+            if(VoiceTimer>0 && ActiveSpeaker=="Вероника") return;
             if (pool == null || pool.Length == 0) return;
             string line = pool[_rng.Next(pool.Length)];
             TriggerVoiceLine(speaker, line, speakerType);

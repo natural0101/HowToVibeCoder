@@ -467,7 +467,7 @@ public static partial class LoreAndMenusUI
     private static readonly string[] MixerNames = ["Ремень и паяльник","УЗИ и обрез","Ловушка и тревога","Галера и Таро","Кейсы"];
     private const int MusicRow = 6;
     private static readonly float[] BeforeMute = [1,1,1,1,1,1,1];
-    private static Rectangle MixerRect(float x,float y,float w,float h) => new(Raylib.GetScreenWidth()/2f-410+x,Raylib.GetScreenHeight()/2f-292+y,w,h);
+    private static Rectangle MixerRect(float x,float y,float w,float h) => new(UiViewport.Width/2f-410+x,UiViewport.Height/2f-292+y,w,h);
     private static Rectangle MixerTrack(int row) => MixerRect(305,103+row*43,250,22);
     private static Rectangle MixerSwitch(int row) => MixerRect(619,99+row*43,80,30);
     private static Rectangle MixerTest(int row) => MixerRect(709,99+row*43,83,30);
@@ -496,7 +496,7 @@ public static partial class LoreAndMenusUI
                 if(v>0) BeforeMute[row]=v;
                 SetMixer(row,v>0 ? 0 : BeforeMute[row]);
             }
-            if (row>0 && Click(MixerTest(row)))
+            if (row>0 && Pressed(MixerTest(row)))
             {
                 Action[] previews=[AudioMusicSystem.PlayBeltWhip,AudioMusicSystem.PlayShotgunBlast,AudioMusicSystem.PlayMacbookBait,AudioMusicSystem.PlayTarotCash,AudioMusicSystem.PlayCaseTick,AudioMusicSystem.PreviewMusic];
                 previews[row-1]();
@@ -512,7 +512,7 @@ public static partial class LoreAndMenusUI
 
     private static void UpdateSettingsInput()
     {
-        UpdateSettingsPointer(Raylib.GetMousePosition(),Raylib.IsMouseButtonPressed(MouseButton.Left),Raylib.IsMouseButtonDown(MouseButton.Left));
+        UpdateSettingsPointer(UiViewport.Pointer,Raylib.IsMouseButtonPressed(MouseButton.Left),Raylib.IsMouseButtonDown(MouseButton.Left));
         if(Raylib.IsKeyPressed(KeyboardKey.Down)) SelectedSliderIndex=(SelectedSliderIndex+1)%(MusicRow+1);
         if(Raylib.IsKeyPressed(KeyboardKey.Up)) SelectedSliderIndex=(SelectedSliderIndex+MusicRow)%(MusicRow+1);
         if(Raylib.IsKeyPressed(KeyboardKey.Left)) SetMixer(SelectedSliderIndex,MixerValue(SelectedSliderIndex)-.05f);
@@ -745,7 +745,9 @@ public static partial class LoreAndMenusUI
         }
         else if (IsSettingsOpen)
         {
+            UiViewport.Begin();
             DrawSettingsWindow(font);
+            Raylib.EndMode2D();
         }
         else if (IsCaseOpen)
         {
@@ -812,7 +814,7 @@ public static partial class LoreAndMenusUI
     ];
     private static void ReaderButton(Font f,string title,Rectangle r,bool active)
     {
-        bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
+        bool hover = Raylib.CheckCollisionPointRec(IsSettingsOpen ? UiViewport.Pointer : Raylib.GetMousePosition(), r);
         if (active || hover) Raylib.DrawRectangleRec(r, DossierPrint.Selected);
         Raylib.DrawRectangleLinesEx(r, 1, active ? DossierPrint.Ivory : DossierPrint.Stone);
         MainMenuAndPauseUI.Center(f, title, r, 15, active || hover ? DossierPrint.Ivory : DossierPrint.Quiet);

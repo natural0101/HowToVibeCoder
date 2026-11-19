@@ -30,7 +30,8 @@ public static partial class Program
         };
         Net.OnJoined=() =>
         {
-            ResetNewGameFloor();
+            ResetNewGameFloor(greet:false);
+            awaitingFirstFloor=true;
             awaitingSpawn=true;
             MainMenuAndPauseUI.IsPaused=MainMenuAndPauseUI.IsInMainMenu=MainMenuAndPauseUI.IsSaveLoadPanelOpen=false;
             Raylib.DisableCursor();
@@ -66,10 +67,11 @@ public static partial class Program
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
         guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder,
-        ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon);
+        ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding);
 
     private static void ApplyProgression(FloorSnapshot? state)
     {
+        Floor.Onboarding=state?.OnboardingStep ?? OnboardingStep.Done;
         if(state?.ProgressionVersion is null or <1) Floor.OwnedWeaponsMask=FloorSystems.ClassicMask;
         Floor.OwnedWeaponsMask |= 1<<(int)WeaponType.BareHands;
         _weapons.Inventory=Floor;
@@ -80,13 +82,25 @@ public static partial class Program
         }
     }
 
+    private static bool awaitingFirstFloor;
     private static void HandleCoopMessage(CoopMessage message)
     {
         if(Net.Guest && message is {Kind:"floor", Floor:{} state})
         {
             if(state.Boss==null || state.Coders==null || state.Desks?.Length!=4 || state.Projectiles==null) return;
+            var previous=Floor.Onboarding;
+            bool cheered=Floor.FirstFrogCheered;
             if(state.Systems!=null) _world.Systems=state.Systems;
             ApplyProgression(state);
+            if(awaitingFirstFloor ? Floor.Onboarding==OnboardingStep.TalkToVeronika : previous!=Floor.Onboarding)
+            {
+                if(previous==OnboardingStep.BuyNet && Floor.Onboarding==OnboardingStep.ActivateBait && floorPanel==FloorPanel.Upgrades)
+                { _weapons.Equip(WeaponType.CaptureNet); OpenFloorPanel(FloorPanel.None); }
+                Floor.Coach();
+            }
+            else if(!awaitingFirstFloor && !cheered && Floor.FirstFrogCheered && Floor.Onboarding<=OnboardingStep.CatchFrogs)
+                FloorSystems.CheerFirstFrog();
+            awaitingFirstFloor=false;
             _playerCash=state.Cash; _playerHp=state.GuestHp; hostHp=state.HostHp;
             _world.ElevatorBoss=state.Boss; _world.ElevatorDoorOpenAmount=state.Door;
             _world.HasElevatorKey=state.Key; _world.IsFloor2Unlocked=state.Unlocked;
@@ -109,6 +123,7 @@ public static partial class Program
             // fire packet may precede the next inventory snapshot.
             if(Net.Host) partner.Effects.Inventory=Floor;
             else partner.Effects.Inventory.OwnedWeaponsMask|=1<<(int)shooter.Weapon;
+            int previousHits=partner.Effects.FloatingTexts.Count;
             if(Net.Host && shooter.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
             {
                 partner.Effects.CurrentWeapon=shooter.Weapon;
@@ -123,6 +138,9 @@ public static partial class Program
                 finally { _world.CarriedCoder=hostCarry; }
             }
             else partner.Attack(_world,GrantCash,Net.Host);
+            if(Net.Host)
+                for(int i=previousHits;i<partner.Effects.FloatingTexts.Count;i++)
+                    Net.Send(new("impact",Impact:partner.Effects.FloatingTexts[i]));
             if(Net.Host && _world.IsFloor2Unlocked) _weapons.UnlockedChatGun=true;
             PlayCurrentWeaponAudio(shooter.Weapon);
         }
@@ -152,6 +170,12 @@ public static partial class Program
             pendingCase=false;
             if(message.Kind=="case-paid") LoreAndMenusUI.StartPaidCaseSpin();
             else SetHudBanner("Недостаточно общих денег на кейс");
+        }
+        else if(Net.Guest && message is {Kind:"impact", Impact:{} impact})
+        {
+            _weapons.FloatingTexts.Add(impact);
+            _weapons.TriggerHitmarker(impact.IsCritical);
+            AudioMusicSystem.PlayHitmarker();
         }
         else if(Net.Guest && message is {Kind:"status", Text:{} status})
         {
@@ -183,6 +207,7 @@ public static partial class Program
             _playerHp=AfterDamage(_playerHp,damage);
             SetHudBanner($"ПРИЛЕТЕЛ БЛОК «{label}» (-{damage} ХП)!",2.5f);
         },Net.Ready ? _world.Partner?.Pose.Eye : null,damage=>guestHp=AfterDamage(guestHp,damage));
+        Floor.UpdateOnboarding(_world,_playerCash);
     }
 
     // Handing over a prisoner and witnessing their NDA both require a second player.
