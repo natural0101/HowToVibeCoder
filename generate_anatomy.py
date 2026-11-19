@@ -196,45 +196,45 @@ def pistol_grip_right(kind):
     away_rest = (mid_rest - wrist_rest).cross(j("finger-2-1") - j("finger-5-1")).normalized()
 
     if kind == "fps_uzi":
-        f_target = V((-0.14, 0.02, 0.990)).normalized()
-        u_target = V((-0.03, -0.998, 0.02)).normalized()
+        f_target = V((-0.22, -0.04, 0.975)).normalized()
+        u_target = V((-0.04, -0.95, -0.31)).normalized()
         a_target = (u_target - f_target * f_target.dot(u_target)).normalized()
         palm_target = f_target.cross(a_target).normalized()
         hand_rot = Matrix((f_target, a_target, palm_target)).transposed() @ rest_frame.transposed()
 
-        mid_knuckle = V((-0.214, -0.191, 0.695))
+        mid_knuckle = V((-0.215, -0.182, 0.672))
         dest_wrist = mid_knuckle - hand_rot @ (mid_rest - wrist_rest)
         dest_elbow = V((-0.365, -0.375, 0.355))
 
         digit_dirs = {
             "thumb": [
-                (V(( 0.84,  0.48,  0.24)), V((-0.20,  0.50, -0.84))),
-                (V(( 0.52,  0.22,  0.82)), V(( 0.72,  0.35, -0.60))),
-                (V((-0.02,  0.10,  0.99)), V(( 0.96,  0.20,  0.02))),
+                (V(( 0.85,  0.25,  0.46)), V((-0.65,  0.65, -0.38))),
+                (V(( 0.40,  0.08,  0.91)), V(( 0.35,  0.85, -0.38))),
+                (V((-0.05,  0.04,  0.998)), V(( 0.65,  0.74, -0.15))),
             ],
             "index": [
-                (V(( 0.06,  0.18,  0.982)), V((-0.95,  0.18,  0.22))),
-                (V(( 0.58, -0.02,  0.814)), V((-0.74,  0.12,  0.66))),
-                (V(( 0.96, -0.04, -0.260)), V(( 0.25,  0.10,  0.96))),
+                (V(( 0.02,  0.06,  0.998)), V((-0.95,  0.18,  0.22))),
+                (V(( 0.38,  0.02,  0.925)), V((-0.82,  0.12,  0.56))),
+                (V(( 0.96,  0.00,  0.280)), V(( 0.25,  0.10,  0.96))),
             ],
             "middle": [
-                (V(( 0.90,  0.00,  0.44)), V((-0.40,  0.05,  0.91))),
-                (V(( 0.78,  0.00, -0.62)), V(( 0.62,  0.05,  0.78))),
-                (V(( 0.08,  0.02, -0.99)), V(( 0.99,  0.05,  0.08))),
+                (V(( 0.58,  0.00,  0.815)), V((-0.78,  0.05,  0.62))),
+                (V(( 0.92,  0.00, -0.390)), V(( 0.39,  0.05,  0.92))),
+                (V(( 0.42,  0.02, -0.910)), V(( 0.91,  0.05,  0.42))),
             ],
             "ring": [
-                (V(( 0.88,  0.00,  0.48)), V((-0.44,  0.00,  0.90))),
-                (V(( 0.78,  0.00, -0.62)), V(( 0.62,  0.00,  0.78))),
-                (V(( 0.10,  0.02, -0.99)), V(( 0.99,  0.00,  0.10))),
+                (V(( 0.48,  0.00,  0.877)), V((-0.84,  0.00,  0.54))),
+                (V(( 0.96,  0.00, -0.280)), V(( 0.28,  0.00,  0.96))),
+                (V(( 0.52,  0.02, -0.850)), V(( 0.85,  0.00,  0.52))),
             ],
             "pinky": [
-                (V(( 0.84,  0.00,  0.54)), V((-0.50, -0.05,  0.86))),
-                (V(( 0.80,  0.02, -0.60)), V(( 0.60, -0.05,  0.80))),
-                (V(( 0.14,  0.04, -0.99)), V(( 0.98, -0.05,  0.14))),
+                (V(( 0.42,  0.00,  0.908)), V((-0.88, -0.05,  0.47))),
+                (V(( 0.96,  0.02, -0.280)), V(( 0.28, -0.05,  0.96))),
+                (V(( 0.62,  0.04, -0.780)), V(( 0.78, -0.05,  0.62))),
             ],
         }
     else:
-        f_target = V((-0.15, -0.15, 0.977)).normalized()
+        f_target = V((-0.18, -0.15, 0.972)).normalized()
         u_target = V((-0.03, -0.78, -0.625)).normalized()
         a_target = (u_target - f_target * f_target.dot(u_target)).normalized()
         palm_target = f_target.cross(a_target).normalized()
@@ -246,9 +246,9 @@ def pistol_grip_right(kind):
 
         digit_dirs = {
             "thumb": [
-                (V(( 0.66,  0.50,  0.56)), V((-0.25,  0.65, -0.72))),
-                (V(( 0.64,  0.30,  0.71)), V(( 0.42,  0.55, -0.72))),
-                (V(( 0.04,  0.18,  0.98)), V(( 0.95,  0.25, -0.12))),
+                (V(( 0.82,  0.44,  0.36)), V((-0.25,  0.65, -0.72))),
+                (V(( 0.38,  0.18,  0.91)), V(( 0.55,  0.55, -0.62))),
+                (V((-0.06,  0.12,  0.99)), V(( 0.95,  0.25, -0.08))),
             ],
             "index": [
                 (V(( 0.06, -0.02,  0.998)), V((-0.95,  0.18,  0.24))),
@@ -286,8 +286,6 @@ def pistol_grip_right(kind):
     signet = None
     for d, name in enumerate(DIGITS, 1):
         pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest)
-        if kind == "fps_uzi" and name == "thumb":
-            pos += V((0.004, 0.010, -0.011))
         segs = digit_dirs[name]
         for k, (dir_v, dor_v) in enumerate(segs, 1):
             rest_start = j(f"finger-{d}-{k}")
@@ -597,8 +595,8 @@ def walnut_fit(p):
         if a <= h <= b:
             t = (h - a) / (b - a)
             z = 0.66 - (za + (zb - za) * t)
-            rx = (xa + (xb - xa) * t) + 0.0032
-            rz = (ra + (rb - ra) * t) + 0.0040
+            rx = (xa + (xb - xa) * t) + 0.0038
+            rz = (ra + (rb - ra) * t) + 0.0052
             x, d = p.x + 0.18, p.z - z
             r = math.hypot(x / rx, d / rz)
             if 0 < r < 1:
@@ -626,18 +624,18 @@ def polymer_fit(p):
                 return V((p.x, p.y, 0.7268))
             return V((-0.1868, p.y, p.z))
     cz = 0.6625
-    hx = 0.0288
+    hx = 0.0290
     top_blend = max(0.0, min(1.0, (p.y - (-0.168)) / 0.020))
-    hz_front = 0.0320 + 0.0032 * top_blend
-    hz_rear = 0.0290 if p.y > -0.166 else 0.0372
-    hz = hz_rear if p.z < cz else hz_front
+    z_front = 0.6943 + 0.0032 * top_blend
+    z_rear = 0.6252
+    hz = (cz - z_rear) if p.z < cz else (z_front - cz)
     dx = (p.x - cx) / hx
     dz = (p.z - cz) / hz
     r4 = (dx ** 4 + dz ** 4) ** 0.25
     if 0.0 < r4 < 1.0:
-        p = V((cx + (p.x - cx) / r4, p.y, cz + (p.z - cz) / r4))
-    if p.y > -0.1455 and 0.630 < p.z < 0.720 and -0.206 < p.x < -0.154:
-        p = V((p.x, -0.1458, p.z))
+        nz = cz + (p.z - cz) / r4
+        ny = p.y - (0.42 * (p.z - nz) if p.y > -0.165 and nz < p.z else 0.0)
+        p = V((cx + (p.x - cx) / r4, ny, nz))
     return p
 
 
