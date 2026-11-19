@@ -9,7 +9,7 @@ namespace HowToVibeCoder;
 internal enum FloorPanel { None, Contracts, Upgrades, Debrief, Audit, BossFinale }
 internal enum OnboardingStep { TalkToVeronika, CatchFrogs, DepositFrogs, BuyNet, ActivateBait, CaptureFirstCoder, Done }
 internal enum Incident { Printer, Coffee, Bugs, Audit, Ddos, Burnout, Raid, Fire }
-internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2 }
+internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2, CarryHarness }
 internal enum StyleAction { Belt, Iron, Uzi, Shotgun, Beam, Parry, Water, Capture }
 internal record Job(string Title, string Objective, int Seconds, int Base);
 internal record Gear(string Title, string Detail, int Price, bool FixedPrice=false);
@@ -41,10 +41,11 @@ internal sealed partial class FloorSystems
         new("Канифольный напалм","Поджигает цель. Перегрев B12 ×2, выше риск потерять кадр.",160),
         new("NDA на копирке","Отлов и подготовка NDA вдвое быстрее. За подпись +6 СБ.",150),
         new("Печатка Авторитета","Авторитет и страх +30%. Цены +15%, кроме паяльника и пропуска.",210),
-        new("Карманный CO2-баллон","[Q] Облако дыма и −15 ПРОД. Перезарядка 25 с.",190)
+        new("Карманный CO2-баллон","[Q] Облако дыма и −15 ПРОД. Перезарядка 25 с.",190),
+        new("Плечевой ремень","Позволяет поднимать и тащить вайбкодера, не убирая оружие",175)
     ];
 
-    internal static readonly WeaponType[] WeaponOrder = [WeaponType.BareHands, WeaponType.CaptureNet,
+    internal static readonly WeaponType[] WeaponOrder = [WeaponType.CaptureNet,
         WeaponType.Belt, WeaponType.SolderingIron, WeaponType.MicroUzi, WeaponType.SawedOff];
     internal static readonly Gear[] Weapons = [
         new("Сачок-ловушка","Урон 12. До 3 Джава-жаб ($1–$8) и стажёры",3),
@@ -57,7 +58,7 @@ internal sealed partial class FloorSystems
         "Вероника перепрошьёт дубликат пропуска СБ для Северного лифта",1000,FixedPrice:true);
     internal static readonly Gear[] Arsenal = [.. Weapons, ElevatorKeycard];
     internal const string KeycardPurchaseLine = "Дубликат прошит — держи Ключ-карту СБ. Теперь перепаяй щиток у Северного лифта [E]!";
-    internal static readonly int ClassicMask=WeaponOrder.Aggregate(0,(mask,w)=>mask | (1<<(int)w));
+    internal static readonly int ClassicMask=WeaponOrder.Aggregate(1<<(int)WeaponType.BareHands,(mask,w)=>mask | (1<<(int)w));
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
     public List<string> PocketFrogs=new();
     internal OnboardingStep Onboarding { get; set; }
@@ -72,7 +73,7 @@ internal sealed partial class FloorSystems
         OnboardingStep.BuyNet => "Купи Сачок-ловушку ($3) у Вероники [E]",
         OnboardingStep.ActivateBait => "Запусти Макбук-приманку в центре [E]",
         OnboardingStep.CaptureFirstCoder => carrying ? "Отнеси вайбкодера Веронике или на стол Галеры [E]" :
-            "Оглуши вайбкодера (ЛКМ) и подпиши NDA [E]",
+            "Оглуши вайбкодера (ЛКМ), освободи руки и подними [E]",
         _ => ""
     };
 
@@ -85,7 +86,7 @@ internal sealed partial class FloorSystems
             OnboardingStep.DepositFrogs => "Отличный улов! Скинь жаб в Баг-трекер рядом со стойкой [E] — он сразу выдаст наличку.",
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
             OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к Макбуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
-            OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком или с руки (ЛКМ), подпиши NDA [E] и тащи ко мне на стойку или на свободный стол Галеры.",
+            OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком (ЛКМ), убери сачок повторным [1] и подними вайбкодера голыми руками [E]!",
             _ => "Дело пошло! Чтобы уехать на 2-й этаж, перепаяй Северный лифт Паяльником и сними замок СБ — могу перепрошить Ключ-карту за $1000 у меня [E], либо отбери оригинал у СБ."
         };
         SpeakCoaching(line);
@@ -120,7 +121,7 @@ internal sealed partial class FloorSystems
     internal bool HasWeapon(WeaponType w) => (OwnedWeaponsMask & (1<<(int)w))!=0;
     internal string BuyWeapon(int row,Func<int,bool> spend)
     {
-        var weapon=WeaponOrder[row+1];
+        var weapon=WeaponOrder[row];
         var gear=Weapons[row];
         if(HasWeapon(weapon)) return gear.Title+" уже в арсенале";
         if(!spend(Price(gear))) return $"Для покупки нужно ${Price(gear)}";
@@ -425,6 +426,30 @@ internal sealed partial class FloorSystems
     public float AgentHealth=-1;
 }
 
+public sealed partial class SkyscraperFloor1World
+{
+    private static readonly string[] PaLines=[
+        "Объявление Башни: уровень выгорания ниже квартального плана. Просьба проявить инициативу.",
+        "Объявление Башни: в зоне кофе-пойнта обнаружена несанкционированная пицца. Просим оформить тикет.",
+        "Объявление Башни: стойка B12 перегрелась. Просим не кормить сбежавших Джава-жаб.",
+        "Объявление Башни: напоминаем — пятничный релиз продлевает рабочий день, но укрепляет корпоративный дух.",
+        "Объявление Башни: доступ на 2-й этаж временно ограничен отделом СБ. Хорошего спринта!"];
+    private float nextAnnouncement=52;
+    private int announcementIndex;
+
+    internal void UpdateIntercom(float dt)
+    {
+        if(Systems.Onboarding!=OnboardingStep.Done) return;
+        nextAnnouncement-=dt;
+        if(nextAnnouncement>0 || AudioMusicSystem.VoiceTimer>0 || ElevatorBoss.SpeechTimer>0 ||
+           ElevatorBoss.State is ElevatorBossState.IntroSpeech or ElevatorBossState.Repairing) return;
+        string line=PaLines[announcementIndex%PaLines.Length];
+        AudioMusicSystem.Speak("SYSTEM ZERO",line,SpeakerVoiceType.RoboticAgent);
+        AudioMusicSystem.VoiceTimer=Math.Max(4.5f,line.Length/17f);
+        nextAnnouncement=45+(++announcementIndex*13%21);
+    }
+}
+
 public static partial class Program
 {
     private static GameSaveData? pendingFloorSave;
@@ -472,20 +497,24 @@ public static partial class Program
         }
         _world.Systems=systems; seenReport=systems.Serial;
         ApplyProgression(state);
-        _weapons.Equip(state.ProgressionVersion>=1 ? state.Equipped : (WeaponType)Math.Clamp(data.CurrentWeaponSlot+1,1,4));
+        _world.CarriedCoder=state.HostCarried;
+        var savedWeapon=state.ProgressionVersion>=1 ? state.Equipped : (WeaponType)Math.Clamp(data.CurrentWeaponSlot+1,1,4);
+        _weapons.Equip(_world.CarriedCoder!=null && !_world.CanCarryWith(savedWeapon) ? WeaponType.BareHands : savedWeapon);
+        if(state.Equipped==WeaponType.BareHands && state.SelectedHotbarSlot is int slot &&
+            (uint)slot<(uint)_weapons.HotbarSlotCount && _weapons.Hotbar[slot]==null)
+            _weapons.SelectOwnedSlot(slot);
         ApplyElevator(state);
         _weapons.UnlockedChatGun=state.Unlocked;
         _world.SelectedBaitTier=state.Bait; _world.IsMacBookTrapActive=state.Trap; _world.TotalCodersSoldToHr=state.Sold;
         _world.ActiveCoders.Clear(); _world.ActiveCoders.AddRange(state.Coders);
         if(state.Carried!=null) _world.ActiveCoders.Add(state.Carried);
-        _world.CarriedCoder=state.HostCarried;
         _world.GalleyDesks.Clear(); _world.GalleyDesks.AddRange(state.Desks);
         _world.EnemyProjectiles.Clear(); _world.EnemyProjectiles.AddRange(state.Projectiles);
         _world.ResumeCoderIds();
     }
     private static FloorPanel floorPanel;
     private static bool sidegrades;
-    private static int floorRow, seenReport;
+    private static int floorRow, firstShopRow, seenReport;
     private static string panelMessage="";
     private static readonly Color paper=new(234,227,201,255), amber=new(232,192,110,255),
         quiet=DossierPrint.Quiet, rule=DossierPrint.Stone;
@@ -493,14 +522,14 @@ public static partial class Program
 
     private static void OpenFloorPanel(FloorPanel panel)
     {
-        floorPanel=panel; floorRow=0; sidegrades=false; panelMessage="";
+        floorPanel=panel; floorRow=firstShopRow=0; sidegrades=false; panelMessage="";
         if(panel==FloorPanel.None) Raylib.DisableCursor();
         else Raylib.EnableCursor();
     }
 
-    private const int WeaponBuyOffset=30, BuyOffset=10, PagerAction=20, BaitAction=21, RollbackAction=22;
+    private const int WeaponBuyOffset=30, BuyOffset=10, PagerAction=23, BaitAction=21, RollbackAction=22;
     private static int KeycardAction => WeaponBuyOffset + FloorSystems.Weapons.Length;
-    private static string ApplyFloorAction(int index)
+    private static string ApplyFloorAction(int index,bool guestBuyer=false)
     {
         if(index==KeycardAction)
         {
@@ -513,12 +542,22 @@ public static partial class Program
         }
         if(index>=WeaponBuyOffset && index<WeaponBuyOffset+FloorSystems.Weapons.Length)
         {
+            var weapon=FloorSystems.WeaponOrder[index-WeaponBuyOffset];
+            bool owned=Floor.HasWeapon(weapon);
             var result=Floor.BuyWeapon(index-WeaponBuyOffset,TrySpendCash);
+            if(!owned && Floor.HasWeapon(weapon))
+            {
+                if(guestBuyer)
+                {
+                    Net.Send(new("floor",Floor:CaptureFloor()));
+                    Net.Send(new("equip-purchase",Text:weapon.ToString()));
+                }
+                else _weapons.Equip(weapon);
+            }
             SetHudBanner(result);
             if(index==WeaponBuyOffset && Floor.Onboarding<OnboardingStep.ActivateBait && Floor.HasWeapon(WeaponType.CaptureNet))
             {
-                _weapons.Equip(WeaponType.CaptureNet);
-                if(floorPanel==FloorPanel.Upgrades) OpenFloorPanel(FloorPanel.None);
+                if(!guestBuyer && floorPanel==FloorPanel.Upgrades) OpenFloorPanel(FloorPanel.None);
                 Floor.UpdateOnboarding(_world,_playerCash);
             }
             return result;
@@ -552,7 +591,9 @@ public static partial class Program
     private static float PanelScale => Math.Min(Raylib.GetScreenWidth()/1280f,Raylib.GetScreenHeight()/720f);
     private static Vector2 PanelOffset => (new Vector2(Raylib.GetScreenWidth(),Raylib.GetScreenHeight())-new Vector2(1280,720)*PanelScale)/2;
     private static Rectangle ArsenalTab(int i) => new(105+i*355,164,350,35);
-    private static Rectangle FloorRowRect(int i) => sidegrades ? new(102,204+35*i,1076,34) : new(102,204+55*i,1076,51);
+    private static Rectangle FloorRowRect(int i) => sidegrades ? new(102,204+35*(i-firstShopRow),1076,34) : new(102,204+55*i,1076,51);
+
+    private const int VisibleUpgradeRows=10;
 
     private static bool HandleFloorPanel()
     {
@@ -589,7 +630,7 @@ public static partial class Program
             Vector2 p=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
             for(int tab=0;tab<2;tab++)
                 if(Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(p,ArsenalTab(tab))) next=tab==1;
-            if(next!=sidegrades) { sidegrades=next; floorRow=0; panelMessage=""; }
+            if(next!=sidegrades) { sidegrades=next; floorRow=firstShopRow=0; panelMessage=""; }
         }
         if(shop && Key(KeyboardKey.B)) panelMessage=FloorAction(BaitAction);
         if(shop && Key(KeyboardKey.G)) panelMessage=FloorAction(PagerAction);
@@ -597,8 +638,18 @@ public static partial class Program
         int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
         if(Key(KeyboardKey.Down) || Key(KeyboardKey.S)) floorRow=(floorRow+1)%count;
         if(Key(KeyboardKey.Up) || Key(KeyboardKey.W)) floorRow=(floorRow+count-1)%count;
+        if(shop && sidegrades)
+        {
+            int wheel=Math.Sign(Raylib.GetMouseWheelMove());
+            if(wheel!=0)
+            {
+                firstShopRow=Math.Clamp(firstShopRow-wheel,0,Math.Max(0,count-VisibleUpgradeRows));
+                floorRow=Math.Clamp(floorRow,firstShopRow,firstShopRow+VisibleUpgradeRows-1);
+            }
+            firstShopRow=Math.Clamp(firstShopRow,Math.Max(0,floorRow-VisibleUpgradeRows+1),floorRow);
+        }
         Vector2 mouse=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
-        for(int i=0;i<count;i++)
+        for(int i=firstShopRow;i<count && (!sidegrades || i<firstShopRow+VisibleUpgradeRows);i++)
         {
             if(!shop && Key(KeyboardKey.One+i)) floorRow=i;
             if(Raylib.CheckCollisionPointRec(mouse,FloorRowRect(i)) && Raylib.IsMouseButtonPressed(MouseButton.Left))
@@ -783,7 +834,7 @@ public static partial class Program
                     TypeAt(tab==0 ? "[1] ОРУЖИЕ И ДОСТУП" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab ? Color.White : quiet, activeTab);
                 }
             int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;
-            for(int i=0;i<count;i++)
+            for(int i=firstShopRow;i<count && (!sidegrades || i<firstShopRow+VisibleUpgradeRows);i++)
             {
                 Rectangle row=FloorRowRect(i);
                 bool selected=i==floorRow;
@@ -798,7 +849,7 @@ public static partial class Program
                 var job=shop ? null : FloorSystems.Jobs[i];
                 TypeAt(gear?.Title ?? job!.Title,row.X+12,row.Y+(sidegrades ? 4 : 11),sidegrades ? 19 : 21,ink,true);
                 TypeAt(gear?.Detail ?? job!.Objective,row.X+342,row.Y+(sidegrades ? 7 : 15),16,selected ? paper : quiet);
-                string value=gear==FloorSystems.ElevatorKeycard ? (_world.HasElevatorKey ? "Получена" : $"${gear.Price}") : shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i+1]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
+                string value=gear==FloorSystems.ElevatorKeycard ? (_world.HasElevatorKey ? "Получена" : $"${gear.Price}") : shop && !sidegrades ? (Floor.HasWeapon(FloorSystems.WeaponOrder[i]) ? "Куплено" : $"${Floor.Price(gear!)}") : shop ? Floor.Has((Sidegrade)i) ?
                     (i<2 && Floor.Shell!=(Sidegrade)i ? "На складе" : "Снаряжено") : $"${Floor.Price(gear!)}" : $"{job!.Seconds} с    ${job.Base}";
                 TypeAt(value,shop ? 980 : 1041,row.Y+(sidegrades ? 7 : 14),17,ink);
             }

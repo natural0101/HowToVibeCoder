@@ -279,6 +279,16 @@ def build_bug_frog():
     mod = runpy.run_path(str(ASSETS / "external_cc0/office/build_prop_bug_frog.py"))
     mod["build_prop_bug_frog"]()
 
+def build_pendant_lamp():
+    import runpy
+    mod = runpy.run_path(str(Path(__file__).resolve().parent / "scripts/build_atmosphere_props.py"))
+    mod["build_prop_pendant_lamp"]()
+
+def build_poster_frame():
+    import runpy
+    mod = runpy.run_path(str(Path(__file__).resolve().parent / "scripts/build_atmosphere_props.py"))
+    mod["build_prop_poster_frame"]()
+
 # ==============================================================================
 # 9. PROP: ESCAPED AI AGENT BOSS (escaped_ai_boss.glb)
 # ==============================================================================
@@ -1469,6 +1479,8 @@ if __name__ == "__main__":
             build_hr_reception_desk()
             build_bug_terminal()
             build_bug_frog()
+            build_pendant_lamp()
+            build_poster_frame()
             build_weapon_belt()
             build_weapon_solder()
             build_weapon_uzi()

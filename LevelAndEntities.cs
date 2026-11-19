@@ -214,6 +214,37 @@ public struct OfficeProp3D
     public bool HasCollision;
 }
 
+internal enum LooseKind { Jira, Nda, Cup, Can, Folder }
+
+internal sealed class LooseClutterItem(LooseKind kind,Vector3 feet,float yaw)
+{
+    internal Vector3 Feet=feet, Velocity;
+    internal float Yaw=yaw, Pitch, Spin, Cooldown;
+    internal bool Light => kind is LooseKind.Jira or LooseKind.Nda;
+    internal void Draw()
+    {
+        if(Light)
+        {
+            VisualEngine3D.Sheet(Feet+Vector3.UnitY*(.008f+.146f*MathF.Abs(MathF.Sin(Pitch))),Yaw,Pitch,kind==LooseKind.Nda ? Finish.NdaSheet : Finish.JiraSheet);
+            return;
+        }
+        if(kind==LooseKind.Folder)
+        {
+            VisualEngine3D.OrientedBox(Feet+Vector3.UnitY*.012f,new(.23f,.018f,.316f),Yaw,new(149,103,65,255));
+            VisualEngine3D.Sheet(Feet+Vector3.UnitY*.024f,Yaw,0,Finish.NdaSheet);
+            return;
+        }
+        bool cup=kind==LooseKind.Cup;
+        float tilt=(cup ? .38f : 1.32f)+Pitch;
+        Vector3 axis=new(MathF.Cos(Yaw)*MathF.Sin(tilt),MathF.Cos(tilt),MathF.Sin(Yaw)*MathF.Sin(tilt));
+        float h=cup ? .145f : .112f, r=cup ? .048f : .033f;
+        Vector3 basePos=Feet+Vector3.UnitY*(r*MathF.Abs(MathF.Sin(tilt))+Math.Max(0,-axis.Y*h));
+        VisualEngine3D.Rod(basePos,basePos+axis*h,r*.75f,r,10,cup ? new(222,210,182,255) : new(140,57,43,255));
+        VisualEngine3D.Rod(basePos+axis*h,basePos+axis*(h+.008f),r*1.05f,r,10,cup ? new(47,43,40,255) : new(170,176,177,255));
+        if(cup) VisualEngine3D.Rod(basePos+axis*(h*.32f),basePos+axis*(h*.64f),r*.87f,r*.96f,10,new(155,103,66,255));
+    }
+}
+
 public sealed class EscapedAgentBoss
 {
     public bool IsActive;
@@ -266,6 +297,12 @@ public sealed partial class SkyscraperFloor1World
     public readonly List<AmbushCoverObject> AmbushCovers = new(8);
     public readonly List<GalleyDeskSlot> GalleyDesks = new(4);
     public readonly List<OfficeProp3D> OfficeProps = new(110);
+    internal static readonly Vector2[] PendantLocations = [
+        new(0,12.9f),new(0,5.2f),new(-3.9f,9.7f),new(4,13),new(8.9f,13.4f),
+        new(-14.5f,5.5f),new(-20.7f,-8.5f),new(14.8f,3.5f),new(22,-10.5f)];
+    private static readonly Vector3 LoungeTable = new(-3.9f,0,9.7f), BreakTable = new(4,0,13);
+    private Vector3 CartPosition => RackPos+new Vector3(1.13f,0,-.66f);
+    private static readonly Vector3[] SideRacks=[new(13.5f,0,-12.4f),new(-22.5f,0,-12.5f)];
 
     // Dynamic Entities
     public readonly List<VibeCoderEntity> ActiveCoders = new(16);
@@ -313,6 +350,94 @@ public sealed partial class SkyscraperFloor1World
     internal const float TrapTop = .94f * TrapScale;
     private readonly List<BoundingBox> solids = new();
     private float _worldClock = 0f;
+    internal readonly List<LooseClutterItem> LooseClutter=new(30);
+    private float clutterRemainder,previousSteam,previousRackSmoke,previousPocketSmoke;
+    private readonly Dictionary<Vector3,float> chargedSpills=new();
+
+    private void SeedLooseClutter()
+    {
+        LooseClutter.Clear();
+        clutterRemainder=previousSteam=previousRackSmoke=previousPocketSmoke=0;
+        chargedSpills.Clear();
+        var rng=new Random(812);
+        Vector2[] clusters=[new(-11.25f,2.76f),new(11.3f,2.78f),new(4.0f,11.82f),
+            new(-5.03f,9.72f),new(-14.35f,6.85f),new(7.1f,12.05f),new(6.03f,3.07f)];
+        for(int i=0;i<30;i++)
+        {
+            int group=i%clusters.Length;
+            Vector2 xy=clusters[group]+new Vector2(rng.NextSingle()-.5f,rng.NextSingle()-.5f)*.91f;
+            var kind=group<2 ? (i%3==0 ? LooseKind.Folder : (LooseKind)(i%2)) : (LooseKind)((i+i/7)%5);
+            var feet=ResolvePlayerCollision(new(xy.X,0,xy.Y),.12f);
+            LooseClutter.Add(new(kind,feet,rng.NextSingle()*MathF.Tau));
+        }
+    }
+
+    internal void Scatter(Vector3 source,Vector3 direction,float radius,float strength)
+    {
+        direction.Y=0;
+        for(int i=0;i<LooseClutter.Count;i++)
+        {
+            var item=LooseClutter[i];
+            Vector3 away=item.Feet-source;
+            float falloff=1-away.Length()/radius;
+            if(falloff<=0 || item.Cooldown>0 && strength<=3) continue;
+            away.Y=0;
+            if(away.LengthSquared()>.0001f) away=Vector3.Normalize(away);
+            float kick=(.25f+.75f*falloff)*strength*(item.Light ? 1.12f : .86f);
+            item.Velocity=(away*.73f+direction*.54f+Vector3.UnitY*(.76f+.06f*(i%4)))*kick;
+            item.Spin=(i%2==0 ? -1 : 1)*kick*(1.2f+.2f*(i%3));
+            item.Cooldown=.42f;
+        }
+    }
+
+    internal void UpdateLooseClutter(float dt)
+    {
+        // Existing replicated environmental timers identify a discharge on either client.
+        void Burst(float time,ref float previous,Vector3 origin,float radius)
+        {
+            if(time>previous+.01f) Scatter(origin,Vector3.Zero,radius,5.8f);
+            previous=time;
+        }
+        Burst(Systems.Steam,ref previousSteam,CoffeePos,3.5f);
+        Burst(Systems.RackSmoke,ref previousRackSmoke,RackPos,5);
+        Burst(Systems.PocketSmoke,ref previousPocketSmoke,Systems.PocketOrigin,3.5f);
+        if(Systems.Puddles.Count==0) chargedSpills.Clear();
+        foreach(var spill in Systems.Puddles)
+        {
+            if(spill.Electric>chargedSpills.GetValueOrDefault(spill.Position)+.01f)
+                Scatter(spill.Position,Vector3.Zero,3.2f,5.4f);
+            chargedSpills[spill.Position]=spill.Electric;
+        }
+        const float step=1f/60;
+        clutterRemainder+=Math.Min(dt,.1f);
+        while(clutterRemainder>=step)
+        {
+            clutterRemainder-=step;
+            foreach(var item in LooseClutter)
+            {
+                item.Cooldown=Math.Max(0,item.Cooldown-step);
+                if(item.Velocity==Vector3.Zero) continue;
+                item.Velocity.Y-=(item.Light ? 4.8f : 11.5f)*step;
+                Vector3 next=item.Feet+item.Velocity*step;
+                Vector3 clear=ResolvePlayerCollision(next,.045f,Math.Max(next.Y,0));
+                if(Math.Abs(clear.X-next.X)>.001f) item.Velocity.X*=-.28f;
+                if(Math.Abs(clear.Z-next.Z)>.001f) item.Velocity.Z*=-.28f;
+                float support=SupportHeight(clear,item.Feet.Y,.045f);
+                item.Yaw+=item.Spin*step;
+                item.Pitch=item.Light ? MathF.Sin(item.Yaw*1.65f)*.67f : MathF.Sin(item.Yaw)*.84f;
+                if(clear.Y<=support)
+                {
+                    clear.Y=support;
+                    item.Velocity*=.83f;
+                    item.Velocity.Y=item.Velocity.Y<-.70f ? -item.Velocity.Y*.21f : 0;
+                    item.Spin*=.85f;
+                    item.Pitch=0;
+                    if(item.Velocity.LengthSquared()<.01f) item.Velocity=Vector3.Zero;
+                }
+                item.Feet=clear;
+            }
+        }
+    }
     private readonly Random speciesRandom;
     private readonly Random _rng = new(1994);
 
@@ -482,6 +607,7 @@ public sealed partial class SkyscraperFloor1World
         PopulateRichOfficeProps();
         MapStations();
         BuildSolids();
+        SeedLooseClutter();
         Systems=new();
         IsMacBookTrapActive=false;
         SeedLobby();
@@ -496,6 +622,12 @@ public sealed partial class SkyscraperFloor1World
 
     private void PopulateRichOfficeProps()
     {
+        OfficeProps.Add(new() {Kind=OfficePropKind.LeatherSofa,Position=new(-3.9f,0,11.2f),Size=new(2.46f,1.02f,1.08f),HasCollision=true});
+        foreach (Vector3 feet in new Vector3[]{new(-5.5f,0,8.35f),new(-2.31f,0,11.24f)})
+            OfficeProps.Add(new() {Kind=OfficePropKind.PottedFicus,Position=feet,Size=new(.55f,1.8f,.55f)});
+        OfficeProps.Add(new() {Kind=OfficePropKind.RollingWhiteboard,Position=new(4.55f,0,15.3f),RotationYaw=171,Size=new(1.9f,1.8f,.55f),HasCollision=true});
+        OfficeProps.Add(new() {Kind=OfficePropKind.WaterCooler,Position=new(3.15f,0,14.75f),Size=new(.55f,1.45f,.55f)});
+        OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=new(4.97f,0,13.28f),Size=new(.4f,.5f,.4f)});
         // 1. LEFT FORK (WEST OPEN-SPACE CUBICLES, DESKS, CHAIRS, XEROX, WHITEBOARDS & WATER COOLERS)
         float[] westRowsZ = { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f };
         for (int r = 0; r < westRowsZ.Length; r++)
@@ -716,6 +848,20 @@ public sealed partial class SkyscraperFloor1World
                 HasCollision = false
             });
         }
+        // Shared spines in the open wings. The paired worktops stop well short of
+        // both cross aisles and the portals into the reception corridor.
+        var wingDesks=OfficeProps.Where(p=>p.Kind==OfficePropKind.DualMonitorDesk).ToArray();
+        foreach(var desk in wingDesks)
+        {
+            if(desk.Position.X is not (-14.5f or -20.7f or 14.8f or 22f) ||
+               desk.Position.Z is not (5.5f or -8.5f or 3.5f or -10.5f)) continue;
+            var opposite=desk;
+            opposite.Position.Z-=1.07f;
+            opposite.RotationYaw=180;
+            OfficeProps.Add(opposite);
+            var bin=opposite.Position+new Vector3(-1.04f,0,.17f);
+            OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=bin,Size=new(.34f,.44f,.34f)});
+        }
     }
 
     public static (string Name, int Cost, Color NeonColor, string Description) GetBaitInfo(SubscriptionBaitTier tier) => tier switch
@@ -738,13 +884,17 @@ public sealed partial class SkyscraperFloor1World
             Vector3 half = new(width/2,0,depth/2);
             solids.Add(new(feet-half, feet+half+Vector3.UnitY*height));
         }
-        void Workstation(Vector3 p)
+        void Workstation(Vector3 p,float facing=1)
         {
             Add(p,2.10f*WorkstationScale,.795f*WorkstationScale,1.02f*WorkstationScale);
-            Add(p-new Vector3(0,0,.58f*WorkstationScale),2.25f*WorkstationScale,1.46f*WorkstationScale,.12f);
-            Add(p+new Vector3(0,0,.74f*WorkstationScale),.54f,.52f*WorkstationScale,.50f);
+            Add(p-new Vector3(0,0,facing*.58f*WorkstationScale),2.25f*WorkstationScale,1.46f*WorkstationScale,.12f);
+            Add(p+new Vector3(0,0,facing*.74f*WorkstationScale),.54f,.52f*WorkstationScale,.50f);
         }
         Add(DeployPos,.83f,1.14f,.61f);
+        Add(LoungeTable,1.44f,.40f,.68f);
+        Add(BreakTable,1.1f,.88f,.88f);
+        Add(CartPosition,.85f,.96f,.67f);
+        foreach(var rack in SideRacks) Add(rack,.94f,2.05f,.92f);
         Add(TerminalPos,.75f,1.35f,.65f);
         Add(ExtinguisherPos,.4f,.94f,.4f);
         Add(CoffeePos,.85f,1.39f,.68f);
@@ -765,7 +915,7 @@ public sealed partial class SkyscraperFloor1World
         foreach (var p in OfficeProps)
         {
             if (!p.HasCollision) continue;
-            if (p.Kind == OfficePropKind.DualMonitorDesk) Workstation(p.Position);
+            if (p.Kind == OfficePropKind.DualMonitorDesk) Workstation(p.Position,p.RotationYaw==180 ? -1 : 1);
             else if (p.Kind == OfficePropKind.MeetingDesk) Add(p.Position,2.1f*WorkstationScale,.65f,1.05f*WorkstationScale);
             else Add(p.Position,p.Size.X,p.Size.Y,p.Size.Z);
         }
@@ -1934,7 +2084,7 @@ public sealed partial class SkyscraperFloor1World
                     Systems.Discover(VibeCoderCollection.All.Single(s=>s.Id=="ai_agent_v01"),onGrantMoney);
                     AudioMusicSystem.PlayTarotCash();
 
-                    feedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен. Подпиши акт утилизации.";
+                    feedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен [T]. Подпиши акт утилизации.";
                 }
                 else
                 {
@@ -2000,7 +2150,7 @@ public sealed partial class SkyscraperFloor1World
                 if(target.State==CoderAIState.Subdued) LootElevatorKey(target);
                 Impact(hitPt,target.CombatCenter,salt ? 0 : dmg,disarm);
                 if(tool==WeaponType.CaptureNet && target.TimidIntern && target.State==CoderAIState.Subdued &&
-                    Systems.Has(Sidegrade.CarbonNda) && CarriedCoder==null) feedback=PickUp(target,onGrantMoney);
+                    Systems.Has(Sidegrade.CarbonNda) && CarriedCoder==null) feedback=PickUp(target,onGrantMoney,tool);
             }
             else
             {
@@ -2079,7 +2229,7 @@ public sealed partial class SkyscraperFloor1World
     public string HandleInteractKeyE(
         Vector3 playerPos,
         Func<int, bool> trySpendMoney,
-        Action<int, string> onGrantMoney)
+        Action<int, string> onGrantMoney, WeaponType tool=WeaponType.BareHands)
     {
         // 1. If carrying a captured coder -> check HR Tarot Booth or Galley Desk
         if (CarriedCoder != null)
@@ -2113,7 +2263,7 @@ public sealed partial class SkyscraperFloor1World
                 float dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(c.Position.X, c.Position.Z));
                 if (dist <= 3.8f)
                 {
-                    return PickUp(c,onGrantMoney);
+                    return PickUp(c,onGrantMoney,tool);
                 }
             }
         }
@@ -2272,6 +2422,7 @@ public sealed partial class SkyscraperFloor1World
         Draw90sArsenalAndShopStand3D();
         DrawGalleyWorkstations3D();
         DrawCentralMacBookTrapAndCovers3D();
+        DrawLivingOffice();
         foreach(int x in new[]{-1,1})
         foreach(int z in new[]{-1,1})
         {
@@ -2329,6 +2480,7 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.DrawArchitecture(BuildTowerArchitecture, glass:true);
         Rlgl.DisableDepthMask();
         DrawElevatorDoors(true);
+        DrawSunDust(camera);
         Rlgl.EnableDepthMask();
     }
 
@@ -2343,7 +2495,7 @@ public sealed partial class SkyscraperFloor1World
             switch (p.Kind)
             {
                 case OfficePropKind.DualMonitorDesk:
-                    VisualEngine3D.Asset("prop_workstation_full", pos, 180, WorkstationScale);
+                    DrawPod(pos,i,false,p.RotationYaw==180);
                     break;
                 case OfficePropKind.MeetingDesk:
                     VisualEngine3D.Asset("office_workstation", pos, 180,WorkstationScale);
@@ -2354,10 +2506,10 @@ public sealed partial class SkyscraperFloor1World
                     VisualEngine3D.Asset("prop_xerox_printer", pos, 180);
                     break;
                 case OfficePropKind.FilingCabinet:
-                    VisualEngine3D.Asset("prop_filing_cabinet", pos);
+                    VisualEngine3D.Asset("prop_filing_cabinet", pos, i%7-3);
                     break;
                 case OfficePropKind.RollingWhiteboard:
-                    VisualEngine3D.Asset("prop_whiteboard", pos);
+                    VisualEngine3D.Asset("prop_whiteboard", pos,p.RotationYaw);
                     break;
                 case OfficePropKind.WaterCooler:
                     VisualEngine3D.Asset("prop_water_cooler", pos, pos.X < 0 ? 90f : -90f);
@@ -2372,7 +2524,7 @@ public sealed partial class SkyscraperFloor1World
                     VisualEngine3D.Asset("prop_ficus_tree", pos);
                     break;
                 case OfficePropKind.TrashBin:
-                    VisualEngine3D.Asset("prop_trash_bin", pos);
+                    VisualEngine3D.Asset("prop_trash_bin", pos, i%3*9-8);
                     break;
 
             }
@@ -2402,9 +2554,13 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Box(p.Center + new Vector3(0f, 2.65f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
             VisualEngine3D.Box(p.Center + new Vector3(0f, 4.80f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
 
-            // Illuminated Corporate Poster Frame on South face of Pillar
-            Vector3 posterPos = p.Center + new Vector3(0f, 2.05f, p.HalfDepth + 0.04f);
-            VisualEngine3D.Box(posterPos, 1.35f, 0.95f, 0.05f, new Color(18, 22, 34, 255));
+            if(i<4)
+            {
+                int side=i==0 || i==1 ? -Math.Sign(p.Center.X) : 0;
+                Vector3 normal=side==0 ? Vector3.UnitZ : side*Vector3.UnitX;
+                VisualEngine3D.Asset("prop_poster_frame",p.Center+Vector3.UnitY*1.87f+
+                    normal*((side==0 ? p.HalfDepth : p.HalfWidth)+.003f),side*90);
+            }
 
         }
     }
@@ -2433,7 +2589,7 @@ public sealed partial class SkyscraperFloor1World
                     mesh.Add(new(side*17+i*.43f,.072f,z),new(.16f,.009f,.19f),brass);
             }
         }
-        var paper=new Random(416);
+        BuildOfficeWiring(mesh);
         foreach (var prop in OfficeProps)
         {
             if (prop.Kind==OfficePropKind.MeetingGlass)
@@ -2448,14 +2604,6 @@ public sealed partial class SkyscraperFloor1World
                 {
                     Vector3 offset=alongX ? new(size.X*.49f*i,0,0) : new(0,0,size.Z*.49f*i);
                     mesh.Add(prop.Position+offset+Vector3.UnitY*1.55f,new(.065f,3.1f,.065f),new(57,66,74,255));
-                }
-            }
-            if (prop.Kind is OfficePropKind.XeroxPhotocopier or OfficePropKind.DualMonitorDesk)
-            {
-                for (int i=0;i<2;i++)
-                {
-                    Vector3 sheet=prop.Position+new Vector3(.8f+paper.NextSingle(),.014f+i*.004f,paper.NextSingle()*1.7f);
-                    mesh.Add(sheet,new(.23f,.005f,.31f),new(221,219,204,255),yaw:paper.NextSingle()*2.6f);
                 }
             }
         }
@@ -2693,6 +2841,106 @@ public sealed partial class SkyscraperFloor1World
         }
     }
 
+    private void DrawPod(Vector3 feet,int seat,bool occupied,bool reversed=false)
+    {
+        float angle=(seat%2==0 ? 1 : -1)*(8+seat*7%15)*MathF.PI/180;
+        VisualEngine3D.Workstation(feet,occupied ? Vector2.Zero : new(angle,.06f+.035f*(seat%4)),reversed ? 0 : 180);
+        Vector3 top=feet+Vector3.UnitY*(.792f*WorkstationScale);
+        float side=reversed ? -1 : 1;
+        if(seat%6==1) VisualEngine3D.Asset("prop_pizza_stack",top+side*new Vector3(-.56f,0,.06f),13, .78f);
+        else if(seat%4==0) DrawCoffee(top+side*new Vector3(-.61f,0,.12f));
+        if(seat%3!=0)
+        {
+            VisualEngine3D.OrientedBox(top+new Vector3(-.36f*side,.004f,.26f*side),new(.08f,.004f,.079f),angle,new(200,186,125,255));
+            VisualEngine3D.OrientedBox(top+new Vector3(-.43f*side,.008f,.24f*side),new(.075f,.004f,.079f),-angle,new(143,181,167,255));
+        }
+    }
+
+    private void BuildOfficeWiring(VisualEngine3D.ArchitectureBuilder mesh)
+    {
+        Color rubber=new(40,42,45,255);
+        void Tray(float x1,float z1,float x2,float z2)
+        {
+            var length=new Vector2(x2-x1,z2-z1).Length();
+            mesh.Add(new((x1+x2)/2,.014f,(z1+z2)/2),new(.09f,.024f,length),rubber,yaw:MathF.Atan2(x2-x1,z2-z1));
+        }
+        // Trunk skirts the shaft. Branches terminate at the back of each workstation row.
+        Tray(RackPos.X,RackPos.Z,8.9f,3.8f);
+        Tray(8.9f,3.8f,8.9f,-13.1f);
+        Tray(8.9f,-13.1f,-27.83f,-13.1f);
+        Tray(8.9f,-13.1f,22,-13.1f);
+        foreach(var rack in SideRacks) Tray(rack.X,rack.Z,rack.X,-13.1f);
+        foreach(float x in new[]{-14.5f,-20.7f,-26.9f,14.8f,22f,6.8f,11.2f})
+        {
+            bool galley=x is 6.8f or 11.2f;
+            float trunk=x-.93f;
+            Tray(trunk,galley ? -13.1f : x<0 ? -23 : -25,trunk,galley ? 17 : x<0 ? 12 : 10.5f);
+            foreach(var p in OfficeProps)
+                if(p.Kind==OfficePropKind.DualMonitorDesk && MathF.Abs(p.Position.X-x)<.03f)
+                    Tray(trunk,p.Position.Z-.36f,x,p.Position.Z-.36f);
+            if(galley) foreach(var d in GalleyDesks.Where(d=>d.DeskPosition.X==x))
+                Tray(trunk,d.DeskPosition.Z-.36f,x,d.DeskPosition.Z-.36f);
+        }
+        // Service tape marks only the cart parking bay.
+        for(int i=-4;i<=4;i++)
+            mesh.Add(CartPosition+new Vector3(i*.12f,.009f,.44f),new(.085f,.012f,.12f),
+                i%2==0 ? new(199,150,57,255) : rubber,yaw:-.38f);
+        for(int lane=0;lane<3;lane++)
+        {
+            Vector3 a=RackPos+new Vector3(.36f,.042f,-.38f);
+            Vector3 end=lane==2 ? new(4.65f,.035f,.15f) : CartPosition+new Vector3(.18f*lane,.035f,-.14f);
+            for(int j=1;j<=20;j++)
+            {
+                float t=j/20f;
+                Vector3 b=Vector3.Lerp(RackPos+new Vector3(.36f,.042f,-.38f),end,t);
+                b.X+=MathF.Sin(t*MathF.PI*2+lane*.4f)*.19f*MathF.Sin(t*MathF.PI);
+                b.Z+=MathF.Sin(t*MathF.PI)*(.14f+lane*.09f);
+                Vector3 delta=b-a;
+                mesh.Add((a+b)/2,new(.028f,.028f,delta.Length()+.016f),j%3==0 ? new(73,65,54,255) : rubber,
+                    yaw:MathF.Atan2(delta.X,delta.Z));
+                a=b;
+            }
+        }
+    }
+
+    private void DrawLivingOffice()
+    {
+        foreach(var lamp in PendantLocations)
+            VisualEngine3D.Asset("prop_pendant_lamp",new(lamp.X,CeilingHeight,lamp.Y));
+        VisualEngine3D.Asset("prop_server_cart",CartPosition,-139);
+        foreach(var rack in SideRacks) VisualEngine3D.Asset("prop_server_rack",rack,180);
+        // Solid reception backing between the outer brass ribs and central tarot sign.
+        VisualEngine3D.Asset("prop_poster_frame",new(1.99f,1.86f,15.355f),180);
+        VisualEngine3D.Box(LoungeTable+new Vector3(0,.365f,0),1.44f,.07f,.68f,new(131,87,54,255));
+        foreach(float x in new[]{-.46f,.46f})
+            VisualEngine3D.Box(LoungeTable+new Vector3(x,.165f,0),.11f,.33f,.54f,new(51,53,56,255));
+        VisualEngine3D.Asset("prop_pizza_stack",LoungeTable+new Vector3(.31f,.4f,0),-13);
+        VisualEngine3D.Sheet(LoungeTable+new Vector3(-.29f,.405f,.02f),.24f,0,Finish.PitchDeck);
+        VisualEngine3D.Sheet(LoungeTable+new Vector3(-.37f,.41f,-.04f),-.17f,0,Finish.PitchDeck);
+        VisualEngine3D.Rod(BreakTable,BreakTable+Vector3.UnitY*.05f,.33f,.32f,16,new(57,56,53,255));
+        VisualEngine3D.Rod(BreakTable,BreakTable+Vector3.UnitY*.84f,.059f,.052f,12,new(150,113,73,255));
+        VisualEngine3D.Rod(BreakTable+Vector3.UnitY*.835f,BreakTable+Vector3.UnitY*.88f,.55f,.55f,20,new(157,109,73,255));
+        VisualEngine3D.Asset("prop_pizza_stack",BreakTable+Vector3.UnitY*.88f,-18);
+        DrawCoffee(BreakTable+new Vector3(.34f,.88f,.08f));
+        for(int i=0;i<5;i++)
+            VisualEngine3D.Oval(new(4.97f+.075f*MathF.Cos(i*2),.40f+.024f*i,13.28f+.072f*MathF.Sin(i*2)),
+                new(.08f,.067f,.072f),i==2 ? new(130,78,56,255) : new(212,205,183,255));
+        foreach(var item in LooseClutter) item.Draw();
+    }
+
+    private void DrawSunDust(Camera3D camera)
+    {
+        Vector3 right=Vector3.Normalize(Vector3.Cross(camera.Target-camera.Position,Vector3.UnitY));
+        for(int i=0;i<35;i++)
+        {
+            float t=_worldClock*.19f+i*2.39996f;
+            Vector3 pos=new(-34+i%7*4.9f+MathF.Sin(t)*.43f,1+(i*19%38)*.12f+MathF.Sin(t*.8f)*.27f,
+                -20+(i*31%45)+MathF.Cos(t)*.37f);
+            float r=.009f+.002f*(i%4);
+            Raylib.DrawTriangle3D(pos+Vector3.UnitY*r,pos-right*r,pos+right*r,new Color(255,215,157,90));
+        }
+    }
+
     private void DrawGalleyWorkstations3D()
     {
         for (int i = 0; i < GalleyDesks.Count; i++)
@@ -2700,8 +2948,7 @@ public sealed partial class SkyscraperFloor1World
             var d = GalleyDesks[i];
             Vector3 p = d.DeskPosition;
 
-            VisualEngine3D.Asset("prop_workstation_full",p,180,WorkstationScale);
-            DrawCoffee(p+new Vector3(.53f,.797f,.28f)*WorkstationScale);
+            DrawPod(p,i,d.IsOccupied);
             if (d.IsOccupied)
             {
                 // The pelvis stays in contact with the seat while typing.
@@ -2731,7 +2978,7 @@ public sealed partial class SkyscraperFloor1World
             switch (cov.VisualKind)
             {
                 case 0: // Leather Sofa from the 90s
-                    VisualEngine3D.Asset("prop_leather_sofa", p);
+                    VisualEngine3D.Asset("prop_leather_sofa", p,180);
                     break;
                 case 1: // Potted Office Ficus Tree
                     VisualEngine3D.Asset("prop_ficus_tree", p);
@@ -3028,9 +3275,14 @@ public sealed partial class SkyscraperFloor1World
     // =========================================================================
     private enum FocusKind { None, Terminal, Frog, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Cooler, Coffee, Rack, Printer, Deploy, Extinguisher }
     private readonly record struct Focus(FocusKind Kind, string Label, int Index);
-    private string PickUp(VibeCoderEntity c,Action<int,string>? grant)
+    internal const string HandsFullPrompt="Убери оружие (повторно [1–4]), чтобы поднять";
+    internal const string HandsFullMessage="Нужны голые руки — нажми слот [1–4] ещё раз (или купи Плечевой ремень)";
+    internal bool CanCarryWith(WeaponType tool) => tool==WeaponType.BareHands || Systems.Has(Sidegrade.CarryHarness);
+
+    private string PickUp(VibeCoderEntity c,Action<int,string>? grant,WeaponType tool)
     {
         if (CarriedCoder != null) return "Сначала отведи пойманного кодера к Веронике или на галеру";
+        if(c.CanSignNda && !CanCarryWith(tool)) return HandsFullMessage;
         Systems.Style(StyleAction.Capture);
         Systems.Risk(security:.5f+(Systems.Has(Sidegrade.CarbonNda) ? 6 : 0));
         if(!c.IdentityRevealed && !c.IsMiniBoss)
@@ -3080,7 +3332,7 @@ public sealed partial class SkyscraperFloor1World
             case FocusKind.Offer:
                 var candidate=ActiveCoders[focus.Index];
                 if(!spend(80)) return "На аванс нужно $80";
-                if(candidate.Archetype==CoderArchetype.SecurityGuard) return PickUp(candidate,grant);
+                if(candidate.Archetype==CoderArchetype.SecurityGuard) return PickUp(candidate,grant,tool);
                 candidate.Pressure(24,0,-6,45);
                 return candidate.State==CoderAIState.Subdued ? "Аванс принят. Подпиши NDA [E]" : "Кандидат изучает оффер";
             case FocusKind.Board:
@@ -3093,7 +3345,7 @@ public sealed partial class SkyscraperFloor1World
             case FocusKind.Rack: return Systems.Reboot(grant);
             case FocusKind.Deploy: return Systems.Deploy(this);
             case FocusKind.Printer: return Systems.Print();
-            case FocusKind.Coder: return PickUp(ActiveCoders[focus.Index],grant);
+            case FocusKind.Coder: return PickUp(ActiveCoders[focus.Index],grant,tool);
             case FocusKind.Veronika: return VeronikaShop;
             case FocusKind.Desk:
                 var desk = GalleyDesks[focus.Index];
@@ -3109,7 +3361,7 @@ public sealed partial class SkyscraperFloor1World
             case FocusKind.Shop:
                 SelectedBaitTier=(SubscriptionBaitTier)(((int)SelectedBaitTier+1)%4);
                 return GetBaitInfo(SelectedBaitTier).Description;
-            default: return HandleInteractKeyE(camera.Position,spend,grant);
+            default: return HandleInteractKeyE(camera.Position,spend,grant,tool);
         }
     }
 
@@ -3153,7 +3405,7 @@ public sealed partial class SkyscraperFloor1World
                 Consider(ActiveCoders[i].Position,.82f,2.6f,FocusKind.Offer,ActiveCoders[i].Archetype==CoderArchetype.SecurityGuard ? "Нанять Крышу ($80)" : "Предложить аванс ($80)",i);
         for(int i=0;i<ActiveCoders.Count;i++)
             if(ActiveCoders[i].CanSignNda)
-                Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,"Подписать NDA",i);
+                Consider(ActiveCoders[i].Position,.45f,3.8f,FocusKind.Coder,CanCarryWith(tool) ? "Подписать NDA и поднять" : HandsFullPrompt,i);
         if(tool==WeaponType.BareHands)
             foreach(var frog in Frogs)
             {

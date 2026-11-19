@@ -96,7 +96,12 @@ public class WeaponAndCombatView
     public WeaponType CurrentWeapon
     {
         get => equipped;
-        set { if(Inventory.HasWeapon(value)) equipped=value; }
+        set
+        {
+            if(!Inventory.HasWeapon(value) || value!=WeaponType.BareHands && DrawBlocked?.Invoke()==true) return;
+            equipped=value;
+            selectedEmptySlot=-1;
+        }
     }
     private void SetOwned(WeaponType weapon,bool value)
     {
@@ -335,36 +340,66 @@ public class WeaponAndCombatView
     public void SelectSlot(int slotNumber)
     {
         // Legacy equipment and cosmetic APIs use the original four weapon IDs.
-        if(slotNumber is >=1 and <=4) Equip((WeaponType)slotNumber);
+        if(slotNumber==4 && UnlockedChatGun && (!UnlockedSawedOff || CurrentWeapon==WeaponType.SawedOff))
+            Equip(WeaponType.ChatGun);
+        else if(slotNumber is >=1 and <=4) Equip((WeaponType)slotNumber);
     }
 
     private int hotbarMask=-1;
-    private WeaponType[] hotbar=[];
-    internal WeaponType[] Hotbar
+    private WeaponType?[] hotbar=[];
+    private int selectedEmptySlot=-1;
+    internal Func<bool> DrawBlocked;
+    internal WeaponType?[] Hotbar
     {
         get
         {
             if(hotbarMask!=Inventory.OwnedWeaponsMask)
             {
                 hotbarMask=Inventory.OwnedWeaponsMask;
-                hotbar=FloorSystems.WeaponOrder.Where(w=>Inventory.HasWeapon(w) || w==WeaponType.SawedOff && UnlockedChatGun).ToArray();
+                var owned=FloorSystems.WeaponOrder.Where(Inventory.HasWeapon).ToArray();
+                hotbar=new WeaponType?[Math.Max(4,owned.Length)];
+                for(int i=0;i<owned.Length;i++) hotbar[i]=owned[i];
+                if(selectedEmptySlot>=hotbar.Length || selectedEmptySlot>=0 && hotbar[selectedEmptySlot]!=null) selectedEmptySlot=-1;
             }
             return hotbar;
         }
     }
-
-    internal void SelectOwnedSlot(int index)
+    internal int HotbarSlotCount => Hotbar.Length;
+    internal int SelectedHotbarSlot
     {
-        var items=Hotbar;
-        if((uint)index<(uint)items.Length) Equip(items[index]);
+        get
+        {
+            var slots=Hotbar;
+            return CurrentWeapon==WeaponType.BareHands ? selectedEmptySlot :
+                Array.IndexOf(slots,CurrentWeapon==WeaponType.ChatGun ? WeaponType.SawedOff : CurrentWeapon);
+        }
+    }
+
+    internal void SelectOwnedSlot(int index,bool toggle=true)
+    {
+        if((uint)index>=(uint)HotbarSlotCount) return;
+        if(Hotbar[index] is {} weapon)
+            Equip(toggle && SelectedHotbarSlot==index ? WeaponType.BareHands : weapon);
+        else
+        {
+            Equip(WeaponType.BareHands);
+            selectedEmptySlot=index;
+        }
+    }
+
+    internal void ScrollHotbar(int direction)
+    {
+        if(direction==0) return;
+        int count=HotbarSlotCount, index=SelectedHotbarSlot;
+        if(index<0) index=direction>0 ? 0 : count-1;
+        SelectOwnedSlot((index+count-Math.Sign(direction))%count,toggle:false);
     }
 
     internal void Equip(WeaponType target)
     {
-        if(target==WeaponType.SawedOff && UnlockedChatGun &&
-            (!UnlockedSawedOff || CurrentWeapon==WeaponType.SawedOff)) target=WeaponType.ChatGun;
-        if(!Inventory.HasWeapon(target) || CurrentWeapon==target) return;
+        var previous=CurrentWeapon;
         CurrentWeapon=target;
+        if(CurrentWeapon==previous) return;
         _inspectTimer=_reloadTime=_flash=0;
         StartDraw(1);
     }

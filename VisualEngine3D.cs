@@ -4,7 +4,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud, LiftGlass, JiraSheet, NdaSheet, PitchDeck }
 
 internal static unsafe partial class VisualEngine3D
 {
@@ -21,9 +21,29 @@ internal static unsafe partial class VisualEngine3D
     private static readonly Dictionary<(string Asset,int Mesh),int> handSurfaces=new();
     private static int handSurfaceLoc, weaponFinishLoc;
     private static int firstPersonLoc, muzzleLoc, flashLoc;
-    private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc;
+    private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc, cabinPowerLoc;
     private static Finish? activeFinish;
     private static float activeTaper;
+    private static int podLoc,shadowPodLoc,loadLoc;
+    internal static HashSet<string> CapturedAssets;
+
+    // The workstation GLB has one joined mesh. Its wheeled chair and monitor heads
+    // occupy separate local volumes. Keep the same deformation in the depth pass.
+    private const string PodGeometry = """
+        uniform vec2 podPose;
+        void posePod(inout vec3 p,inout vec3 n) {
+            if(podPose.x==0.) return;
+            bool chair=p.z<-.405 && abs(p.x)<.38 && (p.y<.70 || p.z<-.77);
+            bool screen=p.y>.897 && abs(p.x)<.81 && abs(p.z-.24)<.18;
+            if(!chair && !screen) return;
+            vec2 pivot=chair ? vec2(0.,-.72) : vec2(p.x<0. ? -.42 : .34,.25);
+            float a=podPose.x*(chair ? 1. : .22);
+            mat2 rotation=mat2(cos(a),-sin(a),sin(a),cos(a));
+            p.xz=pivot+rotation*(p.xz-pivot);
+            if(chair) p.z-=podPose.y;
+            n.xz=rotation*n.xz;
+        }
+        """;
 
     private const string Vertex = """
         #version 330 core
@@ -45,6 +65,7 @@ internal static unsafe partial class VisualEngine3D
         void main() {
             vec3 p = vertexPosition;
             vec3 n = vertexNormal;
+            posePod(p,n);
             // Only jacket rings carry this UV channel. Rotate each complete section
             // toward its shoulder, preserving its radius and the rigid wrist opening.
             if (vertexTexCoord.x>1.99 && dot(sleevePull,sleevePull)>.0001) {
@@ -95,7 +116,9 @@ internal static unsafe partial class VisualEngine3D
         uniform sampler2D texture0;
         uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
-        uniform float power, clock, flashStrength;
+        uniform float power, clock, flashStrength, cabinPower;
+        uniform vec2 pendants[9];
+        uniform float rackLoad;
         uniform vec3 muzzle;
         uniform int firstPerson;
         uniform int finish,handSurface;
@@ -214,6 +237,17 @@ internal static unsafe partial class VisualEngine3D
             vec3 base=tex.rgb*ink.rgb;
             bool leather=finish==6 || (finish==17 && colSpecular.a>.49 && colSpecular.a<.51);
             vec3 emission=(finish==17 || finish==21) ? colSpecular.rgb*tex.rgb : vec3(0.);
+            if(finish==17 && colSpecular.a>.70 && colSpecular.a<.80) {
+                float tick=floor(clock*(2.2+7.*rackLoad));
+                float active=step(.40,hash(vec2(floor(pos.y*44.)+floor(pos.x*24.),tick)));
+                vec3 lamp=emission;
+                if(lamp.b>lamp.g && lamp.b>.1) lamp=vec3(1.,.095,.045);
+                emission=lamp*(.09+1.55*active);
+                base*=.38+.62*active;
+            } else if(finish==17 && colSpecular.a>.85 && colSpecular.a<.94) {
+                float scan=.97+.03*sin(clock*17.+pos.y*53.+pos.x);
+                base*=scan; emission*=scan;
+            }
             float dist=length(eye-pos);
             if(finish==13) {
                 vec3 ray=normalize(pos-eye);
@@ -271,10 +305,16 @@ internal static unsafe partial class VisualEngine3D
                 wet+=vec3(1.8,3.1,4.)*lightning*puddleElectric;
                 color=vec4(wet,smoothstep(0.,max(.005,fwidth(inside)),inside)*(.52+.37*fres+.10*min(lightning,1.))); return;
             }
-            if(finish==14) {
+            if(finish==14 || finish==28) {
                 float edge=pow(1.-abs(dot(n,v)),3.);
                 float glint=pow(max(0.,dot(reflect(-v,n),normalize(vec3(-.55,.72,-.42)))),16.);
-                color=vec4(mix(ink.rgb*.55,vec3(.90,.70,.51),glint),ink.a*.63+edge*.025+glint*.12); return;
+                vec4 glass=vec4(mix(ink.rgb*.55,vec3(.90,.70,.51),glint),ink.a*.63+edge*.025+glint*.12);
+                if(finish==28) {
+                    float frost=clamp((ink.a*255.-138.)/110.,0.,1.);
+                    float grain=fract(sin(dot(floor(pos.xy*180.),vec2(12.9898,78.233)))*43758.5453);
+                    glass=mix(glass,vec4(ink.rgb*(.90+.15*grain),ink.a),frost);
+                }
+                color=glass; return;
             }
             if(finish==21) {
                 // Imported MPFB swatches are linear glTF factors. Convert once
@@ -344,12 +384,21 @@ internal static unsafe partial class VisualEngine3D
             float ao=mix(1.,mix(.68,1.,smoothstep(0.,.42,pos.y)),1.-abs(n.y));
             vec3 light=mix(vec3(.16,.12,.10),vec3(.18,.25,.36),.5+.5*n.y)*ao;
             light+=vec3(1.48,1.02,.64)*max(0.,dot(n,key))*shadow;
+            if(firstPerson==0 && pos.y<9.) {
+                float pool=0.;
+                for(int i=0;i<9;i++) {
+                    vec2 offset=pos.xz-pendants[i];
+                    pool=max(pool,1.-smoothstep(.18,1.,dot(offset,offset*vec2(.075,.13))));
+                }
+                light+=vec3(.92,.55,.25)*pool*(.29+.71*max(0.,n.y));
+            }
             if(firstPerson==0) light+=point(puddleLight,vec3(.08,1.12,1.55)*puddlePower,n,v,gloss);
             light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
             light+=point(tarot,vec3(1.6,.85,.38)*(.94+.06*sin(clock*8.)),n,v,gloss);
             light+=point(tarot+vec3(.55,-.30,.18),vec3(.42,.18,.82),n,v,gloss);
             float beacon=.82+.28*sin(clock*3.2);
             light+=point(northBeacon,vec3(1.4,.12,.15)*beacon,n,v,gloss);
+            light+=point(northBeacon+vec3(0.,-.5,2.35),vec3(2.1,.09,.06)*cabinPower,n,v,gloss);
             light+=point(southBeacon,vec3(1.4,.12,.15)*beacon,n,v,gloss);
             if(firstPerson==1) light=max(light,vec3(.68,.64,.66));
             float fres=pow(1.-max(0.,dot(n,v)),3.);
@@ -397,10 +446,11 @@ internal static unsafe partial class VisualEngine3D
 
     public static void Load()
     {
-        shader = Raylib.LoadShaderFromMemory(Vertex, Fragment);
+        shader = Raylib.LoadShaderFromMemory(Vertex.Replace("void main()",PodGeometry+"\nvoid main()"), Fragment);
         if (shader.Id == 0 || shader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
+        shader.Locs[(int)ShaderLocationIndex.ColorSpecular]=Loc("colSpecular");
         handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
@@ -411,8 +461,12 @@ internal static unsafe partial class VisualEngine3D
         batchLoc = Loc("batch"); clockLoc = Loc("clock");
         eyeLoc = Loc("eye"); finishLoc = Loc("finish"); taperLoc = Loc("taper");
         laptopLoc = Loc("laptop"); tarotLoc = Loc("tarot"); northLoc = Loc("northBeacon");
-        southLoc = Loc("southBeacon"); powerLoc = Loc("power");
+        southLoc = Loc("southBeacon"); powerLoc = Loc("power"); cabinPowerLoc = Loc("cabinPower");
         InitLightingPipeline();
+        podLoc=Loc("podPose");
+        shadowPodLoc=Raylib.GetShaderLocation(shadowShader,"podPose");
+        loadLoc=Loc("rackLoad");
+        Raylib.SetShaderValueV(shader,Loc("pendants[0]"),SkyscraperFloor1World.PendantLocations,ShaderUniformDataType.Vec2,SkyscraperFloor1World.PendantLocations.Length);
         box = ModelFor(Raylib.GenMeshCube(1,1,1));
         bevel = ModelFor(RoundedBox());
         plane = ModelFor(Raylib.GenMeshPlane(1,1,1,1));
@@ -454,8 +508,10 @@ internal static unsafe partial class VisualEngine3D
                 glow=new(e[0].GetSingle(),e[1].GetSingle(),e[2].GetSingle());
             if(name.Equals("display",StringComparison.OrdinalIgnoreCase) && glow==Vector3.Zero) glow=new(.25f,.66f,.78f);
             if(name.Contains("nichrome",StringComparison.OrdinalIgnoreCase)) glow=new(1,.48f,.15f);
-            int leather=name.Contains("Leather",StringComparison.OrdinalIgnoreCase) ? 128 : 0;
-            model.Materials[i++].Maps[1].Color=new Color((int)(255*glow.X),(int)(255*glow.Y),(int)(255*glow.Z),leather);
+            int tag=name.Contains("Leather",StringComparison.OrdinalIgnoreCase) ? 128 :
+                name is "LedAmber" or "LedCyan" or "LedGreen" ? 192 :
+                name is "MonitorCode1" or "MonitorCode2" or "CrtPhosphorScreen" ? 228 : 0;
+            model.Materials[i++].Maps[1].Color=new Color((int)(255*glow.X),(int)(255*glow.Y),(int)(255*glow.Z),tag);
         }
     }
 
@@ -649,6 +705,25 @@ internal static unsafe partial class VisualEngine3D
             return;
         }
         Raylib.DrawModelEx(model, position, Vector3.UnitY, yaw, (stretch ?? Vector3.One)*scale, tint ?? Color.White);
+        CapturedAssets?.Add(name);
+    }
+
+    internal static void Workstation(Vector3 feet,Vector2 pose,float yaw)
+    {
+        var pass=CastingShadows ? shadowShader : shader;
+        int loc=CastingShadows ? shadowPodLoc : podLoc;
+        Raylib.SetShaderValue(pass,loc,pose,ShaderUniformDataType.Vec2);
+        Asset("prop_workstation_full",feet,yaw,SkyscraperFloor1World.WorkstationScale);
+        Raylib.SetShaderValue(pass,loc,Vector2.Zero,ShaderUniformDataType.Vec2);
+    }
+
+    internal static void Sheet(Vector3 p,float yaw,float pitch,Finish finish=Finish.JiraSheet)
+    {
+        Quaternion q=Quaternion.CreateFromYawPitchRoll(yaw,pitch,0);
+        float angle=2*MathF.Acos(Math.Clamp(q.W,-1,1));
+        Vector3 axis=new(q.X,q.Y,q.Z);
+        Draw(box,p,new(.210f,.003f,.297f),Color.White,finish,
+            axis.LengthSquared()>.000001f ? Vector3.Normalize(axis) : Vector3.UnitY,angle*180/MathF.PI);
     }
 
     // A rounded unit box with flat face centres and two bevel bands along each edge.
@@ -684,11 +759,13 @@ internal static unsafe partial class VisualEngine3D
 
     public static void World(Camera3D cam, SkyscraperFloor1World world)
     {
+        Raylib.SetShaderValue(shader,loadLoc,Math.Clamp((world.Systems.PT+world.Systems.TD)/130f,0,1),ShaderUniformDataType.Float);
         var nearest=world.Systems.Puddles.Where(p=>p.Electric>0).MinBy(p=>Vector3.DistanceSquared(p.Position,cam.Position));
         Raylib.SetShaderValue(shader,puddlePosLoc,(nearest?.Position ?? Vector3.Zero)+Vector3.UnitY*.42f,ShaderUniformDataType.Vec3);
         Raylib.SetShaderValue(shader,puddlePowerLoc,nearest==null ? 0f : 1.28f+.23f*MathF.Sin((float)Raylib.GetTime()*37),ShaderUniformDataType.Float);
         Raylib.SetShaderValue(shader,firstPersonLoc,0,ShaderUniformDataType.Int);
         Raylib.SetShaderValue(shader,clockLoc,(float)Raylib.GetTime(),ShaderUniformDataType.Float);
+        Raylib.SetShaderValue(shader,cabinPowerLoc,1-world.ElevatorGlassOpacity,ShaderUniformDataType.Float);
         View(cam.Position,world.CentralMacBookPos+new Vector3(0,1.6f,.35f),
              world.HrTarotBoothPos+new Vector3(0,1.65f,-.6f),
              world.NorthElevatorPos+new Vector3(0,3.7f,-1),
@@ -732,6 +809,7 @@ internal static unsafe partial class VisualEngine3D
         Raylib.SetShaderValue(shader,flashLoc,0f,ShaderUniformDataType.Float);
         Raylib.SetShaderValue(shader,firstPersonLoc,1,ShaderUniformDataType.Int);
         Vector3 distant=new(50,50,50);
+        Raylib.SetShaderValue(shader,cabinPowerLoc,0f,ShaderUniformDataType.Float);
         View(Vector3.Zero,distant,distant,distant,distant,0);
     }
 
@@ -890,7 +968,7 @@ internal static unsafe partial class VisualEngine3D
     {
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
                     or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
-                    or Finish.BlackMarble or Finish.Bronze or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
+                    or Finish.BlackMarble or Finish.Bronze or Finish.LiftGlass or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
         Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(16,25,30,255))
                                  : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
@@ -920,6 +998,17 @@ internal static unsafe partial class VisualEngine3D
             Raylib.ImageDrawTriangle(ref img,new(372,211),new(448,211),new(410,264),brass);
         }
         if(f==Finish.Tarot) Inscription("A R C A N A",48,436,new Color(244,209,146,255));
+        if(f is Finish.JiraSheet or Finish.NdaSheet or Finish.PitchDeck)
+        {
+            bool nda=f==Finish.NdaSheet;
+            Raylib.ImageClearBackground(ref img,nda ? new(234,228,207,255) : new(219,224,217,255));
+            var ink=new Color(49,55,57,255);
+            Inscription(f==Finish.PitchDeck ? "SEED   2026" : nda ? "NDA" : "JIRA   B12-409",64,44,ink);
+            string[] lines=f==Finish.PitchDeck ? ["Башня Энтропии","План запуска","Раунд инвестиций","Материалы встречи"] : nda ? ["Соглашение","о неразглашении","Отдел кадров","Подпись"] :
+                ["Ошибка сборки","Приоритет   P1","Исполнитель","Шаги повтора"];
+            for(int i=0;i<lines.Length;i++)
+                Raylib.ImageDrawTextEx(ref img,GameFonts.Get(Typeface.Interface,16),lines[i],new(42,154+i*64),24,0,ink);
+        }
         if(f is Finish.Exit or Finish.Billboard)
         {
             Raylib.ImageClearBackground(ref img, f==Finish.Exit ? new Color(156,18,39,255) : new Color(27,17,57,255));
@@ -1045,10 +1134,10 @@ internal static unsafe partial class VisualEngine3D
             uniform mat4 lightVP,matModel;
             uniform float taper;
             void main() {
-                vec3 p=vertexPosition; p.xz*=1.+p.y*taper;
+                vec3 p=vertexPosition,n=vec3(0); posePod(p,n); p.xz*=1.+p.y*taper;
                 gl_Position=lightVP*matModel*vec4(p,1.);
             }
-            ""","""
+            """.Replace("void main()",PodGeometry+"\nvoid main()"),"""
             #version 330
             void main() { }
             """);

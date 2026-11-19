@@ -68,7 +68,7 @@ public static partial class Program
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
         guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder,
         ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
-        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity);
+        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot);
 
     private static void ApplyElevator(FloorSnapshot state)
     {
@@ -105,8 +105,6 @@ public static partial class Program
             ApplyProgression(state);
             if(awaitingFirstFloor ? Floor.Onboarding==OnboardingStep.TalkToVeronika : previous!=Floor.Onboarding)
             {
-                if(previous==OnboardingStep.BuyNet && Floor.Onboarding==OnboardingStep.ActivateBait && floorPanel==FloorPanel.Upgrades)
-                { _weapons.Equip(WeaponType.CaptureNet); OpenFloorPanel(FloorPanel.None); }
                 Floor.Coach();
             }
             else if(!awaitingFirstFloor && !cheered && Floor.FirstFrogCheered && Floor.Onboarding<=OnboardingStep.CatchFrogs)
@@ -120,6 +118,7 @@ public static partial class Program
             _world.IsMacBookTrapActive=state.Trap; _world.SelectedBaitTier=state.Bait;
             peerEscort=state.HostCarried;
             _world.CarriedCoder=state.Carried; _world.TotalCodersSoldToHr=state.Sold;
+            HolsterForEscort();
             _world.ActiveCoders.Clear(); _world.ActiveCoders.AddRange(state.Coders);
             _world.GalleyDesks.Clear(); _world.GalleyDesks.AddRange(state.Desks);
             _world.EnemyProjectiles.Clear(); _world.EnemyProjectiles.AddRange(state.Projectiles);
@@ -127,7 +126,7 @@ public static partial class Program
         }
         if(message is {Kind:"fire", Pose:{} shooter})
         {
-            if(Net.Host && !Floor.HasWeapon(shooter.Weapon)) return;
+            if(Net.Host && (!Floor.HasWeapon(shooter.Weapon) || guestCarried!=null && !_world.CanCarryWith(shooter.Weapon))) return;
             if(shooter.Weapon==WeaponType.ChatGun && !_world.IsFloor2Unlocked && !_weapons.UnlockedChatGun) return;
             var partner=_world.Partner??=new PartnerAvatar();
             bot=false; partner.Move(shooter);
@@ -169,7 +168,7 @@ public static partial class Program
         }
         else if(Net.Host && message.Kind=="floor-action" && int.TryParse(message.Text,out int index))
         {
-            string result=ApplyFloorAction(index);
+            string result=ApplyFloorAction(index,guestBuyer:true);
             Net.Send(new("status",Text:result));
         }
         else if(Net.Host && message is {Kind:"pocket-co2",Pose:{} pose})
@@ -188,6 +187,12 @@ public static partial class Program
             _weapons.FloatingTexts.Add(impact);
             _weapons.TriggerHitmarker(impact.IsCritical);
             AudioMusicSystem.PlayHitmarker();
+        }
+        else if(Net.Guest && message.Kind=="equip-purchase" && Enum.TryParse<WeaponType>(message.Text,out var purchase))
+        {
+            _weapons.Equip(purchase);
+            if(purchase==WeaponType.CaptureNet && Floor.Onboarding<=OnboardingStep.ActivateBait && floorPanel==FloorPanel.Upgrades)
+                OpenFloorPanel(FloorPanel.None);
         }
         else if(Net.Guest && message.Kind=="keycard-purchased")
             FloorSystems.SpeakCoaching(FloorSystems.KeycardPurchaseLine);
@@ -240,7 +245,7 @@ public static partial class Program
         if(mine!=null && theirs==null)
         {
             if(!apply) return "Передать кандидата напарнику";
-            if(guestActor) { _world.CarriedCoder=mine; guestCarried=null; }
+            if(guestActor) { _world.CarriedCoder=mine; guestCarried=null; HolsterForEscort(); }
             else { guestCarried=mine; _world.CarriedCoder=null; }
             return "Кандидат передан напарнику";
         }
@@ -252,6 +257,12 @@ public static partial class Program
             return "NDA заверен вдвоём. СБ -5";
         }
         return null;
+    }
+
+    private static void HolsterForEscort()
+    {
+        if(_world.CarriedCoder!=null && !_world.CanCarryWith(_weapons.CurrentWeapon))
+            _weapons.Equip(WeaponType.BareHands);
     }
 
     private static int AfterDamage(int hp,int damage)
@@ -288,6 +299,17 @@ public static partial class Program
             {
                 if(sent<3 && _playerCash==0 && Floor.PocketFrogs.Count==sent)
                 {
+                    if(sent==0)
+                    {
+                        if(_weapons.HotbarSlotCount!=4 || _weapons.Hotbar.Any(w=>w!=null) || _weapons.CurrentWeapon!=WeaponType.BareHands)
+                            throw new InvalidDataException("Guest empty hotbar");
+                        for(int i=0;i<4;i++)
+                        {
+                            _weapons.SelectOwnedSlot(i);
+                            if(_weapons.SelectedHotbarSlot!=i || _weapons.CurrentWeapon!=WeaponType.BareHands)
+                                throw new InvalidDataException("Guest empty slot selection");
+                        }
+                    }
                     var frog=_world.Frogs.First(f=>f.SpeciesId=="frog_hopper");
                     _weapons.Equip(WeaponType.BareHands);
                     _playerPos=frog.Feet+new Vector3(0,1.1f,1);
@@ -304,8 +326,9 @@ public static partial class Program
                 { FloorAction(WeaponBuyOffset); ordered=true; }
                 if(ordered && Floor.HasWeapon(WeaponType.CaptureNet) && _playerCash==1 && Floor.PocketFrogs.Count==0)
                 {
-                    _weapons.SelectOwnedSlot(1);
-                    if(_weapons.CurrentWeapon!=WeaponType.CaptureNet) throw new InvalidDataException("Guest net slot");
+                    if(_weapons.CurrentWeapon!=WeaponType.CaptureNet) { DrawFrame(); continue; }
+                    if(_weapons.SelectedHotbarSlot!=0 || _weapons.HotbarSlotCount!=4 || _weapons.Hotbar.Skip(1).Any(w=>w!=null))
+                        throw new InvalidDataException("Guest net slot");
                     var guard=_world.ActiveCoders.Find(c=>c.Archetype==CoderArchetype.SecurityGuard);
                     if(guard!=null && !guardHit)
                     {
@@ -355,7 +378,10 @@ public static partial class Program
             LookAtTarget(recruit.CombatCenter);
             _weapons.SelectSlot(1);
             _world.ProcessPlayerAttack(BuildPlayerCamera(),_weapons,GrantCash,out _);
-            _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+            if(_world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash,_weapons.CurrentWeapon)!=SkyscraperFloor1World.HandsFullMessage)
+                throw new InvalidDataException("Host picked up with weapon");
+            _weapons.SelectOwnedSlot(_weapons.SelectedHotbarSlot);
+            _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash,_weapons.CurrentWeapon);
             if(_world.CarriedCoder!=recruit) throw new InvalidDataException("Coop NDA setup");
         }
         while(clock.Elapsed.TotalSeconds<15)
