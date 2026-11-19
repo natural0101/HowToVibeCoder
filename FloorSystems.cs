@@ -599,10 +599,9 @@ public static partial class Program
             GameFonts.Measure(small, rarity + "    " + note, 15).X) + 36;
         float xToast = (Raylib.GetScreenWidth() - width) / 2;
         const int top = 18;
-        Raylib.DrawRectangleRec(new(xToast, top, width, 56), new Color(24, 22, 20, (int)(215 * fade)));
-        Raylib.DrawRectangleRec(new(xToast, top, 3, 56), Raylib.Fade(DossierPrint.Crimson, fade));
-        DossierPrint.Text(rarity + "    " + note, xToast + 15, top + 4, 15, Raylib.Fade(amber, fade), Typeface.InterfaceBold);
-        DossierPrint.Text(title, xToast + 15, top + 22, 26, Raylib.Fade(DossierPrint.Ivory, fade), Typeface.SerifBold);
+        Raylib.DrawRectangleRec(new(xToast, top, width, 56), new Color(24, 22, 20, (int)(225 * fade)));
+        DossierPrint.Text(rarity + "    " + note, xToast + 16, top + 5, 15, Raylib.Fade(amber, fade), Typeface.InterfaceBold);
+        DossierPrint.Text(title, xToast + 16, top + 23, 26, Raylib.Fade(DossierPrint.Ivory, fade), Typeface.SerifBold);
     }
 
     private static void DrawPayroll()
@@ -614,9 +613,7 @@ public static partial class Program
         void Print(string value, float x, float y, int size, Color color, Typeface face = Typeface.Interface)
             => DossierPrint.Text(value, x, y, size, color, face);
         void Line(int y, Color color) => Raylib.DrawLine(164, y, 1116, y, color);
-        Line(79, red);
-        Line(83, red);
-        Print("БЕЛАЯ АКУЛА IT     Бухгалтерия первого этажа", 164, 98, 17, muted);
+        Print("БЕЛАЯ АКУЛА IT     Бухгалтерия первого этажа", 164, 92, 17, muted);
         Print("Ведомость расчёта", 161, 133, 51, ink, Typeface.SerifBold);
         Print(job.Title, 165, 205, 25, ink, Typeface.InterfaceBold);
         Print(r.Success ? "Работа принята заказчиком" : "Контракт сорван", 165, 240, 19, muted);
@@ -648,7 +645,7 @@ public static partial class Program
         Line(483, ruleInk);
         Print("ЗАПИСЬ ДИСПЕТЧЕРА", 165, 505, 15, muted, Typeface.InterfaceBold);
         Print(r.Diagnosis, 165, 532, 24, ink);
-        Line(594, red);
+        Line(594, ruleInk);
         Print("[Enter]  Следующий контракт       [E]  Вернуться на этаж", 165, 613, 19, ink);
     }
 
@@ -671,9 +668,8 @@ public static partial class Program
                 for(int tab=0;tab<2;tab++)
                 {
                     var tabRect=ArsenalTab(tab);
-                    var ink=sidegrades==(tab==1) ? paper : quiet;
-                    TypeAt(tab==0 ? "[1] ОРУЖИЕ (ЦЕПОЧКА)" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,ink);
-                    if(sidegrades==(tab==1)) Raylib.DrawLineEx(new(tabRect.X,tabRect.Y+32),new(tabRect.X+286,tabRect.Y+32),3,DossierPrint.Crimson);
+                    var activeTab = sidegrades==(tab==1);
+                    TypeAt(tab==0 ? "[1] ОРУЖИЕ (ЦЕПОЧКА)" : "[2] АПГРЕЙДЫ И ПРИМАНКИ",tabRect.X,tabRect.Y+4,17,activeTab ? Color.White : quiet, activeTab);
                 }
             int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Weapons.Length) : FloorSystems.Jobs.Length;
             for(int i=0;i<count;i++)
@@ -683,7 +679,6 @@ public static partial class Program
                 if(selected)
                 {
                     Raylib.DrawRectangleRec(row, DossierPrint.Selected);
-                    Raylib.DrawRectangleRec(new(row.X, row.Y, 4, row.Height), DossierPrint.Crimson);
                 }
                 else Raylib.DrawLine((int)row.X,(int)row.Y+50,1178,(int)row.Y+50,rule);
                 Color ink=selected ? DossierPrint.Ivory : paper;

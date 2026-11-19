@@ -808,9 +808,8 @@ public static partial class LoreAndMenusUI
     {
         bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
         if (active || hover) Raylib.DrawRectangleRec(r, DossierPrint.Selected);
-        Raylib.DrawRectangleLinesEx(r, 1, DossierPrint.Stone);
-        if (active) Fill(r.X, r.Y, 3, r.Height, DossierPrint.Crimson);
-        MainMenuAndPauseUI.Center(f, title, r, 15, DossierPrint.Ivory);
+        Raylib.DrawRectangleLinesEx(r, 1, active ? DossierPrint.Ivory : DossierPrint.Stone);
+        MainMenuAndPauseUI.Center(f, title, r, 15, active || hover ? DossierPrint.Ivory : DossierPrint.Quiet);
     }
     private static void Type(string text, float x, float y, int size, Color ink, Typeface face = Typeface.Interface)
     {
@@ -877,9 +876,8 @@ public static partial class LoreAndMenusUI
         {
             Rectangle r=MixerRect(18,95+row*43,784,38);
             Fill(r.X + 10, r.Y + r.Height + 2, r.Width - 20, 1, DossierPrint.Stone);
-            if (row == SelectedSliderIndex) Fill(r.X + 1, r.Y + 9, 3, 20, DossierPrint.Crimson);
             string name=row==0?"Общая громкость":row==MusicRow?"Музыка и босс":MixerNames[row-1];
-            DrawTextCrisp(font,name,(int)r.X+12,(int)r.Y+8,18,Color.White);
+            DrawTextCrisp(font,name,(int)r.X+12,(int)r.Y+8,18,row == SelectedSliderIndex ? Color.White : DossierPrint.Ivory);
             float value=MixerValue(row);
             Slider(MixerTrack(row),value);
             MainMenuAndPauseUI.Center(font,$"{value*100:0}%",MixerRect(561,99+row*43,51,30),15,Color.White);

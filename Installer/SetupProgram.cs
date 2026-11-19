@@ -1134,12 +1134,10 @@ public sealed class SetupMainForm : Form
         using (Font subFont = new("Segoe UI", 9.25f, FontStyle.Regular))
         using (SolidBrush titleBrush = new(Color.FromArgb(245, 247, 250)))
         using (SolidBrush subBrush = new(Color.FromArgb(174, 182, 194)))
-        using (SolidBrush barBrush = new(Color.FromArgb(212, 175, 99)))
         {
-            g.DrawString("HOW TO", titleFont, titleBrush, 22f, ClientSize.Height - 118f);
-            g.DrawString("VIBE CODER", titleFont, titleBrush, 22f, ClientSize.Height - 90f);
-            g.FillRectangle(barBrush, 24f, ClientSize.Height - 52f, 26f, 2f);
-            g.DrawString("Этаж 1 · Белая Акула", subFont, subBrush, 23f, ClientSize.Height - 40f);
+            g.DrawString("HOW TO", titleFont, titleBrush, 22f, ClientSize.Height - 108f);
+            g.DrawString("VIBE CODER", titleFont, titleBrush, 22f, ClientSize.Height - 80f);
+            g.DrawString("Этаж 1 · Белая Акула", subFont, subBrush, 23f, ClientSize.Height - 44f);
         }
 
         // Vertical hairline divider between art and workspace

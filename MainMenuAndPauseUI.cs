@@ -1075,9 +1075,8 @@ public static class MainMenuAndPauseUI
     {
         bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
         Raylib.DrawRectangleRec(r, selected || hover ? DossierPrint.Selected : DossierPrint.Matte);
-        Raylib.DrawRectangleLinesEx(r, 1, DossierPrint.Stone);
-        if (selected) Raylib.DrawRectangleRec(new(r.X, r.Y, 4, r.Height), DossierPrint.Crimson);
-        Center(GameFonts.Get(Typeface.Interface, 20), label, r, 20, DossierPrint.Ivory);
+        Raylib.DrawRectangleLinesEx(r, 1, selected ? DossierPrint.Ivory : DossierPrint.Stone);
+        Center(GameFonts.Get(Typeface.Interface, 20), label, r, 20, selected || hover ? Color.White : DossierPrint.Ivory);
     }
 
     private static void DrawMenuItem(string label, Rectangle r, bool selected)
@@ -1085,8 +1084,7 @@ public static class MainMenuAndPauseUI
         bool active = selected || Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), r);
         if (active)
         {
-            Raylib.DrawRectangleRec(r, new Color(44, 38, 34, 90));
-            Raylib.DrawRectangleRec(new(r.X, r.Y, 4, r.Height), new Color(180, 34, 54, 255));
+            Raylib.DrawRectangleRec(r, new Color(44, 38, 34, 130));
         }
         int size = 22;
         var face = GameFonts.Get(active ? Typeface.InterfaceBold : Typeface.Interface, size);

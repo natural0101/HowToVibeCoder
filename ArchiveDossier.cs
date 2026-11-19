@@ -105,8 +105,7 @@ public static partial class LoreAndMenusUI
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveRowBounds(i));
             Raylib.DrawRectangleRec(row, active ? Selected : hover ? new Color(36, 31, 28, 255) : new Color(26, 23, 21, 240));
             Fill(row.X, row.Y + row.Height - 1, row.Width, 1, new Color(58, 52, 46, 200));
-            if (active) Fill(row.X, row.Y, 4, row.Height, Crimson);
-            Type($"{i + 1:00}", row.X + 13, row.Y + 13, 14, Quiet);
+            Type($"{i + 1:00}", row.X + 13, row.Y + 13, 14, active ? Ivory : Quiet);
             string name = EntryName(i);
             int size = 20;
             while (size > 13 && GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, size), name, size).X > row.Width - 53) size--;
@@ -133,9 +132,8 @@ public static partial class LoreAndMenusUI
 
     private static float Speaker(string name, string words, float y, Color accent)
     {
-        Fill(SheetX, y + 1, 3, 19, accent);
-        Text(name, SheetX + 11, y, 17, Ink, Typeface.InterfaceBold);
-        return Paragraph(words, SheetX + 11, y + 26, TextWidth - 11, 20, 25, Ink) + 19;
+        Text(name, SheetX, y, 17, accent, Typeface.InterfaceBold);
+        return Paragraph(words, SheetX, y + 26, TextWidth, 20, 25, Ink) + 19;
     }
 
     private static void DrawCollectionSheet(int i)
@@ -206,8 +204,6 @@ public static partial class LoreAndMenusUI
     private static void DrawPage(float bottom)
     {
         Sheet(new(720, 136, 520, bottom - 136));
-        Fill(SheetX, 148, TextWidth, 3, RedInk);
-        Fill(SheetX, 154, TextWidth, 1, RedInk);
     }
 
     private static void DrawReading()
@@ -327,9 +323,8 @@ public static partial class LoreAndMenusUI
             Rectangle r = LoreTab(i);
             bool active = i == ActiveLoreTab;
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveTabBounds(i));
-            Type($"[{i + 1}]", r.X, r.Y + 10, 15, Quiet);
-            Type(ArchiveTabs[i], r.X + 31, r.Y + 5, 22, active || hover ? Ivory : Quiet, Typeface.InterfaceBold);
-            if (active) Fill(r.X, r.Y + r.Height - 3, r.Width, 3, new Color(168, 30, 50, 255));
+            Type($"[{i + 1}]", r.X, r.Y + 10, 15, active ? Ivory : Quiet);
+            Type(ArchiveTabs[i], r.X + 31, r.Y + 5, 22, active ? Color.White : hover ? Ivory : Quiet, Typeface.InterfaceBold);
         }
         DrawSelector();
         Raylib.DrawTexturePro(_exhibitTexture.Texture, new(0, 0, _exhibitTexture.Texture.Width, -_exhibitTexture.Texture.Height),
