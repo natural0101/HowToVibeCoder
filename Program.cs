@@ -69,6 +69,7 @@ public static partial class Program
         string displayPath=interactive ? Path.Combine(MainMenuAndPauseUI.SavesDirectory,"display_settings.json")
             : Path.Combine(Path.GetTempPath(),"vibecoder-display-"+Guid.NewGuid().ToString("N")+".json");
         MainMenuAndPauseUI.LoadDisplay(displayPath,interactive);
+        if(interactive) Raylib.SetTraceLogLevel(TraceLogLevel.Warning);
         Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | ConfigFlags.HiddenWindow);
         Raylib.InitWindow(ScreenWidth, ScreenHeight, "HOW TO VIBE CODER - ЭТАЖ 1: CLOUD ENTROPIC TOWER (1994 -> 2026)");
         if(interactive) MainMenuAndPauseUI.Display.Apply();
