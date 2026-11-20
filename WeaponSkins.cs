@@ -174,20 +174,30 @@ public static partial class Program
                 float x=640+(i-slot.Position)*208;
                 if(x< -10 || x>1290) continue;
                 var ticket=slot.Tickets[i];
+                int tTier=Math.Clamp((ticket.Skin-1)/3,0,3);
+                (Color top,Color bot,Color edge)=tTier switch{
+                    0=>(new Color(22,52,110,255),new Color(58,132,235,255),new Color(128,192,255,255)),
+                    1=>(new Color(56,22,114,255),new Color(138,68,242,255),new Color(198,144,255,255)),
+                    2=>(new Color(102,14,50,255),new Color(224,44,110,255),new Color(255,134,178,255)),
+                    _=>(new Color(118,74,10,255),new Color(246,196,64,255),new Color(255,244,182,255))
+                };
                 Rectangle card=new(x-98,429,196,143);
-                PaperSlip(card,new(236,222,195,255),shopGold);
+                Raylib.DrawRectangleRounded(new(card.X+2,card.Y+3,card.Width,card.Height),.07f,8,new(12,4,8,175));
+                Raylib.DrawRectangleGradientV((int)card.X+2,(int)card.Y+2,(int)card.Width-4,(int)card.Height-4,top,bot);
+                Raylib.DrawRectangleGradientV((int)card.X+3,(int)card.Y+3,(int)card.Width-6,(int)(card.Height*.48f),new Color(255,255,255,tTier==3 ? 72 : 34),Color.Blank);
+                Raylib.DrawRectangleRoundedLinesEx(card,.06f,8,tTier==3 ? 2.6f : 1.6f,edge);
                 var icon=_slotIcons[(ticket.Row+4)%5];
-                var crop=iconCrops[ticket.Row];
-                float k=Math.Min(124/crop.Width,62/crop.Height);
-                Raylib.DrawTexturePro(icon,crop,new(x,470,crop.Width*k,crop.Height*k),new(crop.Width*k/2,crop.Height*k/2),0,Color.White);
-                ShopText(WeaponSkins.Names[ticket.Skin],x,507,20,shopInk,width:186);
-                Color tint=WeaponSkins.Inks[(ticket.Skin-1)/3];
-                Raylib.DrawRectangleRounded(new(x-83,541,166,22),.45f,8,Raylib.ColorLerp(tint,shopCream,.25f));
-                FinishSample(new(x-77,545,20,13),ticket.Skin,false);
-                ShopText(WeaponSkins.Tiers[(ticket.Skin-1)/3],x+8,542,14,shopInk,true,false);
+                var raw=iconCrops[ticket.Row];
+                float sx=icon.Width/256f, sy=icon.Height/256f;
+                Rectangle crop=new(raw.X*sx,raw.Y*sy,raw.Width*sx,raw.Height*sy);
+                float k=Math.Min(154/crop.Width,108/crop.Height);
+                Vector2 sz=new(crop.Width*k,crop.Height*k);
+                Raylib.DrawTexturePro(icon,crop,new(x+3,503,sz.X,sz.Y),sz/2,0,new Color(10,6,12,115));
+                Raylib.DrawTexturePro(icon,crop,new(x,500,sz.X,sz.Y),sz/2,0,Color.White);
             }
             Raylib.EndScissorMode();
-            Raylib.DrawTriangle(new(624,407),new(640,440),new(656,407),shopGold);
+            Raylib.DrawLineEx(new(640,418),new(640,586),2.5f,new Color(248,216,126,210));
+            Raylib.DrawTriangle(new(626,406),new(640,434),new(654,406),shopGold);
         }
         Raylib.EndMode2D();
         void Button(Rectangle r,string label){
