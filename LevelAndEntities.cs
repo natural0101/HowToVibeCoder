@@ -134,8 +134,10 @@ public sealed class GalleyDeskSlot
     public Vector3 SeatedFeet => ChairPosition-Vector3.UnitZ*(.25f*SkyscraperFloor1World.WorkstationScale);
     public bool IsOccupied;
     public string CoderName = "";
+    public string SpeciesId = "";
     public CoderArchetype Archetype;
     public Color HoodieColor;
+    public Color GlassesColor = new(92,232,224,255);
     public bool IsSlackingInTwitter;
     public float SlackCycleTimer;
     public float Productivity=20, TechDebtRate, Morale=1, Burnout, TradingTimer=28;
@@ -2584,6 +2586,8 @@ public sealed partial class SkyscraperFloor1World
         desk.CoderName = CarriedCoder.Name;
         desk.Archetype = CarriedCoder.Archetype;
         desk.HoodieColor = CarriedCoder.HoodieColor;
+        desk.SpeciesId = CarriedCoder.SpeciesId;
+        desk.GlassesColor = CarriedCoder.GlassesColor;
         desk.IsSlackingInTwitter = false;
         desk.SlackCycleTimer = 25f;
         desk.IncomeAccumulator = 0f;
@@ -3482,9 +3486,9 @@ public sealed partial class SkyscraperFloor1World
             if (d.IsOccupied)
             {
                 Color hoodie = d.WhackFlashTimer>0 ? Color.Gold : d.HoodieColor;
-                Color visor = d.IsSlackingInTwitter ? new(255,174,82,255) : new(92,232,224,255);
+                Color visor = d.IsSlackingInTwitter ? new(255,174,82,255) : d.GlassesColor;
                 float bob = d.IsSlackingInTwitter ? -.04f : .02f*MathF.Sin(d.TypingPhase*2.6f);
-                VisualEngine3D.DrawSeatedCoder(d.SeatedFeet,180f,WorkstationScale,hoodie,visor,bob);
+                VisualEngine3D.DrawSeatedCoder(d.SeatedFeet,180f,WorkstationScale,hoodie,visor,bob,d.SpeciesId,i);
             }
         }
     }

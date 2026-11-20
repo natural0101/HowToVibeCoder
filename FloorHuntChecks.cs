@@ -113,36 +113,42 @@ public static partial class Program
             LookAtTarget(cabinPanel);
             capture("58_elevator_cabin_panel_closeup.png");
 
-            // Part 2 visual self-QA: new articulated Vibe Coder poses (sneak, flee, kneel) + resized desk & seated coder + chairs!
+            // Part 2 visual self-QA: new articulated Vibe Coder poses (sneak, flee, kneel) + resized desk & seated coder + 12 collectible lineup!
             ResetNewGameFloor(greet:false);
             _weapons.Equip(WeaponType.BareHands);
             _isCrouching=false;
             AudioMusicSystem.VoiceTimer=_hudStatusTimer=0;
             _world.ActiveCoders.Clear();
-            var cSneak=new VibeCoderEntity { Id=901, Name="Стажёр Артём", Position=new(-4.8f,0,7.2f), FacingYaw=-.45f,
+            var cSneak=new VibeCoderEntity { Id=900, Name="Стажёр Артём", SpeciesId="tab", Position=new(-4.8f,0,7.2f), FacingYaw=-.45f,
                 State=CoderAIState.SneakingToBait, WalkCycle=1.1f, HoodieColor=new(78,136,214,255), GlassesColor=new(86,238,224,255), Hp=50, MaxHp=50 };
-            var cFlee=new VibeCoderEntity { Id=902, Name="Промптер Влад", Position=new(-3.2f,0,7.0f), FacingYaw=2.45f,
-                State=CoderAIState.PanickedFleeing, WalkCycle=1.25f, DodgeCooldown=1.2f, HoodieColor=new(196,88,128,255), GlassesColor=new(255,192,82,255), Hp=50, MaxHp=50 };
-            var cKneel=new VibeCoderEntity { Id=903, Name="Джун Макс", Position=new(-4.0f,0,6.2f), FacingYaw=.15f,
-                State=CoderAIState.Subdued, HoodieColor=new(82,188,136,255), GlassesColor=new(142,226,255,255), Hp=1, MaxHp=50 };
+            var cFlee=new VibeCoderEntity { Id=902, Name="Берсерк Влад", SpeciesId="refactor", Position=new(-3.2f,0,7.0f), FacingYaw=2.45f,
+                State=CoderAIState.PanickedFleeing, WalkCycle=1.25f, DodgeCooldown=0.4f, HoodieColor=new(186,52,72,255), GlassesColor=new(255,192,82,255), Hp=50, MaxHp=50 };
+            var cKneel=new VibeCoderEntity { Id=901, Name="Смузи Макс", SpeciesId="smoothie", Position=new(-4.0f,0,6.2f), FacingYaw=.15f,
+                State=CoderAIState.Subdued, HoodieColor=new(164,131,213,255), GlassesColor=new(179,232,76,255), Hp=1, MaxHp=50 };
             _world.ActiveCoders.AddRange([cSneak, cFlee, cKneel]);
             _playerPos=new(-4.0f,1.52f,9.45f);
             LookAtTarget(new(-4.0f,1.02f,6.95f));
             capture("59_part2_coder_sneak_flee_kneel.png");
 
-            // Close-up on face, hoodie, headphones, and kneeling pose
+            // Close-up on face, elbows, hoodie, headphones, and kneeling pose
             _playerPos=new(-4.65f,1.42f,8.55f);
             LookAtTarget(cSneak.Position+Vector3.UnitY*1.12f);
             capture("60_part2_coder_face_closeup.png");
 
-            // Seated Vibe Coder at resized 0.92x Open-Space desk + standing coder beside desk to verify human-scale desk vs coder!
+            // Seated Vibe Coder (Tech-Wizard!) at resized 0.92x Open-Space desk + standing CRT-Helmet coder beside desk
             var desk=_world.GalleyDesks[0];
             desk.IsOccupied=true;
-            desk.CoderName="Сеньор Илья";
-            desk.HoodieColor=new(104,132,224,255);
+            desk.CoderName="Маг Фреймворков";
+            desk.SpeciesId="framework";
+            desk.HoodieColor=new(42,88,204,255);
+            desk.GlassesColor=new(249,197,76,255);
             desk.IsSlackingInTwitter=false;
+            cSneak.SpeciesId="legacy";
+            cSneak.HoodieColor=new(69,111,75,255);
+            cSneak.GlassesColor=new(132,248,148,255);
             cSneak.Position=desk.DeskPosition+new Vector3(1.42f,0,.15f);
             cSneak.State=CoderAIState.WalkingToBait;
+            cSneak.IsCombatCoder=true; cSneak.Aggro=false;
             cSneak.WalkCycle=0f;
             cSneak.FacingYaw=0f;
             _world.ActiveCoders.Remove(cFlee);
@@ -150,6 +156,40 @@ public static partial class Program
             _playerPos=desk.DeskPosition+new Vector3(1.65f,1.55f,2.35f);
             LookAtTarget(desk.DeskPosition+new Vector3(.35f,.92f,.15f));
             capture("61_part2_desk_chair_seated_scale.png");
+
+            // 12-species collectible Vibe Coder lineup (clear unobstructed shot IN FRONT of Veronika's desk!)
+            _world.ActiveCoders.Clear();
+            string[] showcaseIds = [
+                "tab", "smoothie", "leverage", "framework", "call", "refactor",
+                "no-commits", "skolkovo", "meetup", "friday", "legacy", "sb_chief"
+            ];
+            for (int idx = 0; idx < showcaseIds.Length; idx++)
+            {
+                var sp = VibeCoderCollection.All.Single(s => s.Id == showcaseIds[idx]);
+                int row = idx / 6, col = idx % 6;
+                float x = -2.35f + col * .94f + (row == 1 ? .22f : 0f);
+                float z = row == 0 ? 7.65f : 6.10f;
+                var entity = new VibeCoderEntity {
+                    Id = 910 + idx,
+                    Name = sp.Name,
+                    SpeciesId = sp.Id,
+                    Rarity = sp.Rarity,
+                    Position = new(x, 0f, z),
+                    FacingYaw = (col - 2.5f) * -.10f,
+                    State = CoderAIState.WalkingToBait,
+                    IsCombatCoder = true,
+                    Aggro = false,
+                    WalkCycle = 0f,
+                    HoodieColor = sp.HoodieColor,
+                    GlassesColor = sp.GlassesColor,
+                    Hp = 50,
+                    MaxHp = 50
+                };
+                _world.ActiveCoders.Add(entity);
+            }
+            _playerPos = new(0f, 1.56f, 11.40f);
+            LookAtTarget(new(0f, 1.04f, 6.85f));
+            capture("62_part2_12_collectible_coders_lineup.png");
         }
         ResetNewGameFloor(greet:false);
     }
