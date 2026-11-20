@@ -383,7 +383,7 @@ public sealed partial class SkyscraperFloor1World
     // GLB is 2.46 x 1.02 x 1.09 m. Preserve seat/back height at the narrower footprint.
     private static readonly Vector3 SofaStretch=new(1,.80f/SofaScale,1);
     private static readonly Vector3 SofaSize=new(2.46f*SofaScale,.816f,1.09f*SofaScale);
-    internal const float TrapScale = .90f, WorkstationScale = 1.10f;
+    internal const float TrapScale = .90f, WorkstationScale = .92f;
     internal const float TrapTop = .94f * TrapScale;
     private readonly List<BoundingBox> solids = new();
     private float _worldClock = 0f;
@@ -2713,7 +2713,10 @@ public sealed partial class SkyscraperFloor1World
                 case OfficePropKind.MeetingDesk:
                     VisualEngine3D.Asset("office_workstation", pos, 180,WorkstationScale);
                     foreach (int side in new[] { -1, 1 })
+                    {
                         VisualEngine3D.Box(pos+new Vector3(side*.86f,.36f,0)*WorkstationScale,.08f*WorkstationScale,.72f*WorkstationScale,.88f*WorkstationScale,new Color(65,70,78,255));
+                        VisualEngine3D.Asset("prop_office_chair", pos+new Vector3(side*.50f,0,.64f)*WorkstationScale, 180+side*12f, WorkstationScale);
+                    }
                     break;
                 case OfficePropKind.XeroxPhotocopier:
                     VisualEngine3D.Asset("prop_xerox_printer", pos, p.RotationYaw);
@@ -2898,8 +2901,10 @@ public sealed partial class SkyscraperFloor1World
             Part(0,1.45f,-2.1f,3.9f,2.9f,.14f,new(40,50,56,255),Finish.Slate);
             Part(0,2.91f,-1.04f,3.9f,.12f,2.22f,metal);
             Part(0,2.82f,-1.64f,3.18f,.03f,.10f,warm,Finish.Lamp);
-            Part(0,.77f,-1.72f,2.9f,.10f,.52f,new(140,101,73,255));
-            Part(0,1.13f,-1.78f,.8f,.49f,.07f,metal);
+            Part(0,.74f,-1.72f,2.9f,.07f,.56f,new(140,101,73,255));
+            foreach(int leg in new[]{-1,1})
+                Part(leg*1.32f,.36f,-1.72f,.06f,.72f,.48f,metal);
+            Part(0,1.08f,-1.78f,.8f,.46f,.07f,metal);
             Part(0,2.68f,0,3.94f,.48f,.2f,metal);
             foreach(int side in new[]{-1,1})
             {
@@ -2925,6 +2930,8 @@ public sealed partial class SkyscraperFloor1World
             float gap=t*t*(3-2*t);
             Part(0,2.68f,.115f,2.55f,.37f,.035f,Color.White,Finish.Coworking+i);
             Part(1.57f,2.68f,.12f,.15f,.11f,.05f,RoomOpen[i]>.01f ? new(72,245,158,255) : new(255,171,65,255),Finish.Lamp);
+            foreach(int ch in new[]{-1,1})
+                VisualEngine3D.Asset("prop_office_chair", d+new Vector3(ch*.82f,0,-1.28f), 180+ch*16f, .92f);
             foreach(int side in new[]{-1,1})
             {
                 float x=side*(.50f+.90f*gap);
@@ -3438,10 +3445,12 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.Sheet(new(-5.47f,.014f,-2.72f),.31f,0,Finish.JiraSheet);
         VisualEngine3D.Sheet(new(-5.65f,.012f,-2.55f),-.17f,0,Finish.NdaSheet);
         DrawPizza(BreakTable+Vector3.UnitY*.88f,-18);
-        VisualEngine3D.Box(ArenaTable+Vector3.UnitY*.76f,1.5f,.08f,.8f,new(126,88,61,255));
+        VisualEngine3D.Box(ArenaTable+Vector3.UnitY*.74f,1.5f,.07f,.8f,new(126,88,61,255));
         foreach(float x in new[]{-.62f,.62f})
             VisualEngine3D.Box(ArenaTable+new Vector3(x,.36f,0),.09f,.72f,.63f,new(62,63,66,255));
-        DrawPizza(ArenaTable+Vector3.UnitY*.80f,7);
+        foreach(int ch in new[]{-1,1})
+            VisualEngine3D.Asset("prop_office_chair", ArenaTable+new Vector3(ch*.38f,0,.60f), 180+ch*10f, .92f);
+        DrawPizza(ArenaTable+Vector3.UnitY*.78f,7);
         DrawCoffee(BreakTable+new Vector3(.34f,.88f,.08f));
         for(int i=0;i<5;i++)
             VisualEngine3D.Oval(new(4.97f+.075f*MathF.Cos(i*2),.40f+.024f*i,13.28f+.072f*MathF.Sin(i*2)),
@@ -3472,12 +3481,10 @@ public sealed partial class SkyscraperFloor1World
             DrawPod(p,i,d.IsOccupied);
             if (d.IsOccupied)
             {
-                // The pelvis stays in contact with the seat while typing.
                 Color hoodie = d.WhackFlashTimer>0 ? Color.Gold : d.HoodieColor;
-                VisualEngine3D.Asset("char_vibe_coder_seated",d.SeatedFeet,180, WorkstationScale,
-                    tint:Raylib.ColorLerp(Color.White,hoodie,.30f));
-
-
+                Color visor = d.IsSlackingInTwitter ? new(255,174,82,255) : new(92,232,224,255);
+                float bob = d.IsSlackingInTwitter ? -.04f : .02f*MathF.Sin(d.TypingPhase*2.6f);
+                VisualEngine3D.DrawSeatedCoder(d.SeatedFeet,180f,WorkstationScale,hoodie,visor,bob);
             }
         }
     }
@@ -3738,34 +3745,22 @@ public sealed partial class SkyscraperFloor1World
     private void DrawVibeCoder3D(VibeCoderEntity c)
     {
         float scale=c.ModelScale;
-        bool walking=c.ExitingRoom || (!c.IsCombatCoder || c.Aggro) && c.State is CoderAIState.WalkingToBait or CoderAIState.PanickedFleeing or CoderAIState.CombatHostile;
-        float bob=walking ? .035f*scale*MathF.Abs(MathF.Sin(c.WalkCycle)) : 0;
-        float tilt=c.IsCombatCoder && c.State==CoderAIState.Subdued
-            ? -1.45f*Math.Clamp((c.KnockoutTime+.05f)*4,0,1)
-            : c.HitStaggerTimer>0 ? -.32f*Math.Min(1,c.HitStaggerTimer*6) : c.State==CoderAIState.Subdued ? -.48f : 0;
-        bool fleeing=c.State==CoderAIState.PanickedFleeing && !c.CanSignNda;
-        if(fleeing) { tilt=.384f; bob+=c.Burst*.35f; }
-        if(c.State==CoderAIState.SneakingToBait) { tilt=.19f; bob+=.018f*MathF.Sin(c.WalkCycle); }
-        if(c.State==CoderAIState.LuredAtBait) { tilt=.30f+.025f*MathF.Sin(c.WalkCycle); bob=0; }
+        float bob=c.State==CoderAIState.PanickedFleeing && !c.CanSignNda ? c.Burst*.28f : 0f;
+        float tilt=c.HitStaggerTimer>0 ? -.28f*Math.Min(1,c.HitStaggerTimer*6) : 0f;
         if(c.CanSignNda)
         {
-            bob=-.35f;
-            tilt=.48f+.065f*MathF.Sin(_worldClock*4+c.Id);
             for(int i=0;i<3;i++)
             {
-                float a=_worldClock*3+i*MathF.Tau/3;
-                Vector3 center=c.Position+scale*new Vector3(.32f*MathF.Cos(a),1.37f+.055f*MathF.Sin(a),.47f+.24f*MathF.Sin(a));
-                GoldSpark(center,.095f*scale);
+                float a=_worldClock*3.6f+i*MathF.Tau/3;
+                Vector3 center=c.Position+scale*new Vector3(.24f*MathF.Cos(a),1.16f+.035f*MathF.Sin(a*2),.24f*MathF.Sin(a));
+                GoldSpark(center,.046f*scale);
             }
         }
         Color tint=c.HitFlashTimer>0 ? Color.White : Raylib.ColorLerp(Color.White,c.HoodieColor,c.IsCombatCoder ? .87f : .36f);
-        float stride=fleeing ? 1 : c.CanSignNda ? -1 : c.State==CoderAIState.SneakingToBait ? 2 : c.State==CoderAIState.LuredAtBait ? 3 : 0;
-        if(stride!=0) VisualEngine3D.SetCoderStride(new(stride,c.WalkCycle));
         float recoil=HitRecoil(c.HitFlinchTimer,c.CombatCenter,c.HitDirection,.36f*scale);
         if(recoil>0) VisualEngine3D.SetHitFlash(recoil);
-        VisualEngine3D.DrawCoder(c,c.Position+Vector3.UnitY*bob+c.HitDirection*(.13f*recoil),tilt-.43f*recoil,tint);
+        VisualEngine3D.DrawCoder(c,c.Position+Vector3.UnitY*bob+c.HitDirection*(.13f*recoil),tilt-.32f*recoil,tint,_worldClock);
         if(recoil>0) VisualEngine3D.SetHitFlash(0);
-        if(stride!=0) VisualEngine3D.SetCoderStride(Vector2.Zero);
         if(c.Archetype==CoderArchetype.SecurityGuard)
         {
             Vector3 At(float x,float y,float z)=>c.Position+Vector3.Transform(new Vector3(x,y+bob,z),Quaternion.CreateFromAxisAngle(Vector3.UnitY,c.FacingYaw));
@@ -3800,9 +3795,8 @@ public sealed partial class SkyscraperFloor1World
         {
             Vector3 forward=new(MathF.Sin(c.FacingYaw),0,MathF.Cos(c.FacingYaw));
             float lift = 1 - c.Windup/(c.WindingSlap ? .38f : .58f);
-            Vector3 hand=c.CombatCenter+forward*.24f+new Vector3(forward.Z,.0f,-forward.X)*.19f+Vector3.UnitY*(.13f+.22f*lift);
-            VisualEngine3D.Rod(hand-forward*.13f-Vector3.UnitY*.15f,hand,.055f,.046f,8,c.HoodieColor);
-            VisualEngine3D.Oval(hand,new Vector3(.07f+.045f*lift),new(255,88,34,255),Finish.Lamp);
+            Vector3 hand=c.CombatCenter+forward*.24f+new Vector3(-forward.Z,.0f,forward.X)*.20f+Vector3.UnitY*(.22f+.20f*lift);
+            VisualEngine3D.Orb(hand,.055f+.032f*lift,new(255,88,34,255),Finish.Lamp);
         }
 
     }
@@ -4201,50 +4195,6 @@ internal static unsafe partial class VisualEngine3D
 
     internal static Color CoderPigment(int index,Color hoodie,Color visor,Color original) => index switch {
         3=>hoodie,5=>Raylib.ColorBrightness(hoodie,-.55f),9=>visor,_=>original };
-
-    internal static void DrawCoder(VibeCoderEntity c,Vector3 feet,float tilt,Color tint)
-    {
-        const string asset="char_vibe_coder";
-        if(CastingShadows)
-        {
-            DrawDepth(imports[asset],Matrix4x4.CreateRotationX(tilt)*Matrix4x4.CreateScale(c.ModelScale)*
-                Matrix4x4.CreateRotationY(c.FacingYaw)*Matrix4x4.CreateTranslation(feet),droppedLaptop:c.LaptopLost);
-            return;
-        }
-        if (c.SpeciesId.Length==0 && !c.IsCombatCoder && !c.LaptopLost && c.HitFlashTimer<=0)
-        {
-            Asset(asset,feet,c.FacingYaw*180/MathF.PI,c.ModelScale,tint,tilt);
-            return;
-        }
-        var model=imports[asset];
-        Span<Color> saved=stackalloc Color[model.MaterialCount];
-        float flash=Math.Clamp(c.HitFlashTimer/.14f,0,1)*.28f;
-        for(int i=0;i<saved.Length;i++)
-        {
-            ref var pigment=ref model.Materials[i].Maps[0].Color;
-            saved[i]=pigment;
-            // raylib material zero is the fallback; these are the authored blue,
-            // navy and teal swatches of the single shared char_vibe_coder GLB.
-            if(c.IsCombatCoder || c.SpeciesId.Length>0)
-                pigment=CoderPigment(i,c.HoodieColor,c.GlassesColor,pigment);
-            if (i is 3 or 5)
-                pigment=Raylib.ColorLerp(pigment,new Color(255,195,130,255),flash);
-        }
-        if(c.LaptopLost)
-        {
-            Surface(Finish.Anatomy,0);
-            var pose=Matrix4x4.CreateRotationX(tilt)*Matrix4x4.CreateScale(c.ModelScale)*
-                Matrix4x4.CreateRotationY(c.FacingYaw)*Matrix4x4.CreateTranslation(feet);
-            for(int mesh=0;mesh<model.MeshCount;mesh++)
-            {
-                int material=model.MeshMaterial[mesh];
-                // Final four authored swatches belong to the chassis, glass, display and glow.
-                if(material<11) Raylib.DrawMesh(model.Meshes[mesh],model.Materials[material],Matrix4x4.Transpose(pose));
-            }
-        }
-        else Asset(asset,feet,c.FacingYaw*180/MathF.PI,c.ModelScale,Color.White,tilt);
-        for(int i=0;i<saved.Length;i++) model.Materials[i].Maps[0].Color=saved[i];
-    }
 }
 
 public sealed partial class SkyscraperFloor1World

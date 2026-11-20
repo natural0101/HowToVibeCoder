@@ -112,6 +112,44 @@ public static partial class Program
             _playerPos=cabinPanel+new Vector3(-.14f,.04f,.60f);
             LookAtTarget(cabinPanel);
             capture("58_elevator_cabin_panel_closeup.png");
+
+            // Part 2 visual self-QA: new articulated Vibe Coder poses (sneak, flee, kneel) + resized desk & seated coder + chairs!
+            ResetNewGameFloor(greet:false);
+            _weapons.Equip(WeaponType.BareHands);
+            _isCrouching=false;
+            AudioMusicSystem.VoiceTimer=_hudStatusTimer=0;
+            _world.ActiveCoders.Clear();
+            var cSneak=new VibeCoderEntity { Id=901, Name="Стажёр Артём", Position=new(-4.8f,0,7.2f), FacingYaw=-.45f,
+                State=CoderAIState.SneakingToBait, WalkCycle=1.1f, HoodieColor=new(78,136,214,255), GlassesColor=new(86,238,224,255), Hp=50, MaxHp=50 };
+            var cFlee=new VibeCoderEntity { Id=902, Name="Промптер Влад", Position=new(-3.2f,0,7.0f), FacingYaw=2.45f,
+                State=CoderAIState.PanickedFleeing, WalkCycle=1.25f, DodgeCooldown=1.2f, HoodieColor=new(196,88,128,255), GlassesColor=new(255,192,82,255), Hp=50, MaxHp=50 };
+            var cKneel=new VibeCoderEntity { Id=903, Name="Джун Макс", Position=new(-4.0f,0,6.2f), FacingYaw=.15f,
+                State=CoderAIState.Subdued, HoodieColor=new(82,188,136,255), GlassesColor=new(142,226,255,255), Hp=1, MaxHp=50 };
+            _world.ActiveCoders.AddRange([cSneak, cFlee, cKneel]);
+            _playerPos=new(-4.0f,1.52f,9.45f);
+            LookAtTarget(new(-4.0f,1.02f,6.95f));
+            capture("59_part2_coder_sneak_flee_kneel.png");
+
+            // Close-up on face, hoodie, headphones, and kneeling pose
+            _playerPos=new(-4.65f,1.42f,8.55f);
+            LookAtTarget(cSneak.Position+Vector3.UnitY*1.12f);
+            capture("60_part2_coder_face_closeup.png");
+
+            // Seated Vibe Coder at resized 0.92x Open-Space desk + standing coder beside desk to verify human-scale desk vs coder!
+            var desk=_world.GalleyDesks[0];
+            desk.IsOccupied=true;
+            desk.CoderName="Сеньор Илья";
+            desk.HoodieColor=new(104,132,224,255);
+            desk.IsSlackingInTwitter=false;
+            cSneak.Position=desk.DeskPosition+new Vector3(1.42f,0,.15f);
+            cSneak.State=CoderAIState.WalkingToBait;
+            cSneak.WalkCycle=0f;
+            cSneak.FacingYaw=0f;
+            _world.ActiveCoders.Remove(cFlee);
+            _world.ActiveCoders.Remove(cKneel);
+            _playerPos=desk.DeskPosition+new Vector3(1.65f,1.55f,2.35f);
+            LookAtTarget(desk.DeskPosition+new Vector3(.35f,.92f,.15f));
+            capture("61_part2_desk_chair_seated_scale.png");
         }
         ResetNewGameFloor(greet:false);
     }
