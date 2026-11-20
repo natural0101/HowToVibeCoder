@@ -187,8 +187,8 @@ public static partial class Program
         {
             var slot=_world.Slot;
             for(int i=0;i<tickets.Length;i++) slot.Tickets[i]=(tickets[i]/16,tickets[i]%16);
-            slot.Cashback=message.Amount; slot.Time=0; slot.Active=true;
-            FloorSystems.SpeakCoaching(SlotRoulette.SpinLine);
+            slot.Cashback=message.Amount;
+            slot.BeginSpin();
         }
         else if(Net.Host && message is {Kind:"skin-equip",Amount:>=0 and <112})
         {

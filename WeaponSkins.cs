@@ -72,8 +72,30 @@ internal sealed class SlotRoulette
     internal bool Active;
     internal float Time;
     internal int Cashback;
-    internal bool Reveal=>Time>=3.8f;
-    internal float Position=>Winner*(1-MathF.Exp(-5*Math.Min(Time/3.8f,1)))/(1-MathF.Exp(-5));
+    internal const float SpinDuration=3.8f;
+    internal bool Reveal=>Time>=SpinDuration;
+    internal float RevealTime=>Math.Max(0,Time-SpinDuration);
+    internal float Dance=>Active && Reveal ? MathF.Sin(RevealTime*MathF.PI*130/60) : 0;
+    internal readonly record struct ConfettiPiece(Vector2 Origin,Vector2 Velocity,float Rotation,float Spin,Vector2 Size,Color Ink);
+    internal readonly ConfettiPiece[] Confetti=new ConfettiPiece[95];
+    private static readonly Color[] PartyColors=[new(255,204,73,255),new(248,58,89,255),new(179,101,254,255),
+        new(53,221,249,255),new(113,249,182,255),new(255,242,208,255)];
+    internal void BeginSpin()
+    {
+        Time=0; Active=true;
+        AudioMusicSystem.StartSlotLoop();
+        FloorSystems.SpeakCoaching(SpinLine);
+    }
+    internal void Scatter()
+    {
+        var random=new Random(777+Prize.Skin);
+        for(int i=0;i<Confetti.Length;i++) {
+            float Range(float min,float max)=>min+(max-min)*random.NextSingle();
+            Confetti[i]=new(new(Range(510,770),Range(675,738)),new(Range(-980,980),Range(-1390,-345)),
+                Range(0,360),Range(-300,300),new(Range(5,9),Range(10,19)),PartyColors[i%PartyColors.Length]);
+        }
+    }
+    internal float Position=>Winner*(1-MathF.Exp(-5*Math.Min(Time/SpinDuration,1)))/(1-MathF.Exp(-5));
     internal (int Row,int Skin) Prize=>Tickets[Winner];
     internal void Start(FloorSystems floor,VibeCoderRarity rarity,Random rng,Action<int,string>? pay)
     {
@@ -92,8 +114,7 @@ internal sealed class SlotRoulette
         Cashback=floor.HasSkin(weapon,skin) ? rng.Next(75,401) : 0;
         if(Cashback>0) pay?.Invoke(Cashback,"Возврат за повтор");
         floor.SkinMasks[(int)weapon]|=1<<skin;
-        Time=0; Active=true;
-        FloorSystems.SpeakCoaching(SpinLine);
+        BeginSpin();
     }
     internal const string SpinLine="Опа, необычный кадр! Включаю режим автомата — крутим рулетку на скин для твоей пушки!";
     internal const string JackpotLine="Джекпот! Премиум-скин выпал — такого во всей башне ни у кого нет!";
@@ -128,15 +149,19 @@ public static partial class Program
         float delta=MathF.IEEERemainder(MathF.Atan2(dir.X,dir.Z)-_playerYaw,MathF.Tau);
         _playerYaw+=delta*blend;
         _playerPitch+=(MathF.Asin(dir.Y)-_playerPitch)*blend;
-        for(int i=before;i<(int)MathF.Round(slot.Position);i++) AudioMusicSystem.PlayCaseTick();
+        for(int i=before;i<(int)MathF.Round(slot.Position);i++) AudioMusicSystem.PlayCaseTick(.88f+.34f*(i+1)/SlotRoulette.Winner);
         if(!landed && slot.Reveal) {
-            _world.SpawnCashBurst(target+new Vector3(0,.12f,-.15f),36,"$");
+            AudioMusicSystem.StopSlotLoop();
+            AudioMusicSystem.PlaySfx(slot.Prize.Skin>=7 ? "slot_win_jackpot" : "slot_win_fanfare");
+            slot.Scatter();
+            _world.SpawnSlotCoins(45);
             if(slot.Prize.Skin>=7) FloorSystems.SpeakCoaching(SlotRoulette.JackpotLine);
-            else AudioMusicSystem.PlayTarotCash();
+
             Raylib.EnableCursor();
             return;
         }
         if(!slot.Reveal) return;
+        if(slot.Prize.Skin>=7 && slot.RevealTime>=.45f && slot.RevealTime-dt<.45f) _world.SpawnSlotCoins(19);
         Vector2 p=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
         bool click=Raylib.IsMouseButtonPressed(MouseButton.Left);
         bool equip=Raylib.IsKeyPressed(KeyboardKey.Enter) || click && Raylib.CheckCollisionPointRec(p,EquipPrize);
@@ -152,21 +177,56 @@ public static partial class Program
         var slot=_world.Slot;
         var (row,skin)=slot.Prize;
         int tier=(skin-1)/3;
-        Texture2D preview=slot.Reveal ? LoreAndMenusUI.RenderShopExhibit(FloorSystems.WeaponModels[row],slot.Time*37,PanelScale*2,skin) : default;
+        Texture2D preview=slot.Reveal ? LoreAndMenusUI.RenderShopExhibit(FloorSystems.WeaponModels[row],18+slot.RevealTime*37,PanelScale*2,skin) : default;
         Raylib.BeginMode2D(new Camera2D{Zoom=PanelScale,Offset=PanelOffset});
         Rectangle caseRect=new(78,400,1124,207);
-        // Sample actual walnut from the briefcase's wooden rim.
+        if(slot.Reveal && slot.RevealTime<3.5f) {
+            float age=slot.RevealTime;
+            foreach(var piece in slot.Confetti) {
+                Vector2 pos=piece.Origin+piece.Velocity*age+new Vector2(24*(MathF.Sin(age*4+piece.Rotation)-MathF.Sin(piece.Rotation)),480*age*age);
+                Vector2 size=new(piece.Size.X*(.3f+.7f*MathF.Abs(MathF.Cos(age*6+piece.Rotation))),piece.Size.Y);
+                Raylib.DrawRectanglePro(new(pos.X,pos.Y,size.X,size.Y),size/2,piece.Rotation+piece.Spin*age,piece.Ink);
+            }
+            float flash=Math.Clamp(1-age/.38f,0,1);
+            Raylib.DrawRectangle(0,0,1280,720,Raylib.ColorAlpha(WeaponSkins.Inks[tier],115/255f*flash*flash));
+        }
         Raylib.DrawTexturePro(shopBackdrop,new(0,85,55,485),caseRect,Vector2.Zero,0,Color.White);
         Raylib.DrawRectangleRoundedLinesEx(caseRect,.06f,10,3,shopGold);
         Rectangle velvet=new(96,414,1088,178);
         Raylib.DrawRectangleRounded(velvet,.06f,10,new(81,24,38,255));
         if(slot.Reveal) {
-            Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),new(129,412,428,185),Vector2.Zero,0,Color.White);
-            ShopText((skin>=7 ? Loc.T("ДЖЕКПОТ   ","JACKPOT   ") : "")+Loc.Tr(WeaponSkins.Tiers[tier]).ToUpperInvariant(),637,425,18,WeaponSkins.Inks[tier],false);
+            float age=slot.RevealTime;
+            Vector2 center=new(347,503);
+            var ink=WeaponSkins.Inks[tier];
+            Rlgl.Begin((int)DrawMode.Triangles);
+            for(int ray=0;ray<16;ray++) {
+                float angle=ray*MathF.Tau/16+age*.28f;
+                Color light=ray%2==0 ? shopGold : ink;
+                Rlgl.Color4ub(light.R,light.G,light.B,99);
+                Rlgl.Vertex2f(center.X,center.Y);
+                Rlgl.Color4ub(light.R,light.G,light.B,0);
+                Rlgl.Vertex2f(center.X+236*MathF.Cos(angle+.14f),center.Y+85*MathF.Sin(angle+.14f));
+                Rlgl.Vertex2f(center.X+236*MathF.Cos(angle),center.Y+85*MathF.Sin(angle));
+            }
+            Rlgl.End();
+            float pop=1+.24f*MathF.Exp(-age*6.5f)*MathF.Cos(age*18);
+            Vector2 size=new Vector2(428,185)*pop;
+            Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),
+                new(center.X,center.Y-3*MathF.Sin(age*4),size.X,size.Y),size/2,3*MathF.Sin(age*3),Color.White);
+            string headline=tier switch {
+                3=>Loc.T("ДЖЕКПОТ 777 · ОЛИГАРХ-ДРОП!","JACKPOT 777 · OLIGARCH DROP!"),
+                2=>Loc.T("ЭПИК · ЧИСТЫЙ ФЛЕКС!","EPIC · PURE FLEX!"),
+                1=>Loc.T("РЕДКИЙ ЛУТ · ГОДНОТА!","RARE LOOT · CLEAN ROLL!"),
+                _=>Loc.T("НОВЫЙ СКИН · ПОЙДЁТ!","NEW SKIN · NICE ROLL!")};
+            float pulse=tier>=2 ? 1+.04f*MathF.Sin(age*8) : 1;
+            ShopText(headline,637,420,(int)MathF.Round(24*pulse),ink,false,width:525);
             ShopText(WeaponSkins.Names[skin],635,450,32,shopCream,false,width:521);
             ShopText(catalogNames[row],637,492,22,shopCream,false,false);
-            if(slot.Cashback>0) ShopText($"Повтор в коллекции   +${slot.Cashback}",637,519,20,shopGold,false,false);
-            Button(EquipPrize,"[ENTER] НАДЕТЬ СКИН"); Button(StorePrize,"[ESC] В КОЛЛЕКЦИЮ");
+            if(slot.Cashback>0) {
+                Raylib.DrawRectangleRounded(new(636,518,325,27),.4f,8,new(111,60,40,255));
+                ShopText(Loc.T($"Повтор в коллекции   +${slot.Cashback}",$"Duplicate cashback   +${slot.Cashback}"),647,521,18,shopGold,false,false);
+            }
+            Button(EquipPrize,Loc.Tr("[ENTER] НАДЕТЬ СКИН")); Button(StorePrize,Loc.Tr("[ESC] В КОЛЛЕКЦИЮ"));
         } else {
             var p=PanelOffset;
             Raylib.BeginScissorMode((int)(p.X+100*PanelScale),(int)(p.Y+417*PanelScale),(int)(1080*PanelScale),(int)(170*PanelScale));

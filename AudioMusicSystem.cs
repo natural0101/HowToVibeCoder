@@ -168,6 +168,7 @@ namespace HowToVibeCoder
             _silent = silent;
             try
             {
+                if(_silent) EnsureSlotWavs();
                 LoadEnglishManifest();
                 if (!Raylib.IsAudioDeviceReady()) Raylib.InitAudioDevice();
                 if (!Raylib.IsAudioDeviceReady()) return;
@@ -190,6 +191,10 @@ namespace HowToVibeCoder
                 SfxShotgunBlast = LoadAndRegister("shotgun_blast.wav");
                 SfxChatgunBeam = LoadAndRegister("chatgun_beam.wav");
                 SfxHitmarker = LoadAndRegister("hitmarker.wav");
+                foreach (string file in new[]{"slot_lever_pull.wav","slot_win_fanfare.wav","slot_win_jackpot.wav"}) LoadAndRegister(file);
+                _slotMusic=Raylib.LoadMusicStream(Path.Combine(SoundsDir,"slot_spin_loop.wav"));
+                if(!Raylib.IsMusicValid(_slotMusic)) throw new IOException("slot_spin_loop.wav");
+                _slotMusic.Looping=true;
                 sip = LoadAndRegister("coffee_sip.wav");
                 SfxMacbookBait = LoadAndRegister("macbook_bait.wav");
                 SfxAnxietyAlarm = LoadAndRegister("anxiety_alarm.wav");
@@ -219,6 +224,83 @@ namespace HowToVibeCoder
             }
         }
 
+        private static void EnsureSlotWavs()
+        {
+            Directory.CreateDirectory(SoundsDir);
+            EnsureWavFile("slot_lever_pull.wav",()=>ComposeSlot("lever",.45));
+            EnsureWavFile("slot_spin_loop.wav",()=>ComposeSlot("groove",3.2));
+            EnsureWavFile("slot_win_fanfare.wav",()=>ComposeSlot("win",1.8));
+            EnsureWavFile("slot_win_jackpot.wav",()=>ComposeSlot("jackpot",3.2));
+        }
+
+        private enum Timbre { Bass, Brass, Bell, Coin, Kick, Snare, Hat, Gear }
+        private static short[] ComposeSlot(string cue,double duration)
+        {
+            const int rate=44100;
+            double[] mix=new double[(int)Math.Round(duration*rate)];
+            Random noise=new(777);
+            void Hit(double start,double length,double hz,double gain,Timbre voice)
+            {
+                int offset=(int)(start*rate), count=(int)(length*rate);
+                double previous=0;
+                for(int i=0;i<count && offset+i<mix.Length;i++)
+                {
+                    double t=i/(double)rate, u=i/(double)count, phase=Math.Tau*hz*t;
+                    double white=noise.NextDouble()*2-1, hiss=(white-previous)*.5;
+                    previous=white;
+                    double value=voice switch {
+                        Timbre.Brass=>(Math.Sin(phase+.7*Math.Sin(phase))+ .28*Math.Sin(phase*2.004)+.19*Math.Sin(phase*3))*(.8+.2*Math.Exp(-12*t)),
+                        Timbre.Bass=>(Math.Sin(phase)+.34*Math.Sin(phase*2)+.15*Math.Sin(phase*3))*Math.Exp(-6*t),
+                        Timbre.Kick=>Math.Sin(Math.Tau*(49*t+1.45*(1-Math.Exp(-42*t))))*Math.Exp(-22*t),
+                        Timbre.Snare=>(.72*hiss+.28*Math.Sin(phase))*Math.Exp(-27*t),
+                        Timbre.Hat=>hiss*Math.Exp(-60*t),
+                        Timbre.Gear=>(Math.Sin(phase*(1-.41*u))+.5*hiss)*(.45+.55*Math.Pow(Math.Cos(u*22),8))*Math.Exp(-3*u),
+                        Timbre.Coin=>(Math.Sin(phase)+.47*Math.Sin(phase*2.63)+.16*Math.Sin(phase*3.91))*Math.Exp(-31*t),
+                        _=>(Math.Sin(phase)+.38*Math.Sin(phase*2.01)+.14*Math.Sin(phase*4.12))*Math.Exp(-10*t)
+                    };
+                    double attack=voice==Timbre.Brass ? .014 : .002;
+                    mix[offset+i]+=gain*value*Math.Min(1,t/attack)*Math.Min(1,(count-i-1)/(rate*.014));
+                }
+            }
+            static double Note(int midi)=>440*Math.Pow(2,(midi-69)/12d);
+            int[] ninth=[0,4,7,10,14];
+            if(cue=="lever") {
+                Hit(0,.15,73,.62,Timbre.Kick);
+                Hit(.018,.30,1260,.32,Timbre.Gear);
+                for(int i=0;i<5;i++) Hit(.027+i*.032,.035,830-i*73,.26,Timbre.Snare);
+                Hit(.265,.18,1568,.31,Timbre.Bell);
+                Hit(.302,.145,2349,.17,Timbre.Bell);
+            } else if(cue=="groove") {
+                int[] roots=[48,53,55,48];
+                int[] walk=[0,4,7,10];
+                for(int bar=0;bar<4;bar++)
+                    for(int step=0;step<4;step++) {
+                        double at=bar*.8+step*.2;
+                        int root=roots[bar];
+                        Hit(at,.185,Note(root-12+walk[step]),.40,Timbre.Bass);
+                        Hit(at,.15,180,step%2==0 ? .52 : .38,step%2==0 ? Timbre.Kick : Timbre.Snare);
+                        Hit(at,.06,0,.23,Timbre.Hat);
+                        Hit(at+.114,.075,0,.19,Timbre.Hat);
+                        Hit(at+.114,.086,Note(root+24+ninth[(step+bar)%5]),.12,Timbre.Bell);
+                        if(step%2==0) foreach(int interval in ninth)
+                            Hit(at+.105,.085,Note(root+12+interval),.08,Timbre.Brass);
+                    }
+            } else {
+                bool jackpot=cue=="jackpot";
+                for(int call=0;call<3;call++)
+                    foreach(int interval in new[]{0,4,7,12})
+                        Hit(call*.235,call==2 ? (jackpot ? .79 : .42) : .15,Note((call==1 ? 55 : 60)+interval),.16,Timbre.Brass);
+                int[] climb=[0,4,7,12,16,19,24,28];
+                for(int i=0;i<(jackpot ? 16 : 8);i++)
+                    Hit(.47+i*(jackpot ? .127 : .089),.29,Note(66+climb[i%8]+i/8*5),.20,Timbre.Bell);
+                for(int i=0;i<(jackpot ? 48 : 8);i++)
+                    Hit(.43+i*(jackpot ? .048 : .105)+noise.NextDouble()*.034,.14,1800+noise.NextDouble()*1700,.18,Timbre.Coin);
+                Hit(duration-.35,.35,2637,.30,Timbre.Bell);
+                Hit(duration-.27,.27,3951,.12,Timbre.Bell);
+            }
+            return Array.ConvertAll(mix,value=>ClampSample(.92*Math.Tanh(value*1.45)));
+        }
+
         private static Sound LoadAndRegister(string fileName)
         {
             string fullPath = Path.Combine(SoundsDir, fileName);
@@ -241,6 +323,7 @@ namespace HowToVibeCoder
                 Directory.CreateDirectory(SoundsDir);
             }
 
+            EnsureSlotWavs();
             EnsureWavFile("belt_whip.wav", SynthesizeBeltWhip);
             EnsureWavFile("solder_sizzle.wav", SynthesizeSolderSizzle);
             EnsureWavFile("uzi_shot.wav", SynthesizeUziShot);
@@ -293,7 +376,7 @@ namespace HowToVibeCoder
 
         internal static string SceneMusicFile => MusicFiles[(int)_scene];
 
-        public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false)
+        public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false, bool slotActive = false, bool slotSpinning = false)
         {
             dt = Math.Clamp(dt, 0f, 0.05f);
             _weaponBarkDelay=Math.Max(0,_weaponBarkDelay-dt);
@@ -309,6 +392,11 @@ namespace HowToVibeCoder
                 (1f - MathF.Exp(-dt / (speaking ? .038f : .36f)));
 
             float musicCurve = MathF.Pow(Math.Clamp(MusicVolume, 0f, 1f), 1.6f);
+            _slotDuck+=((slotActive ? .14f : 1f)-_slotDuck)*(1-MathF.Exp(-dt*10));
+            if(slotSpinning) {
+                Raylib.SetMusicVolume(_slotMusic,MusicVolume*.83f);
+                Raylib.UpdateMusicStream(_slotMusic);
+            } else StopSlotLoop();
             for (int i = 0; i < Streams.Length; i++)
             {
                 bool selected = i == (int)target;
@@ -322,7 +410,7 @@ namespace HowToVibeCoder
                     continue;
                 }
                 float easedGain = Gains[i] * Gains[i];
-                float volume = musicCurve * SceneTrim[i] * easedGain * _dialogueGain;
+                float volume = musicCurve * SceneTrim[i] * easedGain * _dialogueGain * _slotDuck;
                 if (previous == 0)
                 {
                     Raylib.SetMusicVolume(stream, 0f);
@@ -457,6 +545,20 @@ namespace HowToVibeCoder
             }
         }
 
+        private static Music _slotMusic;
+        private static float _slotDuck=1;
+        internal static void StartSlotLoop()
+        {
+            if(!AudioReady) return;
+            PlaySfx("slot_lever_pull");
+            Raylib.SetMusicVolume(_slotMusic,MusicVolume*.83f);
+            Raylib.PlayMusicStream(_slotMusic);
+        }
+        internal static void StopSlotLoop()
+        {
+            if(AudioReady && Raylib.IsMusicStreamPlaying(_slotMusic)) Raylib.StopMusicStream(_slotMusic);
+        }
+        internal static void PlayCaseTick(float pitch)=>PlaySfx("case_tick",pitch,.95f*EffectLevels[4]);
         public static void PlayCaseTick()
         {
             PlaySfx("case_tick.wav", 0.96f + (float)_rng.NextDouble() * 0.08f, 0.95f * EffectLevels[4]);
@@ -700,6 +802,9 @@ namespace HowToVibeCoder
                     Raylib.UnloadSound(kv);
                 }
                 _soundsByName.Clear();
+                if(Raylib.IsMusicValid(_slotMusic)) Raylib.UnloadMusicStream(_slotMusic);
+                _slotMusic=default;
+                _slotDuck=1;
                 for (int i = 0; i < Streams.Length; i++)
                 {
                     if (Raylib.IsMusicValid(Streams[i])) Raylib.UnloadMusicStream(Streams[i]);

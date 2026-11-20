@@ -158,6 +158,7 @@ public struct EnemyProjectile3D
 
 public struct CashBurstParticle3D
 {
+    public bool Coin;
     public Vector3 Position;
     public Vector3 Velocity;
     public float Life;
@@ -2423,6 +2424,17 @@ public sealed partial class SkyscraperFloor1World
         return $"ПОСАЖЕН В ОПЕНСПЕЙС #{targetIdx + 1}: {name} в смене. Ставка ${desk.Productivity}/с";
     }
 
+    internal void SpawnSlotCoins(int count)
+    {
+        Vector3 tray=HrTarotBoothPos+new Vector3(0,1.48f,-.18f);
+        for(int i=0;i<count;i++) {
+            float angle=_rng.NextSingle()*MathF.Tau, spread=.24f+_rng.NextSingle()*1.14f;
+            CashParticles.Add(new() {Coin=true,Position=tray,Velocity=new(MathF.Cos(angle)*spread,
+                .9f+_rng.NextSingle()*1.45f,-.12f+.24f*MathF.Sin(angle)),Life=1.65f,MaxLife=1.65f,
+                Tint=i%3==0 ? new(255,229,131,255) : new(255,187,47,255)});
+        }
+    }
+
     public void SpawnCashBurst(Vector3 origin, int count, string label = "$$$")
     {
         for (int i = 0; i < count; i++)
@@ -2520,6 +2532,28 @@ public sealed partial class SkyscraperFloor1World
         for (int i = 0; i < CashParticles.Count; i++)
         {
             var cp = CashParticles[i];
+            if(cp.Coin) {
+                float spin=(cp.MaxLife-cp.Life)*12+i;
+                Vector3 face=Vector3.Normalize(new Vector3(MathF.Sin(spin),.34f*MathF.Cos(spin*1.7f),MathF.Cos(spin)));
+                VisualEngine3D.Rod(cp.Position-face*.004f,cp.Position+face*.004f,.027f,.027f,14,cp.Tint,Finish.Bronze);
+                Vector3 visible=Vector3.Dot(face,camera.Position-cp.Position)>0 ? face : -face;
+                var stamp=cp.Position+visible*.0045f;
+                Vector3 across=Vector3.Normalize(Vector3.Cross(visible,Vector3.UnitY));
+                Vector3 up=Vector3.Cross(across,visible);
+                Color emboss=new(255,234,155,255);
+                for(int edge=0;edge<10;edge++) {
+                    Vector3 Rim(float a)=>stamp+.021f*(across*MathF.Cos(a)+up*MathF.Sin(a));
+                    Raylib.DrawLine3D(Rim(edge*MathF.Tau/10),Rim((edge+1)*MathF.Tau/10),emboss);
+                }
+                Raylib.DrawLine3D(stamp+up*.010f-across*.008f,stamp+up*.010f+across*.007f,emboss);
+                Raylib.DrawLine3D(stamp+up*.010f+across*.007f,stamp-up*.012f-across*.004f,emboss);
+                if(MathF.Sin(spin*2)>.86f) {
+                    var glint=cp.Position+new Vector3(.018f,.022f,-.012f);
+                    Raylib.DrawLine3D(glint-Vector3.UnitX*.017f,glint+Vector3.UnitX*.017f,Color.White);
+                    Raylib.DrawLine3D(glint-Vector3.UnitY*.025f,glint+Vector3.UnitY*.025f,Color.White);
+                }
+                continue;
+            }
             VisualEngine3D.Box(cp.Position, 0.28f, 0.12f, 0.16f, new Color(45, 205, 85, 245));
 
         }
@@ -2952,6 +2986,8 @@ public sealed partial class SkyscraperFloor1World
     {
         float k=_slotBlend, shake=Slot.Active && !Slot.Reveal ? MathF.Sin(47*t) : 0;
         pivot.X+=.009f*shake;
+        pivot.Y+=MathF.Abs(Slot.Dance)*.055f;
+        float roll=2*shake+14*Slot.Dance;
         float angle=72*MathF.Sin(MathF.PI*Math.Clamp(Slot.Time/.65f,0,1));
         Vector3 At(float x,float y,float z)=>pivot+new Vector3(x,y,z)*k;
         Color brass=new(210,157,77,255), velvet=new(123,33,52,255);
@@ -2959,7 +2995,7 @@ public sealed partial class SkyscraperFloor1World
         if(authored)
         {
             VisualEngine3D.SetSlotReels(Slot.Position);
-            VisualEngine3D.AssetOriented("char_hr_veronika_slot_head",pivot,180,0,2*shake,k);
+            VisualEngine3D.AssetOriented("char_hr_veronika_slot_head",pivot,180,0,roll,k);
             VisualEngine3D.SetSlotReels(0);
         }
         else {
@@ -2978,7 +3014,7 @@ public sealed partial class SkyscraperFloor1World
         }
         // The delivered head has its right temple socket at (-.118,.128,0) in glTF.
         Vector3 socket=authored ? new(-.118f,.128f,0) : new(-.132f,.135f,0);
-        Matrix4x4 head=Matrix4x4.CreateScale(k)*Matrix4x4.CreateFromYawPitchRoll(MathF.PI,0,2*shake*MathF.PI/180)*
+        Matrix4x4 head=Matrix4x4.CreateScale(k)*Matrix4x4.CreateFromYawPitchRoll(MathF.PI,0,roll*MathF.PI/180)*
             Matrix4x4.CreateTranslation(pivot);
         Vector3 lever=Vector3.Transform(socket,head);
         if(VisualEngine3D.HasAsset("char_hr_veronika_slot_lever"))
@@ -3035,8 +3071,9 @@ public sealed partial class SkyscraperFloor1World
                 {
                     float gesture=reading ? 1f : .4f;
                     Vector3 armPivot=origin+new Vector3(-x,1.298f+breath,-.032f);
-                    VisualEngine3D.AssetOriented(model,armPivot,180,3.5f*gesture*MathF.Sin(t*1.9f+phase),
-                        2.5f*gesture*MathF.Sin(t*1.45f+phase));
+                    float pump=Slot.Active && Slot.Reveal ? 22+17*MathF.Sin(Slot.RevealTime*MathF.Tau*130/60+phase) : 0;
+                    VisualEngine3D.AssetOriented(model,armPivot,180,-pump+3.5f*gesture*MathF.Sin(t*1.9f+phase),
+                        MathF.Sign(x)*pump*.75f+2.5f*gesture*MathF.Sin(t*1.45f+phase));
                 }
                 Arm("char_hr_veronika_arm_l",.138f,0);
                 Arm("char_hr_veronika_arm_r",-.138f,2.1f);

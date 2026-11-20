@@ -426,7 +426,8 @@ public static partial class Program
     private static void UpdateFrame(float dt, ref bool shouldExit)
     {
         UpdateGameplay(dt, ref shouldExit);
-        AudioMusicSystem.UpdateMusic(BossFightMusic, dt, MainMenuAndPauseUI.IsInMainMenu);
+        bool slotVisible=_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu;
+        AudioMusicSystem.UpdateMusic(BossFightMusic,dt,MainMenuAndPauseUI.IsInMainMenu,slotVisible,slotVisible && !_world.Slot.Reveal);
     }
 
     private static void UpdateGameplay(float dt, ref bool shouldExit)
@@ -1458,6 +1459,14 @@ public static partial class Program
         var prize=_world.Slot.Prize;
         Key(KeyboardKey.Enter);
         Check(!_world.Slot.Active && Floor.EquippedSkins[(int)FloorSystems.WeaponOrder[prize.Row]]==prize.Skin,"reveal equips reward");
+        _world.Slot.Start(Floor,VibeCoderRarity.Legendary,new Random(75),GrantCash);
+        Check(_world.Slot.Prize==(3,10),"legendary gold Micro-Uzi fixture");
+        for(int i=0;i<267;i++) {
+            UpdateSlot(1f/60);
+            _world.PoseVeronika(_playerPos,1f/60);
+        }
+        capture("33b_veronika_slot_jackpot_party.png");
+        Key(KeyboardKey.Escape);
         RoundTrip();
         for(int i=0;i<90;i++) TickFloor(1f/60);
         foreach(var (feet,side) in SkyscraperFloor1World.Gates)
