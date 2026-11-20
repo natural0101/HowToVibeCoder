@@ -3775,24 +3775,6 @@ public sealed partial class SkyscraperFloor1World
         }
         if(c.Ignition>0 && c.Hp>0)
             VisualEngine3D.Oval(c.CombatCenter+Vector3.UnitY*.12f,new(.12f,.17f+.04f*MathF.Sin(_worldClock*21),.1f),Color.Orange,Finish.Plasma);
-        if(!VisualEngine3D.CastingShadows && c.Rarity!=VibeCoderRarity.Common && c.Hp>0)
-        {
-            Color ink=VibeCoderCollection.Ink(c.Rarity);
-            float angle=_worldClock*.75f+c.Id;
-            for(int i=0;i<40;i++)
-            {
-                if(i%10>=8) continue;
-                Vector3 Ring(float t)=>c.Position+new Vector3(.48f*MathF.Cos(t),.035f,.48f*MathF.Sin(t));
-                Raylib.DrawLine3D(Ring(angle+i*MathF.Tau/40),Ring(angle+(i+1)*MathF.Tau/40),Raylib.Fade(ink,.72f));
-            }
-            for(int i=0;i<5;i++)
-            {
-                float t=(_worldClock*.44f+i*.21f)%1;
-                float a=angle+i*2.4f;
-                Vector3 mote=c.Position+new Vector3(.49f*MathF.Cos(a),.07f+t*.83f,.49f*MathF.Sin(a));
-                VisualEngine3D.Oval(mote,new Vector3(.013f,.034f,.013f)*MathF.Sin(t*MathF.PI),ink,Finish.Lamp);
-            }
-        }
         if(!VisualEngine3D.CastingShadows && c.Archetype==CoderArchetype.TeamLeadMeeter && c.State==CoderAIState.CombatHostile)
             Raylib.DrawCircle3D(c.Position+Vector3.UnitY*.04f,5,Vector3.UnitX,90,new Color(128,224,149,155));
         if (c.IsCombatCoder && c.Windup>0)
@@ -4183,9 +4165,23 @@ public sealed partial class SkyscraperFloor1World
             if(focus.Kind==FocusKind.Coder && ActiveCoders[focus.Index]==c) continue;
             if(waypoint?.Position==c.Position && c.Composure>=99) continue;
             if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.Hp<=0 && !c.KnockedOutAlive) continue;
-            Plate(c.Position+Vector3.UnitY*(1.58f*c.ModelScale),c.State==CoderAIState.PanickedFleeing && c.SpeechTimer>0 ? c.SpeechBubble : c.Deadline>0 ? $"Дедлайн! {Math.Ceiling(c.Deadline)} с" : c.IdentityRevealed ? c.Name : c.MysteryTag,
-                c.Composure<99 || c.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,c.Position)<56.25f ? c.Composure/100 : -1,
-                VibeCoderCollection.Ink(c.Rarity),true);
+            string plateText = c.State==CoderAIState.PanickedFleeing && c.SpeechTimer>0 ? c.SpeechBubble
+                : c.Deadline>0 ? $"Дедлайн! {Math.Ceiling(c.Deadline)} с"
+                : c.IdentityRevealed ? c.Name
+                : c.State==CoderAIState.Subdued ? "Сломлен"
+                : "";
+            float bar = c.Composure<99 || c.State==CoderAIState.Subdued ? c.Composure/100 : -1;
+            if(plateText.Length>0)
+                Plate(c.Position+Vector3.UnitY*(1.92f*c.ModelScale),plateText,bar,VibeCoderCollection.Ink(c.Rarity),true);
+            else if(bar>=0 && Visible(camera.Position,c.CombatCenter))
+            {
+                var head=c.Position+Vector3.UnitY*(1.92f*c.ModelScale);
+                if(Vector3.Dot(head-camera.Position,look)>0 && WorldLabelLayout.Place(UiViewport.Project(head,camera),56,5,out var track))
+                {
+                    Raylib.DrawRectangleRec(track,new Color(14,18,26,165));
+                    Raylib.DrawRectangleRec(new(track.X+1,track.Y+1,54*Math.Clamp(bar,0,1),3),VibeCoderCollection.Ink(c.Rarity));
+                }
+            }
         }
         if(Systems.Verdict==AgentVerdict.Contained && Vector3.DistanceSquared(camera.Position,GalleyDesks[0].DeskPosition)<36)
             Plate(GalleyDesks[0].DeskPosition+new Vector3(.74f,1,0),"Узел агента   $14/с",-1,Color.White);

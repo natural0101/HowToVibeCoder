@@ -26,11 +26,24 @@ internal static unsafe partial class VisualEngine3D
     {
         "div" or "smoothie" => (.94f, 1.04f, 1.00f),
         "refactor" or "sb_chief" => (1.13f, 1.04f, 1.06f),
-        "meetup" => (1.02f, 1.03f, 1.28f),
+        "meetup" => (1.02f, 1.03f, 1.45f),
         "no-commits" or "skolkovo" => (1.03f, 1.05f, 1.00f),
         "friday" or "legacy" => (1.06f, 1.07f, 1.08f),
         "prompt" or "framework" => (.97f, 1.02f, 1.00f),
         _ => (1.00f, 1.00f, 1.00f),
+    };
+
+    internal static (string Torso, string ForearmL, string ForearmR, bool ForearmRHoodie, bool ForearmRTrim, string ShinR, bool ShinRTrim)
+        SpeciesLimbs(int headIdx) => headIdx switch
+    {
+        0 => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r_hook",  true,  false, "coder_shin_r_peg", false),
+        1 => ("coder_torso",         "coder_forearm_l_coffee", "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
+        2 => ("coder_torso_chain",   "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
+        3 => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r_staff", true,  true,  "coder_shin_r",     true),
+        5 => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r_cyber", false, false, "coder_shin_r",     true),
+        7 => ("coder_torso_jetpack", "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
+        9 => ("coder_torso_devil",   "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
+        _ => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
     };
 
     internal struct CoderRigPose
@@ -66,15 +79,16 @@ internal static unsafe partial class VisualEngine3D
 
         switch (headIdx % 12)
         {
-            case 0: // Zoomer Headphones — right hand adjusting earcup, left hand tucked by pocket
-                p.TorsoYaw = -.22f; p.HeadYaw = .24f; p.HeadRoll = -.08f;
-                p.ArmRPitch = -1.22f; p.ArmRRoll = -.48f; p.ElbowRPitch = -1.78f; p.ElbowRYaw = .38f;
-                p.ArmLPitch = .14f; p.ArmLRoll = .16f; p.ElbowLPitch = -1.12f; p.ElbowLYaw = -.42f;
+            case 0: // Vibe-Pirate! Proudly brandishing steel hook right hand + wooden peg-leg stepped forward!
+                p.TorsoYaw = -.22f; p.HeadYaw = .24f; p.HeadRoll = -.07f;
+                p.ThighRPitch = -.18f; p.ThighRRoll = -.10f; p.ShinRPitch = .18f;
+                p.ArmRPitch = -.92f + .06f * breath; p.ArmRRoll = -.36f; p.ElbowRPitch = -1.25f; p.ElbowRYaw = .20f;
+                p.ArmLPitch = .20f; p.ArmLRoll = .46f; p.ElbowLPitch = -1.38f; p.ElbowLYaw = -.70f;
                 break;
-            case 1: // Hipster Beanie / Smoothie — relaxed lean holding imaginary smoothie cup up
+            case 1: // Caffeine / Smoothie Maniac — holding oversized iced smoothie cup up with jittery tremble!
                 p.PelvisRoll = -.05f; p.TorsoYaw = .20f; p.TorsoRoll = .05f; p.HeadYaw = -.16f; p.HeadRoll = .07f;
-                p.ArmLPitch = -.38f; p.ArmLRoll = .14f; p.ElbowLPitch = -1.52f + .05f * breath; p.ElbowLYaw = -.22f;
-                p.ArmRPitch = .16f; p.ArmRRoll = -.18f; p.ElbowRPitch = -.88f; p.ElbowRYaw = .34f;
+                p.ArmLPitch = -.42f; p.ArmLRoll = .16f; p.ElbowLPitch = -1.48f + .06f * breath; p.ElbowLYaw = -.18f;
+                p.ArmRPitch = .14f; p.ArmRRoll = -.18f; p.ElbowRPitch = -.92f; p.ElbowRYaw = .30f;
                 break;
             case 2: // Backwards Cap Crypto-Bro — cocky wide stance, left hand on hip, chin up
                 p.TorsoPitch = -.04f; p.TorsoYaw = -.24f; p.HeadPitch = -.09f; p.HeadYaw = .26f;
@@ -385,15 +399,16 @@ internal static unsafe partial class VisualEngine3D
             * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinRPitch, -p.ThighRRoll * .45f)
             * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighR;
 
-        DrawArticulatedPart("coder_torso", torso, hoodie, trim, visor, true, true, false, flash);
+        var limbs = SpeciesLimbs(headIdx);
+        DrawArticulatedPart(limbs.Torso, torso, hoodie, trim, visor, true, true, false, flash);
         DrawArticulatedPart(headAsset, head, hoodie, trim, visor, false, false, true, flash);
         DrawArticulatedPart("coder_upper_arm_l", upperArmL, hoodie, trim, visor, true, false, false, flash);
-        DrawArticulatedPart("coder_forearm_l", forearmL, hoodie, trim, visor, true, true, false, flash);
+        DrawArticulatedPart(limbs.ForearmL, forearmL, hoodie, trim, visor, true, true, false, flash);
         DrawArticulatedPart("coder_upper_arm_r", upperArmR, hoodie, trim, visor, true, false, false, flash);
-        DrawArticulatedPart("coder_forearm_r", forearmR, hoodie, trim, visor, true, true, false, flash);
+        DrawArticulatedPart(limbs.ForearmR, forearmR, hoodie, trim, visor, limbs.ForearmRHoodie, limbs.ForearmRTrim, false, flash);
         DrawArticulatedPart("coder_thigh_l", thighL, hoodie, trim, visor, false, false, false, 0f);
         DrawArticulatedPart("coder_shin_l", shinL, hoodie, trim, visor, false, true, false, 0f);
         DrawArticulatedPart("coder_thigh_r", thighR, hoodie, trim, visor, false, false, false, 0f);
-        DrawArticulatedPart("coder_shin_r", shinR, hoodie, trim, visor, false, true, false, 0f);
+        DrawArticulatedPart(limbs.ShinR, shinR, hoodie, trim, visor, false, limbs.ShinRTrim, false, 0f);
     }
 }

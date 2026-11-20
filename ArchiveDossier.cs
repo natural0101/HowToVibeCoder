@@ -616,16 +616,17 @@ internal static unsafe partial class VisualEngine3D
             Matrix4x4 shinL = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul) * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinLPitch, -p.ThighLRoll * .45f) * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighL;
             Matrix4x4 thighR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighRPitch, p.ThighRRoll) * Matrix4x4.CreateTranslation(-.090f, 0f, 0f) * pelvis;
             Matrix4x4 shinR = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul) * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinRPitch, -p.ThighRRoll * .45f) * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighR;
-            DrawCoderArchivePart("coder_torso", torso, true, true, false);
+            var limbs = SpeciesLimbs(headIdx);
+            DrawCoderArchivePart(limbs.Torso, torso, true, true, false);
             DrawCoderArchivePart(headAsset, head, false, false, true);
             DrawCoderArchivePart("coder_upper_arm_l", upperArmL, true, false, false);
-            DrawCoderArchivePart("coder_forearm_l", forearmL, true, true, false);
+            DrawCoderArchivePart(limbs.ForearmL, forearmL, true, true, false);
             DrawCoderArchivePart("coder_upper_arm_r", upperArmR, true, false, false);
-            DrawCoderArchivePart("coder_forearm_r", forearmR, true, true, false);
+            DrawCoderArchivePart(limbs.ForearmR, forearmR, limbs.ForearmRHoodie, limbs.ForearmRTrim, false);
             DrawCoderArchivePart("coder_thigh_l", thighL, false, false, false);
             DrawCoderArchivePart("coder_shin_l", shinL, false, true, false);
             DrawCoderArchivePart("coder_thigh_r", thighR, false, false, false);
-            DrawCoderArchivePart("coder_shin_r", shinR, false, true, false);
+            DrawCoderArchivePart(limbs.ShinR, shinR, false, limbs.ShinRTrim, false);
             return;
         }
         DrawParts(asset, transform, partner);
