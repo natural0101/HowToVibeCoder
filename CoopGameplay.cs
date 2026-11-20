@@ -18,7 +18,7 @@ public static partial class Program
     private static ref VibeCoderEntity? guestCarried => ref escorts[actorSlot];
     private static ref VibeCoderEntity? peerEscort => ref escorts[0];
     private static PartnerAvatar Avatar(int slot) => _world.Partners[slot]??=new PartnerAvatar(slot);
-    private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon,_weapons.BeltSwingPhase);
+    private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon,_weapons.BeltSwingPhase,_isCrouching,_sprinting);
     private static void StartHosting(bool newShift = false)
     {
         bool online = Net.StartHost(CoopNetworkSystem.DefaultPort);
@@ -92,7 +92,7 @@ public static partial class Program
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
         escorts[slot],_world.TotalCodersSoldToHr,health[slot],_playerHp,_world.Systems,_world.CarriedCoder,
-        ProgressionVersion:2,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
+        ProgressionVersion:3,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
         ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot,Health:[_playerHp,health[1],health[2]],Escorts:[_world.CarriedCoder,escorts[1],escorts[2]],Downed:[Downed(0),Downed(1),Downed(2)],RoomOpen:_world.RoomOpen,VentTime:_world.VentTime);
 
     private static void ApplyElevator(FloorSnapshot state)
@@ -237,6 +237,8 @@ public static partial class Program
             var weapon=(WeaponType)(message.Amount/16);
             if(FloorSystems.WeaponOrder.Contains(weapon)) Floor.EquipSkin(weapon,message.Amount%16);
         }
+        else if(Net.Host && message is { Kind:"drop-bait", Pose:{Valid:true} baitActor })
+            Net.Send(new("status",Text:_world.DropFloorBait(baitActor.Camera)),actorSlot);
         else if(Net.Host && message.Kind=="drink")
         {
             guestInteraction=true;
@@ -302,6 +304,7 @@ public static partial class Program
             foreach(var frog in _world.Frogs) if(frog.Rest<=0) frog.AdvanceArc(dt);
             return;
         }
+        _world.HostSprinting=_sprinting;
         _world.UpdateWorld(dt,_playerPos,_isCrouching,(amount,_)=>_playerCash=Math.Max(0,_playerCash+amount),ReceiveDamage,Net.Ready ? _world.Partners[1]?.Pose.Eye : null,GuestDamage,
             Net.Ready ? _world.Partners[2]?.Pose.Eye : null,(damage,label,source)=>DamageSlot(2,damage,label,source));
         Floor.UpdateOnboarding(_world,_playerCash);

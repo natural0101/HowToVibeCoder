@@ -268,6 +268,7 @@ public static partial class Program
             DrawFrame();
             Raylib.ClearWindowState(ConfigFlags.HiddenWindow);
         }
+        if(localPair && coopSmoke) CheckFloorHunt();
         int join=Array.IndexOf(args,"--join");
         if(join>=0)
         {
@@ -546,7 +547,12 @@ public static partial class Program
         SetHudBanner($"+${amount} ({sourceLabel}) | Баланс: ${_playerCash}");
     }
 
-    private static void SetHudBanner(string text, float duration = 4.2f,bool foreground=false)
+    private static void DropBait()
+    {
+        if(Net.Guest) Net.Send(new("drop-bait",LocalPose));
+        else SetHudBanner(_world.DropFloorBait(BuildPlayerCamera()),foreground:true);
+    }
+    internal static void SetHudBanner(string text, float duration = 4.2f,bool foreground=false)
     {
         _foregroundBanner=foreground;
         _hudStatusBanner = text;
@@ -1062,6 +1068,7 @@ public static partial class Program
         Raylib.DrawRing(new(277,sh-41),3,4.5f,-95,95,12,white);
         Raylib.DrawRectangleRounded(new(262,sh-47,14,13),.42f,6,white);
         ShadowText(_uiFont,$"×{(Net.Guest ? GuestCups : Floor.PocketCoffeeCups)}",286,sh-51,18,white);
+        ShadowText(_uiFont,Loc.T("[G] Наживка","[G] Bait")+" ×"+Floor.BaitStock.Sum(),317,sh-51,16,white);
         if(_playerHp<65)
             ShadowText(_uiFont,"Хил: [H] Кофе или Кофе-машина / Пицца [E]",38,sh-120,15,new Color(178,238,201,(int)(205+42*MathF.Sin((float)Raylib.GetTime()*3))));
         if(HealFlashTimer>0)
@@ -1385,7 +1392,7 @@ public static partial class Program
         void Guided(OnboardingStep step,string words)
         {
             Check(Floor.Onboarding==step && CoachingSubtitle && AudioMusicSystem.ActiveVoiceText.Contains(words),"coaching "+step);
-            Check((_world.OnboardingWaypoint(_playerPos)!=null)==(step!=OnboardingStep.Done),"beacon "+step);
+            Check((_world.OnboardingWaypoint(_playerPos)!=null)==(step is not (OnboardingStep.Done or OnboardingStep.ActivateBait)),"beacon "+step);
         }
         void RoundTrip()
         {
@@ -1413,7 +1420,7 @@ public static partial class Program
         }
         ResetNewGameFloor();
         var bait=_world.CentralMacBookPos+Vector3.UnitY*(SkyscraperFloor1World.TrapTop+.13f);
-        Approach(bait,2); Key(KeyboardKey.E);
+        _world.ActivateMacBookTrap(SubscriptionBaitTier.FreeTier,_=>true,out _);
         Check(Floor.Onboarding==OnboardingStep.TalkToVeronika && _world.ActiveCoders.Count==1 &&
             _world.ActiveCoders[0].TimidIntern && Math.Abs(_world.ActiveCoders[0].Position.X)<8.5f,"safe early bait");
         Floor.BuyWeapon(0,_=>true); TickFloor(1f/60);
@@ -1427,6 +1434,7 @@ public static partial class Program
             _lastDamageSourcePos==trainee.Position,"telegraphed training projectile");
         Key(KeyboardKey.H);
         Check(Floor.Onboarding==OnboardingStep.CaptureFirstCoder && _playerHp==100 && Floor.PocketCoffeeCups==1,"alternative healing lesson");
+        _playerPos=new(.8f,1.72f,14.3f);
         Floor.NextIncident=.01f; Floor.SEC=85;
         for(int i=0;i<300;i++) TickFloor(.05f);
         Check(Floor.LastIncident==-1 && !Floor.Raid && Floor.Audit==0 && _world.ActiveCoders.Count==2 &&
@@ -1536,11 +1544,12 @@ public static partial class Program
         Key(KeyboardKey.Tab); Check(sidegrades,"upgrade tab");
         Key(KeyboardKey.One); Key(KeyboardKey.Enter);
         Guided(OnboardingStep.ActivateBait,"Сачок в руках");
-        Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.CentralMacBookPos,"bait waypoint");
+        Check(Floor.BaitStock[0]==1,"starter bait");
         Check(floorPanel==FloorPanel.None && _weapons.CurrentWeapon==WeaponType.CaptureNet,"net ready in world");
         LookAtTarget(bait);
         capture("20_onboarding_bait_beacon.png");
-        Approach(bait,2); Key(KeyboardKey.E);
+        _playerPos=new(-5.8f,1.72f,7.4f); LookAtTarget(new(-5.8f,.1f,6)); Key(KeyboardKey.G);
+        _playerPos=new(4,1.72f,11); for(int i=0;i<70;i++) TickFloor(1f/60);
         Guided(OnboardingStep.StunAndHeal,"Пошли клиенты");
         Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.ActiveCoders.MinBy(c=>Vector3.DistanceSquared(_playerPos,c.Position))?.Position,"nearest candidate");
         Check(_world.IsMacBookTrapActive && _world.ActiveCoders.Any(c=>c.TimidIntern),"guided free wave");
@@ -1574,11 +1583,14 @@ public static partial class Program
         Approach(cluster+Vector3.UnitY*.15f,1.7f); Attack();
         Check(Floor.PocketFrogs.Count==carried+3 && _world.Frogs.Count(f=>f.From.X>22)==1,"three per sweep");
         var intern=_world.ActiveCoders.First(c=>c.TimidIntern);
+        intern.ExitingRoom=false;
         intern.Position=new(-4.5f,0,6);
         Approach(intern.CombatCenter);
         Attack(); Check(intern.Hp==12 && intern.State!=CoderAIState.Subdued,"first net swipe");
         LookAtTarget(intern.CombatCenter);
-        Attack(); Check(intern.State==CoderAIState.Subdued,"net subdues intern");
+        Attack();
+        if(intern.DodgeCooldown>0 && intern.Hp>0) { Approach(intern.CombatCenter); Attack(); }
+        Check(intern.State==CoderAIState.Subdued,"net subdues intern within dodge cooldown");
         Guided(OnboardingStep.HealAtCoffee,"Тебя задели");
         Check(_playerHp==82 && _lastDamageAmount==18 && _lastDamageTimer>2.4f && _lastDamageLabel.Contains("искра"),"attributed scratch");
         _playerPos=SkyscraperFloor1World.CoffeePos+new Vector3(-.6f,1.72f,1.65f);
@@ -1624,6 +1636,9 @@ public static partial class Program
         Check(!Floor.WingsUnlocked && _world.TotalCodersSoldToHr==1,"first sale preserves quarantine");
         for(int sale=2;sale<=3;sale++)
         {
+            ApplyFloorAction(50);
+            _playerPos=new(-5.8f,1.72f,7.4f); LookAtTarget(new(-5.8f,.1f,6)); Key(KeyboardKey.G);
+            _playerPos=new(4,1.72f,11);
             for(int tick=0;tick<120;tick++) TickFloor(1f/60);
             var candidate=_world.ActiveCoders.First(c=>c.TimidIntern);
             if(sale==3) Check(candidate.Rarity==VibeCoderRarity.Uncommon,"third atrium candidate uncommon");
@@ -1927,13 +1942,14 @@ public static partial class Program
         Console.WriteLine($"[AUTOTEST] Space peak={peak:F3}m landing=1.720m Ctrl={crouched:F3}m sprint={sprintEnergy:F1} dash={dashEnergy:F1} recovered={_energy}");
 
         // Walk into the table, vault its edge, stand on top, then jump just after stepping off.
-        _playerPos=_world.CentralMacBookPos+new Vector3(1.20f,1.72f,-.70f);
+        var table=new Vector3(4,0,13); // Pizza table remains vaultable.
+        _playerPos=table+new Vector3(1.20f,1.72f,-.28f);
         _playerYaw=-MathF.PI/2;
         Key(KeyboardKey.W,true); Tick(8);
-        Require(_playerPos.X>_world.CentralMacBookPos.X+.90f,"desk side collision");
+        Require(_playerPos.X>table.X+.90f,"desk side collision");
         Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false); Tick(8);
         Key(KeyboardKey.W,false); Tick(48);
-        Require(_isGrounded && Math.Abs(_playerPos.Y-1.72f-SkyscraperFloor1World.TrapTop)<.01f,"table landing");
+        Require(_isGrounded && Math.Abs(_playerPos.Y-1.72f-.88f)<.01f,"table landing");
         Key(KeyboardKey.S,true);
         for(int i=0;i<18 && _isGrounded;i++) Tick();
         Key(KeyboardKey.S,false);
@@ -1944,7 +1960,7 @@ public static partial class Program
         while((_playerVelY>=0 || _playerPos.Y>2.12f) && descent++<90) Tick();
         Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false); Tick(6);
         Require(_playerVelY>5,"buffered landing jump");
-        Console.WriteLine($"[AUTOTEST] Bait top={SkyscraperFloor1World.TrapTop:F3}m, side collision, vault, coyote and buffered jump PASS");
+        Console.WriteLine($"[AUTOTEST] Pizza table top=0.88m, side collision, vault, coyote and buffered jump PASS");
 
         ResetClassicFixture();
         // Use the far end of the north hall for the timed magazine test.
@@ -1979,6 +1995,7 @@ public static partial class Program
         // Keep the test lane clear of the nearby architectural pillar.
         _playerPos=new(-5.6f,1.72f,5.6f);
         enemy.Position=new(-5.6f,0,10.4f);
+        Key(KeyboardKey.LeftControl,true); // Stay quiet while measuring the fighter’s attack cadence.
         Tick(32);
         Require(enemy.Aggro && enemy.Windup>0 && _world.EnemyProjectiles.Count==0,"warn before throw");
         for(int i=0;i<60 && !_world.EnemyProjectiles.Any(p=>p.IsGlitch);i++) Tick();
@@ -1996,6 +2013,7 @@ public static partial class Program
         int meleeHp=_playerHp;
         for(int i=0;i<160 && _playerHp==meleeHp;i++) Tick();
         Require(meleeHp-_playerHp==6,"telegraphed laptop slap");
+        Key(KeyboardKey.LeftControl,false);
         _weapons.SelectSlot(3);
         LookAtTarget(enemy.CombatCenter); Mouse(true); Tick(); Mouse(false);
         Require(enemy.HitStaggerTimer>0 && enemy.KnockbackVel.Length()>2 && enemy.Hp>0,"impact impulse");
@@ -2713,6 +2731,7 @@ public static partial class Program
         LookAtTarget(vent+new Vector3(0,.15f,.69f));
         _weapons.Equip(WeaponType.BareHands);
         CaptureShot("45_new_frogs_floor_scale.png",hideHud:true);
+        CheckFloorHunt(name=>CaptureShot(name));
         CheckRoomSpawns();
         CheckLivingOffice((name,cam)=>CaptureShot(name,sceneCamera:cam,hideHud:true));
         CheckElevatorReveal(name=>CaptureShot(name));

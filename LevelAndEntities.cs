@@ -26,7 +26,7 @@ public enum CoderAIState
     SittingAtMacBook = 1,
     CombatHostile = 2,
     PanickedFleeing = 3,
-    Subdued = 4
+    Subdued = 4, Peeking, SneakingToBait, LuredAtBait
 }
 
 public enum ElevatorBossState
@@ -61,6 +61,8 @@ public sealed class VibeCoderEntity
     public float FacingYaw; // Radians
     public float MaxHp;
     public float Hp;
+    public bool FloorHunter, EscapingToDoor;
+    public float DodgeCooldown, Stress, Burst;
     public float Anxiety; // 0..100
     public CoderAIState State;
     public float StateTimer;
@@ -119,7 +121,7 @@ public sealed class VibeCoderEntity
     public bool IsMiniBoss => Archetype == CoderArchetype.SaasGuruMiniBoss;
     public const float BodyScale = .70f;
     public float ModelScale => BodyScale * (IsMiniBoss ? 1.28f : 1f);
-    public Vector3 CombatCenter => Position + Vector3.UnitY * (1.05f * ModelScale);
+    public Vector3 CombatCenter => Position + Vector3.UnitY * ((State==CoderAIState.LuredAtBait ? .57f : 1.05f) * ModelScale);
 }
 
 public sealed class GalleyDeskSlot
@@ -467,11 +469,12 @@ public sealed partial class SkyscraperFloor1World
             }
         }
     }
-    private readonly Random speciesRandom;
+    private readonly Random speciesRandom, dodgeRandom;
     private readonly Random _rng = new(1994);
 
     public SkyscraperFloor1World(int? speciesSeed=null)
     {
+        dodgeRandom=speciesSeed.HasValue ? new Random(speciesSeed.Value+8) : Random.Shared;
         frogRandom=speciesSeed.HasValue ? new Random(speciesSeed.Value+83) : new Random();
         speciesRandom=speciesSeed.HasValue ? new Random(speciesSeed.Value) : new Random();
         InitializeFloorLayout();
@@ -963,7 +966,7 @@ public sealed partial class SkyscraperFloor1World
                 Add(d+Vector3.UnitX*(side*1.45f),.9f,2.9f,.12f);
             }
         }
-        Add(CentralMacBookPos,1.44f*TrapScale,TrapTop,2.48f*TrapScale);
+
         Add(HrTarotBoothPos,3.30f,1.08f,2.10f);
         Add(HrTarotBoothPos+new Vector3(-2.15f,0,.35f),1.45f,1.31f,.60f);
         Add(ArsenalShopPos,4.50f,1.12f,1.90f);
@@ -1107,7 +1110,7 @@ public sealed partial class SkyscraperFloor1World
             ActiveAmbushCoverName = "Присед [C]";
         }
 
-        IsPlayerInAmbush = nearCover || isCrouching || InCloud(playerPos);
+        IsPlayerInAmbush = Systems.PlacedBait is {} bait ? !IsPlayerSpottedAtBait(bait,playerPos,isCrouching) : nearCover || isCrouching || InCloud(playerPos);
     }
 
     // =========================================================================
@@ -1356,11 +1359,12 @@ public sealed partial class SkyscraperFloor1World
         UpdateAmbushState(playerPos, isCrouching);
 
         // 1. Spawn coder when MacBook Trap is active and no live non-subdued coder is walking
-        if(IsMacBookTrapActive && !Systems.WingsUnlocked && TotalCodersSoldToHr<Systems.Balance.QuarantineUnlockTarget &&
+        UpdateFloorHunt(dt,playerPos,isCrouching);
+        if(!Systems.FloorHuntEnabled && IsMacBookTrapActive && !Systems.WingsUnlocked && TotalCodersSoldToHr<Systems.Balance.QuarantineUnlockTarget &&
             (CoderSpawnTimer-=dt)<=0 && ActiveCoders.Count(c=>(c.Hp>0 || c.CanSignNda) &&
             Math.Abs(c.Position.X)<9 && c.Position.Z is >=4 and <=15)<Systems.Balance.Cap(2))
             SpawnAtriumIntern();
-        if (IsMacBookTrapActive && Systems.WingsUnlocked)
+        if (!Systems.FloorHuntEnabled && IsMacBookTrapActive && Systems.WingsUnlocked)
         {
             int activeCount = 0;
             for (int i = 0; i < ActiveCoders.Count; i++)
@@ -1401,7 +1405,7 @@ public sealed partial class SkyscraperFloor1World
 
     // Use the same expanded furniture and gate footprints as walking players.
     // Find a short route once when a recruit first leaves its room for the lounge.
-    private Queue<Vector3> RouteToBait(Vector3 from,Vector3 goal)
+    private Queue<Vector3> RouteToBait(Vector3 from,Vector3 goal,float stopRadius=0)
     {
         static (int X,int Z) Cell(Vector3 p) => ((int)MathF.Round(p.X*2),(int)MathF.Round(p.Z*2));
         static Vector3 Feet((int X,int Z) c) => new(c.X*.5f,0,c.Z*.5f);
@@ -1412,7 +1416,7 @@ public sealed partial class SkyscraperFloor1World
         queue.Enqueue(start,0);
         while(queue.TryDequeue(out var cell,out _))
         {
-            if(cell==finish)
+            if(cell==finish || stopRadius>0 && Vector3.DistanceSquared(Feet(cell),goal)<stopRadius*stopRadius)
             {
                 var path=new Stack<Vector3>();
                 for(var at=cell;at!=start;at=previous[at]) path.Push(Feet(at));
@@ -1473,6 +1477,8 @@ public sealed partial class SkyscraperFloor1World
                 continue;
             }
             if(c.State==CoderAIState.Subdued) { LootElevatorKey(c); continue; }
+            if(!c.FloorHunter && !c.EscapingToDoor && c.StunTimer<=0) UpdateStress(c,dt);
+            if((c.FloorHunter || c.EscapingToDoor) && c.StunTimer<=0) { UpdateHunter(c,dt); continue; }
             if(c.ExitingRoom && c.StunTimer<=0)
             {
                 var door=RoomDoors[c.EntryRoom];
@@ -1672,7 +1678,7 @@ public sealed partial class SkyscraperFloor1World
     {
         if(c.Archetype==CoderArchetype.SecurityGuard && InCloud(eye)) { c.Aggro=false; c.Windup=0; return false; }
         if(c.Deadline>0) dt*=1.5f;
-        if(IsMacBookTrapActive && !c.RaidGuard && !c.ReleaseAttacker && !c.BaitTaken &&
+        if(!Systems.FloorHuntEnabled && IsMacBookTrapActive && !c.RaidGuard && !c.ReleaseAttacker && !c.BaitTaken &&
             c.Archetype is CoderArchetype.JuniorPrompter or CoderArchetype.CryptoBro && Vector3.DistanceSquared(c.Position,CentralMacBookPos)<90)
         {
             c.State=CoderAIState.WalkingToBait; c.Windup=0; c.BaitTaken=true;
@@ -2299,7 +2305,10 @@ public sealed partial class SkyscraperFloor1World
                 if(!CanCarryWith(tool)) weaponSystem.Equip(WeaponType.BareHands);
                 return;
             }
-            isCrit=target.State==CoderAIState.SittingAtMacBook;
+            if((target.FloorHunter || target.EscapingToDoor || target.Stress>=70) && TryDodge(target,tool,origin)) { feedback=target.SpeechBubble; weaponSystem.TriggerWeaponAttack(camera); return; }
+            bool ambush=target.State==CoderAIState.LuredAtBait && QuietAt(origin) && target.Stress<55;
+            if(ambush && tool==WeaponType.CaptureNet) dmg=(int)MathF.Ceiling(target.Hp);
+            isCrit=ambush || target.State==CoderAIState.SittingAtMacBook;
             if(target.IsCombatCoder)
             {
                 target.Aggro = true;
@@ -2367,7 +2376,8 @@ public sealed partial class SkyscraperFloor1World
                 Impact(hitPt,target.CombatCenter,dmg,isCrit);
                 if(target.Hp<=0) { KillCoder(target,onGrantMoney); feedback="Кандидат выбыл. СБ +14"; }
             }
-            if(target.Hp>0 && !target.CanSignNda && (target.TimidIntern || !target.IsCombatCoder && !target.IsMiniBoss)) Panic(target);
+            if(target.Hp>0 && target.State!=CoderAIState.Subdued) { target.Stress=100; Spook(target); }
+            if(!target.EscapingToDoor && !target.FloorHunter && target.Hp>0 && !target.CanSignNda && (target.TimidIntern || !target.IsCombatCoder && !target.IsMiniBoss)) Panic(target);
             AudioMusicSystem.PlayHitmarker();
         }
 
@@ -2405,6 +2415,8 @@ public sealed partial class SkyscraperFloor1World
         }
         if(surfaceDistance<=maxRange && HitStation(camera,weaponSystem,origin+forward*surfaceDistance,out combatFeedback)) return true;
 
+        if(melee) foreach(var nearby in ActiveCoders)
+            if(!nearby.CanSignNda && Vector3.DistanceSquared(origin,nearby.CombatCenter)<5 && Visible(origin,nearby.CombatCenter)) { nearby.Stress=100; Spook(nearby); }
         // 4. Missed enemy - still fire weapon visuals into world geometry
         weaponSystem.TriggerWeaponAttack(camera, surfaceDistance <= maxRange ? origin+forward*surfaceDistance : null, hitEnemy: false, shotDirection: forward);
         return false;
@@ -2477,14 +2489,6 @@ public sealed partial class SkyscraperFloor1World
             }
         }
 
-        // 3. Check if near Central MacBook Trap Desk
-        float distMac = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(CentralMacBookPos.X, CentralMacBookPos.Z));
-        if (distMac <= 3.8f)
-        {
-            ActivateMacBookTrap(SelectedBaitTier, trySpendMoney, out string msg);
-            return msg;
-        }
-
         // 4. Check if near Central Armored Elevator Core (North or South doors) or Call Buttons
         float distElevNorth = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(NorthElevatorPos.X, NorthElevatorPos.Z));
         float distElevSouth = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(SouthElevatorDoorPos.X, SouthElevatorDoorPos.Z));
@@ -2496,16 +2500,7 @@ public sealed partial class SkyscraperFloor1World
             return msg;
         }
 
-        // 5. Check if near 90s Shop Stand -> cycle subscription bait tier
-        float distShop = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(ArsenalShopPos.X, ArsenalShopPos.Z));
-        if (distShop <= 4.2f)
-        {
-            SelectedBaitTier = (SubscriptionBaitTier)(((int)SelectedBaitTier + 1) % 4);
-            var info = GetBaitInfo(SelectedBaitTier);
-            return $"ВЫБРАНА ПРИМАНКА ДЛЯ ЯБЛОБУКА: {info.Name} - {info.Description}";
-        }
-
-        return "Подойди ближе к ЯблоБуку [E], покорному кодеру [E], HR-Тарологу Веронике [E], Опенспейсу [E] или Лифту [E]!";
+        return Loc.T("Наведи прицел на объект или положи наживку [G]","Aim at an object or drop bait [G]");
     }
 
     public string SellCarriedCoderToHrVeronika(Action<int, string>? onGrantMoney)
@@ -2616,7 +2611,7 @@ public sealed partial class SkyscraperFloor1World
         if(!VisualEngine3D.CastingShadows)
         {
             VisualEngine3D.World(camera,this);
-            VisualEngine3D.SetTrapLight(CentralMacBookPos+new Vector3(-.24f,1.22f,0)*TrapScale);
+            VisualEngine3D.SetTrapLight(Systems.PlacedBait?.Position+Vector3.UnitY*.14f ?? new(0,-100,0));
         }
         DrawSkyscraperArchitecture3D();
         DrawWingGates();
@@ -2624,7 +2619,7 @@ public sealed partial class SkyscraperFloor1World
         if(!VisualEngine3D.CastingShadows)
         {
             VisualEngine3D.Shadow(HrTarotBoothPos,4.8f,3);
-            VisualEngine3D.Shadow(CentralMacBookPos,1.9f*TrapScale,3*TrapScale);
+            if(Systems.PlacedBait is {} bait) VisualEngine3D.Shadow(bait.Position,.43f,.33f);
             foreach(var desk in GalleyDesks) VisualEngine3D.Shadow(desk.DeskPosition,3,2.4f);
         }
         DrawBugHunt();
@@ -3470,10 +3465,8 @@ public sealed partial class SkyscraperFloor1World
 
     private void DrawCentralMacBookTrapAndCovers3D()
     {
-        Vector3 m = CentralMacBookPos;
-
-        // 1. Detailed Blender 3D Tactical Trap Desk + Open Aluminum MacBook Pro
-        VisualEngine3D.Asset("prop_macbook_trap_desk", m, -90f, TrapScale);
+        if(Systems.PlacedBait is {} bait) VisualEngine3D.DrawFloorBait(bait.Position,bait.Tier,bait.Yaw,_worldClock);
+        else if(Systems.HasWeapon(WeaponType.CaptureNet) && Systems.ActiveBaitTier<0) VisualEngine3D.DrawFloorBait(RefillPoint,0,MathF.PI,_worldClock);
 
 
         // 4. Ambush Cover Objects around Central Desk (Each a dedicated 3D Blender model!)
@@ -3699,7 +3692,9 @@ public sealed partial class SkyscraperFloor1World
             ? -1.45f*Math.Clamp((c.KnockoutTime+.05f)*4,0,1)
             : c.HitStaggerTimer>0 ? -.32f*Math.Min(1,c.HitStaggerTimer*6) : c.State==CoderAIState.Subdued ? -.48f : 0;
         bool fleeing=c.State==CoderAIState.PanickedFleeing && !c.CanSignNda;
-        if(fleeing) tilt=.384f;
+        if(fleeing) { tilt=.384f; bob+=c.Burst*.35f; }
+        if(c.State==CoderAIState.SneakingToBait) { tilt=.19f; bob+=.018f*MathF.Sin(c.WalkCycle); }
+        if(c.State==CoderAIState.LuredAtBait) { tilt=.30f+.025f*MathF.Sin(c.WalkCycle); bob=0; }
         if(c.CanSignNda)
         {
             bob=-.35f;
@@ -3712,9 +3707,10 @@ public sealed partial class SkyscraperFloor1World
             }
         }
         Color tint=c.HitFlashTimer>0 ? Color.White : Raylib.ColorLerp(Color.White,c.HoodieColor,c.IsCombatCoder ? .87f : .36f);
-        if(fleeing || c.CanSignNda) VisualEngine3D.SetCoderStride(new(fleeing ? 1 : -1,c.WalkCycle));
+        float stride=fleeing ? 1 : c.CanSignNda ? -1 : c.State==CoderAIState.SneakingToBait ? 2 : c.State==CoderAIState.LuredAtBait ? 3 : 0;
+        if(stride!=0) VisualEngine3D.SetCoderStride(new(stride,c.WalkCycle));
         VisualEngine3D.DrawCoder(c,c.Position+Vector3.UnitY*bob,tilt,tint);
-        if(fleeing || c.CanSignNda) VisualEngine3D.SetCoderStride(Vector2.Zero);
+        if(stride!=0) VisualEngine3D.SetCoderStride(Vector2.Zero);
         if(c.Archetype==CoderArchetype.SecurityGuard)
         {
             Vector3 At(float x,float y,float z)=>c.Position+Vector3.Transform(new Vector3(x,y+bob,z),Quaternion.CreateFromAxisAngle(Vector3.UnitY,c.FacingYaw));
@@ -3822,13 +3818,16 @@ public sealed partial class SkyscraperFloor1World
             // Slots from before the collection had archetypes but no species IDs.
             var species=VibeCoderCollection.All.FirstOrDefault(s=>s.Id==c.SpeciesId)
                 ?? VibeCoderCollection.All.First(s=>s.Archetype==c.Archetype);
+            var capturedRarity=c.Rarity;
             VibeCoderCollection.Dress(c,species);
+            if(c.FloorHunter) c.Rarity=capturedRarity;
             c.Name=species.Name;
             Systems.Discover(species,grant);
         }
         c.IdentityRevealed=true;
         LootElevatorKey(c);
         ActiveCoders.Remove(c);
+        if(c.FloorHunter && Systems.PlacedBait?.HunterId==c.Id) Systems.PlacedBait=null;
         if(c.Archetype==CoderArchetype.SecurityGuard)
         { Systems.Protection=true; return "Начальник СБ прикрывает смену. −1,2 СБ/с"; }
         CarriedCoder = c;
@@ -3905,15 +3904,14 @@ public sealed partial class SkyscraperFloor1World
                 if (desk.IsOccupied) return $"{desk.CoderName}: ставка ${desk.Productivity}/с, мораль {desk.Morale:P0}, выгорание {desk.Burnout:F0}%";
                 return SeatCarriedCoderAtGalley(focus.Index);
             case FocusKind.MacBook:
-                ActivateMacBookTrap(SelectedBaitTier,spend,out string trap);
-                return trap;
+                return RecoverBait();
             case FocusKind.Elevator:
                 TrySummonElevatorBoss(out string lift);
                 return lift;
             case FocusKind.Shop:
-                SelectedBaitTier=(SubscriptionBaitTier)(((int)SelectedBaitTier+1)%4);
-                return GetBaitInfo(SelectedBaitTier).Description;
-            default: return HandleInteractKeyE(camera.Position,spend,grant,tool);
+                return VeronikaShop;
+            default: if(camera.Target.Y<camera.Position.Y-.3f && Systems.ActiveBaitTier>=0) return DropFloorBait(camera);
+                return HandleInteractKeyE(camera.Position,spend,grant,tool);
         }
     }
 
@@ -3951,7 +3949,8 @@ public sealed partial class SkyscraperFloor1World
                     gate.Side ? new(0,3.2f,1.9f) : new(1.9f,3.2f,0));
                 Consider(gate.Feet+nearest,0,2.8f,FocusKind.Barrier,BarrierHint);
             }
-        Consider(CentralMacBookPos, TrapTop+.13f, 3.8f, FocusKind.MacBook, "ЯблоБук-ловушка");
+        if(Systems.PlacedBait is {} bait) Consider(bait.Position,.1f,2,FocusKind.MacBook,Loc.T("Поднять наживку","Recover bait"));
+        else if(Systems.HasWeapon(WeaponType.CaptureNet) && Systems.ActiveBaitTier<0) Consider(RefillPoint,.15f,2.5f,FocusKind.MacBook,Loc.T("Взять запасной ЯблоБук","Collect spare AppleBook"));
         string deposit=$"Сдать Джаба-жаб ({Systems.PocketFrogs.Count} шт.)";
         Consider(TerminalPos,1.08f,3f,FocusKind.Terminal,Systems.PocketFrogs.Count>0 ? deposit : "Баг-трекер принимает Джаба-жаб. Садок пуст");
         Consider(HrTarotBoothPos,1.6f,4.6f,FocusKind.Veronika,CarriedCoder!=null ? "Сдать кадра HR Веронике" :
@@ -3984,12 +3983,14 @@ public sealed partial class SkyscraperFloor1World
 
     internal (Vector3 Position,float Height,string Label)? OnboardingWaypoint(Vector3 eye)
     {
+        (Vector3,float,string)? HuntWaypoint() => Systems.PlacedBait is {} bait ? (bait.Position,.23f,Loc.T("Спрячься [Ctrl]","Hide [Ctrl]")) :
+            Systems.ActiveBaitTier<0 ? (RefillPoint,.3f,Loc.T("Взять запасной ЯблоБук","Collect spare AppleBook")) : null;
         switch(Systems.Onboarding)
         {
             case OnboardingStep.TalkToVeronika: return (HrTarotBoothPos,2.12f,"HR Вероника [E]");
             case OnboardingStep.DepositFrogs: return (TerminalPos,1.65f,"Баг-трекер [E]");
             case OnboardingStep.BuyNet: return (HrTarotBoothPos,2.12f,"Вероника: Сачок $3 [E]");
-            case OnboardingStep.ActivateBait: return (CentralMacBookPos,TrapTop+.62f,"ЯблоБук-приманка [E]");
+            case OnboardingStep.ActivateBait: return null;
             case OnboardingStep.CatchFrogs:
                 var frog=Frogs.Where(f=>f.CatchableByHand && ReachableFrog(eye,f.Feet))
                     .MinBy(f=>Vector3.DistanceSquared(eye,f.Feet));
@@ -3997,7 +3998,7 @@ public sealed partial class SkyscraperFloor1World
             case OnboardingStep.SeatFirstGalley:
                 var desk=GalleyDesks.Where(d=>!d.IsOccupied).MinBy(d=>Vector3.DistanceSquared(eye,d.DeskPosition));
                 if(CarriedCoder!=null && desk!=null) return (desk.DeskPosition,1.5f,"Посади в Опенспейс [E]");
-                if(ActiveCoders.Count==0) return (CentralMacBookPos,TrapTop+.62f,"Примани кадра для Опенспейса [E]");
+                if(ActiveCoders.Count==0) return HuntWaypoint();
                 goto case OnboardingStep.CaptureFirstCoder;
             case OnboardingStep.HealAtCoffee: return (CoffeePos,1.62f,"Выпей эспрессо (+45 HP) [E]");
             case OnboardingStep.CaptureFirstCoder when CarriedCoder!=null:
@@ -4006,7 +4007,7 @@ public sealed partial class SkyscraperFloor1World
             case OnboardingStep.CaptureFirstCoder:
                 var coder=ActiveCoders.Where(c=>(c.Hp>0 || c.CanSignNda) && c.Archetype!=CoderArchetype.SecurityGuard)
                     .MinBy(c=>Vector3.DistanceSquared(eye,c.Position));
-                return coder==null ? (CentralMacBookPos,TrapTop+.62f,"Дождись вайбкодера") :
+                return coder==null ? HuntWaypoint() :
                     (coder.Position,coder.CanSignNda ? .82f : 1.84f*coder.ModelScale,coder.CanSignNda ? "Подпиши NDA [E]" : "Оглуши ЛКМ → NDA [E]");
             default: return null;
         }
@@ -4050,7 +4051,7 @@ public sealed partial class SkyscraperFloor1World
         var focus=FindFocus(camera);
         Vector3? focusFeet=focus.Kind switch {
             FocusKind.Coder=>ActiveCoders[focus.Index].Position, FocusKind.Frog=>Frogs[focus.Index].Feet,
-            FocusKind.Veronika=>HrTarotBoothPos, FocusKind.Terminal=>TerminalPos, FocusKind.MacBook=>CentralMacBookPos,
+            FocusKind.Veronika=>HrTarotBoothPos, FocusKind.Terminal=>TerminalPos, FocusKind.MacBook=>Systems.PlacedBait?.Position ?? RefillPoint,
             FocusKind.Coffee=>CoffeePos, FocusKind.Desk=>GalleyDesks[focus.Index].DeskPosition,_=>null};
         var waypoint=OnboardingWaypoint(camera.Position);
         if(waypoint is {} goal && focusFeet!=goal.Position)
@@ -4111,6 +4112,11 @@ public sealed partial class SkyscraperFloor1World
                 ally.Hp/100f,ally.Blazer);
         foreach(var c in ActiveCoders)
         {
+            if(c.Stress>5 && !c.CanSignNda && Visible(camera.Position,c.CombatCenter))
+                Plate(c.Position+Vector3.UnitY*(1.93f*c.ModelScale),$"{(c.Stress>=90 ? "!" : "?")} {c.Stress:F0}%",c.Stress/100,Raylib.ColorLerp(Color.Gold,Color.Red,c.Stress/100),true);
+            if(c.FloorHunter && c.SpeechTimer>0)
+                Plate(c.Position+Vector3.UnitY*(1.67f*c.ModelScale),c.SpeechBubble,-1,Color.White);
+            if(c.FloorHunter && !c.CanSignNda) continue;
             if(focus.Kind==FocusKind.Coder && ActiveCoders[focus.Index]==c) continue;
             if(waypoint?.Position==c.Position && c.Composure>=99) continue;
             if(Vector3.DistanceSquared(camera.Position,c.Position)>100 || c.Hp<=0 && !c.KnockedOutAlive) continue;

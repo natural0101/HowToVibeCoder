@@ -37,7 +37,7 @@ internal sealed partial class FloorSystems
         new("Синяя изолента MK2","На 45% сильнее удар по эго. Жало быстрее греется и остывает.",260),
         new("Барабан Узи","50 патронов. Перезарядка на 30% дольше.",320),
         new("Ремень «Директорский»","Цепляет соседние цели. Шире окно отражения, короче оглушение.",250),
-        new("Пейджер Крыши","Один вызов [G] отзывает рейд и снимает 35 внимания СБ.",180),
+        new("Пейджер Крыши","Один вызов [P] отзывает рейд и снимает 35 внимания СБ.",180),
         new("Канифольный напалм","Поджигает цель. Перегрев B12 ×2, выше риск потерять кадр.",160),
         new("NDA на копирке","Отлов и подготовка NDA вдвое быстрее. За подпись +6 СБ.",150),
         new("Печатка Авторитета","Авторитет и страх +30%. Цены +15%, кроме паяльника и пропуска.",210),
@@ -81,6 +81,10 @@ internal sealed partial class FloorSystems
     internal CoopBalance Balance => CoopBalance.For(PlayerCount);
     public bool WingsUnlocked, GalleyTipPending;
     public float WingBarrierSlide, EspressoWait, BarrierVoiceWait;
+    public int[] BaitStock = new int[3];
+    public FloorBait? PlacedBait;
+    public bool FloorHuntEnabled;
+    public int ActiveBaitTier => Array.FindLastIndex(BaitStock, count => count > 0);
     public int PocketCoffeeCups=2, GuestCoffeeCups=2, SecondCoffeeCups=2;
     public Dictionary<int,float> StationWait=new();
     public Dictionary<int,int> CoolerDrinks=new();
@@ -93,7 +97,7 @@ internal sealed partial class FloorSystems
         OnboardingStep.CatchFrogs => $"Поймай Джаба-жаб у стойки [E]  ({FrogProgress}/3)",
         OnboardingStep.DepositFrogs => "Сдай Джаба-жаб в Баг-трекер [E]",
         OnboardingStep.BuyNet => "Купи Сачок-ловушку ($3) у Вероники [E]",
-        OnboardingStep.ActivateBait => "Запусти ЯблоБук-приманку в центре [E]",
+        OnboardingStep.ActivateBait => "Положи наживку [G] и спрячься [Ctrl]",
         OnboardingStep.HealAtCoffee => "Выпей эспрессо у стойки (+45 HP) [E]",
         OnboardingStep.StunAndHeal => "Оглуши стажёра сачком [ЛКМ]",
         OnboardingStep.SeatFirstGalley => carrying ? "Отведи кадра на свободный стол Опенспейса [E]" : "Примани вайбкодера для Опенспейса [E]",
@@ -107,8 +111,8 @@ internal sealed partial class FloorSystems
             OnboardingStep.CatchFrogs => "Касса пуста — $0. Вайбкодеры попрятались, но из серверной по полу скачут Джаба-жабы. Схвати 3 штуки руками [E] или ЛКМ — они по $1–$2.",
             OnboardingStep.DepositFrogs => "Отличный улов! Скинь жаб в Баг-трекер рядом со стойкой [E] — он сразу выдаст наличку.",
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
-            OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к ЯблоБуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
-            OnboardingStep.StunAndHeal => "Пошли клиенты! Оглуши первого сачком (ЛКМ), подхвати его вторым взмахом или нажми [E]!",
+            OnboardingStep.ActivateBait => "Сачок в руках! Первый ЯблоБук бесплатно. Положи наживку [G], отойди и спрячься [Ctrl]. Подкрадись сзади, когда кодер сядет у ноутбука.",
+            OnboardingStep.StunAndHeal => "Пошли клиенты! Дождись, когда кодер сядет. Подкрадись сзади и оглуши сачком [ЛКМ]. Подхвати его вторым взмахом или нажми [E].",
             OnboardingStep.HealAtCoffee => "Тебя задели! Вайбкодеры кидаются багами и больно бьют. Подойди к кофе-машине рядом со стойкой и выпей эспрессо — восстановишь здоровье! В бою ещё спасают пицца, кулеры и стакан кофе на кнопку Эйч.",
             OnboardingStep.CaptureFirstCoder => "Бодрящий эспрессо творит чудеса! Теперь подними оглушённого вайбкодера сачком или клавишей [E] и неси ко мне!",
             OnboardingStep.SeatFirstGalley => "Отлично, карантин снят — Западное и Восточное крылья открыты! Слева Опенспейс: сажай туда вайбкодеров промптить за пассивный доход. Справа серверная и охрана эс-бэ — у них есть пропуск, но дерутся они жёстко!",
@@ -176,6 +180,7 @@ internal sealed partial class FloorSystems
         if(HasWeapon(weapon)) return gear.Title+" уже в арсенале";
         if(!spend(Price(gear))) return $"Для покупки нужно ${Price(gear)}";
         OwnedWeaponsMask |= 1<<(int)weapon;
+        if(weapon==WeaponType.CaptureNet) BaitStock[0]++;
         return gear.Title+" в арсенале";
     }
 
@@ -309,7 +314,7 @@ internal sealed partial class FloorSystems
     {
         if(index<0 || index>=GearList.Length) return "";
         var id=(Sidegrade)index;
-        if(id==Sidegrade.Pager && Has(id)) return "Пейджер заряжен. Вызов на [G]";
+        if(id==Sidegrade.Pager && Has(id)) return "Пейджер заряжен. Вызов на [P]";
         if(!Has(id))
         {
             if(!spend(Price(GearList[index]))) return "В общаке не хватает денег";
@@ -549,6 +554,7 @@ public static partial class Program
             _world.ElevatorGlassOpacity=data.ElevatorBossDefeated ? 0 : 1;
             _world.ElevatorDoorOpenAmount=data.ElevatorBossDefeated ? 1 : 0;
             ApplyProgression(null);
+            Floor.BaitStock[0]=1; Floor.FloorHuntEnabled=true;
             _weapons.Equip((WeaponType)Math.Clamp(data.CurrentWeaponSlot+1,1,4));
             foreach(var desk in _world.GalleyDesks.Take(Math.Clamp(data.SeatedGalleyCoders,0,4)))
             { desk.IsOccupied=true; desk.CoderName="Дежурный кодер"; }
@@ -576,6 +582,11 @@ public static partial class Program
         _world.EnemyProjectiles.Clear(); _world.EnemyProjectiles.AddRange(state.Projectiles);
         _world.ResumeCoderIds();
         if(state.ProgressionVersion<2 && !Floor.WingsUnlocked) _world.MigrateTrainingAtrium();
+        if(state.ProgressionVersion<3)
+        {
+            Floor.FloorHuntEnabled=true;
+            if(Floor.HasWeapon(WeaponType.CaptureNet)) Floor.BaitStock[0]=Math.Max(1,Floor.BaitStock[0]);
+        }
     }
     private static FloorPanel floorPanel;
     private static bool sidegrades;
@@ -601,10 +612,17 @@ public static partial class Program
         else Raylib.EnableCursor();
     }
 
-    private const int WeaponBuyOffset=30, BuyOffset=10, PagerAction=23, BaitAction=21, RollbackAction=22;
+    private const int WeaponBuyOffset=30, BuyOffset=10, PagerAction=23, RollbackAction=22;
     private static int KeycardAction => WeaponBuyOffset + FloorSystems.Weapons.Length;
     private static string ApplyFloorAction(int index,bool guestBuyer=false)
     {
+        if(index is >=50 and <=52)
+        {
+            int tier=index-50;
+            if(!TrySpendCash(FloorBait.Prices[tier])) return Loc.T("Не хватает денег","Insufficient funds");
+            Floor.BaitStock[tier]++;
+            return FloorBait.Name(tier)+" ×"+Floor.BaitStock[tier];
+        }
         if(index==KeycardAction)
         {
             if(_world.HasElevatorKey) return "Ключ-карта СБ уже получена";
@@ -640,11 +658,6 @@ public static partial class Program
         if(index>=BuyOffset && index<BuyOffset+FloorSystems.GearList.Length) return Floor.Buy(index-BuyOffset,TrySpendCash);
         if(index>=FinaleAction && index<FinaleAction+2) return Floor.ResolveFinale(index-FinaleAction,GrantCash);
         if(index==PagerAction) return Floor.UsePager(_world);
-        if(index==BaitAction)
-        {
-            _world.SelectedBaitTier=(SubscriptionBaitTier)(((int)_world.SelectedBaitTier+1)%4);
-            return SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier).Description;
-        }
         if(index==RollbackAction && Floor.JobId>=0)
         {
             Floor.Remaining=Math.Max(0,Floor.Remaining-22);
@@ -685,7 +698,8 @@ public static partial class Program
             if(Key(KeyboardKey.J)) OpenFloorPanel(FloorPanel.Contracts);
             else if(Key(KeyboardKey.U)) OpenFloorPanel(FloorPanel.Upgrades);
             else if(Key(KeyboardKey.H)) DrinkPocketCoffee();
-            else if(Key(KeyboardKey.G)) SetHudBanner(FloorAction(PagerAction));
+            else if(Key(KeyboardKey.G)) DropBait();
+            else if(Key(KeyboardKey.P)) SetHudBanner(FloorAction(PagerAction));
             return floorPanel!=FloorPanel.None;
         }
         if(Key(KeyboardKey.Escape) || floorPanel==FloorPanel.Contracts && Key(KeyboardKey.J) ||
@@ -710,7 +724,10 @@ public static partial class Program
                 if(Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(p,ArsenalTab(tab))) next=tab==1;
             if(next!=sidegrades) { sidegrades=next; floorRow=0; panelMessage=""; }
         }
-        if(shop && Key(KeyboardKey.B)) panelMessage=FloorAction(BaitAction);
+        if(shop && sidegrades)
+            for(int tier=0;tier<3;tier++)
+                if(Key((KeyboardKey)((int)KeyboardKey.F1+tier)) || Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec((Raylib.GetMousePosition()-PanelOffset)/PanelScale,SupplyRect(tier)))
+                { panelMessage=FloorAction(50+tier); return true; }
         if(shop && Key(KeyboardKey.G)) panelMessage=FloorAction(PagerAction);
         if(!shop && Key(KeyboardKey.R) && Floor.JobId>=0) panelMessage=FloorAction(RollbackAction);
         int count=shop ? (sidegrades ? FloorSystems.GearList.Length : FloorSystems.Arsenal.Length) : FloorSystems.Jobs.Length;

@@ -144,6 +144,8 @@ public static partial class Program
         }
     }
 
+    private static Rectangle SupplyRect(int tier) => new(64+tier*304,632,298,32);
+
     private static void DrawBriefcase()
     {
         var goods=sidegrades ? FloorSystems.GearList : FloorSystems.Arsenal;
@@ -163,7 +165,7 @@ public static partial class Program
             PaperSlip(r,stock,new(167,138,94,225));
             ShopText(i==0 ? "ОРУЖИЕ" : "АПГРЕЙДЫ",r.X+r.Width/2,40,27,active ? shopInk : new(52,36,24,255));
         }
-        ShopText(Loc.Tr("Приманка: ")+Loc.Tr(SkyscraperFloor1World.GetBaitInfo(_world.SelectedBaitTier).Name),935,40,15,amber,true,false);
+        ShopText(Loc.T("Наживка","Bait")+" ×"+Floor.BaitStock.Sum(),935,40,15,amber,true,false);
         PaperSlip(new(1044,24,156,48),new(236,226,206,255),new(165,148,120,255));
         ShopText($"${_playerCash}",1122,25,36,shopInk);
         for(int i=0;i<10;i++) Raylib.DrawEllipse(394,373,166-i*9,12-i*.65f,new(14,3,6,15));
@@ -198,7 +200,11 @@ public static partial class Program
             left+=advance;
         }
         Control("WASD","Выбор",53,133); Control("ENTER","Купить",57,141);
-        Control("B","Приманка",24,127); Control("G","Крыша",24,103); Control("ESC","Выход",38,112);
+        if(sidegrades) for(int tier=0;tier<3;tier++)
+        {
+            var rect=SupplyRect(tier); PaperSlip(rect,shopCream,shopGold);
+            ShopText($"[F{tier+1}] {FloorBait.Name(tier)}  ${FloorBait.Prices[tier]}",rect.X+149,637,16,shopInk,width:286);
+        } Control("G","Крыша",24,103); Control("ESC","Выход",38,112);
         Rlgl.PushMatrix(); Rlgl.Translatef(1004,633,0); Rlgl.Rotatef(-2,0,0,1);
         PaperSlip(new(0,0,230,76),new(234,218,178,255),new(165,144,99,255));
         ShopText("«Гарантия — ровно",18,9,19,shopInk,false,false);

@@ -56,6 +56,19 @@ internal static unsafe partial class VisualEngine3D
         uniform vec2 coderStride;
         void stride(inout vec3 p) {
             if(coderStride.x==0.) return;
+            if(coderStride.x>=2.) {
+                float upper=smoothstep(.65,1.35,p.y);
+                float arm=smoothstep(.15,.26,abs(p.x))*smoothstep(.65,1.,p.y);
+                if(coderStride.x>2.5) {
+                    p.z+=.23*sin(p.y*2.9)+arm*.17;
+                    p.y-=.65*smoothstep(.06,.95,p.y)+arm*(.24+.032*sin(coderStride.y*2.+p.x*9.));
+                } else {
+                    p.x+=upper*.032*sin(coderStride.y*.7);
+                    p.z+=upper*.13+(1.-upper)*sign(p.x)*.09*sin(coderStride.y);
+                    p.y-=upper*.09;
+                }
+                return;
+            }
             if(coderStride.x<0.) {
                 float shin=1.-smoothstep(.10,.80,p.y);
                 p.z-=.40*shin;
@@ -960,6 +973,48 @@ internal static unsafe partial class VisualEngine3D
             Raylib.SetShaderValue(shader,taperLoc,taper,ShaderUniformDataType.Float);
             activeTaper=taper;
         }
+    }
+
+    internal static void DrawFloorBait(Vector3 p,int tier,float yaw,float time)
+    {
+        // Both lounge rugs sit just above the structural floor.
+        if(Math.Abs(p.X+5.05f)<2.175f && Math.Abs(p.Z-6.9f)<2.05f) p.Y+=.028f;
+        else if(Math.Abs(p.X)<2.4f && p.Z is >.65f and <13.95f) p.Y+=.026f;
+        var rotation=Quaternion.CreateFromAxisAngle(Vector3.UnitY,yaw);
+        Vector3 At(float x,float y,float z)=>p+Vector3.Transform(new(x,y,z),rotation);
+        void Part(Vector3 center,Vector3 size,Color color,Finish finish=Finish.Paint) =>
+            Draw(bevel,center,size,color,finish,Vector3.UnitY,yaw*180/MathF.PI);
+        var silver=new Color(193,202,211,255);
+        Part(At(0,.013f,0),new(.36f,.026f,.25f),silver);
+        Part(At(0,.029f,-.014f),new(.29f,.007f,.12f),new(45,52,61,255));
+        Part(At(0,.029f,.08f),new(.10f,.003f,.05f),new(141,155,167,255));
+        Part(At(0,.12f,-.106f),new(.36f,.216f,.021f),silver);
+        Part(At(0,.12f,-.092f),new(.329f,.18f,.007f),new(76,218,241,255),Finish.Screen);
+        if(tier>0) Rod(At(.26f,.004f,0),At(.26f,.13f,0),.043f,.056f,14,new(236,206,156,255));
+        if(CastingShadows) return;
+        float radius=.31f+.055f*MathF.Sin(time*3);
+        var previous=At(radius,.012f,0);
+        for(int i=1;i<=24;i++)
+        {
+            float angle=i*MathF.Tau/24;
+            var next=At(radius*MathF.Cos(angle),.012f,radius*MathF.Sin(angle));
+            Rod(previous,next,.006f,.006f,6,Color.Gold,Finish.Lamp);
+            previous=next;
+        }
+        for(int band=1;band<=2;band++)
+        {
+            float spread=.043f*band;
+            for(int i=0;i<6;i++)
+            {
+                Vector3 Arc(int step)
+                {
+                    float a=(step-3)*.27f;
+                    return At(spread*MathF.Sin(a),.25f+spread*MathF.Cos(a),-.10f);
+                }
+                Rod(Arc(i),Arc(i+1),.005f,.005f,6,Color.Gold,Finish.Lamp);
+            }
+        }
+        Orb(At(0,.255f,-.10f),.012f,Color.Gold,Finish.Lamp);
     }
 
     public static void Box(Vector3 p,float w,float h,float d,Color tint,Finish f=Finish.Paint)
