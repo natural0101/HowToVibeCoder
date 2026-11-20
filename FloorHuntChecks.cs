@@ -88,6 +88,31 @@ public static partial class Program
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
         Require(Floor.PlacedBait==null && Floor.BaitStock[2]==1,"recover unused bait");
         Console.WriteLine("PASS floor hunt: shop, save, peek and slam, cover, sprint, dodge, escape, ambush, scoop, slot and recovery");
+        if (capture != null)
+        {
+            // Close-up visual inspection of exterior broken, exterior repaired, and interior cabin elevator button panels.
+            ResetNewGameFloor(greet:false);
+            _weapons.Equip(WeaponType.BareHands);
+            _isCrouching=false;
+            AudioMusicSystem.VoiceTimer=_hudStatusTimer=0;
+            Vector3 northPanel=new(_world.ElevatorButtonPos.X,1.43f,_world.NorthElevatorPos.Z-.39f);
+            _playerPos=northPanel+new Vector3(-.16f,.08f,-.92f);
+            LookAtTarget(northPanel);
+            capture("56_elevator_panel_broken_closeup.png");
+
+            _world.HasElevatorKey=true;
+            _world.ElevatorRepaired=true;
+            _world.ElevatorDoorOpenAmount=1f;
+            _world.ElevatorGlassOpacity=0f;
+            _playerPos=northPanel+new Vector3(-.16f,.08f,-.92f);
+            LookAtTarget(northPanel);
+            capture("57_elevator_panel_repaired_closeup.png");
+
+            Vector3 cabinPanel=_world.CentralElevatorCorePos+new Vector3(2.41f,1.42f,-4.15f);
+            _playerPos=cabinPanel+new Vector3(-.18f,.06f,.88f);
+            LookAtTarget(cabinPanel);
+            capture("58_elevator_cabin_panel_closeup.png");
+        }
         ResetNewGameFloor(greet:false);
     }
 }

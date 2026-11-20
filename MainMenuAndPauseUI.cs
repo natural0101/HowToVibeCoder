@@ -553,7 +553,11 @@ public static class MainMenuAndPauseUI
                 {
                     PlayUiSound();
                     _playModeOpen = false;
-                    if (_playModeIndex == 0) StartNewOrResumeFloor();
+                    if (_playModeIndex == 0)
+                    {
+                        if (OnIntroComicRequested != null) OnIntroComicRequested(true);
+                        else StartNewOrResumeFloor();
+                    }
                     else if (_playModeIndex == 1) OpenJoinPanel();
                     else
                     {

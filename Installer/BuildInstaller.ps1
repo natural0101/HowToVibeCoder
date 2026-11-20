@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent),
     [string]$DesktopDir = [Environment]::GetFolderPath('DesktopDirectory')
 )
@@ -43,8 +43,15 @@ try {
     $PublishedSetupExe = Join-Path $PublishOut 'HowToVibeCoder_Setup.exe'
     if (-not (Test-Path -LiteralPath $PublishedSetupExe)) { throw 'Installer executable missing.' }
 
-    Write-Host '[4/4] Moving single verified installer to Desktop (no duplicate copies kept)...'
+    Write-Host '[4/4] Moving single verified installer to Desktop (purging any old installers)...'
     New-Item -ItemType Directory -Force $DesktopDir | Out-Null
+    foreach ($old in @(
+        (Join-Path $DesktopDir 'HowToVibeCoder_Installer_*.exe'),
+        (Join-Path $DesktopDir 'HowToVibeCoder.bat'),
+        (Join-Path $DesktopDir 'How to Vibe Coder (Играть).lnk')
+    )) {
+        Get-Item -Path $old -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
     $DesktopExe = Join-Path $DesktopDir 'HowToVibeCoder_Setup.exe'
     Copy-Item -LiteralPath $PublishedSetupExe -Destination $DesktopExe -Force
     Get-FileHash -LiteralPath $DesktopExe -Algorithm SHA256

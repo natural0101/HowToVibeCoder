@@ -9,8 +9,8 @@ public static partial class LoreAndMenusUI
 {
     private const int ArchiveWidth = 1280, ArchiveHeight = 720, RowHeight = 62, VisibleRows = 5;
     private static readonly string[] ArchiveTabs = ["Переписка", "Досье HR", "Коллекция", "Словарь"];
-    private static readonly string[] IndexTitles = ["Переписка цеха", "Таро-досье HR", "Картотека", "Словарь 90-х"];
-    private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Кассета 1998","Агент v0.1"];
+    private static readonly string[] IndexTitles = ["Переписка цеха", "Таро-досье HR", "Картотека", "Словарь цеха"];
+    private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Лог-файл 01","Агент v0.1"];
     private static readonly string[] ChatTitles = ["Пятничный деплой", "Стойка B12 и кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело «ЭНТРОПИК»","Пятидесятый этаж"];
     private static readonly string[] TarotNames = ["Сеньор Алексей", "Джуниор Данила", "Крипто и Митингер","Личный конверт Вероники"];
     private static readonly string[] TarotCards = ["Аркан XVI: Башня", "Аркан 0: Шут", "Аркан XV: Дьявол","Ведомость замещений"];
@@ -202,7 +202,7 @@ public static partial class LoreAndMenusUI
             var oblique = Matrix4x4.Identity;
             oblique.M12 = -.16f;
             Rlgl.MultMatrixf(oblique);
-            Paragraph("Справка цеха: серверные микроботы-отладчики 1998 г. (Jabba-98), сбегающие из перегретых стоек.", 0, 0, TextWidth - 8, 15, 18, Muted);
+            Paragraph("Справка цеха: материализовавшиеся баги из перегретых стоек, сбегающие через вентиляцию серверной.", 0, 0, TextWidth - 8, 15, 18, Muted);
             Rlgl.PopMatrix();
         }
     }
