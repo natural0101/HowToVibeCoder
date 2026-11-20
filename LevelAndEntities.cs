@@ -3597,7 +3597,7 @@ public sealed partial class SkyscraperFloor1World
         {
             Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
             Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
-            Vector3 panel=new(button.X,1.43f,face.Z+side*.39f);
+            Vector3 panel=new(button.X,1.38f,face.Z+side*.374f);
             if (glass && !BrokenElevator) DrawShaftSmoke(face,side,inside:true);
             foreach(int leaf in new[]{-1,1})
             {
@@ -3634,150 +3634,26 @@ public sealed partial class SkyscraperFloor1World
                     Raylib.ColorLerp(new(45,25,25,255),new(251,58,42,255),1-ElevatorGlassOpacity),Finish.Lamp);
             VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
             DrawElevatorCallPanel(panel,side);
-            DrawCabinOperatingPanel(CentralElevatorCorePos+new Vector3(2.41f,1.42f,side*4.15f),-side);
+            DrawCabinOperatingPanel(CentralElevatorCorePos+new Vector3(2.41f,1.38f,side*4.166f),-side);
         }
     }
 
     private void DrawElevatorCallPanel(Vector3 panel,int side)
     {
-        Vector3 fwd=Vector3.UnitZ*side;
-        Vector3 right=Vector3.UnitX*side;
         float yaw=side<0 ? 180f : 0f;
-        Vector3 Pt(float lx,float ly,float lz)=>panel+right*lx+Vector3.UnitY*ly+fwd*lz;
-
-        Color gunmetal=new(34,38,45,255);
-        Color frameSteel=new(188,178,158,255);
-        Color chrome=new(168,176,184,255);
-        Color darkScrew=new(26,30,36,255);
-        Color okTeal=new(96,232,212,255);
-        Color okGreen=new(74,238,158,255);
-        Color faultRed=new(236,58,44,255);
-        Color faultAmber=new(244,154,54,255);
-
-        // 1. Back housing + chamfered satin-bronze/steel perimeter frame.
-        VisualEngine3D.Box(Pt(0,0,.014f),.456f,.896f,.078f,gunmetal,Finish.Armor);
-        VisualEngine3D.Box(Pt(0,.428f,.052f),.438f,.036f,.024f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(0,-.428f,.052f),.438f,.036f,.024f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(-.202f,0,.052f),.034f,.822f,.024f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(.202f,0,.052f),.034f,.822f,.024f,frameSteel,Finish.Bronze);
-
-        // 2. Four machined hex-socket corner screws.
-        foreach(float sx in new[]{-.185f,.185f})
-            foreach(float sy in new[]{-.405f,.405f})
-            {
-                VisualEngine3D.Rod(Pt(sx,sy,.056f),Pt(sx,sy,.068f),.0105f,.0095f,8,chrome);
-                VisualEngine3D.Rod(Pt(sx,sy,.067f),Pt(sx,sy,.070f),.0045f,.0045f,6,darkScrew);
-            }
-
-        // 3. Crisp 512x1024 localized faceplate texture (rotated cleanly for both North & South sides).
-        VisualEngine3D.FaceBox(Pt(0,0,.052f),.38f,.82f,.012f,yaw,Color.White,
-            BrokenElevator ? Finish.LiftPanelBroken : Finish.LiftPanelFixed);
-
-        // 4. Recessed digital LED screen bezel + live pulsing status LED pill.
-        float pulse=MathF.Sin(_worldClock*10+side)+MathF.Sin(_worldClock*29);
-        Color led=BrokenElevator
-            ? (pulse>.80f ? faultAmber : pulse<-1.25f ? new(82,24,20,255) : faultRed)
-            : okTeal;
-        VisualEngine3D.Box(Pt(0,.345f,.061f),.330f,.010f,.010f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(0,.213f,.061f),.330f,.010f,.010f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(-.160f,.279f,.061f),.010f,.142f,.010f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(.160f,.279f,.061f),.010f,.142f,.010f,chrome,Finish.Bronze);
-        VisualEngine3D.Rod(Pt(.144f,.326f,.060f),Pt(.144f,.326f,.068f),.0085f,.0085f,10,led,Finish.Lamp);
-
-        // 5. Two physical 3D round illuminated elevator call buttons (UP & DOWN).
-        Color haloCol=BrokenElevator ? (pulse>.6f ? faultAmber : new(204,64,46,255)) : okTeal;
-        Color arrowCol=BrokenElevator ? new(255,148,118,255) : new(184,255,244,255);
-        void CallButton(float bx,float by,int dir)
+        VisualEngine3D.Asset(BrokenElevator ? "prop_elevator_panel_broken" : "prop_elevator_panel_fixed", panel, yaw, 1f);
+        // Live pulsing indicator over the RFID reader strip when player has the Security Keycard.
+        if(BrokenElevator && HasElevatorKey)
         {
-            VisualEngine3D.Rod(Pt(bx,by,.056f),Pt(bx,by,.071f),.043f,.041f,16,new(142,148,156,255),Finish.Bronze);
-            VisualEngine3D.Rod(Pt(bx,by,.064f),Pt(bx,by,.074f),.0365f,.0365f,16,haloCol,Finish.Lamp);
-            VisualEngine3D.Rod(Pt(bx,by,.069f),Pt(bx,by,.082f),.031f,.029f,16,new(198,204,210,255),Finish.Bronze);
-            Vector3 apex=Pt(bx,by+dir*.014f,.0835f);
-            Vector3 leftFoot=Pt(bx-.015f,by-dir*.010f,.0835f);
-            Vector3 rightFoot=Pt(bx+.015f,by-dir*.010f,.0835f);
-            VisualEngine3D.Rod(apex,leftFoot,.0034f,.0034f,6,arrowCol,Finish.Lamp);
-            VisualEngine3D.Rod(apex,rightFoot,.0034f,.0034f,6,arrowCol,Finish.Lamp);
-            VisualEngine3D.Rod(leftFoot,rightFoot,.0030f,.0030f,6,arrowCol,Finish.Lamp);
-        }
-        CallButton(-.048f,.125f,1);
-        CallButton(-.048f,.015f,-1);
-
-        // 6. Protruding RFID security keycard scanner frame + live status LED bar + brass card rest lip.
-        VisualEngine3D.Box(Pt(0,-.065f,.063f),.296f,.010f,.014f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(0,-.193f,.068f),.296f,.013f,.022f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(-.144f,-.129f,.063f),.010f,.136f,.014f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(.144f,-.129f,.063f),.010f,.136f,.014f,chrome,Finish.Bronze);
-        Color readerLed=(HasElevatorKey || !BrokenElevator)
-            ? okGreen
-            : (MathF.Sin(_worldClock*5+side)>0 ? faultRed : new(110,24,22,255));
-        VisualEngine3D.Box(Pt(0,-.075f,.067f),.182f,.011f,.010f,readerLed,Finish.Lamp);
-
-        // 7. Lower 220V Service / Soldering Relay Bay (exposed burnt wires when broken, sealed hatch when fixed).
-        VisualEngine3D.Box(Pt(0,-.242f,.062f),.272f,.010f,.012f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(0,-.364f,.062f),.272f,.010f,.012f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(-.131f,-.303f,.062f),.010f,.128f,.012f,chrome,Finish.Bronze);
-        VisualEngine3D.Box(Pt(.131f,-.303f,.062f),.010f,.128f,.012f,chrome,Finish.Bronze);
-        if(BrokenElevator)
-        {
-            // Charred relay modules inside the exposed cavity.
-            VisualEngine3D.Box(Pt(-.064f,-.294f,.066f),.054f,.056f,.018f,new(30,34,40,255));
-            VisualEngine3D.Box(Pt(.056f,-.292f,.066f),.062f,.048f,.018f,new(48,38,34,255));
-            VisualEngine3D.Rod(Pt(-.064f,-.276f,.072f),Pt(-.064f,-.276f,.078f),.006f,.006f,6,frameSteel,Finish.Bronze);
-            VisualEngine3D.Rod(Pt(.056f,-.276f,.072f),Pt(.056f,-.276f,.078f),.006f,.006f,6,frameSteel,Finish.Bronze);
-            // Exposed severed copper/insulated wires jutting from blown relay terminals.
-            VisualEngine3D.Rod(Pt(-.058f,-.302f,.066f),Pt(-.020f,-.288f,.095f),.0048f,.0040f,6,new(208,58,42,255));
-            VisualEngine3D.Rod(Pt(-.020f,-.288f,.095f),Pt(-.006f,-.304f,.098f),.0035f,.0022f,6,new(218,144,78,255));
-            VisualEngine3D.Rod(Pt(.048f,-.304f,.066f),Pt(.016f,-.316f,.094f),.0048f,.0040f,6,new(54,126,204,255));
-            VisualEngine3D.Rod(Pt(.016f,-.316f,.094f),Pt(.004f,-.308f,.097f),.0035f,.0022f,6,new(218,144,78,255));
-            VisualEngine3D.Rod(Pt(-.018f,-.334f,.064f),Pt(.032f,-.340f,.084f),.0042f,.0034f,6,new(224,186,58,255));
-            // Hinged service cover hanging popped open below the bay.
-            VisualEngine3D.TiltedBox(Pt(0,-.398f,.102f),new(.256f,.112f,.010f),right,side*62f,new(72,78,86,255));
-        }
-        else
-        {
-            VisualEngine3D.Box(Pt(0,-.303f,.065f),.254f,.112f,.012f,new(112,120,128,255));
-            VisualEngine3D.Rod(Pt(-.104f,-.303f,.068f),Pt(-.104f,-.303f,.075f),.0065f,.006f,8,frameSteel,Finish.Bronze);
-            VisualEngine3D.Rod(Pt(.104f,-.303f,.068f),Pt(.104f,-.303f,.075f),.0065f,.006f,8,frameSteel,Finish.Bronze);
-            VisualEngine3D.Rod(Pt(0,-.272f,.069f),Pt(0,-.272f,.075f),.0075f,.0075f,8,okGreen,Finish.Lamp);
+            Vector3 fwd=Vector3.UnitZ*side;
+            VisualEngine3D.Box(panel+Vector3.UnitY*(-.095f)+fwd*.0225f,.088f,.0075f,.005f,new(74,238,158,255),Finish.Lamp);
         }
     }
 
-    private void DrawCabinOperatingPanel(Vector3 panel,int side)
+    private static void DrawCabinOperatingPanel(Vector3 panel,int side)
     {
-        Vector3 fwd=Vector3.UnitZ*side;
-        Vector3 right=Vector3.UnitX*side;
         float yaw=side<0 ? 180f : 0f;
-        Vector3 Pt(float lx,float ly,float lz)=>panel+right*lx+Vector3.UnitY*ly+fwd*lz;
-
-        Color frameSteel=new(188,178,158,255);
-        Color okTeal=new(96,232,212,255);
-        Color warmGold=new(236,192,108,255);
-
-        VisualEngine3D.Box(Pt(0,0,.010f),.40f,.92f,.068f,new(58,64,72,255),Finish.Armor);
-        VisualEngine3D.Box(Pt(0,.446f,.044f),.40f,.028f,.020f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(0,-.446f,.044f),.40f,.028f,.020f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(-.188f,0,.044f),.024f,.866f,.020f,frameSteel,Finish.Bronze);
-        VisualEngine3D.Box(Pt(.188f,0,.044f),.024f,.866f,.020f,frameSteel,Finish.Bronze);
-
-        VisualEngine3D.FaceBox(Pt(0,0,.045f),.356f,.864f,.010f,yaw,Color.White,Finish.CabinPanel);
-
-        // 2x4 cylindrical backlit round floor/door buttons aligned with the CabinPanel faceplate.
-        float[] rows=[.118f,.008f,-.102f,-.212f];
-        float[] cols=[-.075f,.075f];
-        for(int r=0;r<rows.Length;r++)
-        {
-            for(int c=0;c<cols.Length;c++)
-            {
-                bool activeFloor=r==0 && c==0;
-                Color ring=activeFloor ? okTeal : warmGold;
-                VisualEngine3D.Rod(Pt(cols[c],rows[r],.049f),Pt(cols[c],rows[r],.060f),.030f,.028f,12,new(140,148,156,255),Finish.Bronze);
-                VisualEngine3D.Rod(Pt(cols[c],rows[r],.055f),Pt(cols[c],rows[r],.063f),.025f,.025f,12,ring,Finish.Lamp);
-                VisualEngine3D.Rod(Pt(cols[c],rows[r],.059f),Pt(cols[c],rows[r],.068f),.020f,.019f,12,new(198,204,210,255),Finish.Bronze);
-            }
-        }
-        // Red cylindrical emergency stop button at bottom-left of alarm bar.
-        VisualEngine3D.Rod(Pt(-.083f,-.338f,.049f),Pt(-.083f,-.338f,.063f),.026f,.024f,12,new(196,42,36,255));
-        VisualEngine3D.Rod(Pt(-.083f,-.338f,.060f),Pt(-.083f,-.338f,.072f),.020f,.019f,12,new(244,72,58,255),Finish.Lamp);
+        VisualEngine3D.Asset("prop_elevator_cabin_panel", panel, yaw, 1f);
     }
 
     private void DrawShaftSmoke(Vector3 face,int side,bool inside)
@@ -3814,7 +3690,7 @@ public sealed partial class SkyscraperFloor1World
         {
             float angle=i*2.4f+(int)(_worldClock/2.17f)*.7f;
             Vector3 velocity=new(MathF.Cos(angle)*1.24f,.56f+MathF.Sin(angle),side*(.6f+.12f*i));
-            Vector3 head=panel+new Vector3(0,-.302f,side*.105f)+velocity*t-Vector3.UnitY*(4*t*t);
+            Vector3 head=panel+new Vector3(0,-.202f,side*.040f)+velocity*t-Vector3.UnitY*(4*t*t);
             VisualEngine3D.Rod(head,head+velocity*.045f,.012f,.004f,5,new(174,214,250,255),Finish.Plasma);
         }
     }

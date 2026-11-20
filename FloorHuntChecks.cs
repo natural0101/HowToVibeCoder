@@ -95,8 +95,8 @@ public static partial class Program
             _weapons.Equip(WeaponType.BareHands);
             _isCrouching=false;
             AudioMusicSystem.VoiceTimer=_hudStatusTimer=0;
-            Vector3 northPanel=new(_world.ElevatorButtonPos.X,1.43f,_world.NorthElevatorPos.Z-.39f);
-            _playerPos=northPanel+new Vector3(-.16f,.08f,-.92f);
+            Vector3 northPanel=new(_world.ElevatorButtonPos.X,1.38f,_world.NorthElevatorPos.Z-.374f);
+            _playerPos=northPanel+new Vector3(-.12f,.05f,-.56f);
             LookAtTarget(northPanel);
             capture("56_elevator_panel_broken_closeup.png");
 
@@ -104,12 +104,12 @@ public static partial class Program
             _world.ElevatorRepaired=true;
             _world.ElevatorDoorOpenAmount=1f;
             _world.ElevatorGlassOpacity=0f;
-            _playerPos=northPanel+new Vector3(-.16f,.08f,-.92f);
+            _playerPos=northPanel+new Vector3(-.12f,.05f,-.56f);
             LookAtTarget(northPanel);
             capture("57_elevator_panel_repaired_closeup.png");
 
-            Vector3 cabinPanel=_world.CentralElevatorCorePos+new Vector3(2.41f,1.42f,-4.15f);
-            _playerPos=cabinPanel+new Vector3(-.18f,.06f,.88f);
+            Vector3 cabinPanel=_world.CentralElevatorCorePos+new Vector3(2.41f,1.38f,-4.166f);
+            _playerPos=cabinPanel+new Vector3(-.14f,.04f,.60f);
             LookAtTarget(cabinPanel);
             capture("58_elevator_cabin_panel_closeup.png");
         }

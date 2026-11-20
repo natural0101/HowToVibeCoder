@@ -4,7 +4,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud, LiftGlass, JiraSheet, NdaSheet, PitchDeck, Coworking, Meeting, Standup, BreakRoom, LiftPanelBroken, LiftPanelFixed, CabinPanel }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud, LiftGlass, JiraSheet, NdaSheet, PitchDeck, Coworking, Meeting, Standup, BreakRoom }
 
 internal static unsafe partial class VisualEngine3D
 {
@@ -496,7 +496,6 @@ internal static unsafe partial class VisualEngine3D
             if(finish==4) lit=base*(.44+1.40*max(tex.g,tex.r));
             if(finish==3) lit+=base*max(tex.g,tex.r)*.65;
             if(finish==10) lit=base;
-            if(finish>=36) lit=mix(lit,base,.72);
             if(firstPerson==1) lit+=muzzleLight(n,v)*(.26+base);
             lit+=emission*1.65;
             float fog=1.-exp(-.000055*dist*dist);
@@ -1165,7 +1164,7 @@ internal static unsafe partial class VisualEngine3D
 
     internal static void RefreshLanguage()
     {
-        foreach (var finish in new[]{Finish.Lift,Finish.Exit,Finish.Coworking,Finish.Meeting,Finish.Standup,Finish.BreakRoom,Finish.JiraSheet,Finish.NdaSheet,Finish.PitchDeck,Finish.LiftPanelBroken,Finish.LiftPanelFixed,Finish.CabinPanel})
+        foreach (var finish in new[]{Finish.Lift,Finish.Exit,Finish.Coworking,Finish.Meeting,Finish.Standup,Finish.BreakRoom,Finish.JiraSheet,Finish.NdaSheet,Finish.PitchDeck})
         {
             var old=maps[(int)finish];
             if(old.Id==0) continue;
@@ -1178,15 +1177,13 @@ internal static unsafe partial class VisualEngine3D
 
     private static Texture2D MakeTexture(Finish f)
     {
-        bool tallPanel=f is Finish.LiftPanelBroken or Finish.LiftPanelFixed or Finish.CabinPanel;
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
                     or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
                     or Finish.BlackMarble or Finish.Bronze or Finish.LiftGlass or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
         Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(16,25,30,255))
-                : tallPanel ? Raylib.GenImageColor(512,1024,new Color(22,26,32,255))
-                : Raylib.GenImageColor(size,size,Color.White);
+                                 : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
-        if(f!=Finish.Lift && !tallPanel)
+        if(f!=Finish.Lift)
             for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y);
         void Inscription(string value, int size, int y, Color ink)
         {
@@ -1240,7 +1237,6 @@ internal static unsafe partial class VisualEngine3D
                 Finish.Standup=>Loc.T("ДЕЙЛИ-РУМ","STANDUP POD"), _=>Loc.T("КОФЕ-ПОИНТ","BREAK ROOM") };
             Inscription(title,44,16,new(255,226,171,255));
         }
-        if(tallPanel) DrawElevatorPanelTexture(ref img,f);
         Texture2D tex=Raylib.LoadTextureFromImage(img);
         Raylib.UnloadImage(img);
         if(tex.Id==0) throw new InvalidOperationException($"Could not upload {f}.");
