@@ -302,5 +302,69 @@
     "sr": 24000,
     "bytes": 162174,
     "text": "Catch this lead pull-request! This ain't hitting Tab in Tabsor!"
+  },
+  "vo_comic_1": {
+    "character": "narrator",
+    "duration": 3.872,
+    "rms": 0.1191,
+    "sr": 24000,
+    "bytes": 185896,
+    "text": "Twenty twenty-six. Cloud Entropic Tower. Old-school methods are back."
+  },
+  "vo_comic_2": {
+    "character": "narrator",
+    "duration": 4.919,
+    "rms": 0.1241,
+    "sr": 24000,
+    "bytes": 236156,
+    "text": "Vibe coders overran the floor. Never read the code — just spam Accept All while production burns."
+  },
+  "vo_comic_3": {
+    "character": "narrator",
+    "duration": 5.284,
+    "rms": 0.1223,
+    "sr": 24000,
+    "bytes": 253686,
+    "text": "The register's at zero. But HR Veronika has a plan: catch them, seat them in the open-space, and print cash."
+  },
+  "vo_comic_4": {
+    "character": "narrator",
+    "duration": 4.752,
+    "rms": 0.1279,
+    "sr": 24000,
+    "bytes": 228150,
+    "text": "And behind the sealed North Elevator lurks something far worse... Time to clean up Floor One!"
+  },
+  "vo_comic_5": {
+    "character": "narrator",
+    "duration": 5.626,
+    "rms": 0.1224,
+    "sr": 24000,
+    "bytes": 270084,
+    "text": "Back in ninety-eight, sysadmin Petrovich built Jabba-frogs to debug servers. Now they're hopping everywhere."
+  },
+  "vo_comic_6": {
+    "character": "narrator",
+    "duration": 4.73,
+    "rms": 0.1223,
+    "sr": 24000,
+    "bytes": 227082,
+    "text": "Flip on free Wi-Fi at the AppleBook in the center — vibe coders will swarm straight to the bait."
+  },
+  "vo_comic_7": {
+    "character": "narrator",
+    "duration": 5.152,
+    "rms": 0.1219,
+    "sr": 24000,
+    "bytes": 247326,
+    "text": "Bring rare catches to Veronika — spin weapon skins on her slot head and lift the open-space lockdown."
+  },
+  "vo_comic_8": {
+    "character": "narrator",
+    "duration": 3.312,
+    "rms": 0.1218,
+    "sr": 24000,
+    "bytes": 159014,
+    "text": "Floor One. Zero bucks in your pocket. Welcome to White Shark IT."
   }
 }

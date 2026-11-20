@@ -101,9 +101,10 @@ public static class MainMenuAndPauseUI
     public static Action<GameSaveData>? ApplyLoadedGameState { get; set; }
 
     private static readonly string[] MainMenuButtonLabels =
-        ["Создать игру", "Продолжить", "Кооператив", "Настройки", "Архив", "Персонаж", "Настройки модов", "Создатели", "Выход"];
+        ["Создать игру", "Продолжить", "Кооператив", "Настройки", "Архив", "Персонаж", "Настройки модов", "Создатели", "КОМИКС", "Выход"];
     private static readonly string[] SettingsTabs = ["Игра", "Графика", "Аудио", "Язык"];
     internal static readonly CoopNetworkSystem Coop = new();
+    internal static Action<bool>? OnIntroComicRequested;
     internal static Action? SummonPartner;
     private static int coopFocus;
     private static string address = "127.0.0.1:27094";
@@ -158,7 +159,7 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangleRounded(rect, rounding, 8, fill);
         if (border > 0) Raylib.DrawRectangleRoundedLinesEx(rect, rounding, 8, border, Edge);
     }
-    internal static Rectangle MainButton(int i) => new(56, UiViewport.Height - 412 + i * 43, 310, 36);
+    internal static Rectangle MainButton(int i) => new(56, UiViewport.Height - 412 + i * 39, 310, 36);
     private static Rectangle SettingsRect(float x, float y, float w, float h) =>
         new(UiViewport.Width / 2f - 343 + x, UiViewport.Height / 2f - 276 + y, w, h);
     private static Rectangle SettingsTab(int i) => SettingsRect(i * 173, 32, 166, 39);
@@ -583,7 +584,9 @@ public static class MainMenuAndPauseUI
 
         for (int i = 0; i < MainMenuButtonLabels.Length; i++)
         {
-            if (Raylib.IsKeyPressed(KeyboardKey.One + i) || Raylib.IsKeyPressed(KeyboardKey.Kp1 + i))
+            var number = i == 9 ? KeyboardKey.Zero : KeyboardKey.One + i;
+            var keypad = i == 9 ? KeyboardKey.Kp0 : KeyboardKey.Kp1 + i;
+            if (Raylib.IsKeyPressed(number) || Raylib.IsKeyPressed(keypad))
             {
                 _selectedMainIndex = i;
                 ExecuteMainMenuAction(i);
@@ -623,7 +626,7 @@ public static class MainMenuAndPauseUI
         switch (index)
         {
             case 0: // НОВАЯ ИГРА
-                StartNewOrResumeFloor();
+                OnIntroComicRequested?.Invoke(true);
                 break;
 
             case 1:
@@ -654,7 +657,8 @@ public static class MainMenuAndPauseUI
 
             case 7: _infoPage = "Создатели"; break;
             case 4: LoreAndMenusUI.IsLoreOpen=true; break;
-            case 8: // ВЫХОД
+            case 8: OnIntroComicRequested?.Invoke(false); break;
+            case 9: // ВЫХОД
                 ShouldExitGame = true;
                 OnExitRequested?.Invoke();
                 break;
@@ -1109,7 +1113,7 @@ public static class MainMenuAndPauseUI
         {
             Rectangle r=MainButton(i);
             bool selected=i==_selectedMainIndex;
-            DrawMenuItem(MainMenuButtonLabels[i], r, selected);
+            DrawMenuItem(i == 8 ? Loc.T("КОМИКС", "INTRO COMIC") : MainMenuButtonLabels[i], r, selected);
         }
         if (_infoPage != null)
         {

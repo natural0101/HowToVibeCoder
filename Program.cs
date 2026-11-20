@@ -107,6 +107,9 @@ public static partial class Program
     private static SkyscraperFloor1World _menuFloor = null!;
     private static float _menuTime;
 
+    private static readonly IntroComic comic = new();
+    private static bool startAfterComic;
+    private static float comicFade;
     private static int? fixtureSeed;
     private static float _energy = 100;
     private static Font _serif;
@@ -122,7 +125,8 @@ public static partial class Program
         bool coopSmoke = HasFlag("--coop-smoke");
         bool polishTest=HasFlag("--polish-test");
         bool gripTest = HasFlag("--grip-test");
-        bool silent = args.Any(arg => arg.StartsWith('-') &&
+        bool captureComic = HasFlag("--capture-comic");
+        bool silent = captureComic || args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
         bool localPair=coopSmoke && !HasFlag("--host") && !HasFlag("--join");
@@ -133,7 +137,7 @@ public static partial class Program
             return 0;
         }
 
-        bool interactive=!fixtureSeed.HasValue;
+        bool interactive=!fixtureSeed.HasValue && !captureComic;
         string displayPath=interactive ? Path.Combine(MainMenuAndPauseUI.SavesDirectory,"display_settings.json")
             : Path.Combine(Path.GetTempPath(),"vibecoder-display-"+Guid.NewGuid().ToString("N")+".json");
         MainMenuAndPauseUI.LoadDisplay(displayPath,interactive);
@@ -145,6 +149,22 @@ public static partial class Program
         Raylib.SetExitKey(KeyboardKey.Null);
 
         GameFonts.Load();
+        if (captureComic)
+        {
+            try
+            {
+                AudioMusicSystem.Initialize(silent: true);
+                CaptureComic();
+            }
+            finally
+            {
+                comic.Dispose();
+                AudioMusicSystem.Shutdown();
+                GameFonts.Unload();
+                Raylib.CloseWindow();
+            }
+            return 0;
+        }
         _uiFont = GameFonts.Get(Typeface.Interface, 18);
         _serif = GameFonts.Get(Typeface.Serif, 24);
         MainMenuAndPauseUI.LoadArt(_serif);
@@ -225,6 +245,7 @@ public static partial class Program
             if(Loc.Current!=GameLang.Ru) throw new InvalidDataException("Test left English active");
             File.Delete(displayPath);
         }
+        comic.Dispose();
         Net.Dispose();
         LoreAndMenusUI.UnloadArchive();
         Raylib.UnloadTexture(shopBackdrop);
@@ -238,6 +259,49 @@ public static partial class Program
         return 0;
     }
 
+
+    private static void EndSceneFrame()
+    {
+        if (comicFade > 0)
+            Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), new Color(18, 16, 26, (int)(255 * comicFade / .22f)));
+        Raylib.EndDrawing();
+    }
+
+    private static void CaptureComic()
+    {
+        string directory = Path.Combine(Environment.CurrentDirectory, "screenshots");
+        Directory.CreateDirectory(directory);
+        void Capture(string name)
+        {
+            Raylib.BeginDrawing();
+            comic.Draw();
+            Raylib.EndDrawing();
+            var image = Raylib.LoadImageFromScreen();
+            try
+            {
+                if (image.Width != 1280 || image.Height != 720 || !Raylib.ExportImage(image, Path.Combine(directory, name)))
+                    throw new IOException("Comic capture: " + name);
+            }
+            finally { Raylib.UnloadImage(image); }
+        }
+        Loc.Set(GameLang.Ru, false);
+        comic.Open();
+        for (int i = 1; i <= 8; i++)
+        {
+            comic.Update(1.4f, false, false);
+            if (i == 4) Capture("39_intro_comic_page1.png");
+            if (i == 8)
+            {
+                Capture("40_intro_comic_page2.png");
+                Loc.Set(GameLang.En, false);
+                Capture("40b_intro_comic_page2_en.png");
+            }
+            comic.Update(0, true, false);
+            if (i == 4) comic.Update(.52f, false, false);
+        }
+        if (comic.Active) throw new InvalidDataException("Comic failed to finish");
+        Loc.Set(GameLang.Ru, false);
+    }
 
     private static void WireUpSystems()
     {
@@ -266,6 +330,11 @@ public static partial class Program
             return true;
         };
 
+        MainMenuAndPauseUI.OnIntroComicRequested = start =>
+        {
+            startAfterComic = start;
+            comic.Open();
+        };
         MainMenuAndPauseUI.OnStartNewGameRequested = () =>
         {
             ResetNewGameFloor(preparedFloor);
@@ -425,6 +494,20 @@ public static partial class Program
 
     private static void UpdateFrame(float dt, ref bool shouldExit)
     {
+        if (comic.Active)
+        {
+            bool next = Raylib.IsKeyPressed(KeyboardKey.Space) || Raylib.IsKeyPressed(KeyboardKey.Enter)
+                || Raylib.IsKeyPressed(KeyboardKey.KpEnter) || Raylib.IsMouseButtonPressed(MouseButton.Left);
+            comic.Update(dt, next, Raylib.IsKeyPressed(KeyboardKey.Escape));
+            AudioMusicSystem.UpdateMusic(false, dt, isMainMenu: true, comic: true);
+            if (!comic.Active)
+            {
+                if (startAfterComic) MainMenuAndPauseUI.StartNewOrResumeFloor();
+                comicFade = .22f;
+            }
+            return;
+        }
+        comicFade = Math.Max(0, comicFade - dt);
         UpdateGameplay(dt, ref shouldExit);
         bool slotVisible=_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu;
         AudioMusicSystem.UpdateMusic(BossFightMusic,dt,MainMenuAndPauseUI.IsInMainMenu,slotVisible,slotVisible && !_world.Slot.Reveal);
@@ -780,6 +863,12 @@ public static partial class Program
     private static void DrawFrame(bool showHud=true)
     {
         Raylib.BeginDrawing();
+        if (comic.Active)
+        {
+            comic.Draw();
+            Raylib.EndDrawing();
+            return;
+        }
         Raylib.ClearBackground(new Color(10, 12, 20, 255));
 
         if (MainMenuAndPauseUI.IsInMainMenu)
@@ -805,7 +894,7 @@ public static partial class Program
             VisualEngine3D.Composite();
             MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
             LoreAndMenusUI.Draw(_uiFont);
-            Raylib.EndDrawing();
+            EndSceneFrame();
             return;
         }
 
@@ -842,7 +931,7 @@ public static partial class Program
         LoreAndMenusUI.Draw(_uiFont);
         if(floorPanel!=FloorPanel.None) DrawFloorPanel();
         if(_world.Slot.Active) DrawSlot();
-        Raylib.EndDrawing();
+        EndSceneFrame();
     }
 
     private static void DrawGameplayHud2D()
@@ -1873,12 +1962,21 @@ public static partial class Program
                 }
             }
             Click(380,650);
+            Click(150,(int)MainMenuAndPauseUI.MainButton(8).Y+18);
+            Require(comic.Active, "menu replay opens");
+            PressTestKey(KeyboardKey.Escape);
+            Require(!comic.Active && MainMenuAndPauseUI.IsInMainMenu, "replay returns to menu");
             Click(150,(int)MainMenuAndPauseUI.MainButton(0).Y+18);
-            Require(!MainMenuAndPauseUI.IsMenuBlockingGameplay && Raylib.IsCursorHidden() && _world.ActiveCoders.Count==0,"single click starts and captures");
+            Require(comic.Active && MainMenuAndPauseUI.IsInMainMenu,"new game opens comic");
+            PressTestKey(KeyboardKey.Escape);
+            Require(!comic.Active && !MainMenuAndPauseUI.IsMenuBlockingGameplay && Raylib.IsCursorHidden() && _world.ActiveCoders.Count==0,"skip starts fresh floor");
             MainMenuAndPauseUI.OpenMainMenu();
             Input(2,(int)KeyboardKey.Enter); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
             Input(1,(int)KeyboardKey.Enter); Raylib.PollInputEvents();
-            Require(!MainMenuAndPauseUI.IsInMainMenu && Raylib.IsCursorHidden(),"Enter starts and captures");
+            Require(comic.Active, "Enter starts comic");
+            for(int frame=0; frame<850 && comic.Active; frame++) UpdateFrame(.05f,ref exit);
+            Require(!comic.Active && !MainMenuAndPauseUI.IsInMainMenu && Raylib.IsCursorHidden(),"comic auto-advances into floor");
+            Console.WriteLine("[AUTOTEST] PASS comic replay, skip and muted auto-advance into Floor 1");
             var before=_playerPos;
             Input(2,(int)KeyboardKey.W); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
             Input(1,(int)KeyboardKey.W); Raylib.PollInputEvents();

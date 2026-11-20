@@ -168,6 +168,7 @@ namespace HowToVibeCoder
             _silent = silent;
             try
             {
+                EnsureComicWavs();
                 if(_silent) EnsureSlotWavs();
                 LoadEnglishManifest();
                 if (!Raylib.IsAudioDeviceReady()) Raylib.InitAudioDevice();
@@ -191,7 +192,7 @@ namespace HowToVibeCoder
                 SfxShotgunBlast = LoadAndRegister("shotgun_blast.wav");
                 SfxChatgunBeam = LoadAndRegister("chatgun_beam.wav");
                 SfxHitmarker = LoadAndRegister("hitmarker.wav");
-                foreach (string file in new[]{"slot_lever_pull.wav","slot_win_fanfare.wav","slot_win_jackpot.wav"}) LoadAndRegister(file);
+                foreach (string file in new[]{"comic_panel_slam.wav","comic_page_turn.wav","slot_lever_pull.wav","slot_win_fanfare.wav","slot_win_jackpot.wav"}) LoadAndRegister(file);
                 _slotMusic=Raylib.LoadMusicStream(Path.Combine(SoundsDir,"slot_spin_loop.wav"));
                 if(!Raylib.IsMusicValid(_slotMusic)) throw new IOException("slot_spin_loop.wav");
                 _slotMusic.Looping=true;
@@ -223,6 +224,63 @@ namespace HowToVibeCoder
                 AudioReady = false;
             }
         }
+
+        private static void EnsureComicWavs()
+        {
+            Directory.CreateDirectory(SoundsDir);
+            EnsureWavFile("comic_panel_slam.wav", () => ComposeComicEffect(false));
+            EnsureWavFile("comic_page_turn.wav", () => ComposeComicEffect(true));
+        }
+
+        private static short[] ComposeComicEffect(bool paper)
+        {
+            const int rate = 44100;
+            double length = paper ? .48 : .24;
+            var samples = new short[(int)(rate * length)];
+            var random = new Random(paper ? 1998 : 2026);
+            double low = 0, mid = 0;
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double t = i / (double)rate, u = t / length;
+                double noise = 2 * random.NextDouble() - 1;
+                low += .055 * (noise - low);
+                mid += .35 * (noise - mid);
+                double value = paper
+                    ? (low + .48 * mid) * Math.Pow(Math.Sin(Math.PI * u), 1.4)
+                        * (.56 + .44 * Math.Pow(Math.Sin(19 * u + 7 * u * u), 2))
+                    : .68 * Math.Sin(Math.Tau * (53 * t + .9 * (1 - Math.Exp(-56 * t)))) * Math.Exp(-23 * t)
+                        + .52 * (noise - mid) * Math.Exp(-195 * t);
+                value *= Math.Min(1, t * 1600) * Math.Min(1, (length - t) * 150);
+                samples[i] = (short)(32767 * Math.Clamp(value, -1, 1));
+            }
+            return samples;
+        }
+
+        private static Sound? comicVoice;
+        private static string ComicClipId(int panel) => panel is >= 1 and <= 8
+            ? $"vo_comic_{panel}" : throw new ArgumentOutOfRangeException(nameof(panel));
+        private static Dictionary<string,(Sound Sound,float Duration)> ComicBank => Loc.IsEn ? _voiceClipsEn : _voiceClips;
+        public static void PlayComicPanelSlam() => PlaySfx("comic_panel_slam", volumeScale: .62f);
+        public static void PlayComicPageTurn() => PlaySfx("comic_page_turn", volumeScale: .85f);
+        public static float GetComicNarrationDuration(int panelIndex1To8) =>
+            ComicBank.GetValueOrDefault(ComicClipId(panelIndex1To8)).Duration;
+        public static bool IsComicNarrationPlaying() => comicVoice is { } voice && Raylib.IsSoundPlaying(voice);
+        public static void StopComicNarration()
+        {
+            if (comicVoice is { } voice) Raylib.StopSound(voice);
+            comicVoice = null;
+        }
+        public static void PlayComicNarration(int panelIndex1To8)
+        {
+            StopComicNarration();
+            string id = ComicClipId(panelIndex1To8);
+            if (_silent || !AudioReady || MasterVolume <= 0 || VoiceVolume <= 0 || !ComicBank.TryGetValue(id, out var clip)) return;
+            if (_activeVoSound is { } previous) Raylib.StopSound(previous);
+            comicVoice = clip.Sound;
+            Raylib.SetSoundVolume(clip.Sound, Math.Clamp(VoiceVolume, 0, 1));
+            Raylib.PlaySound(clip.Sound);
+        }
+        internal static bool HasComicVoice => comicVoice.HasValue;
 
         private static void EnsureSlotWavs()
         {
@@ -323,6 +381,7 @@ namespace HowToVibeCoder
                 Directory.CreateDirectory(SoundsDir);
             }
 
+            EnsureComicWavs();
             EnsureSlotWavs();
             EnsureWavFile("belt_whip.wav", SynthesizeBeltWhip);
             EnsureWavFile("solder_sizzle.wav", SynthesizeSolderSizzle);
@@ -376,11 +435,11 @@ namespace HowToVibeCoder
 
         internal static string SceneMusicFile => MusicFiles[(int)_scene];
 
-        public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false, bool slotActive = false, bool slotSpinning = false)
+        public static void UpdateMusic(bool isBossActive, float dt = 1f / 60f, bool isMainMenu = false, bool slotActive = false, bool slotSpinning = false, bool comic = false)
         {
             dt = Math.Clamp(dt, 0f, 0.05f);
             _weaponBarkDelay=Math.Max(0,_weaponBarkDelay-dt);
-            bool speaking = VoiceTimer > 0;
+            bool speaking = VoiceTimer > 0 || comic;
             VoiceTimer = Math.Max(0, VoiceTimer - dt);
             if (speaking && VoiceTimer == 0) ActiveSpeaker = ActiveVoiceText = "";
             _scene = isMainMenu ? Score.Menu : isBossActive ? Score.Boss : Score.Office;
@@ -582,7 +641,7 @@ namespace HowToVibeCoder
                 _enSpeaker[item.Name]=item.Value.GetProperty("character").GetString() switch
                 {
                     "veronika"=>"HR Veronika", "petrovich"=>"Petrovich", "robot"=>"AI Agent v0.1",
-                    "pa"=>"SYSTEM ZERO", "coder"=>"Vibe Coder", "boss90s"=>"90s Boss",
+                    "narrator"=>"Narrator", "pa"=>"SYSTEM ZERO", "coder"=>"Vibe Coder", "boss90s"=>"90s Boss",
                     _=>throw new InvalidDataException("Unknown studio speaker: "+item.Name)
                 };
             }
@@ -681,7 +740,8 @@ namespace HowToVibeCoder
             var project=new DirectoryInfo(AppContext.BaseDirectory);
             while(project!=null && !File.Exists(Path.Combine(project.FullName,"HowToVibeCoder.csproj"))) project=project.Parent;
             string sourceRoot=project?.FullName ?? Directory.GetCurrentDirectory();
-            if(routes.Count!=38 || manifest.RootElement.EnumerateObject().Count()!=38) throw new InvalidDataException("Incomplete studio voice coverage");
+            for(int panel=1;panel<=8;panel++) routes.Add(ComicClipId(panel));
+            if(routes.Count!=46 || manifest.RootElement.EnumerateObject().Count()!=46) throw new InvalidDataException("Incomplete studio voice coverage");
             foreach(var (id,subtitle) in new[]{
                 ("vo_veronika_slot_spin",SlotRoulette.SpinLine),("vo_veronika_slot_jackpot",SlotRoulette.JackpotLine),
                 ("vo_veronika_wings_locked",FloorSystems.LockedLine.Replace("СБ","эс-бэ")),
@@ -730,7 +790,7 @@ namespace HowToVibeCoder
                 }
             }
             finally { VoiceTimer=0; ActiveVoiceText=ActiveSpeaker=""; Loc.Set(GameLang.Ru,false); }
-            Console.WriteLine("[AUTOTEST] PASS studio voices: 38/38 RU and 38/38 EN decoded and matched manifest durations");
+            Console.WriteLine("[AUTOTEST] PASS studio voices: 46/46 RU and 46/46 EN decoded and matched manifest durations");
         }
 
         internal static void Speak(string speaker,string text,SpeakerVoiceType voice,string clipId=null) =>
@@ -788,6 +848,7 @@ namespace HowToVibeCoder
             try
             {
                 if (_activeVoSound is {} previous) Raylib.StopSound(previous);
+                StopComicNarration();
                 _activeVoSound=null;
                 foreach (var clip in _voiceClips.Values) Raylib.UnloadSound(clip.Sound);
                 _voiceClips.Clear();
