@@ -555,6 +555,7 @@ internal static unsafe partial class VisualEngine3D
             RestoreBoothPalette(path,name,model);
             imports.Add(name, model);
             if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
+            else if (name.StartsWith("vc_", StringComparison.Ordinal)) ReadCoderParts(path, name, model.MeshCount);
         }
     }
 

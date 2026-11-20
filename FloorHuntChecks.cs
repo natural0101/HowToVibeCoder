@@ -190,6 +190,16 @@ public static partial class Program
             _playerPos = new(0f, 1.56f, 11.40f);
             LookAtTarget(new(0f, 1.04f, 6.85f));
             capture("62_part2_12_collectible_coders_lineup.png");
+
+            // Close-up hero showcase of Vibe-Pirate, Punk Cyborg & Sleepy TeamLead at 2.1m for facial & outfit detail inspection!
+            _world.ActiveCoders.Clear();
+            var hPirate = new VibeCoderEntity { Id=930, SpeciesId="tab", Rarity=VibeCoderRarity.Common, Position=new(-0.92f, 0f, 7.2f), FacingYaw=.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            var hCyborg = new VibeCoderEntity { Id=931, SpeciesId="refactor", Rarity=VibeCoderRarity.Rare, Position=new(0.0f, 0f, 7.1f), FacingYaw=0f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            var hSleepy = new VibeCoderEntity { Id=932, SpeciesId="call", Rarity=VibeCoderRarity.Rare, Position=new(0.92f, 0f, 7.2f), FacingYaw=-.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            _world.ActiveCoders.AddRange([hPirate, hCyborg, hSleepy]);
+            _playerPos = new(0f, 1.38f, 9.55f);
+            LookAtTarget(new(0f, 1.08f, 7.15f));
+            capture("63_part2_hero_trio_closeup.png");
         }
         ResetNewGameFloor(greet:false);
     }

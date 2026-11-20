@@ -1,10 +1,46 @@
 using System.Numerics;
+using System.Text.Json;
 using Raylib_cs;
 
 namespace HowToVibeCoder;
 
 internal static unsafe partial class VisualEngine3D
 {
+    private static readonly Dictionary<string, (int Start, int Count)[]> coderParts = new();
+
+    private static void ReadCoderParts(string path, string asset, int meshCount)
+    {
+        using var reader = new BinaryReader(File.OpenRead(path));
+        reader.BaseStream.Position = 12;
+        int length = reader.ReadInt32();
+        if (reader.ReadUInt32() != 0x4E4F534A) throw new InvalidDataException(path);
+        using var json = JsonDocument.Parse(reader.ReadBytes(length));
+        var ranges = new (int Start, int Count)[10];
+        int index = 0;
+        foreach (var mesh in json.RootElement.GetProperty("meshes").EnumerateArray())
+        {
+            int count = mesh.GetProperty("primitives").GetArrayLength();
+            int slot = (mesh.GetProperty("name").GetString() ?? "") switch
+            {
+                "Torso_Mesh"     => 0,
+                "Head_Mesh"      => 1,
+                "UpperArmL_Mesh" => 2,
+                "ForearmL_Mesh"  => 3,
+                "UpperArmR_Mesh" => 4,
+                "ForearmR_Mesh"  => 5,
+                "ThighL_Mesh"    => 6,
+                "ShinL_Mesh"     => 7,
+                "ThighR_Mesh"    => 8,
+                "ShinR_Mesh"     => 9,
+                _ => -1,
+            };
+            if (slot >= 0) ranges[slot] = (index, count);
+            index += count;
+        }
+        if (index != meshCount) throw new InvalidDataException($"Incomplete Vibe Coder mesh groups: {path}");
+        coderParts[asset] = ranges;
+    }
+
     internal static int SpeciesHeadIndex(string speciesId, int fallbackId = 0) => speciesId switch
     {
         "tab" or "stack" => 0,
@@ -24,31 +60,18 @@ internal static unsafe partial class VisualEngine3D
 
     internal static (float Width, float Height, float ShoeX) SpeciesProportions(string speciesId) => speciesId switch
     {
-        "div" or "smoothie" => (.94f, 1.04f, 1.00f),
-        "refactor" or "sb_chief" => (1.13f, 1.04f, 1.06f),
-        "meetup" => (1.02f, 1.03f, 1.45f),
-        "no-commits" or "skolkovo" => (1.03f, 1.05f, 1.00f),
-        "friday" or "legacy" => (1.06f, 1.07f, 1.08f),
-        "prompt" or "framework" => (.97f, 1.02f, 1.00f),
+        "div" or "smoothie" => (.95f, 1.01f, 1.00f),
+        "refactor" or "sb_chief" => (1.06f, 1.04f, 1.04f),
+        "meetup" => (1.02f, 1.03f, 1.15f),
+        "no-commits" or "skolkovo" => (1.01f, 1.03f, 1.00f),
+        "friday" or "legacy" => (1.03f, 1.04f, 1.02f),
+        "prompt" or "framework" => (1.00f, 1.02f, 1.00f),
         _ => (1.00f, 1.00f, 1.00f),
-    };
-
-    internal static (string Torso, string ForearmL, string ForearmR, bool ForearmRHoodie, bool ForearmRTrim, string ShinR, bool ShinRTrim)
-        SpeciesLimbs(int headIdx) => headIdx switch
-    {
-        0 => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r_hook",  true,  false, "coder_shin_r_peg", false),
-        1 => ("coder_torso",         "coder_forearm_l_coffee", "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
-        2 => ("coder_torso_chain",   "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
-        3 => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r_staff", true,  true,  "coder_shin_r",     true),
-        5 => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r_cyber", false, false, "coder_shin_r",     true),
-        7 => ("coder_torso_jetpack", "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
-        9 => ("coder_torso_devil",   "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
-        _ => ("coder_torso",         "coder_forearm_l",        "coder_forearm_r",       true,  true,  "coder_shin_r",     true),
     };
 
     internal struct CoderRigPose
     {
-        public float PelvisY, PelvisRoll, RootTilt;
+        public float PelvisY, PelvisZ, PelvisRoll, RootTilt;
         public float TorsoPitch, TorsoYaw, TorsoRoll;
         public float HeadPitch, HeadYaw, HeadRoll;
         public float ArmLPitch, ArmLRoll, ElbowLPitch, ElbowLYaw;
@@ -62,170 +85,197 @@ internal static unsafe partial class VisualEngine3D
         float breath = MathF.Sin(clock * 2.1f + seed * 1.7f);
         var p = new CoderRigPose
         {
-            PelvisY = .885f + .007f * breath,
-            PelvisRoll = .04f,
-            TorsoPitch = .05f,
-            TorsoYaw = -.16f,
-            TorsoRoll = -.04f,
-            HeadPitch = .03f + .025f * breath,
-            HeadYaw = .18f + .10f * MathF.Sin(clock * 1.1f + seed),
+            PelvisY = .90f + .007f * breath,
+            PelvisRoll = .035f,
+            TorsoPitch = .04f,
+            TorsoYaw = -.15f,
+            TorsoRoll = -.035f,
+            HeadPitch = .02f + .02f * breath,
+            HeadYaw = .16f + .09f * MathF.Sin(clock * 1.1f + seed),
             HeadRoll = .04f,
-            // Natural wide athletic stance — never glued-together doll feet!
-            ThighLPitch = -.11f, ThighLRoll = .085f, ShinLPitch = .16f,
-            ThighRPitch = .04f,  ThighRRoll = -.075f, ShinRPitch = .04f,
-            ArmLPitch = .08f, ArmLRoll = .11f, ElbowLPitch = -.85f, ElbowLYaw = -.26f,
-            ArmRPitch = -.06f, ArmRRoll = -.11f, ElbowRPitch = -.52f, ElbowRYaw = .16f,
+            ThighLPitch = -.10f, ThighLRoll = .08f, ShinLPitch = .14f,
+            ThighRPitch = .04f,  ThighRRoll = -.07f, ShinRPitch = .04f,
+            ArmLPitch = .06f, ArmLRoll = .12f, ElbowLPitch = -.80f, ElbowLYaw = -.24f,
+            ArmRPitch = -.05f, ArmRRoll = -.12f, ElbowRPitch = -.52f, ElbowRYaw = .16f,
         };
 
         switch (headIdx % 12)
         {
-            case 0: // Vibe-Pirate! Proudly brandishing steel hook right hand + wooden peg-leg stepped forward!
-                p.TorsoYaw = -.22f; p.HeadYaw = .24f; p.HeadRoll = -.07f;
+            case 0: // Vibe-Pirate: brandishing forged steel hook + wooden peg-leg stepped forward!
+                p.TorsoYaw = -.22f; p.HeadYaw = .24f; p.HeadRoll = -.06f;
                 p.ThighRPitch = -.18f; p.ThighRRoll = -.10f; p.ShinRPitch = .18f;
-                p.ArmRPitch = -.92f + .06f * breath; p.ArmRRoll = -.36f; p.ElbowRPitch = -1.25f; p.ElbowRYaw = .20f;
-                p.ArmLPitch = .20f; p.ArmLRoll = .46f; p.ElbowLPitch = -1.38f; p.ElbowLYaw = -.70f;
+                p.ArmRPitch = -.92f + .06f * breath; p.ArmRRoll = -.34f; p.ElbowRPitch = -1.25f; p.ElbowRYaw = .18f;
+                p.ArmLPitch = .18f; p.ArmLRoll = .44f; p.ElbowLPitch = -1.35f; p.ElbowLYaw = -.68f;
                 break;
-            case 1: // Caffeine / Smoothie Maniac — holding oversized iced smoothie cup up with jittery tremble!
-                p.PelvisRoll = -.05f; p.TorsoYaw = .20f; p.TorsoRoll = .05f; p.HeadYaw = -.16f; p.HeadRoll = .07f;
+            case 1: // Smoothie Maniac: holding iced matcha cup up with caffeinated tremble
+                p.PelvisRoll = -.04f; p.TorsoYaw = .18f; p.TorsoRoll = .04f; p.HeadYaw = -.15f; p.HeadRoll = .06f;
                 p.ArmLPitch = -.42f; p.ArmLRoll = .16f; p.ElbowLPitch = -1.48f + .06f * breath; p.ElbowLYaw = -.18f;
-                p.ArmRPitch = .14f; p.ArmRRoll = -.18f; p.ElbowRPitch = -.92f; p.ElbowRYaw = .30f;
+                p.ArmRPitch = .14f; p.ArmRRoll = -.18f; p.ElbowRPitch = -.90f; p.ElbowRYaw = .28f;
                 break;
-            case 2: // Backwards Cap Crypto-Bro — cocky wide stance, left hand on hip, chin up
-                p.TorsoPitch = -.04f; p.TorsoYaw = -.24f; p.HeadPitch = -.09f; p.HeadYaw = .26f;
-                p.ThighLRoll = .11f; p.ThighRRoll = -.10f;
-                p.ArmLPitch = .22f; p.ArmLRoll = .52f; p.ElbowLPitch = -1.48f; p.ElbowLYaw = -.75f;
-                p.ArmRPitch = -.24f; p.ArmRRoll = -.16f; p.ElbowRPitch = -1.05f; p.ElbowRYaw = .12f;
+            case 2: // Tinfoil Crypto-Bro: cocky wide stance, hand on hip, chin up
+                p.TorsoPitch = -.04f; p.TorsoYaw = -.22f; p.HeadPitch = -.08f; p.HeadYaw = .24f;
+                p.ThighLRoll = .10f; p.ThighRRoll = -.09f;
+                p.ArmLPitch = .20f; p.ArmLRoll = .48f; p.ElbowLPitch = -1.42f; p.ElbowLYaw = -.72f;
+                p.ArmRPitch = -.22f; p.ArmRRoll = -.16f; p.ElbowRPitch = -1.02f; p.ElbowRYaw = .12f;
                 break;
-            case 3: // Tech-Wizard — mystic caster pose, right hand raised weaving prompt magic
-                p.TorsoYaw = .22f; p.HeadYaw = -.18f; p.HeadPitch = -.06f;
-                p.ArmRPitch = -1.28f + .06f * breath; p.ArmRRoll = -.26f; p.ElbowRPitch = -.88f; p.ElbowRYaw = .14f;
-                p.ArmLPitch = -.18f; p.ArmLRoll = .18f; p.ElbowLPitch = -1.35f; p.ElbowLYaw = -.36f;
+            case 3: // 40-Framework Wizard: mystic pose holding glowing crystal oak staff forward
+                p.TorsoYaw = .20f; p.HeadYaw = -.16f; p.HeadPitch = -.05f;
+                p.ArmRPitch = -.52f + .04f * breath; p.ArmRRoll = -.22f; p.ElbowRPitch = -1.12f; p.ElbowRYaw = .10f;
+                p.ArmLPitch = -.24f; p.ArmLRoll = .20f; p.ElbowLPitch = -1.35f; p.ElbowLYaw = -.34f;
                 break;
-            case 4: // Call-Center TeamLead — left hand tapping boom-mic, right hand gesturing on Zoom call
-                p.TorsoYaw = -.18f; p.HeadYaw = .15f; p.HeadRoll = .08f;
-                p.ArmLPitch = -1.08f; p.ArmLRoll = .34f; p.ElbowLPitch = -1.86f; p.ElbowLYaw = -.44f;
-                p.ArmRPitch = -.42f; p.ArmRRoll = -.22f; p.ElbowRPitch = -1.24f + .08f * breath; p.ElbowRYaw = .18f;
+            case 4: // Sleepy TeamLead: hand near boom-mic on Zoom call, drowsy tilt
+                p.TorsoYaw = -.16f; p.HeadYaw = .14f; p.HeadRoll = .10f;
+                p.ArmLPitch = -1.05f; p.ArmLRoll = .32f; p.ElbowLPitch = -1.82f; p.ElbowLYaw = -.42f;
+                p.ArmRPitch = -.38f; p.ArmRRoll = -.20f; p.ElbowRPitch = -1.18f + .07f * breath; p.ElbowRYaw = .18f;
                 break;
-            case 5: // Punk Mohawk Berserk — wide fighter stance, fists up ready to refactor!
-                p.PelvisY = .855f; p.TorsoPitch = .16f; p.TorsoYaw = -.28f; p.HeadYaw = .28f; p.HeadPitch = -.10f;
-                p.ThighLPitch = -.22f; p.ThighLRoll = .13f; p.ShinLPitch = .34f;
-                p.ThighRPitch = .10f; p.ThighRRoll = -.12f; p.ShinRPitch = .18f;
-                p.ArmLPitch = -.62f; p.ArmLRoll = .24f; p.ElbowLPitch = -1.68f; p.ElbowLYaw = -.32f;
-                p.ArmRPitch = -.88f; p.ArmRRoll = -.22f; p.ElbowRPitch = -1.62f; p.ElbowRYaw = .26f;
+            case 5: // Punk Cyborg Refactorer: wide fighter stance, cyber-claw raised!
+                p.PelvisY = .865f; p.TorsoPitch = .14f; p.TorsoYaw = -.26f; p.HeadYaw = .26f; p.HeadPitch = -.08f;
+                p.ThighLPitch = -.20f; p.ThighLRoll = .12f; p.ShinLPitch = .30f;
+                p.ThighRPitch = .10f; p.ThighRRoll = -.11f; p.ShinRPitch = .16f;
+                p.ArmLPitch = -.58f; p.ArmLRoll = .24f; p.ElbowLPitch = -1.62f; p.ElbowLYaw = -.30f;
+                p.ArmRPitch = -.92f; p.ArmRRoll = -.24f; p.ElbowRPitch = -1.52f; p.ElbowRYaw = .24f;
                 break;
-            case 6: // Zen Halo Guru — calm serene stance, hands brought together at chest (namaste) + subtle levitation
-                p.PelvisY = .925f + .022f * breath;
+            case 6: // Zen Monk Halo: serene hands together at chest + gentle levitation
+                p.PelvisY = .94f + .024f * breath;
                 p.TorsoPitch = 0f; p.TorsoYaw = 0f; p.TorsoRoll = 0f; p.PelvisRoll = 0f;
-                p.HeadPitch = .05f; p.HeadYaw = .06f * breath; p.HeadRoll = 0f;
-                p.ThighLPitch = -.06f; p.ThighLRoll = .06f; p.ShinLPitch = .10f;
-                p.ThighRPitch = -.06f; p.ThighRRoll = -.06f; p.ShinRPitch = .10f;
-                p.ArmLPitch = -.52f; p.ArmLRoll = .26f; p.ElbowLPitch = -1.62f; p.ElbowLYaw = -.68f;
-                p.ArmRPitch = -.52f; p.ArmRRoll = -.26f; p.ElbowRPitch = -1.62f; p.ElbowRYaw = .68f;
+                p.HeadPitch = .04f; p.HeadYaw = .05f * breath; p.HeadRoll = 0f;
+                p.ThighLPitch = -.05f; p.ThighLRoll = .06f; p.ShinLPitch = .08f;
+                p.ThighRPitch = -.05f; p.ThighRRoll = -.06f; p.ShinRPitch = .08f;
+                p.ArmLPitch = -.50f; p.ArmLRoll = .24f; p.ElbowLPitch = -1.58f; p.ElbowLYaw = -.64f;
+                p.ArmRPitch = -.50f; p.ArmRRoll = -.24f; p.ElbowRPitch = -1.58f; p.ElbowRYaw = .64f;
                 break;
-            case 7: // Skolkovo VR Neuro-Shaman — swiping invisible holographic UI in mid-air!
-                p.TorsoPitch = .08f; p.TorsoYaw = .14f; p.HeadYaw = -.12f + .16f * breath; p.HeadPitch = -.06f;
-                p.ArmLPitch = -.88f; p.ArmLRoll = .18f; p.ElbowLPitch = -1.08f + .10f * breath; p.ElbowLYaw = -.18f;
-                p.ArmRPitch = -.72f; p.ArmRRoll = -.20f; p.ElbowRPitch = -1.22f - .10f * breath; p.ElbowRYaw = .22f;
+            case 7: // Skolkovo VR Shaman: pinching holographic UI in mid-air
+                p.TorsoPitch = .07f; p.TorsoYaw = .14f; p.HeadYaw = -.12f + .15f * breath; p.HeadPitch = -.05f;
+                p.ArmLPitch = -.86f; p.ArmLRoll = .18f; p.ElbowLPitch = -1.06f + .10f * breath; p.ElbowLYaw = -.18f;
+                p.ArmRPitch = -.70f; p.ArmRRoll = -.20f; p.ElbowRPitch = -1.20f - .10f * breath; p.ElbowRYaw = .22f;
                 break;
-            case 8: // Meetup Boss in Balenciaga — fashion runway swagger, arms folded coolly
-                p.PelvisRoll = .07f; p.TorsoYaw = -.26f; p.TorsoRoll = -.06f; p.HeadYaw = .26f; p.HeadPitch = -.08f;
-                p.ThighLPitch = -.15f; p.ThighLRoll = .10f; p.ShinLPitch = .22f;
+            case 8: // Meetup Crown Boss: swagger runway tilt, arms folded
+                p.PelvisRoll = .06f; p.TorsoYaw = -.24f; p.TorsoRoll = -.05f; p.HeadYaw = .24f; p.HeadPitch = -.07f;
+                p.ThighLPitch = -.14f; p.ThighLRoll = .10f; p.ShinLPitch = .20f;
                 p.ThighRPitch = .05f; p.ThighRRoll = -.06f; p.ShinRPitch = .04f;
-                p.ArmLPitch = -.40f; p.ArmLRoll = .24f; p.ElbowLPitch = -1.52f; p.ElbowLYaw = -.78f;
-                p.ArmRPitch = -.34f; p.ArmRRoll = -.24f; p.ElbowRPitch = -1.46f; p.ElbowRYaw = .74f;
+                p.ArmLPitch = -.38f; p.ArmLRoll = .24f; p.ElbowLPitch = -1.48f; p.ElbowLYaw = -.74f;
+                p.ArmRPitch = -.32f; p.ArmRRoll = -.24f; p.ElbowRPitch = -1.42f; p.ElbowRYaw = .70f;
                 break;
-            case 9: // Friday 19:59 Devil Horns — mischievous evil mastermind hunch, rubbing hands
-                p.PelvisY = .855f; p.TorsoPitch = .22f; p.TorsoYaw = .16f; p.HeadPitch = -.14f; p.HeadYaw = -.14f;
-                p.ThighLPitch = -.18f; p.ThighLRoll = .11f; p.ShinLPitch = .28f;
-                p.ThighRPitch = -.12f; p.ThighRRoll = -.11f; p.ShinRPitch = .22f;
-                p.ArmLPitch = -.55f; p.ArmLRoll = .20f; p.ElbowLPitch = -1.65f + .08f * breath; p.ElbowLYaw = -.58f;
-                p.ArmRPitch = -.55f; p.ArmRRoll = -.20f; p.ElbowRPitch = -1.65f - .08f * breath; p.ElbowRYaw = .58f;
+            case 9: // Friday 19:59 Prod Demon: wicked hunch rubbing hands together
+                p.PelvisY = .87f; p.TorsoPitch = .20f; p.TorsoYaw = .15f; p.HeadPitch = -.12f; p.HeadYaw = -.12f;
+                p.ThighLPitch = -.16f; p.ThighLRoll = .10f; p.ShinLPitch = .24f;
+                p.ThighRPitch = -.10f; p.ThighRRoll = -.10f; p.ShinRPitch = .20f;
+                p.ArmLPitch = -.52f; p.ArmLRoll = .20f; p.ElbowLPitch = -1.62f + .08f * breath; p.ElbowLYaw = -.55f;
+                p.ArmRPitch = -.52f; p.ArmRRoll = -.20f; p.ElbowRPitch = -1.62f - .08f * breath; p.ElbowRYaw = .55f;
                 break;
-            case 10: // Legacy CRT Monitor — curious retro head tilt, one hand on hip, one raised greeting
-                p.TorsoYaw = .18f; p.HeadYaw = -.15f; p.HeadRoll = .15f + .04f * breath;
-                p.ArmRPitch = .20f; p.ArmRRoll = -.48f; p.ElbowRPitch = -1.42f; p.ElbowRYaw = .72f;
-                p.ArmLPitch = -.68f; p.ArmLRoll = .28f; p.ElbowLPitch = -1.35f; p.ElbowLYaw = -.12f;
+            case 10: // Legacy 1998 CRT: curious retro head tilt, hand on hip
+                p.TorsoYaw = .16f; p.HeadYaw = -.14f; p.HeadRoll = .14f + .04f * breath;
+                p.ArmRPitch = .18f; p.ArmRRoll = -.46f; p.ElbowRPitch = -1.38f; p.ElbowRYaw = .70f;
+                p.ArmLPitch = -.64f; p.ArmLRoll = .26f; p.ElbowLPitch = -1.32f; p.ElbowLYaw = -.12f;
                 break;
-            default: // 11: Security Chief / Toxic PM — broad intimidating arms-akimbo boss stance!
+            default: // 11: Tower Security Chief: intimidating arms-akimbo boss stance
                 p.TorsoPitch = -.03f; p.TorsoYaw = 0f; p.PelvisRoll = 0f; p.TorsoRoll = 0f; p.HeadYaw = .08f * breath;
-                p.ThighLPitch = -.06f; p.ThighLRoll = .12f; p.ShinLPitch = .08f;
-                p.ThighRPitch = -.06f; p.ThighRRoll = -.12f; p.ShinRPitch = .08f;
-                p.ArmLPitch = .22f; p.ArmLRoll = .52f; p.ElbowLPitch = -1.48f; p.ElbowLYaw = -.78f;
-                p.ArmRPitch = .22f; p.ArmRRoll = -.52f; p.ElbowRPitch = -1.48f; p.ElbowRYaw = .78f;
+                p.ThighLPitch = -.06f; p.ThighLRoll = .11f; p.ShinLPitch = .08f;
+                p.ThighRPitch = -.06f; p.ThighRRoll = -.11f; p.ShinRPitch = .08f;
+                p.ArmLPitch = .20f; p.ArmLRoll = .48f; p.ElbowLPitch = -1.44f; p.ElbowLYaw = -.74f;
+                p.ArmRPitch = .20f; p.ArmRRoll = -.48f; p.ElbowRPitch = -1.44f; p.ElbowRYaw = .74f;
                 break;
         }
         return p;
     }
 
-    private static void DrawArticulatedPart(string name, Matrix4x4 world, Color hoodie, Color trim, Color visor,
-        bool tintHoodie, bool tintTrim, bool tintVisor, float flash)
+    private static void DrawRiggedCoder(int headIdx, Matrix4x4 root, in CoderRigPose p, float shoeMul, Shader? overrideShader = null)
     {
-        var model = imports[name];
-        if (CastingShadows)
+        string asset = $"vc_{headIdx}";
+        Model model = imports[asset];
+        var ranges = coderParts[asset];
+
+        Matrix4x4 pelvis = Matrix4x4.CreateRotationZ(p.PelvisRoll)
+            * Matrix4x4.CreateTranslation(0f, p.PelvisY, p.PelvisZ) * root;
+        Matrix4x4 torso = Matrix4x4.CreateFromYawPitchRoll(p.TorsoYaw, p.TorsoPitch, p.TorsoRoll) * pelvis;
+        Matrix4x4 head = Matrix4x4.CreateFromYawPitchRoll(p.HeadYaw, p.HeadPitch, p.HeadRoll)
+            * Matrix4x4.CreateTranslation(0f, .540f, 0f) * torso;
+
+        Matrix4x4 upperArmL = Matrix4x4.CreateFromYawPitchRoll(0f, p.ArmLPitch, p.ArmLRoll)
+            * Matrix4x4.CreateTranslation(.180f, .440f, 0f) * torso;
+        Matrix4x4 forearmL = Matrix4x4.CreateFromYawPitchRoll(p.ElbowLYaw, p.ElbowLPitch, 0f)
+            * Matrix4x4.CreateTranslation(0f, -.260f, 0f) * upperArmL;
+
+        Matrix4x4 upperArmR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ArmRPitch, p.ArmRRoll)
+            * Matrix4x4.CreateTranslation(-.180f, .440f, 0f) * torso;
+        Matrix4x4 forearmR = Matrix4x4.CreateFromYawPitchRoll(p.ElbowRYaw, p.ElbowRPitch, 0f)
+            * Matrix4x4.CreateTranslation(0f, -.260f, 0f) * upperArmR;
+
+        Matrix4x4 thighL = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighLPitch, p.ThighLRoll)
+            * Matrix4x4.CreateTranslation(.098f, 0f, 0f) * pelvis;
+        Matrix4x4 shinL = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul)
+            * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinLPitch, -p.ThighLRoll * .45f)
+            * Matrix4x4.CreateTranslation(0f, -.420f, 0f) * thighL;
+
+        Matrix4x4 thighR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighRPitch, p.ThighRRoll)
+            * Matrix4x4.CreateTranslation(-.098f, 0f, 0f) * pelvis;
+        Matrix4x4 shinR = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul)
+            * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinRPitch, -p.ThighRRoll * .45f)
+            * Matrix4x4.CreateTranslation(0f, -.420f, 0f) * thighR;
+
+        ReadOnlySpan<Matrix4x4> partMatrices = [
+            torso, head, upperArmL, forearmL, upperArmR, forearmR, thighL, shinL, thighR, shinR
+        ];
+
+        if (CastingShadows && overrideShader == null)
         {
-            DrawDepth(model, world);
+            for (int part = 0; part < 10; part++)
+            {
+                var (start, count) = ranges[part];
+                var matT = Matrix4x4.Transpose(partMatrices[part]);
+                for (int i = start; i < start + count; i++)
+                    Raylib.DrawMesh(model.Meshes[i], depthMaterial, matT);
+            }
             return;
         }
-        Surface(Finish.Anatomy, 0);
-        Span<Color> saved = stackalloc Color[model.MaterialCount];
-        int visorSlot = model.MaterialCount - 2; // teal is always second-to-last right before coal across all 12 heads
-        for (int i = 0; i < saved.Length; i++)
+
+        if (overrideShader == null) Surface(Finish.Anatomy, 0);
+        for (int part = 0; part < 10; part++)
         {
-            ref var pigment = ref model.Materials[i].Maps[0].Color;
-            saved[i] = pigment;
-            if (tintHoodie && i == 1) pigment = hoodie;
-            else if (tintTrim && i == 2) pigment = trim;
-            else if (tintVisor && i == visorSlot) pigment = visor;
-            if (flash > 0f && ((tintHoodie && i is 1 or 2) || (!tintHoodie && !tintVisor && i == 2)))
-                pigment = Raylib.ColorLerp(pigment, new Color(255, 200, 140, 255), flash);
+            var (start, count) = ranges[part];
+            var matT = Matrix4x4.Transpose(partMatrices[part]);
+            for (int i = start; i < start + count; i++)
+            {
+                Material mat = model.Materials[model.MeshMaterial[i]];
+                if (overrideShader.HasValue) mat.Shader = overrideShader.Value;
+                Raylib.DrawMesh(model.Meshes[i], mat, matT);
+            }
         }
-        var pose = Matrix4x4.Transpose(world);
-        for (int i = 0; i < model.MeshCount; i++)
-            Raylib.DrawMesh(model.Meshes[i], model.Materials[model.MeshMaterial[i]], pose);
-        for (int i = 0; i < saved.Length; i++)
-            model.Materials[i].Maps[0].Color = saved[i];
-        CapturedAssets?.Add(name);
+        CapturedAssets?.Add(asset);
+    }
+
+    internal static void DrawArchiveVibeCoder(string speciesId, Matrix4x4 transform, Shader dossierShader)
+    {
+        int headIdx = SpeciesHeadIndex(speciesId, 0);
+        var (wMul, hMul, shoeMul) = SpeciesProportions(speciesId);
+        var p = PersonalityIdlePose(headIdx, (float)Raylib.GetTime(), headIdx);
+        Matrix4x4 root = Matrix4x4.CreateScale(wMul, hMul, wMul) * transform;
+        DrawRiggedCoder(headIdx, root, p, shoeMul, dossierShader);
     }
 
     internal static void DrawSeatedCoder(Vector3 feet, float yawDeg, float scale, Color hoodie, Color visor, float workBob,
         string speciesId = "", int slotIndex = 0)
     {
-        const string bodyAsset = "coder_seated_body";
-        var model = imports[bodyAsset];
-        var world = Matrix4x4.CreateRotationX(workBob)
-            * Matrix4x4.CreateScale(scale)
+        int headIdx = SpeciesHeadIndex(speciesId, slotIndex);
+        float t = (float)Raylib.GetTime();
+        float typeL = .08f * MathF.Sin(t * 14f + slotIndex * 1.9f);
+        float typeR = .08f * MathF.Sin(t * 14f + slotIndex * 1.9f + 1.6f);
+        var p = new CoderRigPose
+        {
+            PelvisY = .52f,
+            PelvisZ = -.14f,
+            TorsoPitch = .16f + workBob,
+            HeadPitch = .16f,
+            HeadYaw = .06f * MathF.Sin(t * 1.4f + slotIndex),
+            ArmLPitch = -.86f, ArmLRoll = .10f, ElbowLPitch = -1.08f + typeL, ElbowLYaw = -.22f,
+            ArmRPitch = -.86f, ArmRRoll = -.10f, ElbowRPitch = -1.08f + typeR, ElbowRYaw = .22f,
+            ThighLPitch = -1.48f, ThighLRoll = .08f, ShinLPitch = 1.48f,
+            ThighRPitch = -1.48f, ThighRRoll = -.08f, ShinRPitch = 1.48f,
+        };
+        Matrix4x4 root = Matrix4x4.CreateScale(scale)
             * Matrix4x4.CreateRotationY(yawDeg * MathF.PI / 180f)
             * Matrix4x4.CreateTranslation(feet);
-        string headAsset = $"coder_head_{SpeciesHeadIndex(speciesId, slotIndex)}";
-        // Head seated snugly into hoodie collar (zero gap) and pitched subtly toward dual monitors.
-        Matrix4x4 headWorld = Matrix4x4.CreateRotationX(.18f)
-            * Matrix4x4.CreateTranslation(0f, 1.018f, -.018f)
-            * world;
-
-        if (CastingShadows)
-        {
-            DrawDepth(model, world);
-            DrawDepth(imports[headAsset], headWorld);
-            return;
-        }
-        Surface(Finish.Anatomy, 0);
-        Span<Color> saved = stackalloc Color[model.MaterialCount];
-        Color trim = Raylib.ColorBrightness(hoodie, -.55f);
-        // coder_seated_body materials: [0=default, 1=skin, 2=blue, 3=denim, 4=navy, 5=sole, 6=ivory, 7=coal]
-        for (int i = 0; i < saved.Length; i++)
-        {
-            ref var pigment = ref model.Materials[i].Maps[0].Color;
-            saved[i] = pigment;
-            pigment = i switch { 2 => hoodie, 4 => trim, _ => pigment };
-        }
-        var pose = Matrix4x4.Transpose(world);
-        for (int i = 0; i < model.MeshCount; i++)
-            Raylib.DrawMesh(model.Meshes[i], model.Materials[model.MeshMaterial[i]], pose);
-        for (int i = 0; i < saved.Length; i++)
-            model.Materials[i].Maps[0].Color = saved[i];
-        CapturedAssets?.Add(bodyAsset);
-
-        DrawArticulatedPart(headAsset, headWorld, hoodie, trim, visor, false, false, true, 0f);
+        DrawRiggedCoder(headIdx, root, p, 1.0f);
     }
 
     internal static void DrawCoder(VibeCoderEntity c, Vector3 feet, float extraTilt, Color tint, float clock = 0f)
@@ -240,8 +290,8 @@ internal static unsafe partial class VisualEngine3D
         {
             PelvisY = .90f,
             TorsoPitch = extraTilt * .55f,
-            ArmLRoll = .08f, ElbowLPitch = -.35f,
-            ArmRRoll = -.08f, ElbowRPitch = -.35f,
+            ArmLRoll = .09f, ElbowLPitch = -.35f,
+            ArmRRoll = -.09f, ElbowRPitch = -.35f,
             ThighLRoll = .05f, ThighRRoll = -.05f,
         };
 
@@ -359,56 +409,11 @@ internal static unsafe partial class VisualEngine3D
             p.TorsoYaw = -.32f * lift;
         }
 
-        Color hoodie = c.HoodieColor.A > 0 ? c.HoodieColor : new Color(92, 138, 214, 255);
-        if (c.HitFlashTimer > 0f) hoodie = Raylib.ColorLerp(hoodie, Color.White, .55f);
-        Color trim = Raylib.ColorBrightness(hoodie, -.55f);
-        Color visor = c.GlassesColor.A > 0 ? c.GlassesColor : new Color(92, 232, 224, 255);
-        float flash = Math.Clamp(c.HitFlashTimer / .14f, 0f, 1f) * .35f;
-        string headAsset = $"coder_head_{headIdx}";
-
         Matrix4x4 root = Matrix4x4.CreateRotationX(p.RootTilt)
             * Matrix4x4.CreateScale(bodyScale)
             * Matrix4x4.CreateRotationY(c.FacingYaw)
             * Matrix4x4.CreateTranslation(feet);
 
-        Matrix4x4 pelvis = Matrix4x4.CreateRotationZ(p.PelvisRoll)
-            * Matrix4x4.CreateTranslation(0f, p.PelvisY, 0f) * root;
-        Matrix4x4 torso = Matrix4x4.CreateFromYawPitchRoll(p.TorsoYaw, p.TorsoPitch, p.TorsoRoll) * pelvis;
-        Matrix4x4 head = Matrix4x4.CreateFromYawPitchRoll(p.HeadYaw, p.HeadPitch, p.HeadRoll)
-            * Matrix4x4.CreateTranslation(0f, .54f, 0f) * torso;
-
-        Matrix4x4 upperArmL = Matrix4x4.CreateFromYawPitchRoll(0f, p.ArmLPitch, p.ArmLRoll)
-            * Matrix4x4.CreateTranslation(.168f, .432f, 0f) * torso;
-        Matrix4x4 forearmL = Matrix4x4.CreateFromYawPitchRoll(p.ElbowLYaw, p.ElbowLPitch, 0f)
-            * Matrix4x4.CreateTranslation(.014f, -.255f, .004f) * upperArmL;
-
-        Matrix4x4 upperArmR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ArmRPitch, p.ArmRRoll)
-            * Matrix4x4.CreateTranslation(-.168f, .432f, 0f) * torso;
-        Matrix4x4 forearmR = Matrix4x4.CreateFromYawPitchRoll(p.ElbowRYaw, p.ElbowRPitch, 0f)
-            * Matrix4x4.CreateTranslation(-.014f, -.255f, .004f) * upperArmR;
-
-        Matrix4x4 thighL = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighLPitch, p.ThighLRoll)
-            * Matrix4x4.CreateTranslation(.090f, 0f, 0f) * pelvis;
-        Matrix4x4 shinL = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul)
-            * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinLPitch, -p.ThighLRoll * .45f)
-            * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighL;
-
-        Matrix4x4 thighR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighRPitch, p.ThighRRoll)
-            * Matrix4x4.CreateTranslation(-.090f, 0f, 0f) * pelvis;
-        Matrix4x4 shinR = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul)
-            * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinRPitch, -p.ThighRRoll * .45f)
-            * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighR;
-
-        var limbs = SpeciesLimbs(headIdx);
-        DrawArticulatedPart(limbs.Torso, torso, hoodie, trim, visor, true, true, false, flash);
-        DrawArticulatedPart(headAsset, head, hoodie, trim, visor, false, false, true, flash);
-        DrawArticulatedPart("coder_upper_arm_l", upperArmL, hoodie, trim, visor, true, false, false, flash);
-        DrawArticulatedPart(limbs.ForearmL, forearmL, hoodie, trim, visor, true, true, false, flash);
-        DrawArticulatedPart("coder_upper_arm_r", upperArmR, hoodie, trim, visor, true, false, false, flash);
-        DrawArticulatedPart(limbs.ForearmR, forearmR, hoodie, trim, visor, limbs.ForearmRHoodie, limbs.ForearmRTrim, false, flash);
-        DrawArticulatedPart("coder_thigh_l", thighL, hoodie, trim, visor, false, false, false, 0f);
-        DrawArticulatedPart("coder_shin_l", shinL, hoodie, trim, visor, false, true, false, 0f);
-        DrawArticulatedPart("coder_thigh_r", thighR, hoodie, trim, visor, false, false, false, 0f);
-        DrawArticulatedPart(limbs.ShinR, shinR, hoodie, trim, visor, false, limbs.ShinRTrim, false, 0f);
+        DrawRiggedCoder(headIdx, root, p, shoeMul);
     }
 }

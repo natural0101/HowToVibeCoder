@@ -576,57 +576,7 @@ internal static unsafe partial class VisualEngine3D
         }
         if(asset=="char_vibe_coder")
         {
-            var (wMul, hMul, shoeMul) = SpeciesProportions(species?.Id ?? "");
-            int headIdx = SpeciesHeadIndex(species?.Id ?? "", 0);
-            Color hoodie = species?.HoodieColor ?? new(78,136,214,255);
-            Color trim = Raylib.ColorBrightness(hoodie, -.55f);
-            Color visor = species?.GlassesColor ?? new(92,232,224,255);
-            string headAsset = $"coder_head_{headIdx}";
-            var p = PersonalityIdlePose(headIdx, (float)Raylib.GetTime(), headIdx);
-            void DrawCoderArchivePart(string partName, Matrix4x4 pose, bool tintHoodie, bool tintTrim, bool tintVisor)
-            {
-                Model model = imports[partName];
-                int visorSlot = model.MaterialCount - 2;
-                pose = Matrix4x4.Transpose(pose);
-                for (int i = 0; i < model.MeshCount; i++)
-                {
-                    int slot = model.MeshMaterial[i];
-                    Material material = model.Materials[slot];
-                    material.Shader = dossierShader;
-                    Color original = material.Maps[0].Color;
-                    if (!hidden)
-                    {
-                        if (tintHoodie && slot == 1) material.Maps[0].Color = hoodie;
-                        else if (tintTrim && slot == 2) material.Maps[0].Color = trim;
-                        else if (tintVisor && slot == visorSlot) material.Maps[0].Color = visor;
-                    }
-                    Raylib.DrawMesh(model.Meshes[i], material, pose);
-                    material.Maps[0].Color = original;
-                }
-            }
-            Matrix4x4 root = Matrix4x4.CreateScale(wMul, hMul, wMul) * transform;
-            Matrix4x4 pelvis = Matrix4x4.CreateRotationZ(p.PelvisRoll) * Matrix4x4.CreateTranslation(0f, p.PelvisY, 0f) * root;
-            Matrix4x4 torso = Matrix4x4.CreateFromYawPitchRoll(p.TorsoYaw, p.TorsoPitch, p.TorsoRoll) * pelvis;
-            Matrix4x4 head = Matrix4x4.CreateFromYawPitchRoll(p.HeadYaw, p.HeadPitch, p.HeadRoll) * Matrix4x4.CreateTranslation(0f, .54f, 0f) * torso;
-            Matrix4x4 upperArmL = Matrix4x4.CreateFromYawPitchRoll(0f, p.ArmLPitch, p.ArmLRoll) * Matrix4x4.CreateTranslation(.168f, .432f, 0f) * torso;
-            Matrix4x4 forearmL = Matrix4x4.CreateFromYawPitchRoll(p.ElbowLYaw, p.ElbowLPitch, 0f) * Matrix4x4.CreateTranslation(.014f, -.255f, .004f) * upperArmL;
-            Matrix4x4 upperArmR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ArmRPitch, p.ArmRRoll) * Matrix4x4.CreateTranslation(-.168f, .432f, 0f) * torso;
-            Matrix4x4 forearmR = Matrix4x4.CreateFromYawPitchRoll(p.ElbowRYaw, p.ElbowRPitch, 0f) * Matrix4x4.CreateTranslation(-.014f, -.255f, .004f) * upperArmR;
-            Matrix4x4 thighL = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighLPitch, p.ThighLRoll) * Matrix4x4.CreateTranslation(.090f, 0f, 0f) * pelvis;
-            Matrix4x4 shinL = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul) * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinLPitch, -p.ThighLRoll * .45f) * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighL;
-            Matrix4x4 thighR = Matrix4x4.CreateFromYawPitchRoll(0f, p.ThighRPitch, p.ThighRRoll) * Matrix4x4.CreateTranslation(-.090f, 0f, 0f) * pelvis;
-            Matrix4x4 shinR = Matrix4x4.CreateScale(shoeMul, 1f, shoeMul) * Matrix4x4.CreateFromYawPitchRoll(0f, p.ShinRPitch, -p.ThighRRoll * .45f) * Matrix4x4.CreateTranslation(0f, -.42f, 0f) * thighR;
-            var limbs = SpeciesLimbs(headIdx);
-            DrawCoderArchivePart(limbs.Torso, torso, true, true, false);
-            DrawCoderArchivePart(headAsset, head, false, false, true);
-            DrawCoderArchivePart("coder_upper_arm_l", upperArmL, true, false, false);
-            DrawCoderArchivePart(limbs.ForearmL, forearmL, true, true, false);
-            DrawCoderArchivePart("coder_upper_arm_r", upperArmR, true, false, false);
-            DrawCoderArchivePart(limbs.ForearmR, forearmR, limbs.ForearmRHoodie, limbs.ForearmRTrim, false);
-            DrawCoderArchivePart("coder_thigh_l", thighL, false, false, false);
-            DrawCoderArchivePart("coder_shin_l", shinL, false, true, false);
-            DrawCoderArchivePart("coder_thigh_r", thighR, false, false, false);
-            DrawCoderArchivePart(limbs.ShinR, shinR, false, limbs.ShinRTrim, false);
+            DrawArchiveVibeCoder(species?.Id ?? "", transform, dossierShader);
             return;
         }
         DrawParts(asset, transform, partner);
