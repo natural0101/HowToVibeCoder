@@ -3684,14 +3684,32 @@ public sealed partial class SkyscraperFloor1World
     {
         bool repair=ElevatorBoss.State==ElevatorBossState.Repairing;
         if(!BrokenElevator && !repair) return;
-        float t=repair ? (RepairSeconds-ElevatorBoss.StateTimer)% .42f : (_worldClock+(side+1)*.36f)%2.17f;
-        if(t>.23f || (repair && ElevatorBoss.StateTimer<1.25f)) return;
-        for(int i=0;i<(repair ? 11 : 5);i++)
+        float period=repair ? .38f : 1.85f;
+        float cycleTime=_worldClock+(side+1)*.41f;
+        float burst=repair ? (RepairSeconds-ElevatorBoss.StateTimer)%period : cycleTime%period;
+        if(burst>.26f || (repair && ElevatorBoss.StateTimer<1.25f)) return;
+        int seed=(int)(cycleTime/period)*31+side*7;
+        Vector3 origin=panel+new Vector3(0,-.202f,side*.034f);
+        // Tiny localized arc flash right between the two copper wire tips during initial snap.
+        if(burst<.06f)
+            VisualEngine3D.Orb(origin,.0075f*(1f-burst/.06f),new(255,244,208,255),Finish.Lamp);
+        int count=repair ? 14 : 8;
+        for(int i=0;i<count;i++)
         {
-            float angle=i*2.4f+(int)(_worldClock/2.17f)*.7f;
-            Vector3 velocity=new(MathF.Cos(angle)*1.24f,.56f+MathF.Sin(angle),side*(.6f+.12f*i));
-            Vector3 head=panel+new Vector3(0,-.202f,side*.040f)+velocity*t-Vector3.UnitY*(4*t*t);
-            VisualEngine3D.Rod(head,head+velocity*.045f,.012f,.004f,5,new(174,214,250,255),Finish.Plasma);
+            float h1=MathF.Sin(seed*12.9898f+i*78.233f)*43758.5453f; h1-=MathF.Floor(h1);
+            float h2=MathF.Sin(seed*39.346f+i*11.135f)*24634.6345f; h2-=MathF.Floor(h2);
+            float h3=MathF.Sin(seed*73.156f+i*52.235f)*19191.1919f; h3-=MathF.Floor(h3);
+            float lag=h3*.07f;
+            float t=burst-lag;
+            if(t<=.006f || t>.22f) continue;
+            float vx=(h1-.5f)*1.35f;
+            float vy=.15f+h2*.75f;
+            float vz=side*(.35f+h3*.85f);
+            Vector3 vel=new(vx,vy-4.8f*t,vz);
+            Vector3 pos=origin+new Vector3((h2-.5f)*.022f,(h1-.5f)*.012f,0)+new Vector3(vx*t,vy*t-2.4f*t*t,vz*t);
+            Vector3 tail=pos-vel*.026f;
+            Color spark=i%3==0 ? new(255,244,205,255) : new(255,186,78,255);
+            VisualEngine3D.Rod(pos,tail,.0022f,.0007f,5,spark,Finish.Lamp);
         }
     }
 
