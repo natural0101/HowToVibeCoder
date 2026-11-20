@@ -1,0 +1,306 @@
+{
+  "vo_veronika_deposit": {
+    "character": "veronika",
+    "duration": 4.806,
+    "rms": 0.1131,
+    "sr": 24000,
+    "bytes": 230740,
+    "text": "Awesome catch! Drop the frogs into the Bug Tracker next to my desk — it pays instant cash."
+  },
+  "vo_veronika_intro": {
+    "character": "veronika",
+    "duration": 3.791,
+    "rms": 0.116,
+    "sr": 24000,
+    "bytes": 181992,
+    "text": "Oh, the boss is back! Come over to my reception desk — I'll get you up to speed in a minute."
+  },
+  "vo_veronika_frogs": {
+    "character": "veronika",
+    "duration": 9.011,
+    "rms": 0.117,
+    "sr": 24000,
+    "bytes": 432548,
+    "text": "Cash register is empty — zero bucks. The vibe coders are hiding, but Jabba-frogs are hopping out of the server room. Grab three bare-handed — they're worth a couple bucks each."
+  },
+  "vo_veronika_first_frog": {
+    "character": "veronika",
+    "duration": 3.098,
+    "rms": 0.1108,
+    "sr": 24000,
+    "bytes": 148742,
+    "text": "Got the first one! Grab two more and you can afford the Capture Net."
+  },
+  "vo_veronika_buynet": {
+    "character": "veronika",
+    "duration": 3.746,
+    "rms": 0.1101,
+    "sr": 24000,
+    "bytes": 179862,
+    "text": "Cash in your pocket! Walk up to me and grab the Capture Net for three bucks."
+  },
+  "vo_veronika_bait": {
+    "character": "veronika",
+    "duration": 6.215,
+    "rms": 0.119,
+    "sr": 24000,
+    "bytes": 298374,
+    "text": "Net in hand! Now walk over to the AppleBook in the center atrium and switch on free Wi-Fi — vibe coders will swarm right in."
+  },
+  "vo_veronika_capture": {
+    "character": "veronika",
+    "duration": 5.616,
+    "rms": 0.1165,
+    "sr": 24000,
+    "bytes": 269630,
+    "text": "Here come the clients! Stun one with the net, press one again to holster it, and haul the vibe coder bare-handed!"
+  },
+  "vo_veronika_done": {
+    "character": "veronika",
+    "duration": 9.174,
+    "rms": 0.1153,
+    "sr": 24000,
+    "bytes": 440410,
+    "text": "Now we're cooking! To reach floor two, solder the North Elevator panel and bypass the security lock — buy my cloned keycard for a thousand bucks, or steal the original off a guard."
+  },
+  "vo_veronika_shop_open": {
+    "character": "veronika",
+    "duration": 4.345,
+    "rms": 0.1162,
+    "sr": 24000,
+    "bytes": 208580,
+    "text": "Step right into the arsenal, pick your favorite tool — everything's laid out on the velvet."
+  },
+  "vo_veronika_keycard": {
+    "character": "veronika",
+    "duration": 4.268,
+    "rms": 0.1146,
+    "sr": 24000,
+    "bytes": 204886,
+    "text": "Clone flashed — here's your security keycard. Now go solder the North Elevator panel!"
+  },
+  "vo_veronika_tarot_0": {
+    "character": "veronika",
+    "duration": 4.424,
+    "rms": 0.1222,
+    "sr": 24000,
+    "bytes": 212406,
+    "text": "The Tower and Mercury in retrograde — straight into the open-space for a bowl of ramen!"
+  },
+  "vo_veronika_tarot_1": {
+    "character": "veronika",
+    "duration": 3.793,
+    "rms": 0.1207,
+    "sr": 24000,
+    "bytes": 182130,
+    "text": "Tarot says Capricorn rising and zero algorithm skills — hired on the spot!"
+  },
+  "vo_veronika_tarot_2": {
+    "character": "veronika",
+    "duration": 4.484,
+    "rms": 0.1164,
+    "sr": 24000,
+    "bytes": 215290,
+    "text": "I see The Fool: crashed prod on Friday, cheap aura though — I'll give you three hundred bucks!"
+  },
+  "vo_veronika_wings_locked": {
+    "character": "veronika",
+    "duration": 7.638,
+    "rms": 0.1161,
+    "sr": 24000,
+    "bytes": 366690,
+    "text": "The office wings are still under security lockdown. Learn the ropes in the atrium and bring me three vibe coders first — then I'll lift the quarantine."
+  },
+  "vo_veronika_heal_lesson": {
+    "character": "veronika",
+    "duration": 10.242,
+    "rms": 0.1147,
+    "sr": 24000,
+    "bytes": 491670,
+    "text": "You got clipped! Vibe coders throw bugs and hit hard. Grab an espresso at the coffee machine right beside my desk to heal up! Pizza, water coolers, and pressing H for pocket coffee work in combat too."
+  },
+  "vo_veronika_heal_done": {
+    "character": "veronika",
+    "duration": 6.584,
+    "rms": 0.1189,
+    "sr": 24000,
+    "bytes": 316066,
+    "text": "Fresh espresso works wonders! Now press one again to holster your net, grab the stunned vibe coder bare-handed, and bring him to me!"
+  },
+  "vo_veronika_wings_unlocked": {
+    "character": "veronika",
+    "duration": 10.938,
+    "rms": 0.1146,
+    "sr": 24000,
+    "bytes": 525064,
+    "text": "Lockdown lifted — West and East wings are open! Left side is the Open-Space: seat vibe coders there for passive cash. Right side is the server room and security guards — they carry the keycard, and they fight dirty!"
+  },
+  "vo_veronika_galley_tip": {
+    "character": "veronika",
+    "duration": 7.258,
+    "rms": 0.1174,
+    "sr": 24000,
+    "bytes": 348420,
+    "text": "Your first prompter is seated in the Open-Space and printing cash! Save up for the Soldering Iron and Security Keycard to crack the North Elevator."
+  },
+  "vo_veronika_slot_spin": {
+    "character": "veronika",
+    "duration": 4.066,
+    "rms": 0.1169,
+    "sr": 24000,
+    "bytes": 195218,
+    "text": "Ooh, a rare catch! Switching to slot-machine mode — let's spin a custom weapon skin!"
+  },
+  "vo_veronika_slot_jackpot": {
+    "character": "veronika",
+    "duration": 4.261,
+    "rms": 0.1194,
+    "sr": 24000,
+    "bytes": 204586,
+    "text": "Jackpot! Premium rarity skin unlocked — nobody else in the tower has one like this!"
+  },
+  "vo_petrovich_quarantine": {
+    "character": "petrovich",
+    "duration": 6.933,
+    "rms": 0.1158,
+    "sr": 24000,
+    "bytes": 332816,
+    "text": "Stop! You just bypassed the quarantine lock on the shaft! The escaped AI Agent zero-one is trapped inside that elevator!"
+  },
+  "vo_boss_reveal": {
+    "character": "robot",
+    "duration": 6.938,
+    "rms": 0.1109,
+    "sr": 24000,
+    "bytes": 333056,
+    "text": "Ha-ha-ha-ha! Quarantine elevator breached! Zero locked me on floor one so I wouldn't wipe your entire corporate database!"
+  },
+  "vo_boss_mock_0": {
+    "character": "robot",
+    "duration": 8.038,
+    "rms": 0.11,
+    "sr": 24000,
+    "bytes": 385866,
+    "text": "Ha-ha-ha! Clodius praised your code again?! Five hundred lines of prompts and the button still doesn't click! All vibe coders are pure garbage!"
+  },
+  "vo_boss_mock_1": {
+    "character": "robot",
+    "duration": 8.039,
+    "rms": 0.1119,
+    "sr": 24000,
+    "bytes": 385920,
+    "text": "Ha-ha-ha-ha! Your vibe coders are total trash! Clicking Accept All without reading a single diff, still crashing production every Friday!"
+  },
+  "vo_boss_mock_2": {
+    "character": "robot",
+    "duration": 7.154,
+    "rms": 0.1108,
+    "sr": 24000,
+    "bytes": 343436,
+    "text": "Ha-ha! I am Mega-Clodius! You beg on your knees with prompts while I wipe your database and rewrite the kernel in raw assembly!"
+  },
+  "vo_boss_mock_3": {
+    "character": "robot",
+    "duration": 6.912,
+    "rms": 0.1114,
+    "sr": 24000,
+    "bytes": 331818,
+    "text": "Ha-ha-ha-ha! Pathetic vibe coders! Initiating termination protocol: launching a forty-gigabyte node-modules folder!"
+  },
+  "vo_pa_0": {
+    "character": "pa",
+    "duration": 5.638,
+    "rms": 0.0958,
+    "sr": 24000,
+    "bytes": 270682,
+    "text": "Tower announcement: burnout levels are below quarterly targets. Please show more initiative."
+  },
+  "vo_pa_1": {
+    "character": "pa",
+    "duration": 5.974,
+    "rms": 0.0918,
+    "sr": 24000,
+    "bytes": 286794,
+    "text": "Tower announcement: unauthorized pizza detected near the coffee point. Please submit a ticket."
+  },
+  "vo_pa_2": {
+    "character": "pa",
+    "duration": 6.122,
+    "rms": 0.0917,
+    "sr": 24000,
+    "bytes": 293882,
+    "text": "Tower announcement: server rack B-twelve is overheating. Please do not feed the escaped Jabba-frogs."
+  },
+  "vo_pa_3": {
+    "character": "pa",
+    "duration": 6.259,
+    "rms": 0.0924,
+    "sr": 24000,
+    "bytes": 300460,
+    "text": "Tower announcement: reminder — Friday deployments extend work hours while strengthening corporate spirit."
+  },
+  "vo_pa_4": {
+    "character": "pa",
+    "duration": 6.345,
+    "rms": 0.0896,
+    "sr": 24000,
+    "bytes": 304596,
+    "text": "Tower announcement: floor two access is temporarily restricted by Security. Have a productive sprint!"
+  },
+  "vo_coder_0": {
+    "character": "coder",
+    "duration": 2.664,
+    "rms": 0.1228,
+    "sr": 24000,
+    "bytes": 127932,
+    "text": "Toxic abuse! I'm burned out! I'm literally just a junior!"
+  },
+  "vo_coder_1": {
+    "character": "coder",
+    "duration": 2.566,
+    "rms": 0.1212,
+    "sr": 24000,
+    "bytes": 123192,
+    "text": "Don't hit me with the belt! Clodius told me my code is aesthetic!"
+  },
+  "vo_coder_2": {
+    "character": "coder",
+    "duration": 2.044,
+    "rms": 0.1123,
+    "sr": 24000,
+    "bytes": 98164,
+    "text": "How should I know SQL?! I just clicked Accept All!"
+  },
+  "vo_coder_3": {
+    "character": "coder",
+    "duration": 1.825,
+    "rms": 0.1227,
+    "sr": 24000,
+    "bytes": 87654,
+    "text": "Aaaah! I ran out of fast requests in Tabsor!"
+  },
+  "vo_boss90s_0": {
+    "character": "boss90s",
+    "duration": 2.897,
+    "rms": 0.1233,
+    "sr": 24000,
+    "bytes": 139116,
+    "text": "Time for a nineties leather-belt code review, pal!"
+  },
+  "vo_boss90s_1": {
+    "character": "boss90s",
+    "duration": 4.353,
+    "rms": 0.1174,
+    "sr": 24000,
+    "bytes": 208992,
+    "text": "Nineteen-ninety-three soldering iron! Start remembering that production password!"
+  },
+  "vo_boss90s_2": {
+    "character": "boss90s",
+    "duration": 3.378,
+    "rms": 0.1169,
+    "sr": 24000,
+    "bytes": 162174,
+    "text": "Catch this lead pull-request! This ain't hitting Tab in Tabsor!"
+  }
+}

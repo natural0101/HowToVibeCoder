@@ -78,7 +78,7 @@ public static partial class LoreAndMenusUI
 
     private static string EntryName(int i) => ActiveLoreTab switch
     {
-        0 => ChatNames[i], 1 => TarotNames[i], 2 => Catches(i) > 0 ? CollectionEntry(i) : "Без опознания", _ => DictionaryEntries[i].zoomer.Split(" (")[0]
+        0 => ChatNames[i], 1 => TarotNames[i], 2 => Catches(i) > 0 ? CollectionEntry(i) : "Без опознания", _ => Loc.Tr(DictionaryEntries[i].zoomer).Split(" (")[0]
     };
     private static string EntryContext(int i) => ActiveLoreTab switch
     {
@@ -94,7 +94,7 @@ public static partial class LoreAndMenusUI
 
     private static void DrawSelector()
     {
-        Type(IndexTitles[ActiveLoreTab], 38, 155, 32, Ivory, Typeface.SerifBold);
+        Type(IndexTitles[ActiveLoreTab], 38, 155, 27, Ivory, Typeface.SerifBold);
         string range = $"Записи {FirstVisibleArchiveEntry + 1:00}–{Math.Min(EntryCount, FirstVisibleArchiveEntry + VisibleRows):00} из {EntryCount:00}";
         Type(ActiveLoreTab == 2 ? $"Открыто {Program.Discoveries.Count} из {EntryCount} дел" : range, 39, 207, 16, Quiet);
         Rectangle clip = ArchiveScreen(Selector);
@@ -153,7 +153,7 @@ public static partial class LoreAndMenusUI
             };
         string title = known ? species.Name : "Неизвестный экземпляр";
         string biography = known ? species.Bio : clue;
-        float ledgerTop = 212 + 47 * Wrap(title, TextWidth, 40, Typeface.SerifBold).Length;
+        float ledgerTop = 212 + 43 * Wrap(title, TextWidth, 35, Typeface.SerifBold).Length;
         float bioTop = ledgerTop + 116;
         float tacticsTop = bioTop + 32 + 27 * Wrap(biography, TextWidth, 22).Length + 12;
         float end = tacticsTop + 32 + 25 * Wrap(species.Hint, TextWidth, 21).Length;
@@ -165,7 +165,7 @@ public static partial class LoreAndMenusUI
         Text($"ЛИЧНОЕ ДЕЛО №{i + 1:00}", SheetX, 165, 15, Muted, Typeface.InterfaceBold);
         Raylib.DrawRectangleLinesEx(new(stampX, 159, stampWidth, 31), 2, seal);
         Text(stamp, stampX + 11, 165, 16, seal, Typeface.InterfaceBold);
-        Paragraph(title, SheetX, 200, TextWidth, 40, 47, Ink, Typeface.SerifBold);
+        Paragraph(title, SheetX, 200, TextWidth, 35, 43, Ink, Typeface.SerifBold);
 
         void Field(string label, string value, int column, int row, Color color)
         {
@@ -178,6 +178,7 @@ public static partial class LoreAndMenusUI
         Fill(SheetX + TextWidth / 2, ledgerTop, 1, 116, Rule);
         var (rarity, ink) = species.Rarity switch
         {
+            VibeCoderRarity.Uncommon => ("Необычный", Muted),
             VibeCoderRarity.Rare => ("Редкий", RedInk),
             VibeCoderRarity.Epic => ("Эпический", new Color(99, 54, 94, 255)),
             VibeCoderRarity.Legendary => ("Легендарный", new Color(34, 99, 73, 255)),
@@ -261,7 +262,7 @@ public static partial class LoreAndMenusUI
         }
     }
 
-    internal static Texture2D RenderShopExhibit(string model,float yaw,float density)
+    internal static Texture2D RenderShopExhibit(string model,float yaw,float density,int skin=0)
     {
         EnsureExhibitTarget(Math.Max(1,(int)(588*density)),Math.Max(1,(int)(254*density)));
         Camera3D cam=new() { Position=new(0,.92f,3),Target=new(0,.64f,0),Up=Vector3.UnitY,
@@ -269,7 +270,7 @@ public static partial class LoreAndMenusUI
         Raylib.BeginTextureMode(_exhibitTexture);
         Raylib.ClearBackground(Color.Blank);
         Raylib.BeginMode3D(cam);
-        VisualEngine3D.DrawArchiveModel(model,1,yaw,false,cam.Position,shop:true);
+        VisualEngine3D.DrawArchiveModel(model,1,yaw,false,cam.Position,shop:true,skin:skin);
         Raylib.EndMode3D();
         Raylib.EndTextureMode();
         return _exhibitTexture.Texture;
@@ -340,14 +341,13 @@ public static partial class LoreAndMenusUI
         if (closeHover) Raylib.DrawRectangleRounded(LoreClose, .55f, 8, Selected);
         Raylib.DrawRectangleRoundedLinesEx(LoreClose, .55f, 8, 1, new Color(113, 99, 86, 255));
         MainMenuAndPauseUI.Center(GameFonts.Get(Typeface.Interface, 16), "Закрыть [N]", LoreClose, 16, Ivory);
-        Fill(38, 119, 1204, 1, Stone);
         for (int i = 0; i < ArchiveTabs.Length; i++)
         {
             Rectangle r = LoreTab(i);
             bool active = i == ActiveLoreTab;
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveTabBounds(i));
             Type($"[{i + 1}]", r.X, r.Y + 10, 15, active ? Ivory : Quiet);
-            Type(ArchiveTabs[i], r.X + 31, r.Y + 5, 22, active ? Color.White : hover ? Ivory : Quiet, Typeface.InterfaceBold);
+            Type(ArchiveTabs[i], r.X + 31, r.Y + 7, 20, active ? Color.White : hover ? Ivory : Quiet, Typeface.InterfaceBold);
         }
         DrawSelector();
         Raylib.DrawTexturePro(_exhibitTexture.Texture, new(0, 0, _exhibitTexture.Texture.Width, -_exhibitTexture.Texture.Height),
@@ -373,7 +373,7 @@ public static partial class LoreAndMenusUI
 internal static unsafe partial class VisualEngine3D
 {
     private static Shader dossierShader;
-    private static int dossierEye, dossierSurface;
+    private static int dossierEye, dossierSurface, dossierSkin, dossierClock;
     private static readonly Dictionary<string,BoundingBox> shopBounds=new();
     internal static BoundingBox ModelBounds(string asset)
     {
@@ -385,7 +385,7 @@ internal static unsafe partial class VisualEngine3D
 
     // The exhibit borrows each loaded mesh and its material maps. The stage shader
     // is applied to a value copy so the world keeps its current lighting pass.
-    internal static void DrawArchiveModel(string asset, float scale, float yaw, bool tool, Vector3 eye,VibeCoderSpecies? species=null,bool hidden=false,bool shop=false)
+    internal static void DrawArchiveModel(string asset, float scale, float yaw, bool tool, Vector3 eye,VibeCoderSpecies? species=null,bool hidden=false,bool shop=false,int skin=0)
     {
         if (dossierShader.Id == 0)
         {
@@ -394,22 +394,24 @@ internal static unsafe partial class VisualEngine3D
                 in vec3 vertexPosition, vertexNormal;
                 in vec2 vertexTexCoord;
                 uniform mat4 mvp, matModel;
-                out vec3 normalWS, posWS;
+                out vec3 normalWS, posWS,skinPos;
                 out vec2 uv;
                 void main() {
                     normalWS = mat3(matModel) * vertexNormal;
                     posWS = (matModel * vec4(vertexPosition,1.)).xyz;
-                    uv = vertexTexCoord;
+                    skinPos=vertexPosition; uv = vertexTexCoord;
                     gl_Position = mvp * vec4(vertexPosition,1.);
                 }
                 """, """
                 #version 330
-                in vec3 normalWS, posWS;
+                in vec3 normalWS, posWS,skinPos;
                 in vec2 uv;
                 uniform sampler2D texture0;
                 uniform vec4 colDiffuse;
                 uniform vec3 eye;
                 uniform int surface;
+                uniform float skinClock;
+                /*SKIN*/
                 out vec4 color;
                 void main() {
                     vec4 swatch = texture(texture0,uv) * colDiffuse;
@@ -430,6 +432,7 @@ internal static unsafe partial class VisualEngine3D
                         color = vec4(lit*(1.-.90*contact),1.); return;
                     }
                     vec3 pigment = pow(swatch.rgb,vec3(.455));
+                    if(weaponSkin>0) pigment=finishSkin(skinPos,n,v,skinClock,pigment);
                     vec3 key = normalize(vec3(-.60,.76,.92));
                     vec3 back = normalize(vec3(.66,.48,-.72));
                     float rim = pow(1.-max(dot(n,v),0.),1.65) * max(dot(n,back),0.);
@@ -443,13 +446,17 @@ internal static unsafe partial class VisualEngine3D
                     }
                     color=vec4(result,swatch.a);
                 }
-                """);
+                """.Replace("/*SKIN*/",WeaponSkins.ShaderCode));
             if (dossierShader.Id == 0 || dossierShader.Id == Rlgl.GetShaderIdDefault())
                 throw new InvalidOperationException("Failed to compile archive lighting");
+            dossierSkin=Raylib.GetShaderLocation(dossierShader,"weaponSkin");
+            dossierClock=Raylib.GetShaderLocation(dossierShader,"skinClock");
             dossierEye = Raylib.GetShaderLocation(dossierShader, "eye");
             dossierSurface = Raylib.GetShaderLocation(dossierShader, "surface");
             stageCylinder = Raylib.LoadModelFromMesh(Raylib.GenMeshCylinder(1, 1, 96));
         }
+        Raylib.SetShaderValue(dossierShader,dossierSkin,skin,ShaderUniformDataType.Int);
+        Raylib.SetShaderValue(dossierShader,dossierClock,(float)Raylib.GetTime(),ShaderUniformDataType.Float);
         Raylib.SetShaderValue(dossierShader, dossierEye, eye, ShaderUniformDataType.Vec3);
         void StageBand(float radius, float from, float height, int surface)
         {

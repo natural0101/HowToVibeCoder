@@ -139,12 +139,11 @@ public static partial class Program
         MainMenuAndPauseUI.LoadDisplay(displayPath,interactive);
         if(interactive) Raylib.SetTraceLogLevel(TraceLogLevel.Warning);
         Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint | ConfigFlags.HiddenWindow);
-        Raylib.InitWindow(ScreenWidth, ScreenHeight, "HOW TO VIBE CODER - ЭТАЖ 1: CLOUD ENTROPIC TOWER (1994 -> 2026)");
+        Raylib.InitWindow(ScreenWidth, ScreenHeight, Loc.WindowTitle);
         if(interactive) MainMenuAndPauseUI.Display.Apply();
         Raylib.SetTargetFPS(60);
         Raylib.SetExitKey(KeyboardKey.Null);
 
-        EnsureFloorTypefaces();
         GameFonts.Load();
         _uiFont = GameFonts.Get(Typeface.Interface, 18);
         _serif = GameFonts.Get(Typeface.Serif, 24);
@@ -186,7 +185,7 @@ public static partial class Program
         {
             if(localPair && !Net.Host) throw new IOException(Net.Status);
             using var guest=localPair ? System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                Environment.ProcessPath!,"--coop-smoke --join 127.0.0.1") { UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true }) : null;
+                Path.Combine(AppContext.BaseDirectory,OperatingSystem.IsWindows() ? "HowToVibeCoder.exe" : "HowToVibeCoder"),"--coop-smoke --join 127.0.0.1") { UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true }) : null;
             var guestLog=guest?.StandardOutput.ReadToEndAsync();
             try
             {
@@ -195,6 +194,7 @@ public static partial class Program
                 CheckCoopEscort(join>=0);
                 CheckCoopProgression(join>=0);
                 CheckCoopCarryHarness(join>=0);
+                CheckCoopSkinAward(join>=0);
                 if(guest!=null)
                 {
                     if(!guest.WaitForExit(10000)) throw new TimeoutException("Guest did not finish.");
@@ -220,7 +220,11 @@ public static partial class Program
 
         if(silent && Raylib.IsAudioDeviceReady() && Raylib.GetMasterVolume()!=0f)
             throw new InvalidDataException("Automation master volume must stay at zero");
-        if(!interactive) File.Delete(displayPath);
+        if(!interactive)
+        {
+            if(Loc.Current!=GameLang.Ru) throw new InvalidDataException("Test left English active");
+            File.Delete(displayPath);
+        }
         Net.Dispose();
         LoreAndMenusUI.UnloadArchive();
         Raylib.UnloadTexture(shopBackdrop);
@@ -234,38 +238,6 @@ public static partial class Program
         return 0;
     }
 
-    private static void EnsureFloorTypefaces()
-    {
-        // A fresh repository build can contain only the older menu font bundle.
-        // Use the same authored assets as the dossier when running from that checkout.
-        string destination=Path.Combine(AppContext.BaseDirectory,"assets","fonts");
-        string[] names=["Oswald-SemiBold.ttf","Oswald-Bold.ttf","PTSans-Regular.ttf","PTSans-Bold.ttf"];
-        if(names.All(name=>File.Exists(Path.Combine(destination,name)))) return;
-        foreach(string anchor in new[]{Environment.CurrentDirectory,AppContext.BaseDirectory})
-        {
-            for(var root=new DirectoryInfo(anchor);root!=null;root=root.Parent)
-            {
-                string source=Path.Combine(root.FullName,"assets","fonts");
-                if(!File.Exists(Path.Combine(root.FullName,"HowToVibeCoder.csproj")) ||
-                    !names.All(name=>File.Exists(Path.Combine(source,name)))) continue;
-                Directory.CreateDirectory(destination);
-                foreach(string name in names)
-                {
-                    string target=Path.Combine(destination,name);
-                    if(File.Exists(target)) continue;
-                    string staged=target+"."+Guid.NewGuid().ToString("N")+".tmp";
-                    try
-                    {
-                        File.Copy(Path.Combine(source,name),staged);
-                        try { File.Move(staged,target); }
-                        catch(IOException) when(File.Exists(target)) { }
-                    }
-                    finally { if(File.Exists(staged)) File.Delete(staged); }
-                }
-                return;
-            }
-        }
-    }
 
     private static void WireUpSystems()
     {
@@ -465,6 +437,8 @@ public static partial class Program
             StartHosting(newShift:true);
         }
         Net.Pump(LocalPose,CaptureFloor);
+
+        if(_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu) { UpdateSlot(dt); return; }
 
         if (_hudStatusTimer > 0f)
         {
@@ -842,7 +816,7 @@ public static partial class Program
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
 
-        bool modalOpen = floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
+        bool modalOpen = _world.Slot.Active || floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
             || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen
             || MainMenuAndPauseUI.IsSettingsPanelOpen;
         if(!modalOpen)
@@ -866,6 +840,7 @@ public static partial class Program
 
         LoreAndMenusUI.Draw(_uiFont);
         if(floorPanel!=FloorPanel.None) DrawFloorPanel();
+        if(_world.Slot.Active) DrawSlot();
         Raylib.EndDrawing();
     }
 
@@ -950,7 +925,7 @@ public static partial class Program
         bool healingLesson=Floor.Onboarding==OnboardingStep.HealAtCoffee;
         if(target.Length>0 && (healingLesson || !(_foregroundBanner && _hudStatusTimer>0)))
         {
-            string prompt=target==SkyscraperFloor1World.HandsFullPrompt ? target : "[E]  "+target;
+            string prompt=target==SkyscraperFloor1World.HandsFullPrompt ? target : "[E] "+target;
             float width=GameFonts.Measure(_serif,prompt,19).X;
             GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
         }
@@ -983,13 +958,14 @@ public static partial class Program
             Raylib.DrawRectangleGradientH(0,0,52,sh,red,Color.Blank);
             Raylib.DrawRectangleGradientH(sw-52,0,52,sh,Color.Blank,red);
         }
-        if(CoachingSubtitle || (AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
+        if(CoachingSubtitle || (AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
         {
             var face=GameFonts.Get(Typeface.InterfaceBold,18);
             float limit=Math.Min(sw-100,940);
             var lines=new List<string>();
             string row="";
-            foreach(var word in AudioMusicSystem.ActiveVoiceText.Split(' '))
+            string caption=Loc.IsEn ? AudioMusicSystem.ActiveSpeaker+": "+AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
+            foreach(var word in caption.Split(' '))
             {
                 string next=row.Length==0 ? word : row+" "+word;
                 if(row.Length>0 && GameFonts.Measure(face,next,18).X>limit)
@@ -1002,7 +978,7 @@ public static partial class Program
         }
         else if (AudioMusicSystem.VoiceTimer>0)
         {
-            string line=AudioMusicSystem.ActiveVoiceText;
+            string line=Loc.IsEn ? AudioMusicSystem.ActiveSpeaker+": "+AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
             float width=Math.Min(sw-24,GameFonts.Measure(_uiFont,line,16).X+22);
             Rectangle caption=new(cx-width/2,sh-122,width,26);
             Raylib.DrawRectangleRounded(caption,.35f,8,new Color(14,20,28,212));
@@ -1011,7 +987,7 @@ public static partial class Program
 
     }
 
-    private static bool CoachingSubtitle => AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeaker=="Вероника";
+    private static bool CoachingSubtitle => AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker=="Вероника";
 
     private static Texture2D[] _slotIcons=[];
 
@@ -1241,6 +1217,7 @@ public static partial class Program
             int selected=_weapons.SelectedHotbarSlot;
             var step=Floor.Onboarding;
             int wallet=_playerCash, mask=Floor.OwnedWeaponsMask;
+            var skins=Floor.SkinMasks.ToArray(); var finishes=Floor.EquippedSkins.ToArray();
             int cups=Floor.PocketCoffeeCups; bool unlocked=Floor.WingsUnlocked;
             var pocket=Floor.PocketFrogs.ToArray(); var discoveries=Floor.DiscoveredSpecies.ToArray();
             string path=Path.GetTempFileName();
@@ -1253,7 +1230,7 @@ public static partial class Program
                 _playerCash=saved.Cash;
                 RestoreFloorSave(saved,path);
                 Check(Floor.Onboarding==step && !CoachingSubtitle && mask==Floor.OwnedWeaponsMask && equipped==_weapons.CurrentWeapon && selected==_weapons.SelectedHotbarSlot && _playerCash==wallet &&
-                    cups==Floor.PocketCoffeeCups && unlocked==Floor.WingsUnlocked && pocket.SequenceEqual(Floor.PocketFrogs) && discoveries.SequenceEqual(Floor.DiscoveredSpecies),"slot round-trip");
+                    skins.SequenceEqual(Floor.SkinMasks) && finishes.SequenceEqual(Floor.EquippedSkins) && cups==Floor.PocketCoffeeCups && unlocked==Floor.WingsUnlocked && pocket.SequenceEqual(Floor.PocketFrogs) && discoveries.SequenceEqual(Floor.DiscoveredSpecies),"slot round-trip");
             }
             finally { pendingShift=null; pendingFloorSave=null; File.Delete(path); }
         }
@@ -1275,7 +1252,7 @@ public static partial class Program
         Check(Floor.Onboarding==OnboardingStep.CaptureFirstCoder && _playerHp==100 && Floor.PocketCoffeeCups==1,"alternative healing lesson");
         Floor.NextIncident=.01f; Floor.SEC=85;
         for(int i=0;i<300;i++) TickFloor(.05f);
-        Check(Floor.LastIncident==-1 && !Floor.Raid && Floor.Audit==0 && _world.ActiveCoders.Count==1 &&
+        Check(Floor.LastIncident==-1 && !Floor.Raid && Floor.Audit==0 && _world.ActiveCoders.Count==2 &&
             _world.Frogs.All(f=>Math.Abs(f.Feet.X)<8.5f && f.Feet.Z is >=4 and <=14.5f),"contained atrium");
         ResetNewGameFloor();
         Floor.PocketFrogs.AddRange(["frog_hopper","frog_hopper","frog_syntax"]);
@@ -1290,7 +1267,16 @@ public static partial class Program
         var gate=new Vector3(-9.6f,1.72f,5.2f);
         _playerPos=gate+new Vector3(2.45f,0,.4f); LookAtTarget(gate);
         capture("30_locked_wing_barrier.png");
-        Key(KeyboardKey.E);
+        var eastGate=new Vector3(9.6f,1.72f,5.2f);
+        _playerPos=eastGate+new Vector3(-2.15f,0,-.85f);
+        LookAtTarget(eastGate-new Vector3(0,0,1.48f));
+        Loc.Set(GameLang.En,false);
+        try
+        {
+            Key(KeyboardKey.E);
+            capture("37_en_hud_and_office.png");
+        }
+        finally { Loc.Set(GameLang.Ru,false); }
         Check(AudioMusicSystem.ActiveClipId=="vo_veronika_wings_locked" && Floor.BarrierVoiceWait>24,"barrier explains quarantine");
         Floor.Coach(); Key(KeyboardKey.E);
         Check(AudioMusicSystem.ActiveClipId!="vo_veronika_wings_locked","barrier voice cooldown");
@@ -1450,8 +1436,29 @@ public static partial class Program
             _world.CarriedCoder==intern && _hudStatusBanner.Contains("Отнеси вайбкодера"),"draw blocked during escort");
         Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.HrTarotBoothPos,"HR delivery waypoint");
         Approach(_world.HrTarotBoothPos+Vector3.UnitY*1.6f,2); Key(KeyboardKey.E);
-        Guided(OnboardingStep.SeatFirstGalley,"карантин снят");
-        Check(Floor.WingsUnlocked,"first sale unlocks wings");
+        Check(!Floor.WingsUnlocked && _world.TotalCodersSoldToHr==1,"first sale preserves quarantine");
+        for(int sale=2;sale<=3;sale++)
+        {
+            for(int tick=0;tick<120;tick++) TickFloor(1f/60);
+            var candidate=_world.ActiveCoders.First(c=>c.TimidIntern);
+            if(sale==3) Check(candidate.Rarity==VibeCoderRarity.Uncommon,"third atrium candidate uncommon");
+            _world.ActiveCoders.Remove(candidate);
+            _world.CarriedCoder=candidate;
+            _world.SellCarriedCoderToHrVeronika(GrantCash);
+            Check(Floor.WingsUnlocked==(sale==3),"quarantine delivery "+sale);
+        }
+        Check(Floor.Onboarding==OnboardingStep.SeatFirstGalley && _world.Slot.Active &&
+            AudioMusicSystem.ActiveClipId=="vo_veronika_slot_spin","third delivery spins and unlocks");
+        _playerPos=_world.HrTarotBoothPos+new Vector3(.05f,1.65f,-1.06f);
+        LookAtTarget(_world.HrTarotBoothPos+new Vector3(0,1.32f,0));
+        for(int i=0;i<72;i++){UpdateSlot(1f/60); _world.PoseVeronika(_playerPos,1f/60);}
+        capture("33_veronika_slot_head_spin.png");
+        for(int i=0;i<170;i++) UpdateSlot(1f/60);
+        DrawFrame(); // Render the prize mesh through the live reveal pass before accepting.
+        var prize=_world.Slot.Prize;
+        Key(KeyboardKey.Enter);
+        Check(!_world.Slot.Active && Floor.EquippedSkins[(int)FloorSystems.WeaponOrder[prize.Row]]==prize.Skin,"reveal equips reward");
+        RoundTrip();
         for(int i=0;i<90;i++) TickFloor(1f/60);
         foreach(var (feet,side) in SkyscraperFloor1World.Gates)
             Check(Vector3.Distance(_world.ResolvePlayerCollision(feet),feet)<.01f,"open gate "+feet);
@@ -1478,7 +1485,7 @@ public static partial class Program
         Approach(_world.GalleyDesks[0].DeskPosition+Vector3.UnitY*.9f*SkyscraperFloor1World.WorkstationScale,1.9f);
         Key(KeyboardKey.E);
         Check(_world.GalleyDesks[0].IsOccupied,"intern payroll");
-        Guided(OnboardingStep.Done,"Первый гребец");
+        Guided(OnboardingStep.Done,"Первый промптер");
         for(int i=1;i<FloorSystems.Weapons.Length;i++)
         {
             int price=FloorSystems.Weapons[i].Price;
@@ -1840,20 +1847,24 @@ public static partial class Program
         {
             MainMenuAndPauseUI.LoadDisplay(path,false);
             Require(MainMenuAndPauseUI.Display==new DisplaySettings(),"default");
-            Click(150,ScreenHeight-370+3*45+18);
+            Click(150,(int)MainMenuAndPauseUI.MainButton(3).Y+18);
             Require(MainMenuAndPauseUI.IsSettingsPanelOpen,"main menu settings");
+            Click(818,238);
+            Require(Loc.IsEn && DisplaySettings.Load(path).Language=="en","English pill");
+            PressTestKey(KeyboardKey.Left);
+            Require(!Loc.IsEn && DisplaySettings.Load(path).Language=="ru","Russian keyboard selection");
             for(int mode=0;mode<2;mode++)
             {
-                Click(770,235);
+                Click(770,347);
                 for(int resolution=1;resolution<=5;resolution++)
                 {
-                    Click(770,292);
+                    Click(770,404);
                     var expected=new DisplaySettings(mode==0 ? DisplayMode.Windowed : DisplayMode.Fullscreen,resolution%5);
                     Require(DisplaySettings.Load(path)==expected && MainMenuAndPauseUI.Display==expected,"persist selectors");
                 }
             }
             Click(380,650);
-            Click(150,ScreenHeight-370+18);
+            Click(150,(int)MainMenuAndPauseUI.MainButton(0).Y+18);
             Require(!MainMenuAndPauseUI.IsMenuBlockingGameplay && Raylib.IsCursorHidden() && _world.ActiveCoders.Count==0,"single click starts and captures");
             MainMenuAndPauseUI.OpenMainMenu();
             Input(2,(int)KeyboardKey.Enter); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
@@ -1863,6 +1874,18 @@ public static partial class Program
             Input(2,(int)KeyboardKey.W); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
             Input(1,(int)KeyboardKey.W); Raylib.PollInputEvents();
             Require(Vector3.Distance(before,_playerPos)>.05f,"movement on next frame");
+            PressTestKey(KeyboardKey.Escape);
+            PressTestKey(KeyboardKey.Four);
+            Require(MainMenuAndPauseUI.IsPaused && MainMenuAndPauseUI.IsSettingsPanelOpen,"pause settings");
+            PressTestKey(KeyboardKey.Right);
+            MainMenuAndPauseUI.LoadDisplay(path,false);
+            Require(Loc.IsEn && MainMenuAndPauseUI.Display.ResolutionIndex==0,"reload English in pause");
+            DrawFrame();
+            PressTestKey(KeyboardKey.Enter);
+            Require(!Loc.IsEn && DisplaySettings.Load(path).Language=="ru","pause Enter restores Russian");
+            PressTestKey(KeyboardKey.Escape);
+            PressTestKey(KeyboardKey.Escape);
+            Console.WriteLine("[AUTOTEST] PASS RU/EN mouse, keyboard, settings reload, main menu and pause");
             Net.Dispose();
             Require(Raylib.IsWindowState(ConfigFlags.HiddenWindow) && Raylib.GetRenderWidth()==1280 && Raylib.GetRenderHeight()==720 &&
                 VisualEngine3D.MatchesViewport(1280,720),"fixed hidden test viewport");
@@ -1907,8 +1930,8 @@ public static partial class Program
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
         if(_world.CarriedCoder!=null || Floor.PocketFrogs.Count!=1 || _playerCash<=0 ||
             _world.FocusPrompt(BuildPlayerCamera())!="Сдать Джаба-жаб Веронике") throw new InvalidDataException("HR tarot payout");
-        if(Floor.Onboarding!=OnboardingStep.SeatFirstGalley || !Floor.WingsUnlocked || !AudioMusicSystem.ActiveVoiceText.Contains("карантин снят"))
-            throw new InvalidDataException("HR delivery completes onboarding");
+        if(Floor.WingsUnlocked || _world.TotalCodersSoldToHr!=1)
+            throw new InvalidDataException("First HR delivery must keep quarantine");
         int wallet=_playerCash;
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
         if(_playerCash<=wallet || Floor.PocketFrogs.Count!=0) throw new InvalidDataException("HR frog deposit");
@@ -2141,11 +2164,48 @@ public static partial class Program
         Console.WriteLine("[AUTOTEST] PASS Living office: navigation, four rendered GLBs, 30 loose items, sprint, shotgun, steam, CO2, electric discharge, settling and intercom priority");
     }
 
+    private static void CheckSkinExhibits()
+    {
+        foreach(var model in FloorSystems.WeaponModels)
+        {
+            var finishes=new HashSet<string>();
+            for(int id=0;id<WeaponSkins.Names.Length;id++)
+            {
+                var texture=LoreAndMenusUI.RenderShopExhibit(model,28,.5f,id);
+                var image=Raylib.LoadImageFromTexture(texture);
+                try
+                {
+                    var pixels=new List<byte>();
+                    for(int y=1;y<image.Height;y+=3)
+                        for(int x=1;x<image.Width;x+=3)
+                        {
+                            var p=Raylib.GetImageColor(image,x,y);
+                            if(p.A<200) continue;
+                            pixels.Add(p.R); pixels.Add(p.G); pixels.Add(p.B);
+                        }
+                    if(pixels.Count<90 || !finishes.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pixels.ToArray()))))
+                        throw new InvalidDataException($"Indistinguishable weapon exhibit: {model} skin {id}");
+                }
+                finally {Raylib.UnloadImage(image);}
+            }
+        }
+        Console.WriteLine("[AUTOTEST] PASS Russo One and Onest atlases, 65 GPU weapon exhibits");
+    }
+
     private static void RunAutomatedScreenshotSuite(string displayPath,bool polishOnly)
     {
         CheckViewmodelRates();
         AudioMusicSystem.CheckMovementSounds();
         AudioMusicSystem.CheckStudioVoices();
+        GameFonts.CheckBundle();
+        CheckSkinExhibits();
+        var collection=new FloorSystems(); var machine=new SlotRoulette();
+        foreach(var w in FloorSystems.WeaponOrder) collection.SkinMasks[(int)w]=0x1ffe;
+        int credit=0;
+        machine.Start(collection,VibeCoderRarity.Legendary,new Random(4),(n,_)=>credit+=n);
+        if(WeaponSkins.Names.Length!=13 || credit!=machine.Cashback || credit is <75 or >400 || machine.Prize.Skin<7)
+            throw new InvalidDataException("Duplicate skin cashback");
+        AudioMusicSystem.VoiceTimer=0;
         CheckElevatorNameplates();
         LoreAndMenusUI.CheckMixerControls();
         string projectScreenshotsDir = Environment.GetEnvironmentVariable("VIBECODER_SCREENSHOTS")
@@ -2156,6 +2216,12 @@ public static partial class Program
 
         void CaptureShot(string fileName, string? detailName = null, Rectangle detail = default, bool cropOnly=false,Camera3D? sceneCamera=null,bool hideHud=false)
         {
+            if(!Loc.IsEn && !sceneCamera.HasValue)
+            {
+                Loc.Set(GameLang.En,false);
+                try { Loc.CheckRenderLanguage=true; DrawFrame(); }
+                finally { Loc.CheckRenderLanguage=false; Loc.Set(GameLang.Ru,false); }
+            }
             // Render 3 warmup frames so all animations/particles/UI settle cleanly
             for (int f = 0; f < 3; f++)
             {
@@ -2214,6 +2280,21 @@ public static partial class Program
             Floor.BuyWeapon(1,_=>true);
             floorRow=3;
             CaptureShot("26_shop_3d_showcase.png");
+            _weapons.UnlockedMicroUzi=true;
+            Floor.SkinMasks[(int)WeaponType.MicroUzi]=(1<<8)|(1<<10)|(1<<11);
+            PressTestKey(KeyboardKey.R);
+            if(Floor.EquippedSkins[(int)WeaponType.MicroUzi]!=8) throw new InvalidDataException("Shop next finish");
+            PressTestKey(KeyboardKey.Q);
+            if(Floor.EquippedSkins[(int)WeaponType.MicroUzi]!=0) throw new InvalidDataException("Shop previous finish");
+            Floor.EquipSkin(WeaponType.MicroUzi,10);
+            CaptureShot("34_shop_skin_gold_uzi.png");
+            Loc.Set(GameLang.En,false);
+            try
+            {
+                CaptureShot("36_en_shop_briefcase.png");
+                CaptureShot("38_living_office_props_overview.png",sceneCamera:Shot(new(17,3.2f,-3.6f),new(5,.94f,6.5f),74));
+            }
+            finally { Loc.Set(GameLang.Ru,false); }
             sidegrades=true; floorRow=9;
             CaptureShot("26b_shop_upgrades_tab.png");
             OpenFloorPanel(FloorPanel.None);
@@ -2229,6 +2310,13 @@ public static partial class Program
             _playerPos=booth+new Vector3(1,1.72f,-4);
             LookAtTarget(booth+Vector3.UnitY*1.3f);
             CaptureShot("29_net_grip_fixed.png",hideHud:true);
+            Floor.EquipSkin(WeaponType.MicroUzi,11);
+            _weapons.Equip(WeaponType.MicroUzi);
+            _playerPos=new(3,1.68f,9);
+            LookAtTarget(new(-4,1.54f,2));
+            for(int i=0;i<60;i++) _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
+            AudioMusicSystem.VoiceTimer=0;
+            CaptureShot("35_uzi_holo_fps.png");
         }
         if(polishOnly) { CapturePolish(); return; }
 

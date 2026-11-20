@@ -85,7 +85,7 @@ public static partial class Program
         Floor.Onboarding=state?.OnboardingStep ?? OnboardingStep.Done;
         if(state is {ProgressionVersion:<2,OnboardingStep:{} old} && (int)old>=5)
             Floor.Onboarding=(int)old==5 ? OnboardingStep.StunAndHeal : OnboardingStep.Done;
-        if(Floor.Onboarding==OnboardingStep.Done || state?.Sold>0 || state?.Desks.Any(d=>d.IsOccupied)==true)
+        if(Floor.Onboarding==OnboardingStep.Done || state?.Sold>=3 || state is {ProgressionVersion:<2} && (state.Sold>0 || state.Desks.Any(d=>d.IsOccupied)))
         {
             if(state is {ProgressionVersion:<2} && Floor.Onboarding!=OnboardingStep.Done)
                 Floor.Onboarding=state.Desks.Any(d=>d.IsOccupied) ? OnboardingStep.Done : OnboardingStep.SeatFirstGalley;
@@ -182,6 +182,19 @@ public static partial class Program
         }
         else if(Net.Guest && message is {Kind:"hurt",Source:{} source,Text:{} label}) ShowHit(message.Amount,label,source);
         else if(Net.Guest && message.Kind=="healed") HealFeedback(message.Amount);
+        else if(Net.Guest && message is {Kind:"skin-spin",Tickets:{Length:40} tickets} &&
+            tickets.All(t=>t>=0 && t/16<5 && t%16 is >=1 and <=12))
+        {
+            var slot=_world.Slot;
+            for(int i=0;i<tickets.Length;i++) slot.Tickets[i]=(tickets[i]/16,tickets[i]%16);
+            slot.Cashback=message.Amount; slot.Time=0; slot.Active=true;
+            FloorSystems.SpeakCoaching(SlotRoulette.SpinLine);
+        }
+        else if(Net.Host && message is {Kind:"skin-equip",Amount:>=0 and <112})
+        {
+            var weapon=(WeaponType)(message.Amount/16);
+            if(FloorSystems.WeaponOrder.Contains(weapon)) Floor.EquipSkin(weapon,message.Amount%16);
+        }
         else if(Net.Host && message.Kind=="drink")
         {
             guestInteraction=true;

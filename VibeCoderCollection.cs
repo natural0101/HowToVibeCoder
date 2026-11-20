@@ -4,7 +4,7 @@ using static HowToVibeCoder.VibeCoderRarity;
 
 namespace HowToVibeCoder;
 
-public enum VibeCoderRarity { Common, Rare, Epic, Legendary }
+public enum VibeCoderRarity { Common, Rare, Epic, Legendary, Uncommon }
 
 internal sealed record VibeCoderSpecies(string Id, string Name, VibeCoderRarity Rarity,
     CoderArchetype Archetype, Color HoodieColor, Color GlassesColor, int BonusPayout, string Hint, string Bio,
@@ -45,8 +45,8 @@ internal static class VibeCoderCollection
     internal static readonly VibeCoderSpecies[] CommonBait=All.Where(s=>!s.IsFrog && s.Rarity==Common && s.Archetype==JuniorPrompter).ToArray();
     internal static readonly Dictionary<string,VibeCoderSpecies> Frogs=All.Where(s=>s.IsFrog).ToDictionary(s=>s.Id);
 
-    internal static string Tag(VibeCoderRarity r) => r switch { Rare=>"РЕДКИЙ", Epic=>"ЭПИЧЕСКИЙ", Legendary=>"ЛЕГЕНДАРНЫЙ", _=>"ОБЫЧНЫЙ" };
-    internal static Color Ink(VibeCoderRarity r) => r switch { Rare=>new(249,198,103,255), Epic=>new(199,159,255,255), Legendary=>new(114,244,195,255), _=>new(211,221,220,255) };
+    internal static string Tag(VibeCoderRarity r) => r switch { Uncommon=>"НЕОБЫЧНЫЙ", Rare=>"РЕДКИЙ", Epic=>"ЭПИЧЕСКИЙ", Legendary=>"ЛЕГЕНДАРНЫЙ", _=>"ОБЫЧНЫЙ" };
+    internal static Color Ink(VibeCoderRarity r) => r switch { Uncommon=>new(74,168,255,255), Rare=>new(249,198,103,255), Epic=>new(199,159,255,255), Legendary=>new(114,244,195,255), _=>new(211,221,220,255) };
 
     internal static VibeCoderSpecies Roll(Random rng, SubscriptionBaitTier bait, FloorSystems floor, CoderArchetype? role=null)
     {

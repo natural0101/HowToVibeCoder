@@ -41,7 +41,7 @@ internal sealed partial class FloorSystems
                 receipt="Аудитор принял ведомость."; break;
             case 1:
                 var worker=world.GalleyDesks.FirstOrDefault(d=>d.IsOccupied);
-                if(worker==null) return "На Галере нет кодера для передачи.";
+                if(worker==null) return "В Опенспейсе нет кодера для передачи.";
                 worker.IsOccupied=false; worker.CoderName=""; Risk(security:-40);
                 receipt="Кодер передан аудитору."; break;
             case 2:
@@ -61,7 +61,7 @@ internal sealed partial class FloorSystems
         if(choice==1) SEC=0;
         int amount=choice==0 ? 1500 : 900;
         Earned+=amount; grant(amount,"Акт утилизации");
-        string receipt=choice==0 ? "Агент контейнирован. Узел Галеры подключён." : "Агент вышел в сеть. В архив поступила запись.";
+        string receipt=choice==0 ? "Агент контейнирован. Узел Опенспейса подключён." : "Агент вышел в сеть. В архив поступила запись.";
         Announce(receipt); return receipt;
     }
 
@@ -111,7 +111,7 @@ public sealed partial class SkyscraperFloor1World
         Systems.NodeIncome+=14*dt;
         int cash=(int)Systems.NodeIncome;
         Systems.NodeIncome-=cash; Systems.Earned+=cash;
-        if(cash>0) grant?.Invoke(cash,"Узел ИИ на Галере");
+        if(cash>0) grant?.Invoke(cash,"Узел ИИ в Опенспейсе");
         return cash;
     }
 

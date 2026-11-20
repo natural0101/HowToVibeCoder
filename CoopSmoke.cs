@@ -94,6 +94,41 @@ public static partial class Program
         }
         throw new TimeoutException($"Coop {(guest ? "guest":"host")}, phase {phase}, network {Net.Status}, UDP {Net.HasPeerPose}, cash {_playerCash}, boss {_world.ElevatorBoss.Hp}");
     }
+    private static void CheckCoopSkinAward(bool guest)
+    {
+        if(!guest)
+        {
+            _world.CarriedCoder=new VibeCoderEntity { Rarity=VibeCoderRarity.Uncommon,TarotPayoutValue=45 };
+            _world.SellCarriedCoderToHrVeronika(GrantCash);
+        }
+        var timer=Stopwatch.StartNew();
+        bool requested=false;
+        while(timer.Elapsed.TotalSeconds<12)
+        {
+            Net.Pump(LocalPose,CaptureFloor);
+            if(_world.Slot.Active)
+            {
+                var (row,skin)=_world.Slot.Prize;
+                var weapon=FloorSystems.WeaponOrder[row];
+                if(guest && !requested && Floor.HasSkin(weapon,skin))
+                {
+                    Net.Send(new("skin-equip",Amount:(int)weapon*16+skin)); requested=true;
+                }
+                if(Floor.EquippedSkins[(int)weapon]==skin)
+                {
+                    Console.WriteLine($"COOP PASS {(guest ? "guest" : "host")}: shared skin award and guest equip");
+                    if(guest) return;
+                    // Allow the next authoritative snapshot to reach the guest.
+                    var until=timer.Elapsed.TotalSeconds+.6;
+                    while(timer.Elapsed.TotalSeconds<until) {Net.Pump(LocalPose,CaptureFloor); DrawFrame();}
+                    return;
+                }
+            }
+            DrawFrame();
+        }
+        throw new TimeoutException("Shared skin award");
+    }
+
     private static void CheckCoopCarryHarness(bool guest)
     {
         var pickup=new Vector3(26,0,12);

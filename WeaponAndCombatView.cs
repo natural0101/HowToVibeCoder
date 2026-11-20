@@ -1190,7 +1190,7 @@ public class WeaponAndCombatView
         }
         if(!net) return;
         if(VisualEngine3D.HasAsset("weapon_net_90s"))
-            VisualEngine3D.Asset("weapon_net_90s",grip,assemblyTransform:pose);
+            VisualEngine3D.Asset("weapon_net_90s",grip,assemblyTransform:pose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
         else
         {
             Vector3 P(float x,float y,float z)=>Vector3.Transform(grip+new Vector3(x,y,z),pose);
@@ -1264,7 +1264,7 @@ public class WeaponAndCombatView
         VisualEngine3D.ArmAssembly(true, assembly+spread, "fps_hands_belt", pose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
         VisualEngine3D.SetBeltTension(tension);
-        VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose);
+        VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
         VisualEngine3D.SetBeltTension(0);
 
         // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
@@ -1305,7 +1305,7 @@ public class WeaponAndCombatView
 
         VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
         Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        VisualEngine3D.Asset("weapon_solder_90s", handleBase, 0, 1, tint, assemblyTransform: rightPose);
+        VisualEngine3D.Asset("weapon_solder_90s", handleBase, 0, 1, tint, assemblyTransform: rightPose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
         // Power cord leaves the pommel strain-relief boot
         Vector3 cordStart = Vector3.Transform(handleBase - Vector3.UnitZ * .099f, rightPose);
         Vector3 cordMid = cordStart + new Vector3(.04f,-.16f,-.18f);
@@ -1386,7 +1386,7 @@ public class WeaponAndCombatView
             VisualEngine3D.ArmAssembly(false,assembly,"fps_hands_uzi",pose,.035f*UziRecoilPhase);
             VisualEngine3D.PoseReloadPart(true,Vector3.Zero,.031f*UziBoltOffset);
             VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,180,.75f,
-                SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose);
+                SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
             VisualEngine3D.PoseReloadPart(true,Vector3.Zero,0);
             return;
         }
@@ -1429,7 +1429,7 @@ public class WeaponAndCombatView
         }
         VisualEngine3D.PoseReloadPart(true,travel, rack*.059f+.031f*UziBoltOffset);
         VisualEngine3D.Asset("weapon_uzi_90s",receiverCenter,180,.75f,
-            SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose);
+            SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White, assemblyTransform: pose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
         VisualEngine3D.PoseReloadPart(true,Vector3.Zero,0);
     }
 
@@ -1509,7 +1509,7 @@ public class WeaponAndCombatView
         Color shotgunTint=isChatGun ? new Color(150,255,215,255)
             : (SkinTintPrimary.A>0 ? Raylib.ColorLerp(Color.White,SkinTintPrimary,.45f) : Color.White);
         VisualEngine3D.PoseReloadPart(false,Vector3.Zero,angle);
-        VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, 180, 1, shotgunTint, assemblyTransform: pose);
+        VisualEngine3D.Asset("weapon_shotgun_90s", gripTop, 180, 1, shotgunTint, assemblyTransform: pose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
         VisualEngine3D.PoseReloadPart(false,Vector3.Zero,0);
         if(angle>.05f)
         {

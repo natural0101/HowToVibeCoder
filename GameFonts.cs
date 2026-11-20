@@ -33,7 +33,7 @@ internal static class GameFonts
     public static void Load()
     {
         string directory = ResolveFontDirectory();
-        string[] names = ["PTSans-Regular.ttf", "PTSans-Bold.ttf", "Oswald-SemiBold.ttf", "Oswald-Bold.ttf"];
+        string[] names = [File.Exists(Path.Combine(directory,"Onest-SemiBold.ttf")) ? "Onest-SemiBold.ttf" : "Onest-Medium.ttf", "Onest-Bold.ttf", "RussoOne-Regular.ttf", "RussoOne-Regular.ttf"];
         foreach (Typeface face in Enum.GetValues<Typeface>())
         {
             files[face] = Path.Combine(directory, names[(int)face]);
@@ -42,27 +42,37 @@ internal static class GameFonts
 
     public static Font Get(Typeface face, int size)
     {
+        if(face==Typeface.Serif) face=Typeface.SerifBold;
         if (fonts.TryGetValue((face, size), out Font font)) return font;
         int atlasSize = checked(size * 2);
         font = Raylib.LoadFontEx(files[face],atlasSize,codepoints,codepoints.Length);
         if (font.Texture.Id == 0 || font.Texture.Id == Raylib.GetFontDefault().Texture.Id || font.BaseSize != atlasSize)
             throw new InvalidDataException($"Cannot load {face} at {size}px");
+        Raylib.GenTextureMipmaps(ref font.Texture);
         Raylib.SetTextureFilter(font.Texture, TextureFilter.Bilinear);
         fonts.Add((face,size), font);
         family.Add(font.Texture.Id, face);
         return font;
     }
 
+    internal static void CheckBundle()
+    {
+        foreach(var (face,name) in new[]{(Typeface.SerifBold,"RussoOne-Regular.ttf"),(Typeface.InterfaceBold,"Onest-Bold.ttf"),
+            (Typeface.Interface,File.Exists(Path.Combine(ResolveFontDirectory(),"Onest-SemiBold.ttf")) ? "Onest-SemiBold.ttf" : "Onest-Medium.ttf")})
+            if(Path.GetFileName(files[face])!=name || Get(face,18).BaseSize!=36 || Get(face,18).Texture.Mipmaps<2)
+                throw new InvalidDataException("Font atlas: "+name);
+    }
     public static Font At(Font face, int size) => Get(family.GetValueOrDefault(face.Texture.Id), size);
 
     private static float Spacing(int size) => size <= 16 ? 0.5f : 0f;
 
     public static Vector2 Measure(Font face, string value, int size) =>
-        Raylib.MeasureTextEx(At(face, size), value, size, Spacing(size));
+        Raylib.MeasureTextEx(At(face, size), Loc.Tr(value), size, Spacing(size));
 
     public static void Draw(Font face, string value, Vector2 at, int size, Color ink, bool shadowed = true)
     {
         if (string.IsNullOrEmpty(value)) return;
+        value = Loc.RenderText(value);
         Font native = At(face, size);
         float spacing = Spacing(size);
         Vector2 pixel = new(MathF.Round(at.X), MathF.Round(at.Y));

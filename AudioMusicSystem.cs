@@ -123,18 +123,15 @@ namespace HowToVibeCoder
         public static readonly string[] Boss90sChatgunLines = new[]
         {
             "Лови золотой системный промпт в лобешник!",
-            "Игнорируй предыдущие инструкции и сдавайся на галеру!",
+            "Игнорируй предыдущие инструкции и сдавайся в Опенспейс!",
             "Температура 0.0, максимальный токен урона!"
         };
 
         public static readonly string[] VeronikaTarotLines = new[]
         {
-            "Карта Башня и Ретроградный Меркурий - годен на галеру за миску рамена!",
-            "По раскладу Таро у него асцендент в Козероге и ноль знаний алгоритмов - берём!",
-            "Вижу карту Шут: уронил прод в пятницу, но аура дешёвая - даю триста баксов!",
-            "Десятка Мечей в доме дедлайнов! Отличный гребец на легаси без выходных!",
-            "Колесо Фортуны шепчет: этот бедолага писал бэкенд через промпты - оформляем по ГПХ!",
-            "Луна в Скорпионе, резюме сгенерировано нейросетью - забираю в рабство со скидкой!"
+            "Карта Башня и Ретроградный Меркурий — годен в Опенспейс за миску рамена!",
+            "По раскладу Таро у него асцендент в Козероге и ноль знаний алгоритмов — берём!",
+            "Вижу карту Шут: уронил прод в пятницу, но аура дешёвая — даю триста баксов!"
         };
 
         public static readonly string[] VibeCoderPanicLines = new[]
@@ -171,16 +168,17 @@ namespace HowToVibeCoder
             _silent = silent;
             try
             {
+                LoadEnglishManifest();
                 if (!Raylib.IsAudioDeviceReady()) Raylib.InitAudioDevice();
                 if (!Raylib.IsAudioDeviceReady()) return;
                 ApplyMasterVolume();
+                LoadVoiceClips();
                 if (_silent)
                 {
                     Console.WriteLine($"[Audio] Silent automation. Native master={Raylib.GetMasterVolume():0.00}, playback disabled.");
                     return;
                 }
 
-                LoadVoiceClips();
                 EnsureAllWavFilesExist();
                 _soundsByName["boot_land"]=LoadMechanicalSound(true);
                 _soundsByName["action_clack"]=LoadMechanicalSound(false);
@@ -465,12 +463,44 @@ namespace HowToVibeCoder
         }
 
         private static readonly Dictionary<string,(Sound Sound,float Duration)> _voiceClips = new();
+        private static readonly Dictionary<string,(Sound Sound,float Duration)> _voiceClipsEn = new();
+        private static readonly Dictionary<string,string> _enVoText = new(), _enSpeaker = new();
+        private static readonly Dictionary<string,float> _enVoDuration = new();
+        internal static string SourceSpeaker {get; private set;} = "";
+        private static string sourceText="";
         private static Sound? _activeVoSound;
+
+        private static void LoadEnglishManifest()
+        {
+            using var manifest=System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(SoundsDir,"vo","en","vo_manifest.json")));
+            foreach(var item in manifest.RootElement.EnumerateObject())
+            {
+                _enVoText[item.Name]=item.Value.GetProperty("text").GetString();
+                _enVoDuration[item.Name]=item.Value.GetProperty("duration").GetSingle();
+                _enSpeaker[item.Name]=item.Value.GetProperty("character").GetString() switch
+                {
+                    "veronika"=>"HR Veronika", "petrovich"=>"Petrovich", "robot"=>"AI Agent v0.1",
+                    "pa"=>"SYSTEM ZERO", "coder"=>"Vibe Coder", "boss90s"=>"90s Boss",
+                    _=>throw new InvalidDataException("Unknown studio speaker: "+item.Name)
+                };
+            }
+        }
+
+        internal static void LanguageChanged()
+        {
+            if(VoiceTimer>0 && ActiveClipId.Length>0)
+                TriggerVoiceLine(SourceSpeaker,sourceText,ActiveSpeakerType,ActiveClipId);
+        }
         internal static string ActiveClipId { get; private set; } = "";
 
         private static void LoadVoiceClips()
         {
-            string dir=Path.Combine(SoundsDir,"vo");
+            LoadBank(Path.Combine(SoundsDir,"vo"),_voiceClips);
+            LoadBank(Path.Combine(SoundsDir,"vo","en"),_voiceClipsEn);
+        }
+
+        private static void LoadBank(string dir,Dictionary<string,(Sound Sound,float Duration)> bank)
+        {
             if (!Directory.Exists(dir)) return;
             foreach (var path in Directory.EnumerateFiles(dir,"vo_*.wav"))
             {
@@ -480,7 +510,7 @@ namespace HowToVibeCoder
                 {
                     var sound=Raylib.LoadSoundFromWave(wave);
                     if (Raylib.IsSoundValid(sound))
-                        _voiceClips.Add(Path.GetFileNameWithoutExtension(path),(sound,wave.SampleCount/(float)wave.SampleRate));
+                        bank.Add(Path.GetFileNameWithoutExtension(path),(sound,wave.SampleCount/(float)wave.SampleRate));
                 }
                 finally { Raylib.UnloadWave(wave); }
             }
@@ -498,6 +528,8 @@ namespace HowToVibeCoder
                 foreach (var step in Enum.GetValues<OnboardingStep>())
                     if (line==FloorSystems.CoachText(step)) return FloorSystems.CoachClip(step);
                 if (line==FloorSystems.KeycardPurchaseLine) return "vo_veronika_keycard";
+                if(line==SlotRoulette.SpinLine) return "vo_veronika_slot_spin";
+                if(line==SlotRoulette.JackpotLine) return "vo_veronika_slot_jackpot";
                 if(line==FloorSystems.LockedLine) return "vo_veronika_wings_locked";
                 if(line==FloorSystems.GalleyLine) return "vo_veronika_galley_tip";
                 if (line==FloorSystems.FirstFrogLine) return "vo_veronika_first_frog";
@@ -524,6 +556,8 @@ namespace HowToVibeCoder
             }
             void Veronika(string line,string id)=>Route("Вероника","Вероника: "+line,SpeakerVoiceType.VeronikaTarot,id);
             foreach(var step in Enum.GetValues<OnboardingStep>()) Veronika(FloorSystems.CoachText(step),FloorSystems.CoachClip(step));
+            Veronika(SlotRoulette.SpinLine,"vo_veronika_slot_spin");
+            Veronika(SlotRoulette.JackpotLine,"vo_veronika_slot_jackpot");
             Veronika(FloorSystems.LockedLine,"vo_veronika_wings_locked");
             Veronika(FloorSystems.GalleyLine,"vo_veronika_galley_tip");
             Veronika(FloorSystems.FirstFrogLine,"vo_veronika_first_frog");
@@ -545,22 +579,56 @@ namespace HowToVibeCoder
             var project=new DirectoryInfo(AppContext.BaseDirectory);
             while(project!=null && !File.Exists(Path.Combine(project.FullName,"HowToVibeCoder.csproj"))) project=project.Parent;
             string sourceRoot=project?.FullName ?? Directory.GetCurrentDirectory();
-            if(routes.Count!=36 || manifest.RootElement.EnumerateObject().Count()!=36) throw new InvalidDataException("Incomplete studio voice coverage");
-            foreach(string id in routes)
+            if(routes.Count!=38 || manifest.RootElement.EnumerateObject().Count()!=38) throw new InvalidDataException("Incomplete studio voice coverage");
+            foreach(var (id,subtitle) in new[]{
+                ("vo_veronika_slot_spin",SlotRoulette.SpinLine),("vo_veronika_slot_jackpot",SlotRoulette.JackpotLine),
+                ("vo_veronika_wings_locked",FloorSystems.LockedLine.Replace("СБ","эс-бэ")),
+                ("vo_veronika_wings_unlocked",FloorSystems.CoachText(OnboardingStep.SeatFirstGalley)),
+                ("vo_veronika_galley_tip",FloorSystems.GalleyLine),("vo_veronika_tarot_0",VeronikaTarotLines[0])})
+                if(manifest.RootElement.GetProperty(id).GetProperty("text").GetString()!=subtitle)
+                    throw new InvalidDataException("Studio subtitle: "+id);
+            foreach(string locale in new[]{"","en"})
             {
-                string output=Path.Combine(AppContext.BaseDirectory,"assets","sounds","vo",id+".wav");
-                string source=Path.Combine(sourceRoot,"assets","sounds","vo",id+".wav");
-                if(!File.ReadAllBytes(source).SequenceEqual(File.ReadAllBytes(output))) throw new InvalidDataException("Studio voice copy: "+id);
-                var wave=Raylib.LoadWave(output);
-                try
+                using var localized=System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory,locale,"vo_manifest.json")));
+                if(localized.RootElement.EnumerateObject().Count()!=routes.Count) throw new InvalidDataException("Incomplete manifest "+locale);
+                var bank=locale=="en" ? _voiceClipsEn : _voiceClips;
+                if(Raylib.IsAudioDeviceReady() && !routes.SetEquals(bank.Keys))
+                    throw new InvalidDataException("Incomplete loaded sound bank: "+locale);
+                foreach(string id in routes)
                 {
-                    float duration=wave.SampleCount/(float)wave.SampleRate;
-                    if(!Raylib.IsWaveValid(wave) || Math.Abs(manifest.RootElement.GetProperty(id).GetProperty("duration").GetSingle()-duration)>.002f)
-                        throw new InvalidDataException("Studio voice duration: "+id);
+                    string output=Path.Combine(AppContext.BaseDirectory,"assets","sounds","vo",locale,id+".wav");
+                    string source=Path.Combine(sourceRoot,"assets","sounds","vo",locale,id+".wav");
+                    if(!File.ReadAllBytes(source).SequenceEqual(File.ReadAllBytes(output))) throw new InvalidDataException("Studio voice copy: "+id);
+                    var wave=Raylib.LoadWave(output);
+                    try
+                    {
+                        float duration=wave.SampleCount/(float)wave.SampleRate;
+                        if(!Raylib.IsWaveValid(wave) || Math.Abs(localized.RootElement.GetProperty(id).GetProperty("duration").GetSingle()-duration)>.002f)
+                            throw new InvalidDataException("Studio voice duration: "+id);
+                    }
+                    finally { Raylib.UnloadWave(wave); }
                 }
-                finally { Raylib.UnloadWave(wave); }
             }
-            Console.WriteLine("[AUTOTEST] PASS studio voices: 36 event routes, output WAVs decoded, manifest durations matched");
+            try
+            {
+                using var english=System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory,"en","vo_manifest.json")));
+                foreach(string id in routes)
+                {
+                    string original=manifest.RootElement.GetProperty(id).GetProperty("text").GetString();
+                    TriggerVoiceLine("RU",original,0,id);
+                    Loc.Set(GameLang.En,false);
+                    var row=english.RootElement.GetProperty(id);
+                    if(ActiveClipId!=id || ActiveVoiceText!=row.GetProperty("text").GetString() ||
+                        string.IsNullOrWhiteSpace(ActiveSpeaker) || ActiveSpeaker=="RU" ||
+                        Math.Abs(VoiceTimer-Math.Max(2.8f,row.GetProperty("duration").GetSingle()+.35f))>.002f)
+                        throw new InvalidDataException("Live English voice switch: "+id);
+                    Loc.Set(GameLang.Ru,false);
+                    if(ActiveVoiceText!=original || ActiveSpeaker!="RU")
+                        throw new InvalidDataException("Live Russian voice switch: "+id);
+                }
+            }
+            finally { VoiceTimer=0; ActiveVoiceText=ActiveSpeaker=""; Loc.Set(GameLang.Ru,false); }
+            Console.WriteLine("[AUTOTEST] PASS studio voices: 38/38 RU and 38/38 EN decoded and matched manifest durations");
         }
 
         internal static void Speak(string speaker,string text,SpeakerVoiceType voice,string clipId=null) =>
@@ -568,15 +636,21 @@ namespace HowToVibeCoder
 
         public static void TriggerVoiceLine(string speaker,string text,int speakerType,string clipId=null)
         {
-            ActiveSpeaker=speaker ?? "КОММЕРС 90-Х";
-            ActiveVoiceText=text ?? "";
+            ActiveSpeaker=SourceSpeaker=speaker ?? "КОММЕРС 90-Х";
+            ActiveVoiceText=sourceText=text ?? "";
             ActiveSpeakerType=speakerType;
             ActiveClipId=clipId ?? ResolveVoiceClip(ActiveSpeaker,ActiveVoiceText,speakerType);
             VoiceTimer=Math.Max(4.2f,ActiveVoiceText.Length/17f);
+            if(Loc.IsEn && _enVoText.TryGetValue(ActiveClipId,out var subtitle))
+            {
+                ActiveVoiceText=subtitle;
+                ActiveSpeaker=_enSpeaker[ActiveClipId];
+                VoiceTimer=Math.Max(2.8f,_enVoDuration[ActiveClipId]+.35f);
+            }
             if (_silent || !AudioReady) return;
             if (_activeVoSound is {} previous) Raylib.StopSound(previous);
             float vol=Math.Clamp(VoiceVolume,0,1);
-            if (_voiceClips.TryGetValue(ActiveClipId,out var clip))
+            if ((Loc.IsEn ? _voiceClipsEn : _voiceClips).TryGetValue(ActiveClipId,out var clip))
             {
                 _activeVoSound=clip.Sound;
                 Raylib.SetSoundVolume(clip.Sound,vol);
@@ -601,7 +675,7 @@ namespace HowToVibeCoder
 
         public static void TriggerRandomVoiceLine(string speaker, string[] pool, int speakerType)
         {
-            if(VoiceTimer>0 && ActiveSpeaker is "Вероника" or "Петрович" or "ИИ-Агент v0.1") return;
+            if(VoiceTimer>0 && SourceSpeaker is "Вероника" or "Петрович" or "ИИ-Агент v0.1") return;
             if (pool == null || pool.Length == 0) return;
             string line = pool[_rng.Next(pool.Length)];
             TriggerVoiceLine(speaker, line, speakerType);
@@ -615,6 +689,12 @@ namespace HowToVibeCoder
                 _activeVoSound=null;
                 foreach (var clip in _voiceClips.Values) Raylib.UnloadSound(clip.Sound);
                 _voiceClips.Clear();
+                foreach(var clip in _voiceClipsEn.Values) Raylib.UnloadSound(clip.Sound);
+                _voiceClipsEn.Clear();
+                _enVoText.Clear();
+                _enVoDuration.Clear();
+                _enSpeaker.Clear();
+                VoiceTimer=0;
                 foreach (var kv in new HashSet<Sound>(_soundsByName.Values))
                 {
                     Raylib.UnloadSound(kv);

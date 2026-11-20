@@ -25,10 +25,10 @@ internal sealed class WaterSpill
 internal sealed partial class FloorSystems
 {
     internal static readonly Job[] Jobs = [
-        new("Срочный MVP до обеда","Посадить двоих на Галеру и заработать $450",150,650),
+        new("Срочный MVP до обеда","Посадить двоих в Опенспейс и заработать $450",150,650),
         new("Тихий хантинг Сеньора","Доставить Архитектора живым при СБ ниже 45",120,980),
         new("Финтех-спринт без СБ","Доставить Крипто-Бро или заработать $900",100,820),
-        new("Релиз в Пятницу","Нажать DEPLOY и защищать Галеру 45 секунд",110,1200),
+        new("Релиз в Пятницу","Нажать DEPLOY и защищать Опенспейс 45 секунд",110,1200),
         new("Карантинная шахта","Вернуть Северный лифт в строй до блокировки этажа",180,1500)
     ];
     internal static readonly Gear[] GearList = [
@@ -64,6 +64,7 @@ internal sealed partial class FloorSystems
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
     public List<string> PocketFrogs=new();
     internal OnboardingStep Onboarding { get; set; }
+    public int TrainingSpawns;
     public bool WingsUnlocked, GalleyTipPending;
     public float WingBarrierSlide, EspressoWait, BarrierVoiceWait;
     public int PocketCoffeeCups=2, GuestCoffeeCups=2;
@@ -72,7 +73,7 @@ internal sealed partial class FloorSystems
     public bool FirstFrogCheered;
     internal int FrogProgress => Math.Min(3,PocketFrogs.Count);
 
-    internal string Objective(bool carrying) => Onboarding switch
+    internal string Objective(bool carrying,int sold) => Onboarding switch
     {
         OnboardingStep.TalkToVeronika => "Подойди к стойке и поговори с Вероникой [E]",
         OnboardingStep.CatchFrogs => $"Поймай Джаба-жаб у стойки [E]  ({FrogProgress}/3)",
@@ -81,9 +82,8 @@ internal sealed partial class FloorSystems
         OnboardingStep.ActivateBait => "Запусти ЯблоБук-приманку в центре [E]",
         OnboardingStep.HealAtCoffee => "Выпей эспрессо у стойки (+45 HP) [E]",
         OnboardingStep.StunAndHeal => "Оглуши стажёра сачком [ЛКМ]",
-        OnboardingStep.SeatFirstGalley => carrying ? "Отведи кадра на свободный стол Галеры [E]" : "Примани второго вайбкодера для Галеры [E]",
-        OnboardingStep.CaptureFirstCoder => carrying ? "Отнеси вайбкодера Веронике [E]" :
-            "Оглуши вайбкодера (ЛКМ), освободи руки и подними [E]",
+        OnboardingStep.SeatFirstGalley => carrying ? "Отведи кадра на свободный стол Опенспейса [E]" : "Примани вайбкодера для Опенспейса [E]",
+        OnboardingStep.CaptureFirstCoder => $"Сдай вайбкодеров Веронике ({Math.Min(sold,3)}/3)",
         _ => ""
     };
 
@@ -97,7 +97,7 @@ internal sealed partial class FloorSystems
             OnboardingStep.StunAndHeal => "Пошли клиенты! Оглуши первого сачком (ЛКМ), убери сачок повторным [1] и подними вайбкодера голыми руками [E]!",
             OnboardingStep.HealAtCoffee => "Тебя задели! Вайбкодеры кидаются багами и больно бьют. Подойди к кофе-машине рядом со стойкой и выпей эспрессо — восстановишь здоровье! В бою ещё спасают пицца, кулеры и стакан кофе на кнопку Эйч.",
             OnboardingStep.CaptureFirstCoder => "Бодрящий эспрессо творит чудеса! Теперь убери сачок повторным нажатием единицы, подними оглушённого вайбкодера голыми руками и неси ко мне!",
-            OnboardingStep.SeatFirstGalley => "Отлично, карантин снят — Западное и Восточное крылья открыты! Слева Галера: сажай туда вайбкодеров за пассивный доход. Справа серверная и охрана эс-бэ — у них есть пропуск, но дерутся они жёстко!",
+            OnboardingStep.SeatFirstGalley => "Отлично, карантин снят — Западное и Восточное крылья открыты! Слева Опенспейс: сажай туда вайбкодеров промптить за пассивный доход. Справа серверная и охрана эс-бэ — у них есть пропуск, но дерутся они жёстко!",
             _ => "Дело пошло! Чтобы уехать на 2-й этаж, перепаяй Северный лифт Паяльником и сними замок СБ — могу перепрошить Ключ-карту за $1000 у меня [E], либо отбери оригинал у СБ."
         };
     internal static string CoachClip(OnboardingStep step) => "vo_veronika_"+(step switch
@@ -117,8 +117,10 @@ internal sealed partial class FloorSystems
     {
         if(GalleyTipPending && AudioMusicSystem.VoiceTimer<=0)
         { GalleyTipPending=false; SpeakCoaching(GalleyLine); }
+        if(!WingsUnlocked && world.TotalCodersSoldToHr is 1 or 2 && Onboarding<OnboardingStep.CaptureFirstCoder)
+            Onboarding=OnboardingStep.CaptureFirstCoder;
         bool seated=world.GalleyDesks.Exists(d=>d.IsOccupied);
-        if(!WingsUnlocked && (world.TotalCodersSoldToHr>0 || seated))
+        if(!WingsUnlocked && world.TotalCodersSoldToHr>=3)
         {
             WingsUnlocked=true;
             AudioMusicSystem.PlayMacbookBait();
@@ -148,8 +150,8 @@ internal sealed partial class FloorSystems
             CheerFirstFrog();
         }
     }
-    internal const string LockedLine="Крылья офиса пока на карантине эс-бэ. Сначала освойся в атриуме и принеси мне первого вайбкодера — тогда сниму блокировку.";
-    internal const string GalleyLine="Первый гребец сел на Галеру и уже приносит кэш! Копи на Паяльник и Ключ-карту эс-бэ — и сможешь вскрыть Северный лифт на второй этаж.";
+    internal const string LockedLine="Крылья офиса пока на карантине СБ. Сначала освойся в атриуме и принеси мне трёх вайбкодеров — тогда сниму блокировку.";
+    internal const string GalleyLine="Первый промптер сел в Опенспейс и уже приносит кэш! Копи на Паяльник и Ключ-карту эс-бэ — и сможешь вскрыть Северный лифт на второй этаж.";
     internal const string FirstFrogLine="Есть первая! Ещё пару штук — и хватит на Сачок.";
     internal static void CheerFirstFrog() => SpeakCoaching(FirstFrogLine);
     internal bool HasWeapon(WeaponType w) => (OwnedWeaponsMask & (1<<(int)w))!=0;
@@ -286,7 +288,7 @@ internal sealed partial class FloorSystems
         Risk(heat:30);
         world.SpawnWave(2);
         AudioMusicSystem.PlayBossSiren();
-        return "Деплой начался. Удерживай узел Галеры 45 секунд.";
+        return "Деплой начался. Удерживай узел Опенспейса 45 секунд.";
     }
 
     internal string Buy(int index,Func<int,bool> spend)
@@ -364,12 +366,12 @@ internal sealed partial class FloorSystems
         {
             case Incident.Printer: Jam=20; message="Принтер зажевал пачку пропусков. Ремонт 20 с."; break;
             case Incident.Coffee:
-                WantsCoffee=true; message="Галера требует раф. Кофемашина у приёмной.";
+                WantsCoffee=true; message="Опенспейс требует раф. Кофемашина у приёмной.";
                 foreach(var d in world.GalleyDesks) if(d.IsOccupied) d.Morale=.65f;
                 break;
             case Incident.Bugs: world.SpawnWave(2); message="Выброс багов. Дежурная смена идёт в зал."; break;
             case Incident.Audit: Audit=15; AuditPresented=false; message="Поступило предписание аудита Башни."; break;
-            case Incident.Ddos: Ddos=true; message="DDoS: выход Галеры упал вдвое. Перезапусти B12."; break;
+            case Incident.Ddos: Ddos=true; message="DDoS: выход Опенспейса упал вдвое. Перезапусти B12."; break;
             case Incident.Burnout:
                 var worker=world.GalleyDesks.Where(d=>d.IsOccupied).MaxBy(d=>d.Burnout);
                 if(worker!=null) { worker.Burnout=100; worker.IsSlackingInTwitter=true; }
@@ -440,7 +442,7 @@ internal sealed partial class FloorSystems
         if(JobId<0) return;
         Remaining=Down(Remaining);
         string? failure=CrewLost ? "Смена потеряла бойца." : StealthBlown ? "СБ засекла вербовку Сеньора." :
-            JobId==3 && ReleaseStarted && Defense<=0 ? "Налётчики разбили узел Галеры." :
+            JobId==3 && ReleaseStarted && Defense<=0 ? "Налётчики разбили узел Опенспейса." :
             JobId==4 && R>=90 ? "СБ заблокировала лифтовую шахту." : null;
         bool success=JobId switch { 0=>Seated>=2 && Earned>=450,1=>SeniorDelivered,2=>CryptoDelivered || Earned>=900,
             3=>ReleaseFinished,4=>world.ElevatorBoss.IsDefeated,_=>false };
@@ -448,7 +450,7 @@ internal sealed partial class FloorSystems
         success &= failure==null;
         string[] verdicts=["Два новых кадра отбили аванс до обеда.","Архитектор подписал NDA до того, как СБ подняла журнал.",
             CryptoDelivered ? "Крипто-Бро подписал оффер до закрытия торгов." : "Выручка закрыла спринт до конца торгов.",
-            "Галера пережила пятничную смену.","Шахта снова под контролем диспетчера."];
+            "Опенспейс пережила пятничную смену.","Шахта снова под контролем диспетчера."];
         float bonus=(1+.06f*RankIndex)*(JobId==2 ? 1.4f : 1)*(JobId==3 ? 2.5f : FridayMultiplier);
         if(world.Working(CoderArchetype.ToxicPM)) bonus*=1.2f;
         if(JobId==2 && world.GalleyDesks.Exists(d=>d.IsOccupied && d.Archetype==CoderArchetype.CryptoBro)) bonus*=1.5f;
@@ -460,8 +462,8 @@ internal sealed partial class FloorSystems
     }
 
     internal string Progress => JobId switch {
-        0=>$"Галера {Seated}/2    Выручка ${Earned}/450",1=>$"Доставить Архитектора    СБ {(int)SEC}/45",
-        2=>$"Доставить Крипто-Бро или заработать ${Earned}/900",3=>ReleaseStarted ? $"Удержать Галеру    Узел {Defense:F0}%" : "Нажать красную кнопку у лифта",
+        0=>$"Опенспейс {Seated}/2    Выручка ${Earned}/450",1=>$"Доставить Архитектора    СБ {(int)SEC}/45",
+        2=>$"Доставить Крипто-Бро или заработать ${Earned}/900",3=>ReleaseStarted ? $"Удержать Опенспейс    Узел {Defense:F0}%" : "Нажать красную кнопку у лифта",
         4 when AgentHealth<0=>"Восстановить питание Северного лифта",
         4=>$"Ликвидировать агента    Корпус {MathF.Ceiling(100f*AgentHealth)}%",_=>"Заказы [J]    Арсенал [U]" };
     public float AgentHealth=-1;
@@ -568,7 +570,7 @@ public static partial class Program
     {
         if(panel==FloorPanel.Upgrades && floorPanel!=panel) shopOpenedAt=Raylib.GetTime();
         if(panel==FloorPanel.Upgrades && floorPanel!=panel && Raylib.GetTime()>=nextShopGreeting &&
-            !(AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeaker=="Вероника" &&
+            !(AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker=="Вероника" &&
               (AudioMusicSystem.ActiveClipId=="vo_veronika_first_frog" || AudioMusicSystem.ActiveClipId==FloorSystems.CoachClip(Floor.Onboarding))))
         {
             FloorSystems.SpeakCoaching(FloorSystems.ShopGreeting);
@@ -679,6 +681,7 @@ public static partial class Program
         bool shop=floorPanel==FloorPanel.Upgrades;
         if(shop)
         {
+            SkinSwitch(true);
             bool next=sidegrades;
             if(Key(KeyboardKey.Tab)) next=!next;
             if(Key(KeyboardKey.One)) next=false;
@@ -733,6 +736,7 @@ public static partial class Program
 
     internal static void ShadowText(Font font,string text,float x,float y,int size,Color ink)
     {
+        text=Loc.RenderText(text);
         Font face=GameFonts.At(font,size);
         Vector2 pos=new(MathF.Round(x),MathF.Round(y));
         float spacing=size<=16 ? .5f : 0;
@@ -740,7 +744,7 @@ public static partial class Program
         Raylib.DrawTextEx(face,text,pos,size,spacing,ink);
     }
 
-    private static readonly string[] BeatTitles=["РАЗГОВОР С HR","ДЖАБА-ЖАБЫ","БАГ-ТРЕКЕР","САЧОК","ЯБЛОБУК","СТАЖЁР","ХИЛ У КОФЕ-МАШИНЫ","ПЕРВЫЙ КАДР","ГАЛЕРА"];
+    private static readonly string[] BeatTitles=["РАЗГОВОР С HR","ДЖАБА-ЖАБЫ","БАГ-ТРЕКЕР","САЧОК","ЯБЛОБУК","СТАЖЁР","ХИЛ У КОФЕ-МАШИНЫ","ДОСТАВКА КАДРОВ","ОПЕНСПЕЙС"];
     private static void DrawFloorTelemetry()
     {
         int x=28, right=UiViewport.Width-28;
@@ -762,15 +766,15 @@ public static partial class Program
             ShadowText(display,Floor.RankIndex==4 ? "S" : Floor.Rank,x,13,28,ink);
             ShadowText(small,FormattableString.Invariant($"АВТОРИТЕТ  ×{Floor.Variety:0.0}"),x+40,25,13,ink);
         }
-        string progress=Floor.JobId==0 ? $"Галера {Floor.Seated}/2    ${Floor.Earned} / $450" : Floor.Progress;
+        string progress=Floor.JobId==0 ? $"Опенспейс {Floor.Seated}/2    ${Floor.Earned} / $450" : Floor.Progress;
         int seconds=(int)MathF.Ceiling(Floor.Remaining);
-        string objective=Floor.JobId>=0 ? $"{seconds/60}:{seconds%60:00}    {progress}" : progress;
+        string objective=Floor.JobId>=0 ? $"{seconds/60}:{seconds%60:00}    {Loc.Tr(progress)}" : progress;
         bool guiding=Floor.Onboarding!=OnboardingStep.Done;
         bool repairObjective=!guiding && _world.BrokenElevator;
         int beat=(int)Floor.Onboarding;
         string heading=guiding ? $"ШАГ {(beat<6 ? beat+1 : beat)}/8   {BeatTitles[beat]}" : "ЦЕЛЬ   ПРОРЫВ НА 2-Й ЭТАЖ";
-        string detail=guiding ? Floor.Objective(_world.CarriedCoder!=null) :
-            Floor.JobId>=0 ? objective : $"[{(Floor.HasWeapon(WeaponType.SolderingIron)?"×":" ")}] Паяльник ($90)    [{(_world.HasElevatorKey?"×":" ")}] Ключ-карта СБ";
+        string detail=guiding ? Floor.Objective(_world.CarriedCoder!=null,_world.TotalCodersSoldToHr) :
+            Floor.JobId>=0 ? Loc.Tr(objective) : $"[{(Floor.HasWeapon(WeaponType.SolderingIron)?"×":" ")}] Паяльник ($90)    [{(_world.HasElevatorKey?"×":" ")}] Ключ-карта СБ";
         ShadowText(_uiFont,heading,28,Floor.WingsUnlocked ? 54 : 22,16,paper);
         ShadowText(_uiFont,detail,28,Floor.WingsUnlocked ? 77 : 45,17,WorldLabelLayout.Ivory);
         string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
@@ -788,13 +792,13 @@ public static partial class Program
             Right(display,$"{Math.Ceiling(Floor.Friday):00}с",12,28,paper);
             Raylib.DrawRectangle(right-168,47,168,3,track);
             Raylib.DrawRectangle(right-168,47,(int)(168*Floor.Friday/45),3,hot);
-            Right(_uiFont,$"Узел Галеры  {Floor.Defense:F0}%",56,15,paper);
+            Right(_uiFont,$"Узел Опенспейса  {Floor.Defense:F0}%",56,15,paper);
         }
         else if(_world.GalleyDesks.Exists(d=>d.IsOccupied) || Floor.Verdict==AgentVerdict.Contained)
         {
             int staff=_world.GalleyDesks.Count(d=>d.IsOccupied);
             bool lead=_world.GalleyDesks.Exists(d=>d.IsOccupied && !d.IsSlackingInTwitter && d.Archetype==CoderArchetype.TeamLeadMeeter);
-            Right(_uiFont,$"Галера {staff}/4    ${_world.GalleyDesks.Sum(d=>_world.DeskRate(d,lead))+(Floor.Verdict==AgentVerdict.Contained ? 14 : 0):F0}/с",22,16,paper);
+            Right(_uiFont,$"Опенспейс {staff}/4    ${_world.GalleyDesks.Sum(d=>_world.DeskRate(d,lead))+(Floor.Verdict==AgentVerdict.Contained ? 14 : 0):F0}/с",22,16,paper);
         }
         DrawBossTelemetry();
         if(Floor.DiscoveryTime<=0) return;
@@ -875,7 +879,7 @@ public static partial class Program
             Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
             TypeAt("Доска контрактов",102,66,43,DossierPrint.Ivory,true);
             TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01",970,87,15,quiet);
-            TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Floor.Progress : "Срок отсчитывается с момента подписи",105,149,22,paper);
+            TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Loc.Tr(Floor.Progress) : "Срок отсчитывается с момента подписи",105,149,22,paper);
             for(int i=0;i<FloorSystems.Jobs.Length;i++)
             {
                 var job=FloorSystems.Jobs[i];

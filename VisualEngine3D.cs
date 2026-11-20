@@ -19,7 +19,7 @@ internal static unsafe partial class VisualEngine3D
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static readonly Dictionary<(string Asset,int Mesh),int> handSurfaces=new();
-    private static int handSurfaceLoc, weaponFinishLoc;
+    private static int reelLoc,skinLoc, handSurfaceLoc, weaponFinishLoc;
     private static int firstPersonLoc, muzzleLoc, flashLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc, cabinPowerLoc;
     private static Finish? activeFinish;
@@ -59,7 +59,7 @@ internal static unsafe partial class VisualEngine3D
         uniform vec3 sleeveAxis,sleevePull,wrist,handSocket;
         uniform float gripAmount;
         uniform int firstPerson;
-        out vec3 pos, norm;
+        out vec3 pos, norm, skinPos;
         out vec2 localXZ;
         out vec2 uv;
         void main() {
@@ -98,7 +98,7 @@ internal static unsafe partial class VisualEngine3D
             n.y -= taper * dot(vertexPosition.xz,n.xz);
             pos = (matModel * vec4(p,1)).xyz;
             norm = normalize(transpose(inverse(mat3(matModel))) * n);
-            uv = vertexTexCoord; localXZ = vertexPosition.xz;
+            skinPos=vertexPosition; uv = vertexTexCoord; localXZ = vertexPosition.xz;
             tint = batch == 1 || firstPerson==1 || boothColor==1 ? vertexColor : vec4(1.);
             gl_Position = mvp * vec4(p,1);
             // Reserve the nearest tenth for the viewmodel, retaining depth
@@ -109,7 +109,7 @@ internal static unsafe partial class VisualEngine3D
 
     private const string Fragment = """
         #version 330 core
-        in vec3 pos, norm;
+        in vec3 pos, norm, skinPos;
         in vec2 localXZ;
         in vec2 uv;
         in vec4 tint;
@@ -123,7 +123,9 @@ internal static unsafe partial class VisualEngine3D
         uniform vec3 muzzle;
         uniform int firstPerson;
         uniform int finish,handSurface;
+        uniform float slotReels;
         uniform vec2 weaponFinish;
+        /*SKIN*/
         uniform sampler2D shadowMap;
         uniform mat4 lightVP;
         uniform vec3 puddleLight;
@@ -227,6 +229,8 @@ internal static unsafe partial class VisualEngine3D
                 if(dot(n,flatN)<0.) n=-n;
             } else if(dot(n,norm)<0.) n=-n;
             vec2 st=uv;
+            if(slotReels>0. && colSpecular.a>.60 && colSpecular.a<.64 && uv.x<.75)
+                st.y=fract(st.y+slotReels*(1.+floor(uv.x*4.)));
             if(finish==1) st=pos.xz*.36;
             if(finish==11) st=(abs(n.y)>.6 ? pos.xz : (abs(n.x)>.6 ? pos.zy : pos.xy))*.5;
             vec4 tex=texture(texture0,st);
@@ -382,6 +386,7 @@ internal static unsafe partial class VisualEngine3D
                 }
                 n=normalize(n+t*slope.x+b*slope.y);
             }
+            if(weaponSkin>0) base=finishSkin(skinPos,n,v,clock,base);
             vec3 key=sunDir;
             float shadow=sunlight(n);
             float gloss=finish==1 ? 65. : (finish==2 ? 44. : 24.);
@@ -452,13 +457,13 @@ internal static unsafe partial class VisualEngine3D
 
     public static void Load()
     {
-        shader = Raylib.LoadShaderFromMemory(Vertex.Replace("void main()",PodGeometry+"\nvoid main()"), Fragment);
+        shader = Raylib.LoadShaderFromMemory(Vertex.Replace("void main()",PodGeometry+"\nvoid main()"), Fragment.Replace("/*SKIN*/",WeaponSkins.ShaderCode));
         if (shader.Id == 0 || shader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         shader.Locs[(int)ShaderLocationIndex.ColorSpecular]=Loc("colSpecular");
         boothColorLoc=Loc("boothColor");
-        handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
+        reelLoc=Loc("slotReels"); skinLoc=Loc("weaponSkin"); handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
         flashLoc = Loc("flashStrength");
@@ -516,7 +521,7 @@ internal static unsafe partial class VisualEngine3D
                 glow=new(e[0].GetSingle(),e[1].GetSingle(),e[2].GetSingle());
             if(name.Equals("display",StringComparison.OrdinalIgnoreCase) && glow==Vector3.Zero) glow=new(.25f,.66f,.78f);
             if(name.Contains("nichrome",StringComparison.OrdinalIgnoreCase)) glow=new(1,.48f,.15f);
-            int tag=name.Contains("Leather",StringComparison.OrdinalIgnoreCase) ? 128 :
+            int tag=name=="SlotReels" ? 158 : name.Contains("Leather",StringComparison.OrdinalIgnoreCase) ? 128 :
                 name is "LedAmber" or "LedCyan" or "LedGreen" ? 192 :
                 name is "MonitorCode1" or "MonitorCode2" or "CrtPhosphorScreen" ? 228 : 0;
             model.Materials[i++].Maps[1].Color=new Color((int)(255*glow.X),(int)(255*glow.Y),(int)(255*glow.Z),tag);
@@ -665,6 +670,10 @@ internal static unsafe partial class VisualEngine3D
         }
     }
 
+    internal static void SetSlotReels(float position)
+    {
+        if(!CastingShadows) Raylib.SetShaderValue(shader,reelLoc,position,ShaderUniformDataType.Float);
+    }
     internal static void AssetOriented(string name,Vector3 pos,float yaw,float pitch,float roll,float scale=1)
     {
         const float rad=MathF.PI/180;
@@ -674,7 +683,7 @@ internal static unsafe partial class VisualEngine3D
     }
 
     public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
-                             Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false, Matrix4x4? assemblyTransform = null)
+                             Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false, Matrix4x4? assemblyTransform = null,int skin=0)
     {
         Model model = imports[name];
         if(CastingShadows)
@@ -694,6 +703,7 @@ internal static unsafe partial class VisualEngine3D
                 * Matrix4x4.CreateTranslation(position) * assemblyTransform.Value;
             if(name.StartsWith("weapon_",StringComparison.Ordinal))
             {
+                Raylib.SetShaderValue(shader,skinLoc,skin,ShaderUniformDataType.Int);
                 for(int i=0;i<model.MeshCount;i++)
                 {
                     var material=model.Materials[model.MeshMaterial[i]];
@@ -705,6 +715,7 @@ internal static unsafe partial class VisualEngine3D
                     Raylib.DrawMesh(model.Meshes[i],material,Matrix4x4.Transpose(transform));
                     material.Maps[0]=albedo;
                 }
+                Raylib.SetShaderValue(shader,skinLoc,0,ShaderUniformDataType.Int);
                 Raylib.SetShaderValue(shader,weaponFinishLoc,Vector2.Zero,ShaderUniformDataType.Vec2);
                 return;
             }
@@ -997,6 +1008,21 @@ internal static unsafe partial class VisualEngine3D
         return (int)((h^(h>>16))&255);
     }
 
+    private static readonly Dictionary<Finish,Texture2D> alternateSigns=new();
+
+    internal static void RefreshLanguage()
+    {
+        foreach (var finish in new[]{Finish.Lift,Finish.Exit,Finish.JiraSheet,Finish.NdaSheet,Finish.PitchDeck})
+        {
+            var old=maps[(int)finish];
+            if(old.Id==0) continue;
+            maps[(int)finish]=alternateSigns.TryGetValue(finish,out var alternate) ? alternate : MakeTexture(finish);
+            alternateSigns[finish]=old;
+            foreach(var group in architecture)
+                if(group.Finish==finish) group.Model.Materials[0].Maps[0].Texture=maps[(int)finish];
+        }
+    }
+
     private static Texture2D MakeTexture(Finish f)
     {
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
@@ -1010,6 +1036,7 @@ internal static unsafe partial class VisualEngine3D
         void Inscription(string value, int size, int y, Color ink)
         {
             Font native = GameFonts.Get(Typeface.InterfaceBold, Math.Max(1, size / 2));
+            value=Loc.Tr(value);
             int drawSize = native.BaseSize;
             int x = (512 - (int)Raylib.MeasureTextEx(native,value,drawSize,0).X)/2;
             Raylib.ImageDrawTextEx(ref img,native,value,new(x,y),drawSize,0,ink);
@@ -1020,7 +1047,7 @@ internal static unsafe partial class VisualEngine3D
             void Letter(string value,int x,int y,int height,Color color)
             {
                 Font native = GameFonts.Get(Typeface.InterfaceBold, Math.Max(1, height / 2));
-                Raylib.ImageDrawTextEx(ref img,native,value,new(x,y),native.BaseSize,0,color);
+                Raylib.ImageDrawTextEx(ref img,native,Loc.Tr(value),new(x,y),native.BaseSize,0,color);
             }
             Letter("ЭТАЖ",92,32,76,brass);
             Letter("01",78,104,236,ivory);
@@ -1040,7 +1067,7 @@ internal static unsafe partial class VisualEngine3D
             string[] lines=f==Finish.PitchDeck ? ["Башня Энтропии","План запуска","Раунд инвестиций","Материалы встречи"] : nda ? ["Соглашение","о неразглашении","Отдел кадров","Подпись"] :
                 ["Ошибка сборки","Приоритет   P1","Исполнитель","Шаги повтора"];
             for(int i=0;i<lines.Length;i++)
-                Raylib.ImageDrawTextEx(ref img,GameFonts.Get(Typeface.Interface,16),lines[i],new(42,154+i*64),24,0,ink);
+                Raylib.ImageDrawTextEx(ref img,GameFonts.Get(Typeface.Interface,16),Loc.Tr(lines[i]),new(42,154+i*64),24,0,ink);
         }
         if(f is Finish.Exit or Finish.Billboard)
         {
@@ -1128,6 +1155,9 @@ internal static unsafe partial class VisualEngine3D
         architecture.Clear();
         foreach(Model m in new[]{box,bevel,plane,tube,sphere}) Raylib.UnloadModel(m);
         foreach(Texture2D t in maps) Raylib.UnloadTexture(t);
+        Array.Clear(maps);
+        foreach(var sign in alternateSigns.Values) Raylib.UnloadTexture(sign);
+        alternateSigns.Clear();
         UnloadLightingPipeline();
         Raylib.UnloadShader(shader);
     }

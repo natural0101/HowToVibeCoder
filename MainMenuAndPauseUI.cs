@@ -54,12 +54,22 @@ public static class MainMenuAndPauseUI
     public static bool IsSettingsPanelOpen { get; set; } = false;
     internal static DisplaySettings Display { get; private set; }=new();
     internal static bool InteractiveDisplay { get; private set; }
-    private static string displayPath="";
+    private static string displayPath=Path.Combine(SavesDirectory,"display_settings.json");
     internal static void LoadDisplay(string path,bool interactive)
     {
         displayPath=path;
         InteractiveDisplay=interactive;
         Display=DisplaySettings.Load(path);
+        Loc.Set(Display.Language=="en" ? GameLang.En : GameLang.Ru,false);
+    }
+    internal static bool StoreLanguage(GameLang language)
+    {
+        var next=Display with { Language=language==GameLang.En ? "en" : "ru" };
+        try { next.Save(displayPath); }
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException)
+        { Notify(Loc.T("Ошибка сохранения языка","Could not save language")); return false; }
+        Display=next;
+        return true;
     }
     internal static void CycleDisplay(bool mode)
     {
@@ -91,7 +101,7 @@ public static class MainMenuAndPauseUI
     public static Action<GameSaveData>? ApplyLoadedGameState { get; set; }
 
     private static readonly string[] MainMenuButtonLabels =
-        ["Создать игру", "Войти в игру", "Персонаж", "Настройки", "Настройки модов", "Создатели", "Выход"];
+        ["Создать игру", "Продолжить", "Кооператив", "Настройки", "Архив", "Персонаж", "Настройки модов", "Создатели", "Выход"];
     private static readonly string[] SettingsTabs = ["Игра", "Графика", "Аудио", "Язык"];
     internal static readonly CoopNetworkSystem Coop = new();
     internal static Action? SummonPartner;
@@ -148,12 +158,13 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangleRounded(rect, rounding, 8, fill);
         if (border > 0) Raylib.DrawRectangleRoundedLinesEx(rect, rounding, 8, border, Edge);
     }
-    private static Rectangle MainButton(int i) => new(56, UiViewport.Height - 370 + i * 45, 310, 36);
+    internal static Rectangle MainButton(int i) => new(56, UiViewport.Height - 412 + i * 43, 310, 36);
     private static Rectangle SettingsRect(float x, float y, float w, float h) =>
         new(UiViewport.Width / 2f - 343 + x, UiViewport.Height / 2f - 276 + y, w, h);
     private static Rectangle SettingsTab(int i) => SettingsRect(i * 173, 32, 166, 39);
-    private static Rectangle DisplayButton(int row) => SettingsRect(337,132+row*56,279,40);
-    private static Rectangle SettingsTrack(int row) => SettingsRect(373, (_settingsTab==1 ? 260 : 136) + row * 47 + (row == 3 ? 45 : 0), 172, 20);
+    private static Rectangle LanguagePill(int i) => SettingsRect(320+i*138,136,130,40);
+    private static Rectangle DisplayButton(int row) => SettingsRect(337,245+row*56,279,40);
+    private static Rectangle SettingsTrack(int row) => SettingsRect(373, (_settingsTab==1 ? 370 : _settingsTab==0 ? 250 : 136) + row * 47 + (row == 3 ? 45 : 0), 172, 20);
     private static readonly int[][] SettingRows = [[4], [5], [0, 1, 2, 3], []];
     private static readonly string[] SettingNames = ["Общая громкость", "Громкость музыки", "Громкость эффектов", "Громкость речи", "Чувствительность мыши", "Поле зрения"];
     private static bool Clicked(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
@@ -303,7 +314,7 @@ public static class MainMenuAndPauseUI
             string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(GetSaveFilePath(slotIndex), json);
             _cachedSlots[slotIndex] = data;
-            ShowStatusBanner($"ИГРА СОХРАНЕНА В «{data.SlotTitle.ToUpperInvariant()}» (${data.Cash}, Галера: {data.SeatedGalleyCoders}/4)");
+            ShowStatusBanner($"ИГРА СОХРАНЕНА В «{data.SlotTitle.ToUpperInvariant()}» (${data.Cash}, Опенспейс: {data.SeatedGalleyCoders}/4)");
         }
         catch (Exception ex)
         {
@@ -615,26 +626,35 @@ public static class MainMenuAndPauseUI
                 StartNewOrResumeFloor();
                 break;
 
-            case 1: // ЗАГРУЗИТЬ ИГРУ
+            case 1:
+                RefreshSaveSlotsCache();
+                int latest=Enumerable.Range(0,_cachedSlots.Length).Where(i=>_cachedSlots[i]!=null)
+                    .OrderByDescending(i=>File.GetLastWriteTimeUtc(GetSaveFilePath(i))).FirstOrDefault(-1);
+                if(latest>=0) LoadGameState(latest);
+                else Notify(Loc.T("Нет сохранённой игры","No saved game yet"));
+                break;
+            case 2:
                 OpenJoinPanel();
                 break;
 
-            case 2: _infoPage = "Персонаж"; break;
+            case 5: _infoPage = "Персонаж"; break;
             case 3: // НАСТРОЙКИ
+                _settingsTab = 1;
                 IsSettingsPanelOpen = true;
                 IsSaveLoadPanelOpen = false;
                 IsModsPanelOpen = false;
                 break;
 
-            case 4: // МОДЫ
+            case 6: // МОДЫ
                 LoadModsConfig();
                 IsModsPanelOpen = true;
                 IsSaveLoadPanelOpen = false;
                 IsSettingsPanelOpen = false;
                 break;
 
-            case 5: _infoPage = "Создатели"; break;
-            case 6: // ВЫХОД
+            case 7: _infoPage = "Создатели"; break;
+            case 4: LoreAndMenusUI.IsLoreOpen=true; break;
+            case 8: // ВЫХОД
                 ShouldExitGame = true;
                 OnExitRequested?.Invoke();
                 break;
@@ -731,6 +751,7 @@ public static class MainMenuAndPauseUI
                 break;
 
             case 3: // НАСТРОЙКИ
+                _settingsTab = 1;
                 IsSettingsPanelOpen = true;
                 IsSaveLoadPanelOpen = false;
                 IsModsPanelOpen = false;
@@ -748,6 +769,7 @@ public static class MainMenuAndPauseUI
                 OpenMainMenu();
                 break;
 
+            case 7: LoreAndMenusUI.IsLoreOpen=true; break;
             case 6: // ВЫХОД
                 SaveGameState(0);
                 ShouldExitGame = true;
@@ -967,6 +989,12 @@ public static class MainMenuAndPauseUI
         }
         for (int i = 0; i < SettingsTabs.Length; i++)
             if (Clicked(SettingsTab(i))) { _settingsTab = i; _draggingSettingSlider = -1; }
+        if (_settingsTab is 0 or 1 or 3)
+        {
+            if (Clicked(LanguagePill(0)) || Raylib.IsKeyPressed(KeyboardKey.Left)) Loc.Set(GameLang.Ru);
+            else if (Clicked(LanguagePill(1)) || Raylib.IsKeyPressed(KeyboardKey.Right)) Loc.Set(GameLang.En);
+            else if (Raylib.IsKeyPressed(KeyboardKey.Enter)) Loc.Set(Loc.IsEn ? GameLang.Ru : GameLang.En);
+        }
         if (_settingsTab==1)
         {
             if(Clicked(DisplayButton(0))) { CycleDisplay(true); return; }
@@ -1123,7 +1151,6 @@ public static class MainMenuAndPauseUI
         Rectangle panel=new((sw-width)/2,(sh-height)/2,width,height);
         Surface(panel,new Color(24,22,20,250));
         GameFonts.Draw(Serif, title, new(panel.X + 34, panel.Y + 15), title.Length > 35 ? 25 : 35, DossierPrint.Ivory);
-        Raylib.DrawRectangleRec(new(panel.X + 34, panel.Y + 65, panel.Width - 68, 1), DossierPrint.Stone);
     }
 
     public static void DrawPauseOverlay(Font font,int screenW,int screenH)
@@ -1150,7 +1177,7 @@ public static class MainMenuAndPauseUI
             Surface(row,i==_selectedSaveSlotIndex ? new Color(49,42,37,251) : new Color(29,25,22,250),1);
             string title=i==0 ? "Автосохранение" : $"Слот {i}";
             DrawTextCrisp(Serif,title,(int)row.X+20,(int)row.Y+12,24,Color.White);
-            string detail=data==null ? "Пусто" : $"{data.SavedAt}    ${data.Cash}    Галера {data.SeatedGalleyCoders}/4";
+            string detail=data==null ? "Пусто" : $"{data.SavedAt}    ${data.Cash}    Опенспейс {data.SeatedGalleyCoders}/4";
             DrawTextCrisp(Serif,detail,(int)row.X+20,(int)row.Y+48,17,Edge);
             if(IsSaveMode || data!=null) NativeButton(IsSaveMode ? "Сохранить" : "Загрузить",new(row.X+606,row.Y+20,170,46));
         }
@@ -1200,7 +1227,7 @@ public static class MainMenuAndPauseUI
             float value = id == 4 ? LoreAndMenusUI.MouseSensitivity : id == 5 ? LoreAndMenusUI.CameraFov : t;
             Rectangle val = new(r.X+r.Width+32, y-17,68,34);
             Surface(val,new Color(48,40,34,112),0);
-            Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo("ru-RU")),val,22,Edge);
+            Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo(Loc.IsEn ? "en-US" : "ru-RU")),val,22,Edge);
         }
         if (_settingsTab==1)
         {
@@ -1216,7 +1243,21 @@ public static class MainMenuAndPauseUI
             Center(Serif,"Голоса персонажей",SettingsRect(0,257,686,42),26,Color.White);
             NativeButton("Звуковая рубка [F8]",SettingsRect(140,478,406,36));
         }
-        if (_settingsTab==3) Center(Serif,"Русский",SettingsRect(0,165,686,54),30,Color.White);
+        if (_settingsTab is 0 or 1 or 3)
+        {
+            DrawTextCrisp(Serif,"Язык / Language",(int)panel.X+67,(int)LanguagePill(0).Y+6,23,Color.White);
+            for(int i=0;i<2;i++)
+            {
+                Rectangle pill=LanguagePill(i);
+                bool active=(int)Loc.Current==i;
+                bool hover=Raylib.CheckCollisionPointRec(UiViewport.Pointer,pill);
+                Raylib.DrawRectangleRounded(pill,.9f,12,active ? DossierPrint.Paper : hover ? DossierPrint.Selected : DossierPrint.Matte);
+                Raylib.DrawRectangleRoundedLinesEx(pill,.9f,12,1,DossierPrint.Quiet);
+                Center(font,i==0 ? "Русский" : "English",pill,19,active ? DossierPrint.Ink : DossierPrint.Ivory);
+            }
+            Center(font,Loc.T("Меняет весь интерфейс, субтитры и студийную озвучку (RU / EN)",
+                "Switches all UI, subtitles, and studio voice acting (RU / EN)"),SettingsRect(32,184,622,32),17,Edge);
+        }
         NativeButton("Назад",SettingsRect(0,550,166,38));
     }
 

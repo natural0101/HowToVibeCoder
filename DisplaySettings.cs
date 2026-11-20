@@ -9,7 +9,7 @@ namespace HowToVibeCoder;
 [JsonConverter(typeof(JsonStringEnumConverter<DisplayMode>))]
 internal enum DisplayMode { Fullscreen, Windowed }
 
-internal sealed record DisplaySettings(DisplayMode DisplayMode=DisplayMode.Fullscreen,int ResolutionIndex=0)
+internal sealed record DisplaySettings(DisplayMode DisplayMode=DisplayMode.Fullscreen,int ResolutionIndex=0,string Language="ru")
 {
     internal static readonly (int Width,int Height)[] Sizes=[(0,0),(2560,1440),(1920,1080),(1600,900),(1280,720)];
     internal string ResolutionLabel => ResolutionIndex==0 ? "Авто (экран)" : $"{Sizes[ResolutionIndex].Width}×{Sizes[ResolutionIndex].Height}";

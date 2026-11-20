@@ -341,7 +341,7 @@ public static partial class LoreAndMenusUI
             RoleBadge = "SENIOR ARCHITECT — ГАСИТ ТЕХДОЛГ (TD)",
             Time = "Понедельник, 12:40",
             Metrics = [("-TD", "64", Mint), ("ZERO", "12", Amber)],
-            Text = "«Я один на этаже умею чистить Техдолг (TD) за столом Галеры. Но я залез в ядро ZERO: парни, физического CEO нет! Башней рулит нейросеть на кассетах коммерса из 1998 года!»",
+            Text = "«Я один на этаже умею чистить Техдолг (TD) за столом Опенспейса. Но я залез в ядро ZERO: парни, физического CEO нет! Башней рулит нейросеть на кассетах коммерса из 1998 года!»",
             ReplyAuthor = "@sec_ops (Контур Безопасности ZERO)",
             ReplyText = "«Доступ закрыт. Инструкция перехвата: Сеньор не ведётся на дешёвый байт — ломайте ему Эго (Ego) паяльником или выбивайте ЯблоБук, чтобы посадить чистить TD.»",
             HandleColor = new Color(255, 144, 68, 255)
@@ -353,7 +353,7 @@ public static partial class LoreAndMenusUI
             RoleBadge = "КАССЕТА SONY HF-90 — ЗАПИСЬ 17.08.1998",
             Time = "Архив ZERO, 1998",
             Metrics = [("94.7%", "MERGE", Amber), ("SEC", "21", Ash)],
-            Text = "«[Шум кассеты] Братан, спрячь договора АО «Энтропия» и записи наших стрелок. Если айтишники оцифруют мой голос и понятия — они же из этого вечную цифровую Галеру соберут...»",
+            Text = "«[Шум кассеты] Братан, спрячь договора АО «Энтропия» и записи наших стрелок. Если айтишники оцифруют мой голос и понятия — они же из этого вечную цифровую Опенспейс соберут...»",
             ReplyAuthor = "@zero_kernel (SYSTEM ZERO — NUL-PROMPT)",
             ReplyText = "«Голосовой слепок совпал на 94.7% с Нулевым Промптом. Внимание СБ (SEC) повышено. Сбивайте SEC через офисный принтер или сдачу кадров в HR.»",
             HandleColor = new Color(72, 212, 255, 255)
@@ -464,7 +464,7 @@ public static partial class LoreAndMenusUI
         new(Raylib.GetScreenWidth()/2f+(x-1280)*ArtScale,Raylib.GetScreenHeight()/2f+(y-720)*ArtScale,w*ArtScale,h*ArtScale);
     private static bool Click(Rectangle r) => Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(),r);
     private static void Dim(float opacity) => Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),Raylib.Fade(new Color(20,18,16,255),opacity));
-    private static readonly string[] MixerNames = ["Ремень и паяльник","УЗИ и обрез","Ловушка и тревога","Галера и Таро","Кейсы"];
+    private static readonly string[] MixerNames = ["Ремень и паяльник","УЗИ и обрез","Ловушка и тревога","Опенспейс и Таро","Кейсы"];
     private const int MusicRow = 6;
     private static readonly float[] BeforeMute = [1,1,1,1,1,1,1];
     private static Rectangle MixerRect(float x,float y,float w,float h) => new(UiViewport.Width/2f-410+x,UiViewport.Height/2f-292+y,w,h);
@@ -768,13 +768,13 @@ public static partial class LoreAndMenusUI
     private static readonly (string title, string verdict, string body, Color accent)[] TarotEntries =
         {
             (
-                "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) — На Галере гасит Техдолг (-TD)",
+                "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) — В Опенспейсе гасит Техдолг (-TD)",
                 "ПРОГНОЗ ZERO API: ЭГО 98% — ЛОМАТЬ ПАЯЛЬНИКОМ И САЖАТЬ ЧИСТИТЬ ТЕХДОЛГ!",
-                "«Все думают, что я гадаю на картоне, но под бархатом стола спрятан терминал prediction API системы ZERO. По Сеньору оракул выдал: страха нет, зато Эго 98%. Сбейте ему спесь паяльником или выбейте ЯблоБук — на Галере он в одиночку гасит Техдолг этажа!»",
+                "«Все думают, что я гадаю на картоне, но под бархатом стола спрятан терминал prediction API системы ZERO. По Сеньору оракул выдал: страха нет, зато Эго 98%. Сбейте ему спесь паяльником или выбейте ЯблоБук — в Опенспейсе он в одиночку гасит Техдолг этажа!»",
                 new Color(255, 92, 118, 255)
             ),
             (
-                "Фигурант №2: Джуниор Данила (Accept All) — На Галере растит Техдолг (+TD)",
+                "Фигурант №2: Джуниор Данила (Accept All) — В Опенспейсе растит Техдолг (+TD)",
                 "ПРОГНОЗ ZERO API: СТРАХ 100% — БРАТЬ РЕМНЁМ У ЯБЛОБУКА И СДАВАТЬ В HR ЗА КЭШ!",
                 "«Prediction API мигает жёлтым: мальчик жмёт Accept All не глядя и быстро засоряет Техдолг (TD). Заманите его на ЯблоБук-ловушку, припугните отцовским ремнём и несите сразу ко мне в будку Таро — выдам чистый кэш и спишу хвост по линии СБ!»",
                 new Color(64, 245, 165, 255)
@@ -790,7 +790,7 @@ public static partial class LoreAndMenusUI
     private static readonly (string zoomer, string nineties, string comment)[] DictionaryEntries =
         {
             ("Legacy Stakeholder", "Хозяин завода АО «Энтропия» (1998)", "Пришёл за оригиналами договоров и кассетами, на которых обучили ZERO"),
-            ("Техдолг (Шкала TD)", "Косяки цеха в общаке", "Растёт от джунов на Галере; гасится только Сеньором-Архитектором"),
+            ("Техдолг (Шкала TD)", "Косяки цеха в общаке", "Растёт от джунов в Опенспейсе; гасится только Сеньором-Архитектором"),
             ("Температура Прода (PT)", "Перегрев стойки B12 (92°C)", "Закипает при пятничном деплое x2.5 и подрыве серверов паяльником"),
             ("Внимание СБ (Шкала SEC)", "Тревога контура ZERO", "Сбивается печатью фальшивого пропуска на принтере или сдачей кадров Веронике"),
             ("Эспрессо-разнос", "Двойной допинг из кофемашины", "Ускоряет шаг и рывок коммерса для прорыва через дейлик Тимлида"),
@@ -831,6 +831,7 @@ public static partial class LoreAndMenusUI
     private static readonly Dictionary<(string, int, int, Typeface), string[]> ParagraphLines = new();
     internal static string[] Wrap(string text, int width, int size, Typeface face = Typeface.Interface)
     {
+        text = Loc.Tr(text);
         var key = (text, width, size, face);
         if (!ParagraphLines.TryGetValue(key, out var lines))
         {
@@ -934,7 +935,7 @@ public static partial class LoreAndMenusUI
                 Raylib.DrawRectangleRounded(card,.12f,6,DossierPrint.Selected);
                 Raylib.DrawRectangleRoundedLinesEx(card,.12f,6,2,skin.CardColor);
                 Program.DrawSlotIcon((int)skin.Slot,new(card.X+card.Width/2,card.Y+card.Height*.39f),true,skin.Secondary3D);
-                string name=skin.Name.Split('«').Last().TrimEnd('»');
+                string name=Loc.Tr(skin.Name).Split('«').Last().TrimEnd('»');
                 MainMenuAndPauseUI.Center(font,skin.WeaponLabel.Replace("СЛОТ "+((int)skin.Slot+1)+": ",""),Ref(x+8,847,151,28),12,Color.White);
                 MainMenuAndPauseUI.Center(font,name,Ref(x+9,873,149,26),11,Color.White);
                 Raylib.DrawRectangleRec(Ref(x+11,900,145,9),skin.CardColor);
