@@ -10,7 +10,7 @@ internal sealed partial class FloorSystems
 {
     public AgentVerdict Verdict;
     public bool FinalePending, Protection, Conflict, AuditPresented, AuditThreshold, PatrolThreshold;
-    public float Steam, RackSmoke, PocketSmoke, PocketRecharge, HostStun, GuestStun;
+    public float Steam, RackSmoke, PocketSmoke, PocketRecharge, HostStun, GuestStun, SecondStun;
     public float ConflictWait, NodeIncome, Defiance, ShutdownTime;
     public Vector3 PocketOrigin;
     internal int Price(Gear gear) => !gear.FixedPrice && Has(Sidegrade.AuthoritySignet) ? (int)Math.Ceiling(gear.Price*115m/100) : gear.Price;
@@ -19,7 +19,7 @@ internal sealed partial class FloorSystems
     {
         float Down(float t)=>Math.Max(0,t-dt);
         Steam=Down(Steam); RackSmoke=Down(RackSmoke); PocketSmoke=Down(PocketSmoke);
-        PocketRecharge=Down(PocketRecharge); HostStun=Down(HostStun); GuestStun=Down(GuestStun);
+        PocketRecharge=Down(PocketRecharge); HostStun=Down(HostStun); GuestStun=Down(GuestStun); SecondStun=Down(SecondStun);
         ShutdownTime=Down(ShutdownTime); Defiance=Down(Defiance);
         if(WingsUnlocked && SEC>=45 && !PatrolThreshold && !Protection && !world.ActiveCoders.Exists(c=>c.Archetype==CoderArchetype.SecurityGuard && c.Hp>0))
             world.SpawnWave(1,raid:true);
@@ -135,7 +135,7 @@ public sealed partial class SkyscraperFloor1World
         {
             b.Phase=2; b.ShieldHp=EscapedAgentBoss.ShieldCapacity; b.ShieldDelay=0;
             Systems.RackHeat=18; Systems.Risk(heat:18);
-            foreach(int side in new[]{-1,1}) SpawnFrog(b.Position+new Vector3(side*1.6f,-b.Position.Y,-1),"frog_crash").Rest=.1f;
+            foreach(int side in new[]{-1,1}) SpawnFrog(side<0 ? 1 : 2,"frog_crash");
             b.State=ElevatorBossState.ThrowingNodeModules; b.StateTimer=3.8f; b.AttackSubTimer=.2f;
             Systems.Announce("Разгон B12. Замани агента к кулеру или огнетушителю.");
         }

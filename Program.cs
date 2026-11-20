@@ -1444,7 +1444,7 @@ public static partial class Program
         for(int i=0;i<3;i++)
         {
             var frog=_world.Frogs.First(f=>f.SpeciesId=="frog_hopper");
-            Approach(frog.Feet+Vector3.UnitY*.15f);
+            Approach(frog.Feet+Vector3.UnitY*.11f);
             if(i==2) { _weaponFireCooldown=0; Key(KeyboardKey.E); } else Attack();
             Check(Floor.PocketFrogs.Count==i+1,"bare catch "+i);
             if(i==0) Guided(OnboardingStep.CatchFrogs,"Есть первая");
@@ -1487,11 +1487,11 @@ public static partial class Program
         for(int i=0;i<32;i++) _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
         capture("13_net_and_progression.png");
         var crash=_world.Frogs.First(f=>f.SpeciesId=="frog_crash");
-        Approach(crash.Feet+Vector3.UnitY*.15f);
+        Approach(crash.Feet+Vector3.UnitY*.11f);
         Key(KeyboardKey.One); Attack();
         Check(_world.Frogs.Contains(crash) && Floor.PocketFrogs.Count==0 && _hudStatusBanner=="Нужен Сачок ($3) у Вероники","crash dodge");
         Key(KeyboardKey.One);
-        Approach(crash.Feet+Vector3.UnitY*.15f); Attack();
+        Approach(crash.Feet+Vector3.UnitY*.11f); Attack();
         Check(Floor.PocketFrogs.Contains("frog_crash"),"net catches crash");
         // Four simultaneous targets exercise the sweep limit through the combat path.
         var cluster=new Vector3(24,0,18);
@@ -1834,16 +1834,16 @@ public static partial class Program
         Console.WriteLine($"[AUTOTEST] Space peak={peak:F3}m landing=1.720m Ctrl={crouched:F3}m sprint={sprintEnergy:F1} dash={dashEnergy:F1} recovered={_energy}");
 
         // Walk into the table, vault its edge, stand on top, then jump just after stepping off.
-        _playerPos=_world.CentralMacBookPos+new Vector3(.70f,1.72f,1.2f);
-        _playerYaw=MathF.PI;
+        _playerPos=_world.CentralMacBookPos+new Vector3(1.20f,1.72f,-.70f);
+        _playerYaw=-MathF.PI/2;
         Key(KeyboardKey.W,true); Tick(8);
-        Require(_playerPos.Z>5.9f,"desk side collision");
+        Require(_playerPos.X>_world.CentralMacBookPos.X+.90f,"desk side collision");
         Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false); Tick(8);
         Key(KeyboardKey.W,false); Tick(48);
         Require(_isGrounded && Math.Abs(_playerPos.Y-1.72f-SkyscraperFloor1World.TrapTop)<.01f,"table landing");
-        Key(KeyboardKey.D,true);
+        Key(KeyboardKey.S,true);
         for(int i=0;i<18 && _isGrounded;i++) Tick();
-        Key(KeyboardKey.D,false);
+        Key(KeyboardKey.S,false);
         Require(!_isGrounded && _coyoteTimer>0,"table edge");
         Key(KeyboardKey.Space,true); Tick(); Key(KeyboardKey.Space,false);
         Require(_playerVelY>7,"coyote jump");
@@ -2216,6 +2216,57 @@ public static partial class Program
             Approach(aisle,.51f);
     }
 
+    private static void CheckRoomSpawns()
+    {
+        var world=new SkyscraperFloor1World(67);
+        var observer=new Vector3(0,1.72f,32);
+        void Tick(int frames)
+        {
+            for(int i=0;i<frames;i++) world.UpdateWorld(1f/60,observer,false,null,null);
+        }
+        var visited=new HashSet<int>();
+        for(int attempt=0;attempt<48 && visited.Count<4;attempt++)
+        {
+            world.Systems.WingsUnlocked=attempt>=2;
+            var coder=world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier,attempt%2==0 ? -1 : 1);
+            int room=coder.EntryRoom;
+            if(!world.Systems.WingsUnlocked && room>=2) throw new InvalidDataException("Locked wing spawn");
+            if(visited.Add(room))
+            {
+                var door=SkyscraperFloor1World.RoomDoors[room];
+                if(coder.Position.Z>=door.Z || Math.Abs(coder.Position.X-door.X)>.5f)
+                    throw new InvalidDataException("Coder spawned outside alcove");
+                Tick(75);
+                if(coder.Position.Z<=door.Z || world.RoomOpen[room]<.99f)
+                    throw new InvalidDataException("Coder failed to walk through open glass");
+                for(int frame=0;frame<1750 && coder.State==CoderAIState.WalkingToBait;frame++) Tick(1);
+                if(coder.State!=CoderAIState.Subdued || Vector3.Distance(coder.Position,world.CentralMacBookPos+Vector3.UnitX*1.15f)>.36f)
+                    throw new InvalidDataException($"Room {room} route ended at {coder.Position} in {coder.State}");
+                Tick(205);
+                if(world.RoomOpen[room]!=0) throw new InvalidDataException("Glass failed to close");
+            }
+            world.ActiveCoders.Clear();
+        }
+        if(visited.Count!=4) throw new InvalidDataException("Four floor entrances required");
+        for(int i=0;i<world.VentTime.Length;i++)
+        {
+            var frog=world.SpawnFrog(i,"frog_hopper");
+            if(frog.Feet.Z>=world.VentMouth(i).Z || world.VentTime[i]<=0)
+                throw new InvalidDataException("Frog must start behind vent flap");
+            Tick(54);
+            if(frog.Feet.Z<=world.VentMouth(i).Z+.55f || frog.Feet.Y!=0 || world.VentTime[i]!=0)
+                throw new InvalidDataException("Vent exit failed");
+        }
+        for(float z=.8f;z<11.9f;z+=.2f)
+        for(float x=-2.4f;x<=2.4f;x+=.2f)
+        {
+            var point=new Vector3(x,0,z);
+            if(Vector3.DistanceSquared(point,world.ResolvePlayerCollision(point,.02f))>.00001f)
+                throw new InvalidDataException($"Obstructed elevator runner at {point}");
+        }
+        Console.WriteLine("[AUTOTEST] PASS four glass exits and bait routes, three vent hops, clear 4.8m runner");
+    }
+
     private static void CheckLivingOffice(Action<string,Camera3D?> capture)
     {
         ResetClassicFixture();
@@ -2467,6 +2518,22 @@ public static partial class Program
         CaptureShot("07_mods.png");
         MainMenuAndPauseUI.IsModsPanelOpen = false;
         MainMenuAndPauseUI.IsPaused = false;
+        ResetNewGameFloor(greet:false);
+        MainMenuAndPauseUI.IsInMainMenu=false;
+        _world.ActivateMacBookTrap(SubscriptionBaitTier.FreeTier,_=>true,out _);
+        for(int i=0;i<72;i++) _world.UpdateWorld(1f/60,new(1,2,12),false,null,null);
+        CaptureShot("44_atrium_clear_coworking_doors.png",sceneCamera:new Camera3D {
+            Position=new(2.62f,2.85f,8.45f),Target=new(-4.65f,1.22f,2.7f),Up=Vector3.UnitY,FovY=67 });
+        var vent=_world.VentMouth(0);
+        var hopper=_world.SpawnFrog(0,"frog_hopper");
+        for(int i=0;i<25;i++) _world.UpdateWorld(1f/60,vent+Vector3.UnitZ*3,false,null,null);
+        _world.SpawnFrog(0,"frog_syntax");
+        for(int i=0;i<21;i++) _world.UpdateWorld(1f/60,vent+Vector3.UnitZ*3,false,null,null);
+        _playerPos=hopper.Feet+new Vector3(-.34f,.50f,.58f);
+        LookAtTarget(vent+new Vector3(0,.15f,.69f));
+        _weapons.Equip(WeaponType.BareHands);
+        CaptureShot("45_new_frogs_floor_scale.png",hideHud:true);
+        CheckRoomSpawns();
         CheckLivingOffice((name,cam)=>CaptureShot(name,sceneCamera:cam,hideHud:true));
         CheckElevatorReveal(name=>CaptureShot(name));
         CheckZeroToEmpire(name=>CaptureShot(name));
@@ -2490,11 +2557,11 @@ public static partial class Program
         _weapons.SelectSlot(2); // 90s Soldering Iron with rising rosin smoke
         _isCrouching = true;
         _eyeHeight=1.16f;
-        _playerPos = new Vector3(-1.6f, _eyeHeight, 8.05f);
-        LookAtTarget(new Vector3(-.15f, .77f, 5.2f));
+        _playerPos = _world.CentralMacBookPos+new Vector3(2.6f,_eyeHeight,2.05f);
+        LookAtTarget(_world.CentralMacBookPos+Vector3.UnitY*.77f);
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         var walkingCoder = _world.SpawnCoderForTier(SubscriptionBaitTier.CursorPro, forceSide: -1);
-        walkingCoder.Position = new Vector3(-1.55f, 0f, 4.65f);
+        walkingCoder.Position = _world.CentralMacBookPos+new Vector3(1.55f,0,-.55f);
         walkingCoder.FacingYaw = .46f;
         walkingCoder.Anxiety = 38f;
         walkingCoder.SpeechBubble = "Ого, халявный Табсор Про на ЯблоБуке! Бегу жать Accept All!";

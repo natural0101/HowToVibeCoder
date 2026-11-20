@@ -93,7 +93,7 @@ public static partial class Program
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
         escorts[slot],_world.TotalCodersSoldToHr,health[slot],_playerHp,_world.Systems,_world.CarriedCoder,
         ProgressionVersion:2,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
-        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot,Health:[_playerHp,health[1],health[2]],Escorts:[_world.CarriedCoder,escorts[1],escorts[2]],Downed:[Downed(0),Downed(1),Downed(2)]);
+        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot,Health:[_playerHp,health[1],health[2]],Escorts:[_world.CarriedCoder,escorts[1],escorts[2]],Downed:[Downed(0),Downed(1),Downed(2)],RoomOpen:_world.RoomOpen,VentTime:_world.VentTime);
 
     private static void ApplyElevator(FloorSnapshot state)
     {
@@ -156,6 +156,8 @@ public static partial class Program
             if (_world.ElevatorBoss.State != state.Boss.State)
                 SkyscraperFloor1World.PlayElevatorCue(state.Boss.State);
             ApplyElevator(state);
+            if(state.RoomOpen is {Length:4} doors) doors.CopyTo(_world.RoomOpen,0);
+            if(state.VentTime is {Length:3} vents) vents.CopyTo(_world.VentTime,0);
             if(state.Unlocked) _weapons.UnlockedChatGun=true;
             _world.IsMacBookTrapActive=state.Trap; _world.SelectedBaitTier=state.Bait;
             peerEscort=state.HostCarried;
@@ -407,7 +409,7 @@ public static partial class Program
                     var frog=_world.Frogs.First(f=>f.SpeciesId=="frog_hopper");
                     _weapons.Equip(WeaponType.BareHands);
                     _playerPos=frog.Feet+new Vector3(0,1.1f,1);
-                    LookAtTarget(frog.Feet+Vector3.UnitY*.15f);
+                    LookAtTarget(frog.Feet+Vector3.UnitY*.11f);
                     Fire(BuildPlayerCamera()); sent++;
                 }
                 if(sent==3 && Floor.PocketFrogs.Count==3 && !deposited)

@@ -473,12 +473,13 @@ def fitted_sleeve(side, transforms):
                 uv.data[loop.index].uv = (2 + (loop.vertex_index % n) / n, 1 - profile[loop.vertex_index // n][0] / length)
         return obj
 
-    cuff = .033 if side == "l" else .024
+    cuff = .044 if side == "l" else .024
+    poplin_start = .021 if side == "l" else .008
     shell("Double folded poplin", [
-        (.008, .034, .026), (.010, .0365, .028), (.013, .037, .0285), (cuff + .012, .039, .031)
+        (poplin_start, .0345, .0265), (poplin_start + .002, .037, .0285), (poplin_start + .005, .0375, .029), (cuff + .012, .0395, .0315)
     ], "ivory")
     shell("Tailored jacket", [
-        (cuff, .039, .032), (cuff + .002, .043, .035), (cuff + .006, .044, .036),
+        (cuff, .0395, .032), (cuff + .002, .0435, .0355), (cuff + .006, .0445, .0365),
         (.069, .045, .037), (.091, .046, .038), (.105, .046, .039), (.116, .047, .040),
         (.129, .047, .041), (.141, .048, .042), (.154, .048, .042), (.175, .050, .044),
         (.24, .056, .050), (.29, .059, .052), (.34, .064, .055), (length, .074, .064)
@@ -490,37 +491,59 @@ def fitted_sleeve(side, transforms):
         n = (u * front.dot(u) + v * front.dot(v)).normalized()
         return c + n * radius, n
 
-    wire("Sleeve vent", [trim(d, r)[0] for d, r in ((cuff + .002, .037), (.062, .039), (.093, .041), (.12, .044))], .0009, "lapel")
-    for d in (.058, .073, .088):
-        at, n = trim(d, .040)
-        oval("Horn button", at, (.0045, .0038, .0045), "button")
-        oval("Button thread", at + n * .0032, (.0014, .001, .0012), "lapel")
+    wire("Sleeve vent", [trim(d, r)[0] for d, r in ((cuff + .005, .043), (cuff + .032, .0445), (cuff + .060, .0455), (cuff + .090, .047))], .0008, "lapel")
+    for d in (cuff + .020, cuff + .035, cuff + .050):
+        at, n = trim(d, .0455)
+        oval("Horn button", at, (.0042, .0034, .0042), "button")
+        oval("Button thread", at + n * .0028, (.0013, .0009, .0011), "lapel")
     if side == "l":
-        shell("Watch bracelet", [(.001, .034, .027), (.003, .036, .028), (.015, .037, .029), (.017, .035, .027)], "steel")
-        c, u, v = section(.008)
-        top = V((0, 1, -.55))
+        shell("Watch bracelet", [(.0055, .0322, .0248), (.0065, .0334, .0258), (.0135, .0334, .0258), (.0145, .0322, .0248)], "gold")
+        for bd in (.0080, .0100, .0120):
+            shell("Watch link seam", [(bd - .0004, .0333, .0257), (bd + .0004, .0333, .0257)], "steel")
+        c, u, v = section(.010)
+        top = V((0, 1, -.35))
         n = (u * top.dot(u) + v * top.dot(v)).normalized()
-        axis = backwards.cross(n).normalized()
-        across = n.cross(axis).normalized()
-        at = c + n * .029
+        across = n.cross(backwards).normalized()
+        axis = across.cross(n).normalized()
+        if axis.dot(backwards) < 0:
+            axis = -axis
+            across = -across
+        nu, nv = n.dot(u), n.dot(v)
+        r_surf = 1.0 / math.sqrt((nu / .0334) ** 2 + (nv / .0258) ** 2)
+        at = c + n * (r_surf - .0010)
 
         def dial(name, r, h, depth, key):
             verts = [
-                at + n * (h + k * depth) + r * (axis * math.cos(a * math.tau / 36) + across * math.sin(a * math.tau / 36))
-                for k in (0, 1) for a in range(36)
+                at + n * (h + k * depth) + r * (axis * math.cos(a * math.tau / 40) + across * math.sin(a * math.tau / 40))
+                for k in (0, 1) for a in range(40)
             ]
-            faces = [(i, (i + 1) % 36, (i + 1) % 36 + 36, i + 36) for i in range(36)]
-            return mesh(name, verts, faces + [tuple(range(36)), tuple(range(36, 72))], key)
+            faces = [(i, (i + 1) % 40, (i + 1) % 40 + 40, i + 40) for i in range(40)]
+            return mesh(name, verts, faces + [tuple(reversed(range(40))), tuple(range(40, 80))], key)
 
-        dial("Chamfered case", .018, 0, .005, "steel")
-        dial("Brass bezel", .017, .004, .002, "gold")
-        dial("Enamel dial", .0147, .006, .0006, "dial")
-        face = at + n * .0069
+        dial("Watch case back", .0150, -.0006, .0020, "steel")
+        dial("Chamfered case", .0156, .0010, .0032, "gold")
+        dial("Fluted gold bezel", .0148, .0040, .0015, "gold")
+        dial("Dial inner rim", .0129, .0048, .0008, "steel")
+        dial("Enamel dial", .0123, .0052, .0005, "dial")
+        for s_ax in (-1, 1):
+            for s_ac in (-1, 1):
+                lug_pos = at + n * .0016 + axis * (s_ax * .0098) + across * (s_ac * .0140)
+                oval("Watch lug", lug_pos, (.0028, .0022, .0040), "gold")
+        crown_pos = at + n * .0026 - axis * .0163
+        oval("Watch crown", crown_pos, (.0022, .0020, .0020), "gold")
+        face = at + n * .0060
         for j in range(12):
             ray = axis * math.cos(math.tau * j / 12) + across * math.sin(math.tau * j / 12)
-            wire("Index", [face + ray * .0118, face + ray * .0137], .00055, "gold")
-        for vec in (.008 * across - .002 * axis, .011 * axis + .002 * across):
-            wire("Watch hand", [face, face + vec], .0008, "ivory")
+            r_in = .0088 if j % 3 == 0 else .0098
+            w_idx = .00060 if j % 3 == 0 else .00040
+            wire("Index", [face + ray * r_in, face + ray * .0114], w_idx, "gold")
+        h_vec = axis * math.cos(math.radians(150)) + across * math.sin(math.radians(150))
+        m_vec = axis * math.cos(math.radians(30)) + across * math.sin(math.radians(30))
+        s_vec = axis * math.cos(math.radians(-60)) + across * math.sin(math.radians(-60))
+        wire("Hour hand", [face - h_vec * .0014, face + h_vec * .0068], .00062, "ivory")
+        wire("Minute hand", [face - m_vec * .0016, face + m_vec * .0100], .00048, "ivory")
+        wire("Second hand", [face - s_vec * .0020, face + s_vec * .0104], .00024, "gold")
+        oval("Pinion cap", face + n * .0005, (.0011, .0011, .0007), "gold")
 
     bpy.context.view_layer.update()
     for obj in bpy.context.scene.objects:
@@ -637,7 +660,7 @@ def build_arm_piece(side, transforms):
     axis_fore = rotation @ (org - JOINT[side + "-elbow"]).normalized()
     bm = bmesh.new()
     bm.from_mesh(obj.data)
-    plane = V(xyz(w - axis_fore * .021))
+    plane = V(xyz(w - axis_fore * (.034 if side == "l" else .021)))
     normal = V(xyz(axis_fore))
     region = [f for f in bm.faces if all((v.co - V(xyz(w))).length < .081 for v in f.verts)]
     edges = {e for f in region for e in f.edges}

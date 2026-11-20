@@ -12,7 +12,7 @@ namespace HowToVibeCoder;
 internal sealed record FloorSnapshot(int Cash, EscapedAgentBoss Boss, float Door, bool Key, bool Unlocked,
     bool Trap, SubscriptionBaitTier Bait, VibeCoderEntity[] Coders, GalleyDeskSlot[] Desks,
     EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100, FloorSystems? Systems = null,VibeCoderEntity? HostCarried=null, int ProgressionVersion=0,
-    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands, OnboardingStep? OnboardingStep=null, bool? ElevatorRepaired=null, float? ElevatorGlassOpacity=null, int? SelectedHotbarSlot=null,int[]? Health=null,VibeCoderEntity?[]? Escorts=null,bool[]? Downed=null);
+    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands, OnboardingStep? OnboardingStep=null, bool? ElevatorRepaired=null, float? ElevatorGlassOpacity=null, int? SelectedHotbarSlot=null,int[]? Health=null,VibeCoderEntity?[]? Escorts=null,bool[]? Downed=null,float[]? RoomOpen=null,float[]? VentTime=null);
 
 internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0, FloatingCombatText3D? Impact=null,int Amount=0,Vector3? Source=null,int[]? Tickets=null,int Slot=0,int Mask=1);
 internal sealed record Motion(string Session, long Sequence, PlayerPose Pose,int AllySlot=0,PlayerPose? Ally=null);

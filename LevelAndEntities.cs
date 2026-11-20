@@ -48,6 +48,9 @@ public sealed class VibeCoderEntity
     public string Name = "";
     public string SpeciesId = "";
     public VibeCoderRarity Rarity;
+    internal Queue<Vector3>? BaitRoute;
+    public int EntryRoom=-1;
+    public bool ExitingRoom;
     public bool IdentityRevealed, TimidIntern, KnockedOutAlive;
     internal bool CanSignNda => State==CoderAIState.Subdued && (Hp>0 || KnockedOutAlive);
     internal string MysteryTag => (Rarity==VibeCoderRarity.Common ? "???" : "★ ???") +
@@ -285,13 +288,31 @@ public sealed partial class SkyscraperFloor1World
     // Key Functional Landmarks (White Shark Layout: HR Reception Desk centered directly opposite the Elevator!)
     public readonly Vector3 HrTarotBoothPos = new(0.0f, 0f, 13.0f);
     public readonly Vector3 ArsenalShopPos = new(-6.1f, 0f, 14.7f);
-    public readonly Vector3 CentralMacBookPos = new(0.0f, 0f, 5.2f);
+    public readonly Vector3 CentralMacBookPos = new(-5.6f, 0f, 6.3f);
     public readonly Vector3 NorthElevatorPos = new(0.0f, 0f, -8.5f);
     public readonly Vector3 SouthElevatorDoorPos = new(0.0f, 0f, 0.5f);
     public readonly Vector3 ElevatorButtonPos = new(-3.2f, 0f, -9.2f);
     public readonly Vector3 SouthElevatorButtonPos = new(3.2f, 0f, 1.1f);
-    public readonly Vector3 WestSpawnDoorPos = new(-20.5f, 0f, 5.2f);
-    public readonly Vector3 EastSpawnDoorPos = new(20.5f, 0f, 5.2f);
+    internal static readonly Vector3[] RoomDoors=[new(-7.61f,0,3.2f),new(7.61f,0,3.2f),
+        new(-17.8f,0,-13.55f),new(17.8f,0,-13.55f)];
+    internal readonly float[] RoomOpen=new float[4], VentTime=new float[3];
+    private readonly float[] roomHold=new float[4];
+    internal Vector3 VentMouth(int vent) => vent switch {
+        0=>new(8.91f,0,11.65f),1=>RackPos+new Vector3(0,0,.49f),_=>SideRacks[0]+new Vector3(0,0,.48f) };
+    private int PickRoom(int side) => (side>0 ? 1 : 0)+(Systems.WingsUnlocked && _rng.Next(2)==1 ? 2 : 0);
+    private void EnterFromRoom(VibeCoderEntity coder,int room)
+    {
+        coder.EntryRoom=room; coder.ExitingRoom=true;
+        coder.Position=RoomDoors[room]+new Vector3((coder.Id%3-1)*.36f,0,-.8f);
+        coder.FacingYaw=0; roomHold[room]=2.6f;
+    }
+    private VibeCoderEntity SpawnRoomFighter(CoderArchetype role,int side,VibeCoderSpecies? species=null)
+    {
+        int room=PickRoom(side);
+        var coder=SpawnFighter(role,RoomDoors[room],species);
+        EnterFromRoom(coder,room);
+        return coder;
+    }
 
     // Architectural Pillars, Ambush Covers, Galley Desks & 75+ Rich 3D Office Props
     public readonly List<PillarObstacle> Pillars = new(16);
@@ -299,8 +320,8 @@ public sealed partial class SkyscraperFloor1World
     public readonly List<GalleyDeskSlot> GalleyDesks = new(4);
     public readonly List<OfficeProp3D> OfficeProps = new(110);
     internal static readonly Vector2[] PendantLocations = [
-        new(0,12.9f),new(0,5.2f),new(-3.9f,9.7f),new(4,13),new(8.9f,13.4f),
-        new(-14.5f,5.5f),new(-20.7f,-8.5f),new(14.8f,3.5f),new(22,-10.5f)];
+        new(0,12.9f),new(-5.6f,6.3f),new(-3.9f,9.7f),new(4,13),new(8.9f,13.4f),
+        new(-7.6f,3.7f),new(8.75f,12),new(-14.5f,5.5f),new(-20.7f,-8.5f),new(14.8f,3.5f),new(22,-10.5f)];
     private static readonly Vector3 LoungeTable = new(-3.9f,0,9.7f), BreakTable = new(4,0,13);
     private static readonly Vector3 ArenaTable=new(3.1f,0,-12.3f);
     private Vector3 CartPosition => RackPos+new Vector3(1.13f,0,-.66f);
@@ -459,6 +480,7 @@ public sealed partial class SkyscraperFloor1World
 
     public void InitializeFloorLayout()
     {
+        Array.Clear(RoomOpen); Array.Clear(roomHold); Array.Clear(VentTime);
         Pillars.Clear();
         AmbushCovers.Clear();
         GalleyDesks.Clear();
@@ -559,7 +581,7 @@ public sealed partial class SkyscraperFloor1World
             AccentColor = new Color(90, 245, 175, 255)
         });
 
-        // 4 Ambush Cover Objects surrounding the Central MacBook Trap Desk (0, 0, 5.2)
+        // Atrium lounge and server-wing ambush covers.
         AmbushCovers.Add(new AmbushCoverObject
         {
             Name = "Кожаный Диван из 90-х",
@@ -631,7 +653,7 @@ public sealed partial class SkyscraperFloor1World
     private void PopulateRichOfficeProps()
     {
         OfficeProps.Add(new() {Kind=OfficePropKind.LeatherSofa,Position=new(-3.9f,0,11.2f),Size=new(2.46f,1.02f,1.08f),HasCollision=true});
-        foreach (Vector3 feet in new Vector3[]{new(-5.5f,0,8.35f),new(-2.31f,0,11.24f)})
+        foreach (Vector3 feet in new Vector3[]{new(-5.5f,0,8.35f),new(-6.05f,0,11.55f)})
             OfficeProps.Add(new() {Kind=OfficePropKind.PottedFicus,Position=feet,Size=new(.55f,1.8f,.55f)});
         OfficeProps.Add(new() {Kind=OfficePropKind.RollingWhiteboard,Position=new(4.55f,0,15.3f),RotationYaw=171,Size=new(1.9f,1.8f,.55f),HasCollision=true});
         OfficeProps.Add(new() {Kind=OfficePropKind.WaterCooler,Position=new(3.15f,0,14.75f),Size=new(.55f,1.45f,.55f)});
@@ -734,8 +756,6 @@ public sealed partial class SkyscraperFloor1World
 
         Vector3[] whiteboardCoords =
         {
-            new(-6.6f, 0f, 1.2f),
-            new(6.6f, 0f, 1.2f),
             new(-12.5f, 0f, -19.0f),
             new(12.5f, 0f, -19.0f),
             new(-19.0f, 0f, 16.5f),
@@ -905,13 +925,23 @@ public sealed partial class SkyscraperFloor1World
         Add(BreakTable,1.1f,.88f,.88f);
         Add(CartPosition,.85f,.96f,.67f);
         foreach(var rack in SideRacks) Add(rack,.94f,2.05f,.92f);
+        Add(VentMouth(0)-Vector3.UnitZ*.44f,1.2f,1.28f,.88f);
         Add(TerminalPos,.75f,1.35f,.65f);
         Add(ExtinguisherPos,.4f,.94f,.4f);
         Add(CoffeePos,.85f,1.39f,.68f);
         foreach (var p in Pillars) Add(p.Center,2*p.HalfWidth,CeilingHeight,2*p.HalfDepth);
         Add(CentralElevatorCorePos,2*ElevatorCoreHalfW,CeilingHeight,2*ElevatorCoreHalfD);
         foreach (var bay in InteriorWallBays()) solids.Add(new(bay.Center-bay.Size/2,bay.Center+bay.Size/2));
-        Add(CentralMacBookPos,2.48f*TrapScale,TrapTop,1.44f*TrapScale);
+        foreach(var d in RoomDoors)
+        {
+            Add(d-Vector3.UnitZ*2.1f,3.9f,2.9f,.14f);
+            foreach(int side in new[]{-1,1})
+            {
+                Add(d+new Vector3(side*1.89f,0,-1.05f),.12f,2.9f,2.1f);
+                Add(d+Vector3.UnitX*(side*1.45f),.9f,2.9f,.12f);
+            }
+        }
+        Add(CentralMacBookPos,1.44f*TrapScale,TrapTop,2.48f*TrapScale);
         Add(HrTarotBoothPos,3.30f,1.08f,2.10f);
         Add(HrTarotBoothPos+new Vector3(-2.15f,0,.35f),1.45f,1.31f,.60f);
         Add(ArsenalShopPos,4.50f,1.12f,1.90f);
@@ -945,6 +975,12 @@ public sealed partial class SkyscraperFloor1World
             if (feet >= box.Max.Y-.001f) continue;
             Vector3 size = box.Max-box.Min;
             pos = PushOutOfBoxXZ(pos,(box.Max+box.Min)/2,size.X/2,size.Z/2,playerRadius);
+        }
+        for(int i=0;i<RoomDoors.Length && feet<2.45f;i++)
+        {
+            float t=RoomOpen[i], slide=.90f*t*t*(3-2*t);
+            for(int side=-1;side<=1;side+=2)
+                pos=PushOutOfBoxXZ(pos,RoomDoors[i]+new Vector3(side*(.5f+slide),0,.09f),.49f,.024f,playerRadius);
         }
         return pos;
     }
@@ -1065,7 +1101,7 @@ public sealed partial class SkyscraperFloor1World
     private void SpawnAtriumIntern()
     {
         int ordinal=++Systems.TrainingSpawns;
-        var intern=SpawnFighter(CoderArchetype.JuniorPrompter,new(ordinal%2==0 ? 7.2f : -7.2f,0,5.2f));
+        var intern=SpawnRoomFighter(CoderArchetype.JuniorPrompter,ordinal%2==0 ? 1 : -1);
         intern.TimidIntern=intern.IdentityRevealed=intern.LaptopLost=intern.BaitTaken=true;
         intern.Rarity=ordinal>=3 || TotalCodersSoldToHr>=2 ? VibeCoderRarity.Uncommon : VibeCoderRarity.Common;
         intern.Name=ordinal==1 ? "Стажёр-Одуванчик" : $"Промптер №{ordinal}";
@@ -1127,9 +1163,7 @@ public sealed partial class SkyscraperFloor1World
     public VibeCoderEntity SpawnCoderForTier(SubscriptionBaitTier tier, int forceSide = 0)
     {
         int side = forceSide != 0 ? forceSide : (_rng.Next(2) == 0 ? -1 : 1);
-        Vector3 spawnPos = side < 0
-            ? WestSpawnDoorPos + new Vector3(0.8f, 0f, (_rng.NextSingle() - 0.5f) * 1.4f)
-            : EastSpawnDoorPos + new Vector3(-0.8f, 0f, (_rng.NextSingle() - 0.5f) * 1.4f);
+        int room=PickRoom(side);
 
         bool miniBoss=tier==SubscriptionBaitTier.CloudEntropicMax;
         var (payout,bark)=tier switch {
@@ -1138,7 +1172,7 @@ public sealed partial class SkyscraperFloor1World
             SubscriptionBaitTier.CloudEntropicMax=>(600,"МОЙ SAAS НАПИСАН ЗА 2 ЧАСА!"),
             _=>(160,"О, халявный Free Tier на ЯблоБуке!") };
         var coder=new VibeCoderEntity {
-            Id=_nextCoderId++,Position=spawnPos,SpawnSide=side,TarotPayoutValue=payout,
+            Id=_nextCoderId++,SpawnSide=side,TarotPayoutValue=payout,
             SpeechBubble=bark,SpeechTimer=miniBoss ? 5f : 3.5f,
             State=miniBoss ? CoderAIState.CombatHostile : CoderAIState.WalkingToBait
         };
@@ -1155,15 +1189,14 @@ public sealed partial class SkyscraperFloor1World
             VibeCoderCollection.Dress(coder,species);
             if(coder.Archetype==CoderArchetype.ToxicPM) { coder.IsCombatCoder=true; coder.State=CoderAIState.CombatHostile; coder.Aggro=true; }
         }
-        Vector3 toMac = CentralMacBookPos - spawnPos;
-        coder.FacingYaw = MathF.Atan2(toMac.X, toMac.Z);
+        EnterFromRoom(coder,room);
         coder.Hp*=Systems.Balance.EnemyHpScale; coder.MaxHp*=Systems.Balance.EnemyHpScale;
         ActiveCoders.Add(coder);
 
         if (coder.IsMiniBoss)
         {
             var escort=VibeCoderCollection.Roll(speciesRandom,tier,Systems);
-            SpawnFighter(escort.Archetype,spawnPos+Vector3.UnitZ*1.1f,escort);
+            SpawnRoomFighter(escort.Archetype,-side,escort);
             AudioMusicSystem.PlayBossSiren();
             AudioMusicSystem.TriggerRandomVoiceLine("ГУРУ ТАБСОРА ($60K MRR)", AudioMusicSystem.SaasMiniBossLines, (int)SpeakerVoiceType.VibeCoder);
         }
@@ -1263,6 +1296,12 @@ public sealed partial class SkyscraperFloor1World
         Vector3? guestPosition=null, Action<int,string,Vector3>? onGuestHit=null, Vector3? second=null, Action<int,string,Vector3>? hitSecond=null)
     {
         AdvanceLighting(dt);
+        for(int i=0;i<RoomOpen.Length;i++)
+        {
+            roomHold[i]=Math.Max(0,roomHold[i]-dt);
+            RoomOpen[i]=Math.Clamp(RoomOpen[i]+dt*(roomHold[i]>0 ? 2.8f : -1.8f),0,1);
+        }
+        for(int i=0;i<VentTime.Length;i++) VentTime[i]=Math.Max(0,VentTime[i]-dt);
         ApplyElectricField();
         float TickShock(Vector3 eye,float wait,Action<int,string,Vector3>? hit)
         {
@@ -1326,6 +1365,40 @@ public sealed partial class SkyscraperFloor1World
         return passiveEarned;
     }
 
+    // Use the same expanded furniture and gate footprints as walking players.
+    // Find a short route once when a recruit first leaves its room for the lounge.
+    private Queue<Vector3> RouteToBait(Vector3 from,Vector3 goal)
+    {
+        static (int X,int Z) Cell(Vector3 p) => ((int)MathF.Round(p.X*2),(int)MathF.Round(p.Z*2));
+        static Vector3 Feet((int X,int Z) c) => new(c.X*.5f,0,c.Z*.5f);
+        var start=Cell(from); var finish=Cell(goal);
+        var queue=new PriorityQueue<(int X,int Z),int>();
+        var previous=new Dictionary<(int,int),(int,int)> { [start]=start };
+        var cost=new Dictionary<(int,int),int> { [start]=0 };
+        queue.Enqueue(start,0);
+        while(queue.TryDequeue(out var cell,out _))
+        {
+            if(cell==finish)
+            {
+                var path=new Stack<Vector3>();
+                for(var at=cell;at!=start;at=previous[at]) path.Push(Feet(at));
+                return new(path);
+            }
+            foreach(var (dx,dz) in CardinalSteps)
+            {
+                var next=(X:cell.X+dx,Z:cell.Z+dz);
+                int steps=cost[cell]+1;
+                if(cost.TryGetValue(next,out int old) && steps>=old) continue;
+                var p=Feet(next);
+                if(Vector3.DistanceSquared(p,ResolvePlayerCollision(p,.24f))>.00001f) continue;
+                cost[next]=steps; previous[next]=cell;
+                queue.Enqueue(next,steps+Math.Abs(next.X-finish.X)+Math.Abs(next.Z-finish.Z));
+            }
+        }
+        return new();
+    }
+    private static readonly (int,int)[] CardinalSteps=[(1,0),(-1,0),(0,1),(0,-1)];
+
     private void UpdateVibeCoders(float dt, Vector3 hostPos, Vector3? guestPos, Action<int,string,Vector3>? hitHost, Action<int,string,Vector3>? hitGuest,Action<int,string>? pay,Vector3? second,Action<int,string,Vector3>? hitSecond)
     {
         for (int i = ActiveCoders.Count - 1; i >= 0; i--)
@@ -1366,6 +1439,22 @@ public sealed partial class SkyscraperFloor1World
                 continue;
             }
             if(c.State==CoderAIState.Subdued) { LootElevatorKey(c); continue; }
+            if(c.ExitingRoom && c.StunTimer<=0)
+            {
+                var door=RoomDoors[c.EntryRoom];
+                float end=door.Z+1.15f;
+                if(Math.Abs(c.Position.X-door.X)<1 && c.Position.Z<end && c.Position.Z>=door.Z-1)
+                {
+                    roomHold[c.EntryRoom]=Math.Max(roomHold[c.EntryRoom],.5f);
+                    if(RoomOpen[c.EntryRoom]>.7f)
+                    {
+                        c.Position.Z=Math.Min(end,c.Position.Z+dt*1.8f);
+                        c.WalkCycle+=dt*7.5f;
+                    }
+                    continue;
+                }
+                c.ExitingRoom=false;
+            }
             if(c.TimidIntern && !Systems.WingsUnlocked && Systems.Onboarding!=OnboardingStep.StunAndHeal) continue;
             if(c.TimidIntern)
             {
@@ -1404,16 +1493,20 @@ public sealed partial class SkyscraperFloor1World
             {
                 case CoderAIState.WalkingToBait:
                 {
-                    Vector3 target = CentralMacBookPos + new Vector3(0f, 0f, -0.75f);
+                    Vector3 target = CentralMacBookPos + Vector3.UnitX*1.15f;
+                    c.BaitRoute??=RouteToBait(c.Position,target);
+                    while(c.BaitRoute.TryPeek(out var via) && Vector3.DistanceSquared(via,c.Position)<.025f)
+                        c.BaitRoute.Dequeue();
+                    if(c.BaitRoute.TryPeek(out var next)) target=next;
                     Vector3 toTarget = target - c.Position;
                     toTarget.Y = 0f;
                     float dist = toTarget.Length();
 
-                    if (dist > 0.35f)
+                    if (dist > (c.BaitRoute.Count>0 ? .12f : .35f))
                     {
                         Vector3 dir = toTarget / dist;
                         float speed = 2.65f;
-                        c.Position += dir * speed * dt;
+                        c.Position=ResolvePlayerCollision(c.Position+dir*Math.Min(dist,speed*dt),.24f);
                         c.FacingYaw = MathF.Atan2(dir.X, dir.Z);
                         c.WalkCycle += dt * 7.5f;
                     }
@@ -1422,7 +1515,7 @@ public sealed partial class SkyscraperFloor1World
                         c.State = CoderAIState.SittingAtMacBook;
                         c.Anxiety = 0f;
                         if(!c.TimidIntern) c.Pressure(32,0,0,45);
-                        c.FacingYaw = 0f; // Looking at MacBook screen
+                        c.FacingYaw = -MathF.PI/2; // Looking at MacBook screen
                         c.SpeechBubble = "ПОПАЛСЯ НА ХАЛЯВУ! ЖМЁТ ACCEPT ALL НЕ ГЛЯДЯ!";
                         c.SpeechTimer = 6.0f;
                     }
@@ -1511,10 +1604,11 @@ public sealed partial class SkyscraperFloor1World
 
                 case CoderAIState.PanickedFleeing:
                 {
-                    Vector3 exitDoor = c.SpawnSide < 0 ? WestSpawnDoorPos : EastSpawnDoorPos;
+                    Vector3 exitDoor = RoomDoors[c.EntryRoom>=0 ? c.EntryRoom : c.SpawnSide<0 ? 0 : 1];
                     Vector3 toExit = exitDoor - c.Position;
                     toExit.Y = 0f;
                     float dist = toExit.Length();
+                    if(dist<2.6f && c.EntryRoom>=0) roomHold[c.EntryRoom]=1;
                     if (dist < 0.8f)
                     {
                         ActiveCoders.RemoveAt(i);
@@ -2488,14 +2582,15 @@ public sealed partial class SkyscraperFloor1World
         if(!VisualEngine3D.CastingShadows)
         {
             VisualEngine3D.World(camera,this);
-            VisualEngine3D.SetTrapLight(CentralMacBookPos+new Vector3(0,1.22f,.24f)*TrapScale);
+            VisualEngine3D.SetTrapLight(CentralMacBookPos+new Vector3(-.24f,1.22f,0)*TrapScale);
         }
         DrawSkyscraperArchitecture3D();
         DrawWingGates();
+        DrawEntryHardware();
         if(!VisualEngine3D.CastingShadows)
         {
             VisualEngine3D.Shadow(HrTarotBoothPos,4.8f,3);
-            VisualEngine3D.Shadow(CentralMacBookPos,3*TrapScale,1.9f*TrapScale);
+            VisualEngine3D.Shadow(CentralMacBookPos,1.9f*TrapScale,3*TrapScale);
             foreach(var desk in GalleyDesks) VisualEngine3D.Shadow(desk.DeskPosition,3,2.4f);
         }
         DrawBugHunt();
@@ -2676,13 +2771,15 @@ public sealed partial class SkyscraperFloor1World
         BuildOfficeServices(mesh);
         BuildGlassLift(mesh);
         BuildInteriorRooms(mesh);
+        BuildEntryRooms(mesh);
+        mesh.Add(new(-5.05f,.015f,6.9f),new(4.35f,.025f,4.1f),new(139,101,78,255),Finish.Carpet);
         Color brass=new(189,145,76,255);
         float start=SouthElevatorDoorPos.Z+.15f, end=ArsenalShopPos.Z-.75f;
         float center=(start+end)*.5f;
-        mesh.Add(new(0,.013f,center),new(3.25f,.024f,end-start),new(132,28,54,255),Finish.Carpet);
+        mesh.Add(new(0,.013f,center),new(4.8f,.024f,end-start),new(98,52,114,255),Finish.Carpet);
         foreach (int side in new[] { -1,1 })
         {
-            foreach (float edge in new[] { 1.43f,1.55f })
+            foreach (float edge in new[] { 2.20f,2.32f })
                 mesh.Add(new(side*edge,.029f,center),new(.028f,.008f,end-start),brass);
             Color route=side<0 ? new(255,195,83,255) : new(72,225,202,255);
             mesh.Add(new(side*6.35f,.018f,3.3f),new(9.5f,.024f,.065f),route,Finish.Lamp);
@@ -2776,6 +2873,69 @@ public sealed partial class SkyscraperFloor1World
             yield return (new(side*14.8f,2.1f,20),new(10.4f,4.2f,.24f));
         }
         yield return (new(0,2.1f,-15.8f),new(8.2f,4.2f,.24f));
+    }
+
+    private void BuildEntryRooms(VisualEngine3D.ArchitectureBuilder mesh)
+    {
+        Color metal=new(48,61,68,255), warm=new(255,218,160,255);
+        foreach(var d in RoomDoors)
+        {
+            void Part(float x,float y,float z,float w,float h,float depth,Color color,Finish finish=Finish.Paint) =>
+                mesh.Add(d+new Vector3(x,y,z),new(w,h,depth),color,finish);
+            Part(0,1.45f,-2.1f,3.9f,2.9f,.14f,new(40,50,56,255),Finish.Slate);
+            Part(0,2.91f,-1.04f,3.9f,.12f,2.22f,metal);
+            Part(0,2.82f,-1.64f,3.18f,.03f,.10f,warm,Finish.Lamp);
+            Part(0,.77f,-1.72f,2.9f,.10f,.52f,new(140,101,73,255));
+            Part(0,1.13f,-1.78f,.8f,.49f,.07f,metal);
+            Part(0,2.68f,0,3.94f,.48f,.2f,metal);
+            foreach(int side in new[]{-1,1})
+            {
+                Part(side*1.89f,1.44f,-1.05f,.12f,2.88f,2.1f,metal);
+                Part(side*1.45f,1.23f,0,.84f,2.46f,.054f,new(112,159,166,112),Finish.Glass);
+                Part(side*1.02f,1.23f,0,.055f,2.46f,.14f,metal);
+            }
+        }
+        // Equipment cabinet shares the east atrium partition with its service hatch.
+        var cabinet=VentMouth(0)+new Vector3(0,.64f,-.44f);
+        mesh.Add(cabinet,new(1.2f,1.28f,.88f),metal,Finish.Rack);
+    }
+
+    private void DrawEntryHardware()
+    {
+        Color steel=new(81,101,108,255);
+        for(int i=0;i<RoomDoors.Length;i++)
+        {
+            var d=RoomDoors[i];
+            void Part(float x,float y,float z,float w,float h,float depth,Color color,Finish finish=Finish.Paint) =>
+                VisualEngine3D.Box(d+new Vector3(x,y,z),w,h,depth,color,finish);
+            float t=RoomOpen[i];
+            float gap=t*t*(3-2*t);
+            Part(0,2.68f,.115f,2.55f,.37f,.035f,Color.White,Finish.Coworking+i);
+            Part(1.57f,2.68f,.12f,.15f,.11f,.05f,RoomOpen[i]>.01f ? new(72,245,158,255) : new(255,171,65,255),Finish.Lamp);
+            foreach(int side in new[]{-1,1})
+            {
+                float x=side*(.50f+.90f*gap);
+                Part(x,1.23f,.09f,.98f,2.42f,.045f,new(116,183,191,85),Finish.Glass);
+                Part(x,1.07f,.12f,.98f,.15f,.015f,new(170,193,189,155),Finish.Glass);
+                Part(x-side*.47f,1.22f,.12f,.035f,2.42f,.045f,steel);
+                Part(x,.05f,.11f,.98f,.065f,.055f,steel);
+            }
+        }
+        for(int i=0;i<VentTime.Length;i++)
+        {
+            var p=VentMouth(i);
+            VisualEngine3D.Box(p+new Vector3(0,.25f,.012f),.95f,.50f,.042f,steel);
+            VisualEngine3D.Box(p+new Vector3(0,.25f,.041f),.84f,.40f,.035f,new(22,58,48,255));
+            float angle=Math.Clamp(Math.Min((.83f-VentTime[i])/.14f,VentTime[i]/.22f),0,1)*1.38f;
+            var hinge=p+new Vector3(0,.46f,.07f);
+            for(int j=0;j<6;j++)
+            {
+                float drop=.035f+j*.064f;
+                var slat=hinge+new Vector3(0,-drop*MathF.Cos(angle),drop*MathF.Sin(angle));
+                VisualEngine3D.HingedLouver(slat,-angle*180/MathF.PI);
+                VisualEngine3D.Box(hinge+new Vector3(0,-drop-.025f,-.008f),.76f,.008f,.01f,new(79,219,142,255),Finish.Lamp);
+            }
+        }
     }
 
     private static void BuildInteriorRooms(VisualEngine3D.ArchitectureBuilder mesh)
@@ -2971,12 +3131,7 @@ public sealed partial class SkyscraperFloor1World
                 mesh.Add(new(p.X,CeilingHeight-.77f,z),new(1.28f,.05f,.08f),steel);
             }
         }
-        foreach (var door in new[] { WestSpawnDoorPos,EastSpawnDoorPos })
-        {
-            mesh.Add(door+Vector3.UnitY*4.45f,new(1.65f,.62f,.12f),Color.White,Finish.Exit);
-            foreach (int side in new[] { -1,1 })
-                mesh.Add(door+new Vector3(side*.63f,5.63f,0),new(.027f,1.74f,.027f),steel);
-        }
+
     }
 
     private static void DrawCoffee(Vector3 basePos)
@@ -3302,7 +3457,7 @@ public sealed partial class SkyscraperFloor1World
         Vector3 m = CentralMacBookPos;
 
         // 1. Detailed Blender 3D Tactical Trap Desk + Open Aluminum MacBook Pro
-        VisualEngine3D.Asset("prop_macbook_trap_desk", m, 0f, TrapScale);
+        VisualEngine3D.Asset("prop_macbook_trap_desk", m, -90f, TrapScale);
 
 
         // 4. Ambush Cover Objects around Central Desk (Each a dedicated 3D Blender model!)
@@ -3510,7 +3665,7 @@ public sealed partial class SkyscraperFloor1World
     private void DrawVibeCoder3D(VibeCoderEntity c)
     {
         float scale=c.ModelScale;
-        bool walking=(!c.IsCombatCoder || c.Aggro) && c.State is CoderAIState.WalkingToBait or CoderAIState.PanickedFleeing or CoderAIState.CombatHostile;
+        bool walking=c.ExitingRoom || (!c.IsCombatCoder || c.Aggro) && c.State is CoderAIState.WalkingToBait or CoderAIState.PanickedFleeing or CoderAIState.CombatHostile;
         float bob=walking ? .035f*scale*MathF.Abs(MathF.Sin(c.WalkCycle)) : 0;
         float tilt=c.IsCombatCoder && c.State==CoderAIState.Subdued
             ? -1.45f*Math.Clamp((c.KnockoutTime+.05f)*4,0,1)
@@ -3774,7 +3929,7 @@ public sealed partial class SkyscraperFloor1World
         if(tool==WeaponType.BareHands)
             foreach(var frog in Frogs)
             {
-                float aim=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,2.4f);
+                float aim=CatchAim(camera,frog.Feet+Vector3.UnitY*.11f,2.4f);
                 if(aim>Math.Max(best,HandAim(frog))) { best=aim; focus=new(FocusKind.Frog,"Поймать Джаба-жабу",-1); }
             }
         if(!Systems.WingsUnlocked && barrierContact>0 && focus.Kind==FocusKind.None) return new(FocusKind.Barrier,BarrierHint,-1);
@@ -3795,7 +3950,7 @@ public sealed partial class SkyscraperFloor1World
             case OnboardingStep.CatchFrogs:
                 var frog=Frogs.Where(f=>f.CatchableByHand && ReachableFrog(eye,f.Feet))
                     .MinBy(f=>Vector3.DistanceSquared(eye,f.Feet));
-                return frog==null ? null : (frog.Feet,.43f,"Джаба-жаба [E]");
+                return frog==null ? null : (frog.Feet,.30f,"Джаба-жаба [E]");
             case OnboardingStep.SeatFirstGalley:
                 var desk=GalleyDesks.Where(d=>!d.IsOccupied).MinBy(d=>Vector3.DistanceSquared(eye,d.DeskPosition));
                 if(CarriedCoder!=null && desk!=null) return (desk.DeskPosition,1.5f,"Посади в Опенспейс [E]");
@@ -3817,7 +3972,7 @@ public sealed partial class SkyscraperFloor1World
     // A frog around a partition can still be caught from the open side.
     private bool ReachableFrog(Vector3 eye,Vector3 feet)
     {
-        Vector3 point=feet+Vector3.UnitY*.15f;
+        Vector3 point=feet+Vector3.UnitY*.11f;
         bool Clear(Vector3 from,float reach)
         {
             var ray=point-from;
@@ -3895,10 +4050,10 @@ public sealed partial class SkyscraperFloor1World
         {
             if(waypoint?.Position==frog.Feet) continue;
             bool rare=frog.Species.Rarity!=VibeCoderRarity.Common;
-            float alignment=CatchAim(camera,frog.Feet+Vector3.UnitY*.15f,rare ? 8 : 4.5f);
+            float alignment=CatchAim(camera,frog.Feet+Vector3.UnitY*.11f,rare ? 8 : 4.5f);
             if(alignment<(rare ? .91f : .98f)) continue;
             string label=Systems.DiscoveredSpecies.ContainsKey(frog.SpeciesId) ? frog.Species.Name : rare ? "★ ???" : "???";
-            Plate(frog.Feet+Vector3.UnitY*.38f,label,-1,frog.Species.HoodieColor,true);
+            Plate(frog.Feet+Vector3.UnitY*.30f,label,-1,frog.Species.HoodieColor,true);
         }
         if(waypoint?.Position!=HrTarotBoothPos && Vector3.DistanceSquared(camera.Position,HrTarotBoothPos)<100 && FindFocus(camera).Kind!=FocusKind.Veronika)
             Plate(HrTarotBoothPos+Vector3.UnitY*1.87f, ReceptionTicker(),-1,new Color(168,153,202,255));
@@ -3978,7 +4133,7 @@ public sealed partial class SkyscraperFloor1World
     internal void ResumeCoderIds() => _nextCoderId=1+Math.Max(ActiveCoders.Select(c=>c.Id).DefaultIfEmpty().Max(),CarriedCoder?.Id ?? 0);
     internal Vector3 RackPos => AmbushCovers[3].Position;
     internal Vector3 CoolerPos => AmbushCovers[2].Position;
-    internal static readonly Vector3 DeployPos=new(-2.6f,0,1.48f), CoffeePos=new(2.5f,0,12.9f);
+    internal static readonly Vector3 DeployPos=new(-3.25f,0,1.48f), CoffeePos=new(3.12f,0,12.28f);
     private readonly record struct Station(FocusKind Kind,Vector3 Feet,float Height,string Label);
     private readonly List<Station> stations=new();
 
@@ -4031,7 +4186,7 @@ public sealed partial class SkyscraperFloor1World
     internal void EnsureCandidate(CoderArchetype role)
     {
         if(Systems.WingsUnlocked && IsMacBookTrapActive && !ActiveCoders.Exists(c=>c.Archetype==role && c.Hp>0))
-            SpawnFighter(role,EastSpawnDoorPos);
+            SpawnRoomFighter(role,1);
     }
 
     internal void SpawnWave(int count,bool raid=false)
@@ -4039,10 +4194,8 @@ public sealed partial class SkyscraperFloor1World
         if(!Systems.WingsUnlocked || !IsMacBookTrapActive) return;
         for(int i=0;i<count && (ActiveCoders.Count<Systems.Balance.Cap(22) || raid && i==0);i++)
         {
-            float side=i%2==0 ? 1 : -1;
-            Vector3 spawn=Systems.Friday>0 ? new(7+i*1.6f,0,5) : new(side*(11+i),0,6+i);
             var species=VibeCoderCollection.Roll(speciesRandom,SelectedBaitTier,Systems,raid ? CoderArchetype.SecurityGuard : null);
-            var c=SpawnFighter(species.Archetype,spawn,species);
+            var c=SpawnRoomFighter(species.Archetype,i%2==0 ? 1 : -1,species);
             c.Aggro=true; c.RaidGuard=raid; c.ReleaseAttacker=Systems.Friday>0;
             c.SpeechBubble=raid ? "Проверка пропусков!" : "Кто открыл релизную ветку?";
             c.SpeechTimer=2;
@@ -4261,15 +4414,16 @@ internal sealed class BugFrog
     public string SpeciesId="frog_hopper";
     public Vector3 From, To;
     public float Phase, Rest, Yaw, TargetYaw;
+    public bool VentExit;
     internal void AdvanceArc(float dt) => Phase=Math.Min(1,Phase+dt/(.35f+.30f*Species.HopHeight));
     internal VibeCoderSpecies Species => VibeCoderCollection.Frogs[SpeciesId];
-    internal Vector3 Feet => Vector3.Lerp(From,To,Phase)+Vector3.UnitY*(4*Phase*(1-Phase)*Species.HopHeight);
+    internal Vector3 Feet => Vector3.Lerp(From,To,Phase)+Vector3.UnitY*(4*Phase*(1-Phase)*(VentExit ? .09f : Species.HopHeight));
 }
 
 public sealed partial class SkyscraperFloor1World
 {
     internal readonly List<BugFrog> Frogs=new();
-    internal static readonly Vector3 TerminalPos=new(-2.05f,0,8.85f);
+    internal static readonly Vector3 TerminalPos=new(-3.1f,0,10.85f);
     private readonly Random frogRandom;
     private float refill, previousDebt, croakDelay;
 
@@ -4278,7 +4432,7 @@ public sealed partial class SkyscraperFloor1World
         SeedLobby();
         if(!IsMacBookTrapActive) return;
         ActiveCoders.RemoveAll(c=>!c.TimidIntern);
-        if(ActiveCoders.Count>0) ActiveCoders[0].Position=new(-7.5f,0,5.2f);
+
         if(CarriedCoder!=null) Systems.Onboarding=OnboardingStep.CaptureFirstCoder;
         else ActivateMacBookTrap(SubscriptionBaitTier.FreeTier,_=>false,out _);
     }
@@ -4286,23 +4440,35 @@ public sealed partial class SkyscraperFloor1World
     private void SeedLobby()
     {
         Frogs.Clear(); previousDebt=0; refill=4;
-        Vector3[] pads=[new(-1,0,10.05f),new(.95f,0,9.4f),new(-.55f,0,8.1f),
-            new(2.1f,0,8.4f),new(-3.1f,0,7.2f),new(1.1f,0,6.7f),new(-5,0,11),new(5,0,10)];
+        Vector3[] pads=[new(3.45f,0,10.05f),new(4.95f,0,9.4f),new(5.55f,0,8.1f),
+            new(5.1f,0,11.4f),new(-3.1f,0,7.2f),new(4.1f,0,6.7f),new(-5,0,11),new(5,0,10)];
         for(int i=0;i<pads.Length;i++)
         {
-            var frog=SpawnFrog(pads[i],i<3 ? "frog_hopper" : i==3 ? "frog_crash" : i==4 ? "frog_syntax" : null);
+            var frog=PlaceFrog(pads[i],i<3 ? "frog_hopper" : i==3 ? "frog_crash" : i==4 ? "frog_syntax" : null);
             BeginHop(frog,frog.From+Vector3.UnitZ*3);
             frog.Phase=i*.12f; frog.Yaw=frog.TargetYaw;
         }
     }
 
-    private BugFrog SpawnFrog(Vector3 p,string? id=null)
+    private BugFrog PlaceFrog(Vector3 p,string? id=null)
     {
         float roll=frogRandom.NextSingle();
         p=ResolvePlayerCollision(p,.22f);
         var frog=new BugFrog {SpeciesId=id ?? (roll<.035f ? "frog_hotfix" : roll<.20f ? "frog_crash" :
             roll<.47f ? "frog_syntax" : "frog_hopper"),From=p,To=p,Rest=.6f+1.2f*frogRandom.NextSingle()};
         Frogs.Add(frog);
+        return frog;
+    }
+
+    internal BugFrog SpawnFrog(int vent,string? id=null)
+    {
+        var mouth=VentMouth(vent);
+        var dir=Vector3.UnitZ;
+        var frog=PlaceFrog(mouth+dir,id);
+        frog.From=mouth-dir*.10f;
+        frog.To=mouth+dir*(.65f+frogRandom.NextSingle()*.35f);
+        frog.Yaw=frog.TargetYaw=MathF.Atan2(dir.X,dir.Z);
+        frog.Rest=.12f; frog.VentExit=true; VentTime[vent]=.83f;
         return frog;
     }
 
@@ -4347,12 +4513,12 @@ public sealed partial class SkyscraperFloor1World
         if(Systems.TD<previousDebt) previousDebt=Systems.TD;
         if(Systems.WingsUnlocked && Frogs.Count<Systems.Balance.Cap(24) && Systems.TD>previousDebt && (previousDebt==0 || Systems.TD-previousDebt>=1))
         {
-            SpawnFrog(RackPos+new Vector3(frogRandom.NextSingle()*3-1.5f,0,1.4f+frogRandom.NextSingle()));
+            SpawnFrog(frogRandom.Next(1,3));
             previousDebt=Systems.TD;
         }
         if(refill<=0 && Frogs.Count<Systems.Balance.Cap(8))
         {
-            SpawnFrog(new(frogRandom.NextSingle()*5-2.5f,0,7+frogRandom.NextSingle()*3));
+            SpawnFrog(Systems.WingsUnlocked ? frogRandom.Next(3) : 0);
             refill=3.5f;
         }
         foreach(var frog in Frogs)
@@ -4361,13 +4527,14 @@ public sealed partial class SkyscraperFloor1World
             if(frog.Rest>0)
             {
                 frog.Rest-=dt;
-                if(frog.Rest<=0) BeginHop(frog,near);
+                if(frog.Rest<=0 && !frog.VentExit) BeginHop(frog,near);
                 continue;
             }
             float turn=MathF.IEEERemainder(frog.TargetYaw-frog.Yaw,MathF.Tau);
             frog.Yaw+=turn*(1-MathF.Exp(-14*dt));
             frog.AdvanceArc(dt);
             if(frog.Phase<1) continue;
+            frog.VentExit=false;
             frog.Rest=.6f+1.2f*frogRandom.NextSingle();
             if(croakDelay<=0 && Vector3.DistanceSquared(frog.To,near)<36)
             { AudioMusicSystem.PlayFrogCroak(); croakDelay=2.2f; }
@@ -4387,7 +4554,7 @@ public sealed partial class SkyscraperFloor1World
 
     private string CatchSweep(Camera3D camera,bool net)
     {
-        var targets=Frogs.Select(f=>(Frog:f,Aim:CatchAim(camera,f.Feet+Vector3.UnitY*.15f,net ? 3.6f : 2.4f)))
+        var targets=Frogs.Select(f=>(Frog:f,Aim:CatchAim(camera,f.Feet+Vector3.UnitY*.11f,net ? 3.6f : 2.4f)))
             .Where(t=>t.Aim>(net ? .70f : HandAim(t.Frog))).OrderByDescending(t=>t.Aim).Take(net ? 3 : 1).ToArray();
         foreach(var (frog,_) in targets)
         {

@@ -4,7 +4,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud, LiftGlass, JiraSheet, NdaSheet, PitchDeck }
+internal enum Finish { Paint, Slate, Armor, Rack, Screen, Fabric, Leather, Lamp, Contact, Tarot, Lift, Plaster, Facade, Sky, Glass, Exit, Billboard, Imported, Carpet, CharacterShadow, Fluorescent, Anatomy, BlackMarble, Bronze, RosinSmoke, WaterPuddle, Plasma, Cloud, LiftGlass, JiraSheet, NdaSheet, PitchDeck, Coworking, Meeting, Standup, BreakRoom }
 
 internal static unsafe partial class VisualEngine3D
 {
@@ -15,6 +15,7 @@ internal static unsafe partial class VisualEngine3D
     private static readonly Dictionary<(string Asset, bool Right), Vector3> armWrists = new();
     private static readonly Dictionary<(string Asset, bool Right), Vector3> sleeveEnds = new();
     private static int sleeveAxisLoc,sleevePullLoc,wristLoc,handSocketLoc,gripLoc;
+    private static readonly HashSet<int> blazerMeshes=new();
     private static readonly HashSet<int> partnerPropMeshes = new();
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
@@ -118,7 +119,7 @@ internal static unsafe partial class VisualEngine3D
         uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
         uniform float power, clock, flashStrength, cabinPower;
-        uniform vec2 pendants[9];
+        uniform vec2 pendants[11];
         uniform float rackLoad;
         uniform vec3 muzzle;
         uniform int firstPerson;
@@ -397,7 +398,7 @@ internal static unsafe partial class VisualEngine3D
             light+=vec3(1.48,1.02,.64)*max(0.,dot(n,key))*shadow;
             if(firstPerson==0 && pos.y<9.) {
                 float pool=0.;
-                for(int i=0;i<9;i++) {
+                for(int i=0;i<11;i++) {
                     vec2 offset=pos.xz-pendants[i];
                     pool=max(pool,1.-smoothstep(.18,1.,dot(offset,offset*vec2(.075,.13))));
                 }
@@ -547,6 +548,7 @@ internal static unsafe partial class VisualEngine3D
                 foreach (var part in mesh.GetProperty("primitives").EnumerateArray())
                 {
                     string material = materials[part.GetProperty("material").GetInt32()].GetProperty("name").GetString();
+                    if(material is "crimson" or "lapel") blazerMeshes.Add(index);
                     if (material is "GunMetal" or "Gold90s" or "PolymerGrip") partnerPropMeshes.Add(index);
                     index++;
                 }
@@ -723,17 +725,30 @@ internal static unsafe partial class VisualEngine3D
             DrawPaintedModel(model,name,Vector3.Zero,0,Vector3.One,tint ?? Color.White);
             return;
         }
-        if (hideProp)
+        if (hideProp || name=="prop_bug_frog")
         {
             var transform = model.Transform * Matrix4x4.CreateScale((stretch ?? Vector3.One)*scale)
                 * Matrix4x4.CreateRotationY(yaw*MathF.PI/180) * Matrix4x4.CreateTranslation(position);
             for (int i=0;i<model.MeshCount;i++)
-                if (!partnerPropMeshes.Contains(i)) Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
+                if (!hideProp || !partnerPropMeshes.Contains(i))
+                {
+                    var material=model.Materials[model.MeshMaterial[i]];
+                    var original=material.Maps[0].Color;
+                    if(name=="prop_bug_frog") material.Maps[0].Color=FrogPigment(model.MeshMaterial[i],original,tint ?? Color.White);
+                    else if(tint.HasValue && blazerMeshes.Contains(i)) material.Maps[0].Color=tint.Value;
+                    Raylib.DrawMesh(model.Meshes[i],material,Matrix4x4.Transpose(transform));
+                    material.Maps[0].Color=original;
+                }
+            CapturedAssets?.Add(name);
             return;
         }
         DrawPaintedModel(model,name,position,yaw,(stretch ?? Vector3.One)*scale,tint ?? Color.White);
         CapturedAssets?.Add(name);
     }
+
+    // Raylib reserves slot zero. glTF material zero is the satin shell.
+    internal static Color FrogPigment(int slot,Color original,Color species) =>
+        Raylib.ColorTint(original,slot==1 ? species : Color.White);
 
     private static void DrawPaintedModel(Model model,string name,Vector3 pos,float yaw,Vector3 scale,Color tint)
     {
@@ -801,7 +816,7 @@ internal static unsafe partial class VisualEngine3D
         Raylib.SetShaderValue(shader,firstPersonLoc,0,ShaderUniformDataType.Int);
         Raylib.SetShaderValue(shader,clockLoc,(float)Raylib.GetTime(),ShaderUniformDataType.Float);
         Raylib.SetShaderValue(shader,cabinPowerLoc,1-world.ElevatorGlassOpacity,ShaderUniformDataType.Float);
-        View(cam.Position,world.CentralMacBookPos+new Vector3(0,1.6f,.35f),
+        View(cam.Position,world.CentralMacBookPos+new Vector3(-.35f,1.6f,0),
              world.HrTarotBoothPos+new Vector3(0,1.65f,-.6f),
              world.NorthElevatorPos+new Vector3(0,3.7f,-1),
              world.SouthElevatorDoorPos+new Vector3(0,3.7f,1),world.IsMacBookTrapActive ? 1.4f : .42f);
@@ -926,6 +941,9 @@ internal static unsafe partial class VisualEngine3D
         Rlgl.EnableDepthMask();
     }
 
+    internal static void HingedLouver(Vector3 center,float degrees) =>
+        Draw(box,center,new(.82f,.048f,.024f),new(122,137,141,255),Finish.Paint,Vector3.UnitX,degrees);
+
     public static void OrientedBox(Vector3 p, Vector3 size, float yaw, Color color) =>
         Draw(bevel,p,size,color,Finish.Paint,Vector3.UnitY,yaw*180/MathF.PI);
 
@@ -1012,7 +1030,7 @@ internal static unsafe partial class VisualEngine3D
 
     internal static void RefreshLanguage()
     {
-        foreach (var finish in new[]{Finish.Lift,Finish.Exit,Finish.JiraSheet,Finish.NdaSheet,Finish.PitchDeck})
+        foreach (var finish in new[]{Finish.Lift,Finish.Exit,Finish.Coworking,Finish.Meeting,Finish.Standup,Finish.BreakRoom,Finish.JiraSheet,Finish.NdaSheet,Finish.PitchDeck})
         {
             var old=maps[(int)finish];
             if(old.Id==0) continue;
@@ -1075,6 +1093,15 @@ internal static unsafe partial class VisualEngine3D
             Inscription(f==Finish.Exit ? "ВЫХОД" : "NOVA",96,202,Color.White);
             Raylib.ImageDrawRectangle(ref img,24,165,464,5,Color.White);
             Raylib.ImageDrawRectangle(ref img,24,344,464,5,Color.White);
+        }
+        if(f>=Finish.Coworking)
+        {
+            Raylib.UnloadImage(img);
+            img=Raylib.GenImageColor(512,80,new Color(32,47,52,255));
+            string title=f switch {
+                Finish.Coworking=>Loc.T("КОВОРКИНГ","CO-WORKING"), Finish.Meeting=>Loc.T("ПЕРЕГОВОРКА","MEETING ROOM"),
+                Finish.Standup=>Loc.T("ДЕЙЛИ-РУМ","STANDUP POD"), _=>Loc.T("КОФЕ-ПОИНТ","BREAK ROOM") };
+            Inscription(title,44,16,new(255,226,171,255));
         }
         Texture2D tex=Raylib.LoadTextureFromImage(img);
         Raylib.UnloadImage(img);
@@ -1144,7 +1171,7 @@ internal static unsafe partial class VisualEngine3D
     {
         foreach(Model m in imports.Values) Raylib.UnloadModel(m);
         imports.Clear();
-        partnerPropMeshes.Clear();
+        partnerPropMeshes.Clear(); blazerMeshes.Clear();
         armGroups.Clear();
         armWrists.Clear();
         sleeveEnds.Clear();
