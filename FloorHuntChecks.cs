@@ -191,15 +191,25 @@ public static partial class Program
             LookAtTarget(new(0f, 1.04f, 6.85f));
             capture("62_part2_12_collectible_coders_lineup.png");
 
-            // Close-up hero showcase of Vibe-Pirate, Punk Cyborg & Sleepy TeamLead at 2.1m for facial & outfit detail inspection!
+            // Close-up hero showcase of Vibe-Pirate, Punk Cyborg & Sleepy TeamLead at 1.85m for facial & outfit detail inspection!
             _world.ActiveCoders.Clear();
-            var hPirate = new VibeCoderEntity { Id=930, SpeciesId="tab", Rarity=VibeCoderRarity.Common, Position=new(-0.92f, 0f, 7.2f), FacingYaw=.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            var hPirate = new VibeCoderEntity { Id=930, SpeciesId="tab", Rarity=VibeCoderRarity.Common, Position=new(-0.82f, 0f, 7.2f), FacingYaw=.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
             var hCyborg = new VibeCoderEntity { Id=931, SpeciesId="refactor", Rarity=VibeCoderRarity.Rare, Position=new(0.0f, 0f, 7.1f), FacingYaw=0f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
-            var hSleepy = new VibeCoderEntity { Id=932, SpeciesId="call", Rarity=VibeCoderRarity.Rare, Position=new(0.92f, 0f, 7.2f), FacingYaw=-.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            var hSleepy = new VibeCoderEntity { Id=932, SpeciesId="call", Rarity=VibeCoderRarity.Rare, Position=new(0.82f, 0f, 7.2f), FacingYaw=-.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
             _world.ActiveCoders.AddRange([hPirate, hCyborg, hSleepy]);
-            _playerPos = new(0f, 1.38f, 9.55f);
-            LookAtTarget(new(0f, 1.08f, 7.15f));
+            _playerPos = new(0f, 1.40f, 9.05f);
+            LookAtTarget(new(0f, 1.15f, 7.15f));
             capture("63_part2_hero_trio_closeup.png");
+
+            // Close-up hero showcase #2: Smoothie, Wizard & Skolkovo at 1.85m
+            _world.ActiveCoders.Clear();
+            var hSmoothie = new VibeCoderEntity { Id=933, SpeciesId="smoothie", Rarity=VibeCoderRarity.Rare, Position=new(-0.82f, 0f, 7.2f), FacingYaw=.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            var hWizard   = new VibeCoderEntity { Id=934, SpeciesId="framework", Rarity=VibeCoderRarity.Epic, Position=new(0.0f, 0f, 7.1f), FacingYaw=0f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            var hSkolkovo = new VibeCoderEntity { Id=935, SpeciesId="skolkovo", Rarity=VibeCoderRarity.Epic, Position=new(0.82f, 0f, 7.2f), FacingYaw=-.18f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            _world.ActiveCoders.AddRange([hSmoothie, hWizard, hSkolkovo]);
+            _playerPos = new(0f, 1.40f, 9.05f);
+            LookAtTarget(new(0f, 1.15f, 7.15f));
+            capture("64_part2_hero_trio2_closeup.png");
         }
         ResetNewGameFloor(greet:false);
     }
