@@ -67,7 +67,7 @@ public static partial class Program
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
         guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder,
-        ProgressionVersion:1,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
+        ProgressionVersion:2,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
         ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot);
 
     private static void ApplyElevator(FloorSnapshot state)
@@ -83,6 +83,16 @@ public static partial class Program
     private static void ApplyProgression(FloorSnapshot? state)
     {
         Floor.Onboarding=state?.OnboardingStep ?? OnboardingStep.Done;
+        if(state is {ProgressionVersion:<2,OnboardingStep:{} old} && (int)old>=5)
+            Floor.Onboarding=(int)old==5 ? OnboardingStep.StunAndHeal : OnboardingStep.Done;
+        if(Floor.Onboarding==OnboardingStep.Done || state?.Sold>0 || state?.Desks.Any(d=>d.IsOccupied)==true)
+        {
+            if(state is {ProgressionVersion:<2} && Floor.Onboarding!=OnboardingStep.Done)
+                Floor.Onboarding=state.Desks.Any(d=>d.IsOccupied) ? OnboardingStep.Done : OnboardingStep.SeatFirstGalley;
+            if(!Floor.WingsUnlocked) Floor.WingBarrierSlide=1;
+            Floor.WingsUnlocked=true;
+        }
+        Floor.PocketCoffeeCups=Math.Clamp(Floor.PocketCoffeeCups,0,2);
         if(state?.ProgressionVersion is null or <1) Floor.OwnedWeaponsMask=FloorSystems.ClassicMask;
         Floor.OwnedWeaponsMask |= 1<<(int)WeaponType.BareHands;
         _weapons.Inventory=Floor;
@@ -140,13 +150,14 @@ public static partial class Program
                 partner.Effects.CurrentWeapon=shooter.Weapon;
                 var hostCarry=_world.CarriedCoder;
                 _world.CarriedCoder=guestCarried;
+                guestInteraction=true;
                 try
                 {
                     if(_world.ProcessPlayerAttack(shooter.Camera,partner.Effects,GrantCash,out var feedback))
                         Net.Send(new("status",Text:feedback));
                     guestCarried=_world.CarriedCoder;
                 }
-                finally { _world.CarriedCoder=hostCarry; }
+                finally { guestInteraction=false; _world.CarriedCoder=hostCarry; }
             }
             else partner.Attack(_world,GrantCash,Net.Host);
             if(Net.Host)
@@ -161,10 +172,20 @@ public static partial class Program
             if(joint!=null) { Net.Send(new("status",Text:joint)); return; }
             var carried=_world.CarriedCoder;
             _world.CarriedCoder=guestCarried;
-            string result=_world.Interact(actor.Camera,TrySpendCash,GrantCash,actor.Weapon);
+            string result;
+            guestInteraction=true;
+            try { result=_world.Interact(actor.Camera,TrySpendCash,GrantCash,actor.Weapon); }
+            finally { guestInteraction=false; }
             guestCarried=_world.CarriedCoder;
             _world.CarriedCoder=carried;
             Net.Send(new("status",Text:result));
+        }
+        else if(Net.Guest && message is {Kind:"hurt",Source:{} source,Text:{} label}) ShowHit(message.Amount,label,source);
+        else if(Net.Guest && message.Kind=="healed") HealFeedback(message.Amount);
+        else if(Net.Host && message.Kind=="drink")
+        {
+            guestInteraction=true;
+            try { DrinkPocketCoffee(); } finally { guestInteraction=false; }
         }
         else if(Net.Host && message.Kind=="floor-action" && int.TryParse(message.Text,out int index))
         {
@@ -213,6 +234,7 @@ public static partial class Program
 
     private static void TickFloor(float dt)
     {
+        _lastDamageTimer=Math.Max(0,_lastDamageTimer-dt); HealFlashTimer=Math.Max(0,HealFlashTimer-dt);
         if(bot && !Net.Ready) _world.Partner?.Follow(dt,LocalPose,_world,GrantCash);
         _world.Partner?.Tick(dt);
         if(Net.Guest)
@@ -221,11 +243,7 @@ public static partial class Program
             foreach(var frog in _world.Frogs) if(frog.Rest<=0) frog.AdvanceArc(dt);
             return;
         }
-        _world.UpdateWorld(dt,_playerPos,_isCrouching,(amount,_)=>_playerCash=Math.Max(0,_playerCash+amount),(damage,label)=>
-        {
-            _playerHp=AfterDamage(_playerHp,damage);
-            SetHudBanner($"ПРИЛЕТЕЛ БЛОК «{label}» (-{damage} ХП)!",2.5f);
-        },Net.Ready ? _world.Partner?.Pose.Eye : null,damage=>guestHp=AfterDamage(guestHp,damage));
+        _world.UpdateWorld(dt,_playerPos,_isCrouching,(amount,_)=>_playerCash=Math.Max(0,_playerCash+amount),ReceiveDamage,Net.Ready ? _world.Partner?.Pose.Eye : null,GuestDamage);
         Floor.UpdateOnboarding(_world,_playerCash);
     }
 
@@ -263,6 +281,13 @@ public static partial class Program
     {
         if(_world.CarriedCoder!=null && !_world.CanCarryWith(_weapons.CurrentWeapon))
             _weapons.Equip(WeaponType.BareHands);
+    }
+
+    private static void GuestDamage(int damage,string label,Vector3 source)
+    {
+        guestHp=AfterDamage(guestHp,damage);
+        Net.Send(new("hurt",Text:label,Amount:damage,Source:source));
+        BeginHealLesson();
     }
 
     private static int AfterDamage(int hp,int damage)

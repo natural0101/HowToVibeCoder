@@ -42,7 +42,7 @@ internal static class WorldLabelLayout
         return (middle+delta/scale,Vector2.Normalize(delta));
     }
 
-    internal static void DrawWaypoint(Camera3D camera,Vector3 feet,float height,string label)
+    internal static void DrawWaypoint(Camera3D camera,Vector3 feet,float height,string label,Color? tint=null)
     {
         int distance=(int)MathF.Round(Vector2.Distance(new(camera.Position.X,camera.Position.Z),new(feet.X,feet.Z)));
         string caption=$"{label}   {distance} м";
@@ -52,15 +52,15 @@ internal static class WorldLabelLayout
         var shadow=new Color(22,22,25,185);
         void Diamond(Vector2 p,Color color) => Raylib.DrawRectanglePro(new(p.X,p.Y,8.5f,8.5f),new(4.25f),45,color);
         Diamond(center+new Vector2(1,2),shadow);
-        Diamond(center,Ivory);
+        Diamond(center,tint ?? Ivory);
         if(direction!=Vector2.Zero)
         {
             var tip=center+direction*14;
             var flank=new Vector2(-direction.Y,direction.X)*3;
-            Raylib.DrawLineEx(tip-direction*4+flank,tip,1.6f,Ivory);
-            Raylib.DrawLineEx(tip-direction*4-flank,tip,1.6f,Ivory);
+            Raylib.DrawLineEx(tip-direction*4+flank,tip,1.6f,tint ?? Ivory);
+            Raylib.DrawLineEx(tip-direction*4-flank,tip,1.6f,tint ?? Ivory);
         }
-        Program.ShadowText(font,caption,center.X-width/2,center.Y-29,17,Ivory);
+        Program.ShadowText(font,caption,center.X-width/2,center.Y-29,17,tint ?? Ivory);
         Reserve(new(center.X-width/2-3,center.Y-31,width+6,46));
     }
 

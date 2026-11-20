@@ -35,6 +35,73 @@ public static partial class Program
     private static int _playerCash;
     internal static int SharedCash => _playerCash;
     private static int _playerHp = 100;
+    private static Vector3 _lastDamageSourcePos;
+    private static string _lastDamageLabel="";
+    private static int _lastDamageAmount;
+    private static float _lastDamageTimer, HealFlashTimer;
+    private static bool guestInteraction;
+    internal static bool NeedsHealing => (guestInteraction ? guestHp : _playerHp)<100;
+
+    private static void ShowHit(int amount,string label,Vector3 source)
+    {
+        _lastDamageAmount=amount; _lastDamageLabel=label; _lastDamageSourcePos=source; _lastDamageTimer=2.6f;
+        AudioMusicSystem.PlayLanding();
+    }
+    private static void ReceiveDamage(int amount,string label,Vector3 source)
+    {
+        if(guestInteraction) { GuestDamage(amount,label,source); return; }
+        _playerHp=AfterDamage(_playerHp,amount);
+        ShowHit(amount,label,source);
+        BeginHealLesson();
+    }
+    private static void BeginHealLesson()
+    {
+        if(Floor.Onboarding!=OnboardingStep.StunAndHeal) return;
+        Floor.Onboarding=OnboardingStep.HealAtCoffee;
+        Floor.Coach();
+    }
+    internal static void TrainingScratch(Vector3 source)
+    {
+        if(!NeedsHealing) ReceiveDamage(18,"Вайбкодер (искра ноута)",source);
+        else BeginHealLesson();
+    }
+    private static void HealFeedback(int stamina)
+    {
+        _energy=Math.Min(100,_energy+stamina);
+        HealFlashTimer=.5f;
+        AudioMusicSystem.PlaySip();
+    }
+    internal static string Heal(int hp,int stamina,string label)
+    {
+        if(guestInteraction)
+        {
+            guestHp=Math.Min(100,guestHp+hp);
+            Net.Send(new("healed",Amount:stamina));
+        }
+        else { _playerHp=Math.Min(100,_playerHp+hp); HealFeedback(stamina); }
+        if(Floor.Onboarding==OnboardingStep.HealAtCoffee)
+        {
+            Floor.Onboarding=OnboardingStep.CaptureFirstCoder;
+            Floor.Coach();
+        }
+        string toast=$"+{hp} HP   {label}";
+        Floor.Announce(toast,2);
+        return toast;
+    }
+    internal static void RefillCoffeeCup()
+    {
+        if(guestInteraction) Floor.GuestCoffeeCups=Math.Min(2,Floor.GuestCoffeeCups+1);
+        else Floor.PocketCoffeeCups=Math.Min(2,Floor.PocketCoffeeCups+1);
+    }
+    private static void DrinkPocketCoffee()
+    {
+        if(Net.Guest) { Net.Send(new("drink")); return; }
+        ref int cups=ref (guestInteraction ? ref Floor.GuestCoffeeCups : ref Floor.PocketCoffeeCups);
+        if(!NeedsHealing || cups==0) return;
+        cups--;
+        Heal(30,25,"СТАКАН КОФЕ");
+    }
+
     private const int XpPerLevel = 1073;
     private static int _xp = 412;
     private static SkyscraperFloor1World _menuFloor = null!;
@@ -320,6 +387,7 @@ public static partial class Program
         _isCrouching = false;
         _playerCash = 0;
         _playerHp = 100;
+        _lastDamageTimer=HealFlashTimer=0;
         _weapons = new WeaponAndCombatView { Inventory=Floor, DrawBlocked=BlockWeaponDraw };
         LoreAndMenusUI.ActiveWeaponView = _weapons;
         _xp = 412;
@@ -597,6 +665,7 @@ public static partial class Program
             feet=nextFeet;
         }
         _playerPos.Y=feet+_eyeHeight;
+        _world.CheckGateContact(beforeMove+travel,_playerPos,dt);
         Vector3 swept=_playerPos-beforeMove;
         swept.Y=0;
         if((_sprinting || burst>0) && _isGrounded && swept.LengthSquared()>.00001f)
@@ -837,6 +906,31 @@ public static partial class Program
         }
         ShadowText(_serif, ((int)MathF.Round(_energy)).ToString(), 170, sh - 59, 28, white);
 
+        ShadowText(_uiFont,"[H]",232,sh-51,18,white);
+        Raylib.DrawRing(new(277,sh-41),3,4.5f,-95,95,12,white);
+        Raylib.DrawRectangleRounded(new(262,sh-47,14,13),.42f,6,white);
+        ShadowText(_uiFont,$"×{(Net.Guest ? Floor.GuestCoffeeCups : Floor.PocketCoffeeCups)}",286,sh-51,18,white);
+        if(_playerHp<65)
+            ShadowText(_uiFont,"Хил: [H] Кофе или Кофе-машина / Пицца [E]",38,sh-120,15,new Color(178,238,201,(int)(205+42*MathF.Sin((float)Raylib.GetTime()*3))));
+        if(HealFlashTimer>0)
+        {
+            Color mint=new(99,220,158,(int)(94*HealFlashTimer/.5f));
+            Raylib.DrawRectangleGradientH(0,0,64,sh,mint,Color.Blank);
+            Raylib.DrawRectangleGradientH(sw-64,0,64,sh,Color.Blank,mint);
+        }
+        if(_lastDamageTimer>.4f)
+        {
+            var hitCamera=BuildPlayerCamera();
+            Vector3 forward=Vector3.Normalize(new Vector3(hitCamera.Target.X-hitCamera.Position.X,0,hitCamera.Target.Z-hitCamera.Position.Z));
+            var delta=_lastDamageSourcePos-hitCamera.Position;
+            float angle=MathF.Atan2(Vector3.Dot(delta,Vector3.Cross(forward,Vector3.UnitY)),-Vector3.Dot(delta,forward))*180/MathF.PI;
+            float elapsed=2.6f-_lastDamageTimer;
+            if(elapsed<.85f)
+                Raylib.DrawRing(new(cx,sh*.5f),62,65,90-angle-19,90-angle+19,20,new Color(231,63,71,(int)(220*(1-elapsed/.85f))));
+            string alert=$"-{_lastDamageAmount} HP   {_lastDamageLabel}";
+            ShadowText(_uiFont,alert,cx-GameFonts.Measure(_uiFont,alert,19).X/2,sh*.24f,19,new Color(255,173,170,(int)(255*(1-elapsed/2.2f))));
+        }
+
         var tools=_weapons.Hotbar;
         int barX=cx-(tools.Length*70-4)/2, barY=sh-82;
         for(int i=0;i<tools.Length;i++)
@@ -853,13 +947,14 @@ public static partial class Program
         DrawFloorTelemetry();
         var camera=BuildPlayerCamera();
         string target=CoopEscort(camera,false,apply:false) ?? _world.FocusPrompt(camera,_weapons.CurrentWeapon);
-        if(target.Length>0 && !(_foregroundBanner && _hudStatusTimer>0))
+        bool healingLesson=Floor.Onboarding==OnboardingStep.HealAtCoffee;
+        if(target.Length>0 && (healingLesson || !(_foregroundBanner && _hudStatusTimer>0)))
         {
             string prompt=target==SkyscraperFloor1World.HandsFullPrompt ? target : "[E]  "+target;
             float width=GameFonts.Measure(_serif,prompt,19).X;
             GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
         }
-        else if (_hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && (_foregroundBanner || !CoachingSubtitle))
+        else if (!healingLesson && _hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && (_foregroundBanner || !CoachingSubtitle))
         {
             var face = GameFonts.Get(Typeface.InterfaceBold, 20);
             float width=Math.Min(sw-24,GameFonts.Measure(face,_hudStatusBanner,20).X+28);
@@ -1146,6 +1241,7 @@ public static partial class Program
             int selected=_weapons.SelectedHotbarSlot;
             var step=Floor.Onboarding;
             int wallet=_playerCash, mask=Floor.OwnedWeaponsMask;
+            int cups=Floor.PocketCoffeeCups; bool unlocked=Floor.WingsUnlocked;
             var pocket=Floor.PocketFrogs.ToArray(); var discoveries=Floor.DiscoveredSpecies.ToArray();
             string path=Path.GetTempFileName();
             try
@@ -1157,18 +1253,32 @@ public static partial class Program
                 _playerCash=saved.Cash;
                 RestoreFloorSave(saved,path);
                 Check(Floor.Onboarding==step && !CoachingSubtitle && mask==Floor.OwnedWeaponsMask && equipped==_weapons.CurrentWeapon && selected==_weapons.SelectedHotbarSlot && _playerCash==wallet &&
-                    pocket.SequenceEqual(Floor.PocketFrogs) && discoveries.SequenceEqual(Floor.DiscoveredSpecies),"slot round-trip");
+                    cups==Floor.PocketCoffeeCups && unlocked==Floor.WingsUnlocked && pocket.SequenceEqual(Floor.PocketFrogs) && discoveries.SequenceEqual(Floor.DiscoveredSpecies),"slot round-trip");
             }
             finally { pendingShift=null; pendingFloorSave=null; File.Delete(path); }
         }
         ResetNewGameFloor();
         var bait=_world.CentralMacBookPos+Vector3.UnitY*(SkyscraperFloor1World.TrapTop+.13f);
         Approach(bait,2); Key(KeyboardKey.E);
-        Guided(OnboardingStep.CaptureFirstCoder,"Пошли клиенты");
-        Check(_playerCash==0 && _world.ActiveCoders.Any(c=>c.TimidIntern && c.Hp==24) &&
-            _world.ActiveCoders.Any(c=>!c.TimidIntern && c.Archetype==CoderArchetype.JuniorPrompter && c.Hp==50),"instant free bait wave");
+        Check(Floor.Onboarding==OnboardingStep.TalkToVeronika && _world.ActiveCoders.Count==1 &&
+            _world.ActiveCoders[0].TimidIntern && Math.Abs(_world.ActiveCoders[0].Position.X)<8.5f,"safe early bait");
+        Floor.BuyWeapon(0,_=>true); TickFloor(1f/60);
+        var trainee=_world.ActiveCoders.Single();
+        trainee.Position=new(-5.6f,0,10.4f);
+        _playerPos=new(-5.6f,1.72f,5.6f);
+        bool telegraph=false;
+        for(int i=0;i<400 && Floor.Onboarding==OnboardingStep.StunAndHeal;i++)
+        { TickFloor(1f/60); telegraph|=trainee.Windup>0; }
+        Check(telegraph && _playerHp==82 && _lastDamageLabel=="Вайбкодер (Конфликт в main)" &&
+            _lastDamageSourcePos==trainee.Position,"telegraphed training projectile");
+        Key(KeyboardKey.H);
+        Check(Floor.Onboarding==OnboardingStep.CaptureFirstCoder && _playerHp==100 && Floor.PocketCoffeeCups==1,"alternative healing lesson");
+        Floor.NextIncident=.01f; Floor.SEC=85;
+        for(int i=0;i<300;i++) TickFloor(.05f);
+        Check(Floor.LastIncident==-1 && !Floor.Raid && Floor.Audit==0 && _world.ActiveCoders.Count==1 &&
+            _world.Frogs.All(f=>Math.Abs(f.Feet.X)<8.5f && f.Feet.Z is >=4 and <=14.5f),"contained atrium");
         ResetNewGameFloor();
-        Floor.PocketFrogs.AddRange(["frog_hopper","frog_syntax"]);
+        Floor.PocketFrogs.AddRange(["frog_hopper","frog_hopper","frog_syntax"]);
         TickFloor(1f/60); Guided(OnboardingStep.DepositFrogs,"Отличный улов");
         ResetNewGameFloor();
         GrantCash(3,"Тест"); TickFloor(1f/60); Guided(OnboardingStep.BuyNet,"Наличка");
@@ -1176,6 +1286,27 @@ public static partial class Program
         Floor.BuyWeapon(0,_=>true); TickFloor(1f/60); Guided(OnboardingStep.ActivateBait,"Сачок в руках");
         ResetNewGameFloor();
         Guided(OnboardingStep.TalkToVeronika,"хозяин вернулся");
+        var entrance=_playerPos;
+        var gate=new Vector3(-9.6f,1.72f,5.2f);
+        _playerPos=gate+new Vector3(2.45f,0,.4f); LookAtTarget(gate);
+        capture("30_locked_wing_barrier.png");
+        Key(KeyboardKey.E);
+        Check(AudioMusicSystem.ActiveClipId=="vo_veronika_wings_locked" && Floor.BarrierVoiceWait>24,"barrier explains quarantine");
+        Floor.Coach(); Key(KeyboardKey.E);
+        Check(AudioMusicSystem.ActiveClipId!="vo_veronika_wings_locked","barrier voice cooldown");
+        foreach(var (feet,side) in SkyscraperFloor1World.Gates)
+        {
+            var normal=side?Vector3.UnitX*Math.Sign(-feet.X):Vector3.UnitZ;
+            var probe=feet+normal*.04f;
+            Check(Vector3.Dot(_world.ResolvePlayerCollision(probe)-feet,normal)>.49f,"solid gate "+feet);
+        }
+        foreach(int side in new[]{-1,1})
+        {
+            _playerPos=new(side*8.5f,1.72f,5.2f);
+            for(int frame=0;frame<25;frame++) MovePlayer(1f/60,Vector3.UnitX*side,Vector3.UnitX*side,false,false,false);
+            Check(side*_playerPos.X<9.2f,"walk blocked at wing gate");
+        }
+        _playerPos=entrance; LookAtTarget(_world.HrTarotBoothPos+new Vector3(-.45f,1.26f,0));
         var cam=BuildPlayerCamera();
         var hr=_world.HrTarotBoothPos+Vector3.UnitY*2.12f;
         Check(_playerPos==LobbyEntrance && WorldLabelLayout.WaypointProjection(cam,hr,180).Direction==Vector2.Zero,"safe spawn facing HR");
@@ -1247,7 +1378,7 @@ public static partial class Program
         LookAtTarget(bait);
         capture("20_onboarding_bait_beacon.png");
         Approach(bait,2); Key(KeyboardKey.E);
-        Guided(OnboardingStep.CaptureFirstCoder,"Пошли клиенты");
+        Guided(OnboardingStep.StunAndHeal,"Пошли клиенты");
         Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.ActiveCoders.MinBy(c=>Vector3.DistanceSquared(_playerPos,c.Position))?.Position,"nearest candidate");
         Check(_world.IsMacBookTrapActive && _world.ActiveCoders.Any(c=>c.TimidIntern),"guided free wave");
         Check(_playerCash==1 && _weapons.SelectedHotbarSlot==0 && _weapons.HotbarSlotCount==4 &&
@@ -1280,11 +1411,31 @@ public static partial class Program
         Approach(cluster+Vector3.UnitY*.15f,1.7f); Attack();
         Check(Floor.PocketFrogs.Count==carried+3 && _world.Frogs.Count(f=>f.From.X>22)==1,"three per sweep");
         var intern=_world.ActiveCoders.First(c=>c.TimidIntern);
-        intern.Position=new(24,0,14);
+        intern.Position=new(-4.5f,0,6);
         Approach(intern.CombatCenter);
         Attack(); Check(intern.Hp==12 && intern.State!=CoderAIState.Subdued,"first net swipe");
         LookAtTarget(intern.CombatCenter);
         Attack(); Check(intern.State==CoderAIState.Subdued,"net subdues intern");
+        Guided(OnboardingStep.HealAtCoffee,"Тебя задели");
+        Check(_playerHp==82 && _lastDamageAmount==18 && _lastDamageTimer>2.4f && _lastDamageLabel.Contains("искра"),"attributed scratch");
+        _playerPos=SkyscraperFloor1World.CoffeePos+new Vector3(-.6f,1.72f,1.65f);
+        LookAtTarget(SkyscraperFloor1World.CoffeePos+Vector3.UnitY*1.03f);
+        capture("31_heal_station_and_hud.png");
+        _playerHp=42; _energy=25; Floor.PocketCoffeeCups=1;
+        Approach(SkyscraperFloor1World.CoffeePos+Vector3.UnitY*1.15f); Key(KeyboardKey.E);
+        Check(_playerHp==87 && _energy>=75 && Floor.PocketCoffeeCups==2 && Floor.EspressoWait>11,"espresso +45 +50 and refill");
+        Guided(OnboardingStep.CaptureFirstCoder,"Бодрящий");
+        _playerHp=40; Key(KeyboardKey.H);
+        Check(_playerHp==70 && Floor.PocketCoffeeCups==1,"pocket +30");
+        _playerHp=35; Approach(new(4,.95f,13)); Key(KeyboardKey.E);
+        Check(_playerHp==70,"pizza +35");
+        Approach(new(3.15f,.9f,14.75f)); Key(KeyboardKey.E);
+        Check(_playerHp==95,"water +25");
+        _playerHp=35; Key(KeyboardKey.E); Key(KeyboardKey.E);
+        Check(_playerHp==60,"cooler has two drinks");
+        Approach(new(4,.95f,13)); Key(KeyboardKey.E); Check(_playerHp==60,"pizza on cooldown");
+        Approach(SkyscraperFloor1World.CoffeePos+Vector3.UnitY*1.15f); Key(KeyboardKey.E);
+        Check(_playerHp==60 && Floor.PocketCoffeeCups==1,"espresso on cooldown");
         Approach(intern.Position+Vector3.UnitY*.45f);
         Check(_world.FocusPrompt(BuildPlayerCamera(),_weapons.CurrentWeapon)==SkyscraperFloor1World.HandsFullPrompt,"armed pickup prompt");
         int cashBeforeNda=_playerCash;
@@ -1297,12 +1448,37 @@ public static partial class Program
         Key(KeyboardKey.One);
         Check(_weapons.CurrentWeapon==WeaponType.BareHands && _weapons.SelectedHotbarSlot==-1 &&
             _world.CarriedCoder==intern && _hudStatusBanner.Contains("Отнеси вайбкодера"),"draw blocked during escort");
-        Check(_world.OnboardingWaypoint(_playerPos)?.Label.Contains("Галеру")==true &&
-            Floor.Objective(true).StartsWith("Отнеси"),"carried candidate destination");
+        Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.HrTarotBoothPos,"HR delivery waypoint");
+        Approach(_world.HrTarotBoothPos+Vector3.UnitY*1.6f,2); Key(KeyboardKey.E);
+        Guided(OnboardingStep.SeatFirstGalley,"карантин снят");
+        Check(Floor.WingsUnlocked,"first sale unlocks wings");
+        for(int i=0;i<90;i++) TickFloor(1f/60);
+        foreach(var (feet,side) in SkyscraperFloor1World.Gates)
+            Check(Vector3.Distance(_world.ResolvePlayerCollision(feet),feet)<.01f,"open gate "+feet);
+        Check(Floor.WingBarrierSlide==1,"glass retracted");
+        foreach(int side in new[]{-1,1})
+        {
+            _playerPos=new(side*8.5f,1.72f,5.2f);
+            for(int i=0;i<25;i++) MovePlayer(1f/60,Vector3.UnitX*side,Vector3.UnitX*side,false,false,false);
+            Check(side*_playerPos.X>10,"walk through open portal");
+        }
+
+        _world.ActivateMacBookTrap(SubscriptionBaitTier.FreeTier,TrySpendCash,out _);
+        var recruit=_world.ActiveCoders.First(c=>c.Archetype==CoderArchetype.JuniorPrompter);
+        recruit.Position=new(-6,0,7);
+        _weapons.Equip(WeaponType.CaptureNet);
+        for(int hit=0;hit<8 && !recruit.CanSignNda;hit++)
+        { Approach(recruit.CombatCenter); Attack(); }
+        Check(recruit.CanSignNda,"second candidate net capture"); _weapons.Equip(WeaponType.BareHands);
+        Approach(recruit.Position+Vector3.UnitY*.45f); Key(KeyboardKey.E);
+        _playerPos=gate+new Vector3(1.7f,0,-.68f);
+        LookAtTarget(_world.GalleyDesks[0].DeskPosition+Vector3.UnitY*.92f);
+        for(int i=0;i<145;i++) { UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents(); }
+        capture("32_wings_unlocked_galley.png");
         Approach(_world.GalleyDesks[0].DeskPosition+Vector3.UnitY*.9f*SkyscraperFloor1World.WorkstationScale,1.9f);
         Key(KeyboardKey.E);
         Check(_world.GalleyDesks[0].IsOccupied,"intern payroll");
-        Guided(OnboardingStep.Done,"Дело пошло");
+        Guided(OnboardingStep.Done,"Первый гребец");
         for(int i=1;i<FloorSystems.Weapons.Length;i++)
         {
             int price=FloorSystems.Weapons[i].Price;
@@ -1354,6 +1530,7 @@ public static partial class Program
             Check(Floor.Onboarding==OnboardingStep.Done && !CoachingSubtitle,"previous snapshot without onboarding");
         }
         finally { File.Delete(oldSlot); }
+        Console.WriteLine("[AUTOTEST] PASS Floor 1: eight gates, locked/open walks, training throw and net spark, four heals, first HR sale and Galley");
         _weapons.UnlockedSawedOff=false;
         _weapons.UnlockedChatGun=true;
         Key(KeyboardKey.T);
@@ -1369,7 +1546,7 @@ public static partial class Program
     private static void ResetClassicFixture()
     {
         ResetNewGameFloor(greet:false);
-        Floor.Onboarding=OnboardingStep.Done;
+        Floor.Onboarding=OnboardingStep.Done; Floor.WingsUnlocked=true; Floor.WingBarrierSlide=1;
         _world.IsMacBookTrapActive=true;
         _world.CoderSpawnTimer=600;
         _world.SpawnFighter(CoderArchetype.JuniorPrompter,new(-8,0,5.5f));
@@ -1730,7 +1907,7 @@ public static partial class Program
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
         if(_world.CarriedCoder!=null || Floor.PocketFrogs.Count!=1 || _playerCash<=0 ||
             _world.FocusPrompt(BuildPlayerCamera())!="Сдать Джаба-жаб Веронике") throw new InvalidDataException("HR tarot payout");
-        if(Floor.Onboarding!=OnboardingStep.Done || _world.OnboardingWaypoint(_playerPos)!=null || !AudioMusicSystem.ActiveVoiceText.Contains("Дело пошло"))
+        if(Floor.Onboarding!=OnboardingStep.SeatFirstGalley || !Floor.WingsUnlocked || !AudioMusicSystem.ActiveVoiceText.Contains("карантин снят"))
             throw new InvalidDataException("HR delivery completes onboarding");
         int wallet=_playerCash;
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
@@ -1751,7 +1928,7 @@ public static partial class Program
             if(!ok) throw new InvalidDataException("Elevator reveal: "+what);
         }
         ResetNewGameFloor(greet:false);
-        Floor.Onboarding=OnboardingStep.Done;
+        Floor.Onboarding=OnboardingStep.Done; Floor.WingsUnlocked=true; Floor.WingBarrierSlide=1;
         var north=_world.NorthElevatorPos;
         void FrameDoors()
         {
@@ -1841,7 +2018,7 @@ public static partial class Program
         foreach(bool miniboss in new[]{false,true})
         {
             ResetNewGameFloor(greet:false);
-            Floor.Onboarding=OnboardingStep.Done;
+            Floor.Onboarding=OnboardingStep.Done; Floor.WingsUnlocked=true; Floor.WingBarrierSlide=1;
             var feet=new Vector3(24,0,17);
             var carrier=miniboss ? _world.SpawnCoderForTier(SubscriptionBaitTier.CloudEntropicMax) :
                 _world.SpawnFighter(CoderArchetype.SecurityGuard,feet);
@@ -1912,7 +2089,7 @@ public static partial class Program
         Floor.Onboarding=OnboardingStep.BuyNet;
         _world.UpdateIntercom(80);
         if(AudioMusicSystem.VoiceTimer>0) throw new InvalidDataException("PA during onboarding");
-        Floor.Onboarding=OnboardingStep.Done;
+        Floor.Onboarding=OnboardingStep.Done; Floor.WingsUnlocked=true; Floor.WingBarrierSlide=1;
         FloorSystems.SpeakCoaching("Проверка связи");
         _world.UpdateIntercom(65);
         if(!CoachingSubtitle) throw new InvalidDataException("PA interrupted coaching");

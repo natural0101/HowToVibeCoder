@@ -7,7 +7,7 @@ using Raylib_cs;
 namespace HowToVibeCoder;
 
 internal enum FloorPanel { None, Contracts, Upgrades, Debrief, Audit, BossFinale }
-internal enum OnboardingStep { TalkToVeronika, CatchFrogs, DepositFrogs, BuyNet, ActivateBait, CaptureFirstCoder, Done }
+internal enum OnboardingStep { TalkToVeronika, CatchFrogs, DepositFrogs, BuyNet, ActivateBait, StunAndHeal, HealAtCoffee, CaptureFirstCoder, SeatFirstGalley, Done }
 internal enum Incident { Printer, Coffee, Bugs, Audit, Ddos, Burnout, Raid, Fire }
 internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2, CarryHarness }
 internal enum StyleAction { Belt, Iron, Uzi, Shotgun, Beam, Parry, Water, Capture }
@@ -64,8 +64,13 @@ internal sealed partial class FloorSystems
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
     public List<string> PocketFrogs=new();
     internal OnboardingStep Onboarding { get; set; }
+    public bool WingsUnlocked, GalleyTipPending;
+    public float WingBarrierSlide, EspressoWait, BarrierVoiceWait;
+    public int PocketCoffeeCups=2, GuestCoffeeCups=2;
+    public Dictionary<int,float> StationWait=new();
+    public Dictionary<int,int> CoolerDrinks=new();
     public bool FirstFrogCheered;
-    internal int FrogProgress => Math.Min(3, Math.Max(PocketFrogs.Count, PocketFrogs.Sum(id=>VibeCoderCollection.Frogs[id].SalePrice)));
+    internal int FrogProgress => Math.Min(3,PocketFrogs.Count);
 
     internal string Objective(bool carrying) => Onboarding switch
     {
@@ -74,7 +79,10 @@ internal sealed partial class FloorSystems
         OnboardingStep.DepositFrogs => "Сдай Джаба-жаб в Баг-трекер [E]",
         OnboardingStep.BuyNet => "Купи Сачок-ловушку ($3) у Вероники [E]",
         OnboardingStep.ActivateBait => "Запусти ЯблоБук-приманку в центре [E]",
-        OnboardingStep.CaptureFirstCoder => carrying ? "Отнеси вайбкодера Веронике или на стол Галеры [E]" :
+        OnboardingStep.HealAtCoffee => "Выпей эспрессо у стойки (+45 HP) [E]",
+        OnboardingStep.StunAndHeal => "Оглуши стажёра сачком [ЛКМ]",
+        OnboardingStep.SeatFirstGalley => carrying ? "Отведи кадра на свободный стол Галеры [E]" : "Примани второго вайбкодера для Галеры [E]",
+        OnboardingStep.CaptureFirstCoder => carrying ? "Отнеси вайбкодера Веронике [E]" :
             "Оглуши вайбкодера (ЛКМ), освободи руки и подними [E]",
         _ => ""
     };
@@ -86,14 +94,17 @@ internal sealed partial class FloorSystems
             OnboardingStep.DepositFrogs => "Отличный улов! Скинь жаб в Баг-трекер рядом со стойкой [E] — он сразу выдаст наличку.",
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
             OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к ЯблоБуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
-            OnboardingStep.CaptureFirstCoder => "Пошли клиенты! Оглуши первого сачком (ЛКМ), убери сачок повторным [1] и подними вайбкодера голыми руками [E]!",
+            OnboardingStep.StunAndHeal => "Пошли клиенты! Оглуши первого сачком (ЛКМ), убери сачок повторным [1] и подними вайбкодера голыми руками [E]!",
+            OnboardingStep.HealAtCoffee => "Тебя задели! Вайбкодеры кидаются багами и больно бьют. Подойди к кофе-машине рядом со стойкой и выпей эспрессо — восстановишь здоровье! В бою ещё спасают пицца, кулеры и стакан кофе на кнопку Эйч.",
+            OnboardingStep.CaptureFirstCoder => "Бодрящий эспрессо творит чудеса! Теперь убери сачок повторным нажатием единицы, подними оглушённого вайбкодера голыми руками и неси ко мне!",
+            OnboardingStep.SeatFirstGalley => "Отлично, карантин снят — Западное и Восточное крылья открыты! Слева Галера: сажай туда вайбкодеров за пассивный доход. Справа серверная и охрана эс-бэ — у них есть пропуск, но дерутся они жёстко!",
             _ => "Дело пошло! Чтобы уехать на 2-й этаж, перепаяй Северный лифт Паяльником и сними замок СБ — могу перепрошить Ключ-карту за $1000 у меня [E], либо отбери оригинал у СБ."
         };
     internal static string CoachClip(OnboardingStep step) => "vo_veronika_"+(step switch
     {
         OnboardingStep.TalkToVeronika=>"intro", OnboardingStep.CatchFrogs=>"frogs",
         OnboardingStep.DepositFrogs=>"deposit", OnboardingStep.BuyNet=>"buynet",
-        OnboardingStep.ActivateBait=>"bait", OnboardingStep.CaptureFirstCoder=>"capture", _=>"done"
+        OnboardingStep.ActivateBait=>"bait", OnboardingStep.StunAndHeal=>"capture", OnboardingStep.HealAtCoffee=>"heal_lesson", OnboardingStep.CaptureFirstCoder=>"heal_done", OnboardingStep.SeatFirstGalley=>"wings_unlocked", _=>"done"
     });
     internal void Coach() => SpeakCoaching(CoachText(Onboarding),CoachClip(Onboarding));
 
@@ -104,9 +115,25 @@ internal sealed partial class FloorSystems
 
     internal void UpdateOnboarding(SkyscraperFloor1World world,int cash)
     {
-        if(Onboarding==OnboardingStep.Done) return;
-        var next=world.TotalCodersSoldToHr>0 || world.GalleyDesks.Exists(d=>d.IsOccupied) ? OnboardingStep.Done :
-            world.IsMacBookTrapActive ? OnboardingStep.CaptureFirstCoder :
+        if(GalleyTipPending && AudioMusicSystem.VoiceTimer<=0)
+        { GalleyTipPending=false; SpeakCoaching(GalleyLine); }
+        bool seated=world.GalleyDesks.Exists(d=>d.IsOccupied);
+        if(!WingsUnlocked && (world.TotalCodersSoldToHr>0 || seated))
+        {
+            WingsUnlocked=true;
+            AudioMusicSystem.PlayMacbookBait();
+            Onboarding=seated ? OnboardingStep.Done : OnboardingStep.SeatFirstGalley;
+            SpeakCoaching(CoachText(OnboardingStep.SeatFirstGalley));
+            if(seated) GalleyTipPending=true;
+            return;
+        }
+        if(Onboarding==OnboardingStep.SeatFirstGalley && (seated || HasWeapon(WeaponType.SolderingIron) || world.HasElevatorKey))
+        {
+            Onboarding=OnboardingStep.Done;
+            SpeakCoaching(GalleyLine);
+        }
+        if(Onboarding>=OnboardingStep.StunAndHeal) return;
+        var next=world.IsMacBookTrapActive && HasWeapon(WeaponType.CaptureNet) ? OnboardingStep.StunAndHeal :
             HasWeapon(WeaponType.CaptureNet) ? OnboardingStep.ActivateBait :
             cash>=3 ? OnboardingStep.BuyNet :
             FrogProgress>=3 ? OnboardingStep.DepositFrogs : Onboarding;
@@ -121,6 +148,8 @@ internal sealed partial class FloorSystems
             CheerFirstFrog();
         }
     }
+    internal const string LockedLine="Крылья офиса пока на карантине эс-бэ. Сначала освойся в атриуме и принеси мне первого вайбкодера — тогда сниму блокировку.";
+    internal const string GalleyLine="Первый гребец сел на Галеру и уже приносит кэш! Копи на Паяльник и Ключ-карту эс-бэ — и сможешь вскрыть Северный лифт на второй этаж.";
     internal const string FirstFrogLine="Есть первая! Ещё пару штук — и хватит на Сачок.";
     internal static void CheerFirstFrog() => SpeakCoaching(FirstFrogLine);
     internal bool HasWeapon(WeaponType w) => (OwnedWeaponsMask & (1<<(int)w))!=0;
@@ -374,6 +403,13 @@ internal sealed partial class FloorSystems
         if(StyleTime==0) { Recent.Clear(); Repeats=0; Variety=1; Authority=Down(Authority); }
         if(Audit>0 && !AuditPresented && (Audit=Down(Audit))==0)
         { Risk(security:22); Announce("Срок ответа истёк. СБ +22"); }
+        if(WingsUnlocked) WingBarrierSlide=Math.Min(1,WingBarrierSlide+dt/1.4f);
+        EspressoWait=Down(EspressoWait); BarrierVoiceWait=Down(BarrierVoiceWait);
+        foreach(int id in StationWait.Keys.ToArray())
+        {
+            StationWait[id]=Down(StationWait[id]);
+            if(StationWait[id]==0) { StationWait.Remove(id); CoolerDrinks.Remove(id); }
+        }
         TickOffice(dt,world);
         int staff=world.GalleyDesks.Count(d=>d.IsOccupied);
         float rush=JobId>=0 && Remaining<Jobs[JobId].Seconds*.2f ? .17f*dt : 0;
@@ -390,7 +426,7 @@ internal sealed partial class FloorSystems
             if(Friday==0) foreach(var c in world.ActiveCoders) c.ReleaseAttacker=false;
         }
         if(Raid && !world.ActiveCoders.Exists(c=>c.RaidGuard && c.State!=CoderAIState.Subdued)) Raid=false;
-        if((NextIncident-=dt)<=0)
+        if(WingsUnlocked && (NextIncident-=dt)<=0)
         {
             List<Incident> options=[Incident.Printer,Incident.Audit];
             if(world.IsMacBookTrapActive) options.Add(Incident.Bugs);
@@ -512,9 +548,12 @@ public static partial class Program
         _world.SelectedBaitTier=state.Bait; _world.IsMacBookTrapActive=state.Trap; _world.TotalCodersSoldToHr=state.Sold;
         _world.ActiveCoders.Clear(); _world.ActiveCoders.AddRange(state.Coders);
         if(state.Carried!=null) _world.ActiveCoders.Add(state.Carried);
+        foreach(var desk in state.Desks)
+            if((uint)desk.Index<_world.GalleyDesks.Count) desk.DeskPosition=_world.GalleyDesks[desk.Index].DeskPosition;
         _world.GalleyDesks.Clear(); _world.GalleyDesks.AddRange(state.Desks);
         _world.EnemyProjectiles.Clear(); _world.EnemyProjectiles.AddRange(state.Projectiles);
         _world.ResumeCoderIds();
+        if(state.ProgressionVersion<2 && !Floor.WingsUnlocked) _world.MigrateTrainingAtrium();
     }
     private static FloorPanel floorPanel;
     private static bool sidegrades;
@@ -624,6 +663,7 @@ public static partial class Program
         {
             if(Key(KeyboardKey.J)) OpenFloorPanel(FloorPanel.Contracts);
             else if(Key(KeyboardKey.U)) OpenFloorPanel(FloorPanel.Upgrades);
+            else if(Key(KeyboardKey.H)) DrinkPocketCoffee();
             else if(Key(KeyboardKey.G)) SetHudBanner(FloorAction(PagerAction));
             return floorPanel!=FloorPanel.None;
         }
@@ -700,6 +740,7 @@ public static partial class Program
         Raylib.DrawTextEx(face,text,pos,size,spacing,ink);
     }
 
+    private static readonly string[] BeatTitles=["РАЗГОВОР С HR","ДЖАБА-ЖАБЫ","БАГ-ТРЕКЕР","САЧОК","ЯБЛОБУК","СТАЖЁР","ХИЛ У КОФЕ-МАШИНЫ","ПЕРВЫЙ КАДР","ГАЛЕРА"];
     private static void DrawFloorTelemetry()
     {
         int x=28, right=UiViewport.Width-28;
@@ -712,37 +753,26 @@ public static partial class Program
             ShadowText(small,label,x,22,13,mist);
             string number=$"{(int)value:00}";
             ShadowText(_uiFont,number,x+52-GameFonts.Measure(_uiFont,number,15).X,20,15,ink);
-            Raylib.DrawRectangle(x,43,52,3,track);
-            Raylib.DrawRectangle(x,43,(int)MathF.Ceiling(52*value/100),3,ink);
             x+=75;
         }
-        Gauge("ТД",Floor.TD); Gauge("ПРОД",Floor.PT); Gauge("СБ",Floor.SEC);
-        if(Floor.StyleTime>0)
+        if(Floor.WingsUnlocked) { Gauge("ТД",Floor.TD); Gauge("ПРОД",Floor.PT); Gauge("СБ",Floor.SEC); }
+        if(Floor.WingsUnlocked && Floor.StyleTime>0)
         {
             Color ink=Raylib.Fade(amber,Math.Min(1,Floor.StyleTime));
             ShadowText(display,Floor.RankIndex==4 ? "S" : Floor.Rank,x,13,28,ink);
-            Raylib.DrawLine(x+31,23,x+31,42,ink);
             ShadowText(small,FormattableString.Invariant($"АВТОРИТЕТ  ×{Floor.Variety:0.0}"),x+40,25,13,ink);
         }
         string progress=Floor.JobId==0 ? $"Галера {Floor.Seated}/2    ${Floor.Earned} / $450" : Floor.Progress;
         int seconds=(int)MathF.Ceiling(Floor.Remaining);
         string objective=Floor.JobId>=0 ? $"{seconds/60}:{seconds%60:00}    {progress}" : progress;
-        ShadowText(_uiFont,objective,28,54,16,paper);
         bool guiding=Floor.Onboarding!=OnboardingStep.Done;
-        if(guiding)
-            ShadowText(_uiFont,"Цель: "+Floor.Objective(_world.CarriedCoder!=null),28,77,17,WorldLabelLayout.Ivory);
         bool repairObjective=!guiding && _world.BrokenElevator;
-        if(repairObjective)
-        {
-            string task=(_world.HasElevatorKey, Floor.HasWeapon(WeaponType.SolderingIron)) switch
-            {
-                (false,false) => "Цель: Купи Паяльник ($90) и достань Ключ-карту СБ у Вероники [E] или с СБ",
-                (false,true) => "Цель: Достань Ключ-карту СБ (у Вероники $1000 или с СБ-шника)",
-                (true,false) => "Цель: Купи Паяльник ($90) у Вероники для починки щитка",
-                (true,true) => "Цель: Почини щиток и приложи Ключ-карту у Северного лифта [E]"
-            };
-            ShadowText(_uiFont,task,28,77,17,WorldLabelLayout.Ivory);
-        }
+        int beat=(int)Floor.Onboarding;
+        string heading=guiding ? $"ШАГ {(beat<6 ? beat+1 : beat)}/8   {BeatTitles[beat]}" : "ЦЕЛЬ   ПРОРЫВ НА 2-Й ЭТАЖ";
+        string detail=guiding ? Floor.Objective(_world.CarriedCoder!=null) :
+            Floor.JobId>=0 ? objective : $"[{(Floor.HasWeapon(WeaponType.SolderingIron)?"×":" ")}] Паяльник ($90)    [{(_world.HasElevatorKey?"×":" ")}] Ключ-карта СБ";
+        ShadowText(_uiFont,heading,28,Floor.WingsUnlocked ? 54 : 22,16,paper);
+        ShadowText(_uiFont,detail,28,Floor.WingsUnlocked ? 77 : 45,17,WorldLabelLayout.Ivory);
         string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)

@@ -21,10 +21,10 @@ internal sealed partial class FloorSystems
         Steam=Down(Steam); RackSmoke=Down(RackSmoke); PocketSmoke=Down(PocketSmoke);
         PocketRecharge=Down(PocketRecharge); HostStun=Down(HostStun); GuestStun=Down(GuestStun);
         ShutdownTime=Down(ShutdownTime); Defiance=Down(Defiance);
-        if(SEC>=45 && !PatrolThreshold && !Protection && !world.ActiveCoders.Exists(c=>c.Archetype==CoderArchetype.SecurityGuard && c.Hp>0))
+        if(WingsUnlocked && SEC>=45 && !PatrolThreshold && !Protection && !world.ActiveCoders.Exists(c=>c.Archetype==CoderArchetype.SecurityGuard && c.Hp>0))
             world.SpawnWave(1,raid:true);
         PatrolThreshold=SEC>=45;
-        if(SEC>=55 && !AuditThreshold && Audit<=0) IncidentNow(Incident.Audit,world);
+        if(WingsUnlocked && SEC>=55 && !AuditThreshold && Audit<=0) IncidentNow(Incident.Audit,world);
         AuditThreshold=SEC>=55;
         if(Protection) Risk(security:-1.2f*dt);
     }

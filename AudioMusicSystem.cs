@@ -47,6 +47,7 @@ namespace HowToVibeCoder
         public static Sound SfxShotgunBlast { get; private set; }
         public static Sound SfxChatgunBeam { get; private set; }
         public static Sound SfxHitmarker { get; private set; }
+        private static Sound sip;
         public static Sound SfxMacbookBait { get; private set; }
         public static Sound SfxAnxietyAlarm { get; private set; }
         public static Sound SfxSubduedDrop { get; private set; }
@@ -191,6 +192,7 @@ namespace HowToVibeCoder
                 SfxShotgunBlast = LoadAndRegister("shotgun_blast.wav");
                 SfxChatgunBeam = LoadAndRegister("chatgun_beam.wav");
                 SfxHitmarker = LoadAndRegister("hitmarker.wav");
+                sip = LoadAndRegister("coffee_sip.wav");
                 SfxMacbookBait = LoadAndRegister("macbook_bait.wav");
                 SfxAnxietyAlarm = LoadAndRegister("anxiety_alarm.wav");
                 SfxSubduedDrop = LoadAndRegister("subdued_drop.wav");
@@ -254,6 +256,7 @@ namespace HowToVibeCoder
             EnsureWavFile("galley_whack.wav", SynthesizeGalleyWhack);
             EnsureWavFile("case_tick.wav", SynthesizeCaseTick);
             EnsureWavFile("boss_siren.wav", SynthesizeBossSiren);
+            EnsureWavFile("coffee_sip.wav", SynthesizeSip);
             EnsureMusicFiles(SoundsDir);
             EnsureWavFile("voice_boss_90s.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.Boss90s));
             EnsureWavFile("voice_veronika.wav", () => SynthesizeVoiceCadence(SpeakerVoiceType.VeronikaTarot));
@@ -380,7 +383,15 @@ namespace HowToVibeCoder
                 if (!Raylib.IsSoundValid(sound)) throw new InvalidDataException("Invalid movement/reload sound");
                 Raylib.UnloadSound(sound);
             }
-            Console.WriteLine("[AUTOTEST] Landing thump and reload clack loaded, native master=0");
+            EnsureWavFile("coffee_sip.wav",SynthesizeSip);
+            var sipWave=Raylib.LoadWave(Path.Combine(SoundsDir,"coffee_sip.wav"));
+            try
+            {
+                if(!Raylib.IsWaveValid(sipWave) || sipWave.SampleRate!=44100 || sipWave.SampleCount!=24255)
+                    throw new InvalidDataException("Invalid coffee sip sound");
+            }
+            finally { Raylib.UnloadWave(sipWave); }
+            Console.WriteLine("[AUTOTEST] Landing thump, reload clack and coffee sip loaded, native master=0");
         }
 
         private static short[] CaptureSound(string kind)
@@ -487,6 +498,8 @@ namespace HowToVibeCoder
                 foreach (var step in Enum.GetValues<OnboardingStep>())
                     if (line==FloorSystems.CoachText(step)) return FloorSystems.CoachClip(step);
                 if (line==FloorSystems.KeycardPurchaseLine) return "vo_veronika_keycard";
+                if(line==FloorSystems.LockedLine) return "vo_veronika_wings_locked";
+                if(line==FloorSystems.GalleyLine) return "vo_veronika_galley_tip";
                 if (line==FloorSystems.FirstFrogLine) return "vo_veronika_first_frog";
                 if (line==FloorSystems.ShopGreeting) return "vo_veronika_shop_open";
                 return "vo_veronika_tarot_"+Math.Max(0,Array.IndexOf(VeronikaTarotLines,line))%3;
@@ -511,6 +524,8 @@ namespace HowToVibeCoder
             }
             void Veronika(string line,string id)=>Route("Вероника","Вероника: "+line,SpeakerVoiceType.VeronikaTarot,id);
             foreach(var step in Enum.GetValues<OnboardingStep>()) Veronika(FloorSystems.CoachText(step),FloorSystems.CoachClip(step));
+            Veronika(FloorSystems.LockedLine,"vo_veronika_wings_locked");
+            Veronika(FloorSystems.GalleyLine,"vo_veronika_galley_tip");
             Veronika(FloorSystems.FirstFrogLine,"vo_veronika_first_frog");
             Veronika(FloorSystems.ShopGreeting,"vo_veronika_shop_open");
             Veronika(FloorSystems.KeycardPurchaseLine,"vo_veronika_keycard");
@@ -527,10 +542,16 @@ namespace HowToVibeCoder
             Route("КОММЕРС 90-Х",Boss90sUziLines[0],SpeakerVoiceType.Boss90s,"vo_boss90s_2");
             string directory=Path.Combine(SoundsDir,"vo");
             using var manifest=System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory,"vo_manifest.json")));
-            if(routes.Count!=31) throw new InvalidDataException("Incomplete studio voice coverage");
+            var project=new DirectoryInfo(AppContext.BaseDirectory);
+            while(project!=null && !File.Exists(Path.Combine(project.FullName,"HowToVibeCoder.csproj"))) project=project.Parent;
+            string sourceRoot=project?.FullName ?? Directory.GetCurrentDirectory();
+            if(routes.Count!=36 || manifest.RootElement.EnumerateObject().Count()!=36) throw new InvalidDataException("Incomplete studio voice coverage");
             foreach(string id in routes)
             {
-                var wave=Raylib.LoadWave(Path.Combine(directory,id+".wav"));
+                string output=Path.Combine(AppContext.BaseDirectory,"assets","sounds","vo",id+".wav");
+                string source=Path.Combine(sourceRoot,"assets","sounds","vo",id+".wav");
+                if(!File.ReadAllBytes(source).SequenceEqual(File.ReadAllBytes(output))) throw new InvalidDataException("Studio voice copy: "+id);
+                var wave=Raylib.LoadWave(output);
                 try
                 {
                     float duration=wave.SampleCount/(float)wave.SampleRate;
@@ -539,7 +560,7 @@ namespace HowToVibeCoder
                 }
                 finally { Raylib.UnloadWave(wave); }
             }
-            Console.WriteLine("[AUTOTEST] PASS studio voices: 31 event routes, output WAVs decoded, manifest durations matched");
+            Console.WriteLine("[AUTOTEST] PASS studio voices: 36 event routes, output WAVs decoded, manifest durations matched");
         }
 
         internal static void Speak(string speaker,string text,SpeakerVoiceType voice,string clipId=null) =>
@@ -850,6 +871,20 @@ namespace HowToVibeCoder
         }
 
         // 6. hitmarker.wav: crisp CS/CoD-style high-pitched hitmarker tick (ding!)
+        public static void PlaySip() => PlayWeaponSound(sip,.8f);
+        private static short[] SynthesizeSip()
+        {
+            var samples=new short[24255];
+            for(int i=0;i<samples.Length;i++)
+            {
+                double t=i/44100d, gulp=Math.Sin(Math.PI*2*(170*t-118*t*t)+1.8*Math.Sin(t*76))*Math.Exp(-14*t);
+                double u=Math.Max(0,t-.18), clink=Math.Sin(2*Math.PI*1770*u)*Math.Exp(-32*u);
+                double v=Math.Max(0,t-.24), sparkle=Math.Sin(2*Math.PI*939*v)*Math.Exp(-19*v);
+                samples[i]=(short)(10200*gulp+5600*clink+3000*sparkle);
+            }
+            return samples;
+        }
+
         private static short[] SynthesizeHitmarker()
         {
             const int sr = 44100;

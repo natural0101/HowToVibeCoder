@@ -14,7 +14,7 @@ internal sealed record FloorSnapshot(int Cash, EscapedAgentBoss Boss, float Door
     EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100, FloorSystems? Systems = null,VibeCoderEntity? HostCarried=null, int ProgressionVersion=0,
     BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands, OnboardingStep? OnboardingStep=null, bool? ElevatorRepaired=null, float? ElevatorGlassOpacity=null, int? SelectedHotbarSlot=null);
 
-internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0, FloatingCombatText3D? Impact=null);
+internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0, FloatingCombatText3D? Impact=null,int Amount=0,Vector3? Source=null);
 internal sealed record Motion(string Session, long Sequence, PlayerPose Pose);
 
 internal sealed class CoopNetworkSystem : IDisposable
