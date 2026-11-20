@@ -89,7 +89,7 @@ internal sealed class SlotRoulette
         for(int i=0;i<Tickets.Length;i++) Tickets[i]=(rng.Next(5),rng.Next(1,13));
         int roll=rng.Next(100);
         int tier=rarity switch {
-            VibeCoderRarity.Legendary=>roll<32 ? 2 : 3,
+            VibeCoderRarity.Legendary or VibeCoderRarity.Elite=>roll<32 ? 2 : 3,
             VibeCoderRarity.Epic=>roll<70 ? 2 : 3,
             VibeCoderRarity.Rare=>roll<58 ? 1 : roll<88 ? 2 : 3,
             _=>roll<54 ? 0 : roll<84 ? 1 : roll<96 ? 2 : 3};

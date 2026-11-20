@@ -1329,11 +1329,12 @@ public class WeaponAndCombatView
             *Matrix4x4.CreateTranslation(pivot);
     }
 
+    internal float HitJolt;
     private Vector3 BaseOffset()
     {
         float draw=EquipTransition;
         Vector3 look=_lookLagSpring.Value;
-        return _sway.Value+new Vector3(.035f-.32f*look.X-.065f*sprintWeight+.055f*draw,
+        return new Vector3(0,-.115f,-.105f)*HitJolt+_sway.Value+new Vector3(.035f-.32f*look.X-.065f*sprintWeight+.055f*draw,
             -.012f+.23f*look.Y-.16f*draw+.045f*airLift-_landing.Value-.060f*sprintWeight-.04f*dashWeight+.030f*crouchWeight,
             -.105f-.09f*draw-.024f*sprintWeight-.038f*crouchWeight);
     }

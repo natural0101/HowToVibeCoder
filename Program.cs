@@ -24,11 +24,17 @@ public static partial class Program
     private static bool _isCrouching = false;
     private static float _playerVelY, _coyoteTimer, _jumpBufferTimer;
     private static float _eyeHeight = 1.72f, _dashTime, _dashCooldown, _regenDelay, _fovKick;
-    private static float _recoilPitch, _recoilYaw, _shake, _crosshairGap = 4, _damageFlash;
+    private static float _recoilPitch, _recoilYaw, _shake, _crosshairGap = 4, _playerHitAnimTimer;
     private static float _pitchSpring, _yawSpring;
     private static Vector3 _dashDirection;
     private static bool _isGrounded = true, _sprinting, _toggleCrouch, _exhausted;
-    private static int _lastHudHp = 100;
+    private static Vector2 _playerHitDir;
+    private static float PlayerHitWeight => MathF.Pow(Math.Clamp(_playerHitAnimTimer/.22f,0,1),1.6f);
+    private static void TickHitReaction(float dt)
+    {
+        _playerHitAnimTimer=Math.Max(0,_playerHitAnimTimer-dt);
+        _weapons.HitJolt=PlayerHitWeight;
+    }
     private static readonly Random ShotRandom = new(413);
     private static float _walkBobPhase = 0f;
 
@@ -46,6 +52,12 @@ public static partial class Program
 
     private static void ShowHit(int amount,string label,Vector3 source)
     {
+        var incoming=new Vector2(source.X-_playerPos.X,source.Z-_playerPos.Z);
+        var forward=new Vector2(MathF.Sin(_playerYaw),MathF.Cos(_playerYaw));
+        if(incoming.LengthSquared()>.0001f) incoming=Vector2.Normalize(incoming);
+        _playerHitDir=new(Vector2.Dot(incoming,new(-forward.Y,forward.X)),Vector2.Dot(incoming,forward));
+        _playerHitAnimTimer=.22f;
+        _weapons.HitJolt=1;
         _lastDamageAmount=amount; _lastDamageLabel=label; _lastDamageSourcePos=source; _lastDamageTimer=2.6f;
         AudioMusicSystem.PlayLanding();
     }
@@ -75,9 +87,9 @@ public static partial class Program
     private static void PayWakePenalty()=>_playerCash-=Math.Min(100,(int)(_playerCash*.15m));
     private static void FinishWake()
     {
-        _knockoutActive=false; _playerHp=_lastHudHp=100;
+        _knockoutActive=false; _playerHp=100;
         _eyeHeight=1.72f; _playerPos=_world.ResolvePlayerCollision(LobbyEntrance);
-        _dashTime=_playerVelY=_lastDamageTimer=_damageFlash=_jumpBufferTimer=0;
+        _dashTime=_playerVelY=_lastDamageTimer=_playerHitAnimTimer=_jumpBufferTimer=_weapons.HitJolt=0;
         _isGrounded=true; _toggleCrouch=_isCrouching=false;
         LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.4f);
         Raylib.DisableCursor();
@@ -517,8 +529,8 @@ public static partial class Program
         _xp = 412;
         _energy = 100;
         _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _pitchSpring = _yawSpring = 0;
-        _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _damageFlash = 0;
-        _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _lastHudHp=100;
+        _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _playerHitAnimTimer = 0;
+        _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _weapons.HitJolt=0;
         _sprinting=_toggleCrouch=_exhausted=false;
         LookAtTarget(_world.HrTarotBoothPos+new Vector3(-.45f,1.26f,0));
         SetHudBanner("",0);
@@ -565,6 +577,10 @@ public static partial class Program
         Vector3 eyePos = _playerPos + Vector3.UnitY*(bob-_weapons.LandingCompression);
         float pitch = _playerPitch+_recoilPitch+.013f*_weapons.ClosingImpulse+_shake*MathF.Sin(_shake*720);
         float yaw = _playerYaw+_recoilYaw+_shake*MathF.Cos(_shake*860);
+        float hit=PlayerHitWeight, elapsed=.22f-_playerHitAnimTimer;
+        float roll=-MathF.CopySign(5.5f*MathF.PI/180,_playerHitDir.X)*hit;
+        pitch+=hit*(-.082f+.023f*MathF.Sin(elapsed*115));
+        yaw+=hit*.027f*MathF.Sin(elapsed*153);
         Vector3 forward = new(MathF.Sin(yaw)*MathF.Cos(pitch),MathF.Sin(pitch),MathF.Cos(yaw)*MathF.Cos(pitch));
 
         float fall=_knockoutActive ? Math.Clamp(_knockoutTime/.55f,0,1) : 0;
@@ -573,7 +589,7 @@ public static partial class Program
         {
             Position = eyePos,
             Target = eyePos + forward,
-            Up = Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromAxisAngle(forward,.419f*fall+.015f*_weapons.ClosingImpulse)),
+            Up = Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromAxisAngle(forward,roll+.419f*fall+.015f*_weapons.ClosingImpulse)),
             FovY = Math.Clamp(LoreAndMenusUI.CameraFov, 60f, 100f)+_fovKick,
             Projection = CameraProjection.Perspective
         };
@@ -613,7 +629,13 @@ public static partial class Program
         Net.Pump(LocalPose,CaptureForSlot);
 
         if(_playerHp==0 && !_knockoutActive && !MainMenuAndPauseUI.IsInMainMenu) BeginKnockout();
-        if(_knockoutActive) { if(Net.Host && Net.Ready) TickFloor(dt); UpdateKnockout(dt); return; }
+        if(_knockoutActive)
+        {
+            if(Net.Host && Net.Ready) TickFloor(dt);
+            else TickHitReaction(dt);
+            UpdateKnockout(dt);
+            return;
+        }
 
         if(_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu) { UpdateSlot(dt); return; }
 
@@ -747,8 +769,7 @@ public static partial class Program
         UpdateTrigger(dt, Raylib.IsMouseButtonDown(MouseButton.Left),Raylib.IsMouseButtonPressed(MouseButton.Left),
             Raylib.IsKeyPressed(KeyboardKey.R),isMoving);
         TickFloor(dt);
-        if (_playerHp < _lastHudHp) _damageFlash = .22f;
-        _lastHudHp = _playerHp;
+
     }
 
     private static void MovePlayer(float dt, Vector3 move, Vector3 facing, bool jump, bool sprint, bool dash)
@@ -845,7 +866,6 @@ public static partial class Program
         Recover(ref _recoilPitch,ref _pitchSpring,23,dt);
         Recover(ref _recoilYaw,ref _yawSpring,26,dt);
         _shake*=MathF.Exp(-20*dt);
-        _damageFlash=Math.Max(0,_damageFlash-dt);
         Camera3D cam=BuildPlayerCamera();
         _weapons.SetStance(_walkBobPhase,_isCrouching);
         _weapons.UpdateWeapons(dt,cam,moving && _isGrounded,held);
@@ -1136,11 +1156,14 @@ public static partial class Program
             int w=(int)GameFonts.Measure(_uiFont,rounds,25).X;
             LoreAndMenusUI.DrawTextCrisp(_uiFont,rounds,sw-25-w,sh-43,25,white);
         }
-        if (_damageFlash>0)
+        if (_playerHitAnimTimer>0)
         {
-            Color red=new(195,35,32,(int)(110*_damageFlash/.22f));
-            Raylib.DrawRectangleGradientH(0,0,52,sh,red,Color.Blank);
-            Raylib.DrawRectangleGradientH(sw-52,0,52,sh,Color.Blank,red);
+            Color Edge(float side) => new(202,14,48,(int)((63+145*Math.Max(0,side))*PlayerHitWeight));
+            int width=sw/9, height=sh/9;
+            Raylib.DrawRectangleGradientH(0,0,width,sh,Edge(-_playerHitDir.X),Color.Blank);
+            Raylib.DrawRectangleGradientH(sw-width,0,width,sh,Color.Blank,Edge(_playerHitDir.X));
+            Raylib.DrawRectangleGradientV(0,0,sw,height,Edge(_playerHitDir.Y),Color.Blank);
+            Raylib.DrawRectangleGradientV(0,sh-height,sw,height,Color.Blank,Edge(-_playerHitDir.Y));
         }
         if(CoachingSubtitle || (AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
         {
@@ -2131,16 +2154,35 @@ public static partial class Program
         int[] expected=[6,12,24,42,18,120];
         for(int i=0;i<expected.Length;i++)
         {
-            var target=_world.SpawnFighter(CoderArchetype.SeniorArchitect,new(24,0,17));
+            var target=_world.SpawnFighter(i==0 ? CoderArchetype.SecurityGuard : CoderArchetype.SeniorArchitect,new(24,0,17));
             _weapons.Equip(i==0 ? WeaponType.BareHands : FloorSystems.WeaponOrder[i-1]);
             _playerPos=target.Position+new Vector3(0,1.72f,1.65f);
             LookAtTarget(target.CombatCenter);
             _weaponFireCooldown=0;
             UpdateTrigger(1f/60,true,true,false,false);
-            if(target.Hp!=145-expected[i] || _weapons.FloatingTexts.LastOrDefault().Text!="-"+expected[i] || _weapons.HitmarkerTimer<=0)
+            if(target.HitFlinchTimer!=.24f || target.KnockbackVel.LengthSquared()==0 || target.Hp!=145-expected[i] || _weapons.FloatingTexts.LastOrDefault().Text!="-"+expected[i] || _weapons.HitmarkerTimer<=0)
                 throw new InvalidDataException("LMB damage: "+_weapons.CurrentWeapon+" HP "+target.Hp);
+            var before=target.Position;
+            _world.UpdateWorld(.04f,_playerPos,false,null,null);
+            if(target.HitFlinchTimer is <=0 or >=.24f || Vector3.Dot(target.Position-before,target.HitDirection)<=0)
+                throw new InvalidDataException("Enemy recoil impulse: "+_weapons.CurrentWeapon);
             _world.ActiveCoders.Remove(target);
         }
+        _playerPitch=_recoilPitch=_recoilYaw=_shake=0; // Measure roll from a level view.
+        var neutral=BuildPlayerCamera();
+        var right=Vector3.Normalize(Vector3.Cross(neutral.Target-neutral.Position,Vector3.UnitY));
+        foreach(int side in new[]{-1,1})
+        {
+            ReceiveDamage(1,"Impact",_playerPos+side*right);
+            var hit=BuildPlayerCamera();
+            if(MathF.Abs(side*Vector3.Dot(hit.Up-neutral.Up,right)+MathF.Sin(5.5f*MathF.PI/180))>.002f || hit.Target.Y>=neutral.Target.Y || _weapons.HitJolt!=1)
+                throw new InvalidDataException($"Directional camera and hands flinch: side={side}, roll={Vector3.Dot(hit.Up-neutral.Up,right)}, pitch={hit.Target.Y-neutral.Target.Y}, hands={_weapons.HitJolt}, dir={_playerHitDir}, hp={_playerHp}");
+            TickHitReaction(.11f);
+            if(_weapons.HitJolt is <=0 or >=1) throw new InvalidDataException("Hands flinch decay");
+            TickHitReaction(.11f);
+            if(_weapons.HitJolt!=0 || BuildPlayerCamera().Up!=neutral.Up) throw new InvalidDataException("Flinch recovery");
+        }
+        Console.WriteLine("[AUTOTEST] PASS directional player flinch, hands recovery and six weapon recoil impulses");
         ResetNewGameFloor();
         _world.ActivateMacBookTrap(SubscriptionBaitTier.FreeTier,TrySpendCash,out _);
         var intern=_world.ActiveCoders.Single(c=>c.TimidIntern);
@@ -2895,7 +2937,7 @@ public static partial class Program
         _playerPos = new Vector3(-1.35f, 1.72f, -14.2f);
         LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.15f,0));
         UpdateTrigger(1f/60,true,true,false,false);
-        if (_weapons.Ammo!=1 || _world.ElevatorBoss.Hp>=480) throw new InvalidDataException("Shotgun boss shot failed");
+        if (_weapons.Ammo!=1 || _world.ElevatorBoss.HitFlinchTimer!=.24f || _world.ElevatorBoss.Hp>=480) throw new InvalidDataException("Shotgun boss shot failed");
         UpdateTrigger(.018f,false,false,false,false);
         _hudStatusTimer = 0;
         StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);

@@ -291,6 +291,7 @@ public static partial class Program
 
     private static void TickFloor(float dt)
     {
+        TickHitReaction(dt);
         _lastDamageTimer=Math.Max(0,_lastDamageTimer-dt); HealFlashTimer=Math.Max(0,HealFlashTimer-dt);
         if(bot && !Net.Ready) _world.Partner?.Follow(dt,LocalPose,_world,GrantCash);
         foreach(var ally in _world.Teammates)

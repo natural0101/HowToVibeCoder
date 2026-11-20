@@ -594,6 +594,7 @@ namespace HowToVibeCoder
         public static void PlayFrogCroak() => PlaySfx("frog_croak",.94f+_rng.NextSingle()*.12f,.32f);
         public static void PlayNetSwipe() => PlaySfx("net_swipe",1,.78f);
         public static void PlayHandGrab() => PlaySfx("hand_grab",1,.75f);
+        internal static void PlayKnockout()=>PlaySfx("comic_panel_slam",.62f,.95f);
         public static void PlayLanding() => PlaySfx("boot_land",1,.65f);
         public static void PlayActionClack(float pitch) => PlaySfx("action_clack",pitch,.74f);
         public static void PlayBeltWhip() => PlayWeaponSound(SfxBeltWhip, volumeScale: EffectLevels[0]);

@@ -4,7 +4,7 @@ using static HowToVibeCoder.VibeCoderRarity;
 
 namespace HowToVibeCoder;
 
-public enum VibeCoderRarity { Common, Rare, Epic, Legendary, Uncommon }
+public enum VibeCoderRarity { Common, Rare, Epic, Legendary, Uncommon, Elite }
 
 internal sealed record VibeCoderSpecies(string Id, string Name, VibeCoderRarity Rarity,
     CoderArchetype Archetype, Color HoodieColor, Color GlassesColor, int BonusPayout, string Hint, string Bio,
@@ -32,7 +32,7 @@ internal static class VibeCoderCollection
         new("frog_hopper","Джаба-жаба v0.9",Common,JuniorPrompter,new(97,255,74,255),Color.White,1,"Ловится голыми руками [E]. Сдай в Баг-трекер за $1.","Сервисный микробот Петровича 1998 года на чистом Jabba. Выпрыгивает из серверной, когда вайбкодеры забывают закрыть цикл.",1,.85f,.42f),
         new("frog_syntax","Кэш-квакушка",Common,JuniorPrompter,new(41,239,255,255),Color.White,2,"Перехватывай на приземлении [E] или Сачком.","Наглоталась утечек памяти у кулера и светится от перегрузки. Шустрая, но ещё по зубам голым рукам.",2,1.45f,.58f),
         new("frog_crash","Краш-лягух 500",Rare,JuniorPrompter,new(250,70,57,255),Color.White,4,"Выскальзывает из голых рук — нужен Сачок за $3 в Арсенале [U].","Боевой баг-отладчик после пятничного релиза. Роняет сборку и обжигает ладони без сачка.",4,2.15f,.78f),
-        new("frog_hotfix","Золотой Хотфикс",Epic,JuniorPrompter,new(255,213,60,255),Color.White,8,"Редкий гость у серверных стоек — сдай за $8. Нужен Сачок ($3).","Легендарная отладочная жаба с позолоченной платой из старого сейфа АО «Энтропия». Терминал платит $8 без вопросов.",8,1.65f,.68f),
+        new("frog_hotfix","Золотой Хотфикс",Epic,JuniorPrompter,new(255,213,60,255),Color.White,8,"Редкий гость у серверных стоек — сдай за $8. Нужен Сачок ($3).","Легендарная отладочная жаба с позолоченной платой из старого сейфа «ЭНТРОПИК». Терминал платит $8 без вопросов.",8,1.65f,.68f),
         new("meetup", "Босс Митапов в Баленсиаге", Epic, TeamLeadMeeter, new(221,213,191,255), new(212,40,72,255), 150, "Присмотрись к белому силуэту во время инцидента.", "Доклад не сохранился. Зато кроссовки попали во все отчёты конференции."),
         new("legacy", "Призрак Легаси 1998", Legendary, SeniorArchitect, new(69,111,75,255), new(233,196,96,255), 300, "Пятничный релиз повышает шанс появления.", "Последний, кто помнит пароль от сборочного сервера. Пароль набирает только на ощупь."),
         new("friday", "Коммитер в Прод (Пятница 19:59)", Legendary, CryptoBro, new(202,47,49,255), new(255,196,57,255), 320, "Включи пятничный деплой и следи за входом.", "В 19:58 пожелал всем хороших выходных. В 20:01 перестал читать рабочий чат."),
@@ -45,7 +45,7 @@ internal static class VibeCoderCollection
     internal static readonly VibeCoderSpecies[] CommonBait=All.Where(s=>!s.IsFrog && s.Rarity==Common && s.Archetype==JuniorPrompter).ToArray();
     internal static readonly Dictionary<string,VibeCoderSpecies> Frogs=All.Where(s=>s.IsFrog).ToDictionary(s=>s.Id);
 
-    internal static string Tag(VibeCoderRarity r) => r switch { Uncommon=>"НЕОБЫЧНЫЙ", Rare=>"РЕДКИЙ", Epic=>"ЭПИЧЕСКИЙ", Legendary=>"ЛЕГЕНДАРНЫЙ", _=>"ОБЫЧНЫЙ" };
+    internal static string Tag(VibeCoderRarity r) => r switch { Elite=>"ЭЛИТНЫЙ", Uncommon=>"НЕОБЫЧНЫЙ", Rare=>"РЕДКИЙ", Epic=>"ЭПИЧЕСКИЙ", Legendary=>"ЛЕГЕНДАРНЫЙ", _=>"ОБЫЧНЫЙ" };
     internal static Color Ink(VibeCoderRarity r) => r switch { Uncommon=>new(74,168,255,255), Rare=>new(249,198,103,255), Epic=>new(199,159,255,255), Legendary=>new(114,244,195,255), _=>new(211,221,220,255) };
 
     internal static VibeCoderSpecies Roll(Random rng, SubscriptionBaitTier bait, FloorSystems floor, CoderArchetype? role=null)

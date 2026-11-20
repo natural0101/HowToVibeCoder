@@ -39,7 +39,7 @@ public static partial class Program
             var balance=Floor.Balance;
             var (cadence,cap,heal)=n switch {2=>(1.12f,1.45f,.85f),3=>(1.22f,1.85f,.72f),_=>(1f,1f,1f)};
             if(balance.BossCadenceScale!=cadence || balance.SpawnCapScale!=cap || balance.HealCooldownScale!=heal ||
-                Net.ActivePlayerCount!=n || balance.EnemyHpScale!=e || balance.BossHpScale!=b ||
+                Net.ActivePlayerCount!=n || PausePlayerCount!=$"{n}/3" || balance.EnemyHpScale!=e || balance.BossHpScale!=b ||
                 balance.QuarantineUnlockTarget!=target || Math.Abs(enemy.MaxHp-original*e)>.01f ||
                 Math.Abs(boss.MaxHp-originalBoss*b)>.01f || Math.Abs(enemy.Hp/enemy.MaxHp-.4f)>.001f ||
                 Math.Abs(boss.Hp/boss.MaxHp-.6f)>.001f) throw new InvalidDataException($"Live balance {n}");
@@ -69,6 +69,13 @@ public static partial class Program
                 Enumerable.Range(0,3).All(j=>i==j || seen[i].GetValueOrDefault(j)==poses[j])));
         CheckScale(3,1.70f,2.10f,5);
         Console.WriteLine("COOP PASS slots 0,1,2 each received both remote poses, rotations, weapons and swing");
+        _playerCash=35;
+        second.Send(new("floor-action",Text:"51"));
+        Until(()=>floors[1]?.Systems?.BaitStock[1]==1 && floors[2]?.Cash==0);
+        var baitPose=poses[2] with {Eye=new(-5.8f,1.72f,8.1f),Yaw=MathF.PI};
+        second.Send(new("drop-bait",baitPose));
+        Until(()=>floors[1]?.Systems?.PlacedBait?.Tier==1 && floors[2]?.Systems?.BaitStock[1]==0);
+        Console.WriteLine("COOP PASS guest bought and dropped latte bait, both guests received floor position and stock");
         health[1]=64; health[2]=37;
         escorts[2]=new VibeCoderEntity {Id=987};
         MarkDown(1);
@@ -270,17 +277,10 @@ public static partial class Program
                     LookAtTarget(pickup+Vector3.UnitY*.45f);
                     Net.Send(new("interact",LocalPose)); phase++;
                 }
-                else if(phase==1 && _hudStatusBanner==SkyscraperFloor1World.HandsFullMessage && coder!=null && _world.CarriedCoder==null)
+                else if(phase==1 && _world.CarriedCoder!=null)
                 {
-                    PressTestKey(KeyboardKey.One);
-                    if(_weapons.CurrentWeapon!=WeaponType.BareHands || _weapons.SelectedHotbarSlot!=-1)
-                        throw new InvalidDataException("Guest net holster");
-                    PressTestKey(KeyboardKey.One);
-                    if(_weapons.CurrentWeapon!=WeaponType.CaptureNet) throw new InvalidDataException("Guest net redraw");
-                    PressTestKey(KeyboardKey.Two);
-                    if(_weapons.CurrentWeapon!=WeaponType.BareHands || _weapons.SelectedHotbarSlot!=1)
-                        throw new InvalidDataException("Guest empty second slot");
-                    Net.Send(new("interact",LocalPose)); phase++;
+                    if(_weapons.CurrentWeapon!=WeaponType.BareHands) throw new InvalidDataException("Guest auto-holster");
+                    phase++;
                 }
                 else if(phase==2 && _world.CarriedCoder!=null)
                 {

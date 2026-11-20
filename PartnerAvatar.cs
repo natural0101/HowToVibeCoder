@@ -3,7 +3,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponType Weapon,float Swing=0)
+internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponType Weapon,float Swing=0,bool Crouched=false,bool Sprinting=false)
 {
     public Vector3 Forward => new(MathF.Sin(Yaw)*MathF.Cos(Pitch), MathF.Sin(Pitch), MathF.Cos(Yaw)*MathF.Cos(Pitch));
     public Camera3D Camera => new() { Position=Eye, Target=Eye+Forward, Up=Vector3.UnitY, FovY=76 };

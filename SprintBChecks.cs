@@ -32,7 +32,7 @@ public static partial class Program
         }
         void Interact() => _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash,_weapons.CurrentWeapon);
         void Tick(float dt) => _world.UpdateWorld(dt,_playerPos,false,GrantCash,null);
-        void Audit() { Floor.IncidentNow(Incident.Audit,_world); Frame(); Check(floorPanel==FloorPanel.Audit,"audit opens"); }
+
 
         ResetClassicFixture();
         var coffee=SkyscraperFloor1World.CoffeePos;
@@ -64,23 +64,8 @@ public static partial class Program
 
         ResetClassicFixture();
         Floor.SEC=55; Floor.Tick(.01f,_world,null); Frame();
-        Check(floorPanel==FloorPanel.Audit && _world.ActiveCoders.Any(c=>c.Archetype==CoderArchetype.SecurityGuard),"threshold opens audit and dispatches guard");
-        capture("16_audit_memo.png");
-        Key(KeyboardKey.Two); Check(floorPanel==FloorPanel.Audit && Floor.SEC==55,"empty desk unavailable");
-        int wallet=_playerCash;
-        Key(KeyboardKey.One); Check(floorPanel==FloorPanel.None && _playerCash==wallet-180 && Floor.SEC==30 && Floor.TD==12,"paid forgery");
-        var copier=_world.OfficeProps.First(p=>p.Kind==OfficePropKind.XeroxPhotocopier);
-        Aim(copier.Position,.9f); Interact(); wallet=_playerCash;
-        Audit(); Key(KeyboardKey.One);
-        Check(Floor.Badge==0 && _playerCash==wallet,"printed badge consumed");
-        var desk=_world.GalleyDesks[1]; desk.IsOccupied=true; Floor.SEC=52;
-        Audit(); Key(KeyboardKey.Two); Check(!desk.IsOccupied && Floor.SEC==12,"surrender one worker");
-        Audit();
-        var row=DecisionRow(2); Vector2 point=PanelOffset+new Vector2(row.X+150,row.Y+24)*PanelScale;
-        Input(7,(int)point.X,(int)point.Y); Input(6,0); Frame(); Input(5,0); Raylib.PollInputEvents();
-        Check(floorPanel==FloorPanel.None && Floor.SEC==40 && Floor.Defiance==45 && Floor.Raid,"reject audit with mouse");
-        Check(Math.Abs(Floor.GreedMultiplier/(1+Floor.R/100)-1.35f)<.001f,"defiance greed");
-        Floor.Style(StyleAction.Iron); Check(Math.Abs(Floor.Authority-8.1f)<.01f,"defiance authority");
+        Check(floorPanel==FloorPanel.None && Floor.Raid && _world.ActiveCoders.Any(c=>c.RaidGuard && c.EntryRoom==3),"live east-wing inspection");
+        int wallet;
         var guard=_world.ActiveCoders.Last(c=>c.Archetype==CoderArchetype.SecurityGuard);
         guard.Position=new(24,0,17); Aim(guard.Position,.82f);
         float guardZ=guard.Position.Z; Tick(.05f);
@@ -210,12 +195,14 @@ public static partial class Program
         Aim(extinguisher,.65f); Interact();
         Check(Floor.RackSmoke==9 && !Floor.FireIncident && Floor.PT==Math.Max(0,heat-22) &&
             boss.State==ElevatorBossState.StunnedWallCrash && boss.ShieldHp==0,"E discharge shorts boss");
+        _playerHp=100; // This scenario uses the full-health spill interaction.
         var cooler=_world.CoolerPos; Aim(cooler,.9f); Interact();
-        var water=cooler+new Vector3(.6f,0,1.5f);
-        _playerPos=cooler+new Vector3(1.9f,1.72f,3.5f); Shoot(WeaponType.SolderingIron,water);
+        Check(Floor.Puddles.Count>0,$"cooler interaction hp={_playerHp} focus={_world.FocusPrompt(BuildPlayerCamera())}");
+        var water=cooler+new Vector3(1.45f,0,-.8f);
+        _playerPos=cooler+new Vector3(2.80f,1.72f,-1.30f); Shoot(WeaponType.SolderingIron,water);
         boss.Position=cooler+Vector3.UnitZ*1.6f; boss.ShieldHp=100;
         Aim(boss.Position,1.4f,3); Burst();
-        Check(Floor.Puddles.Any(p=>p.Electric>0) && boss.ShieldHp==0 && boss.StateTimer==3,"hit in live puddle");
+        Check(Floor.Puddles.Any(p=>p.Electric>0) && boss.ShieldHp==0 && boss.StateTimer==3,$"hit in live puddle electric={Floor.Puddles.FirstOrDefault()?.Electric} shield={boss.ShieldHp} timer={boss.StateTimer}");
         boss.Position=new(24,0,17); Aim(boss.Position,1.4f,4);
         for(int i=0;i<5 && boss.Phase==2;i++) Core();
         Check(boss.Phase==3 && boss.ShieldHp==0 && _world.CurrentTape.Contains("директора"),"SYSTEM ZERO broadcast");
@@ -255,7 +242,7 @@ public static partial class Program
         finally { File.Delete(slot); pendingShift=null; pendingFloorSave=null; }
         Check(VibeCoderCollection.All.Length==24 && VibeCoderCollection.Frogs.Values.Select(f=>f.SalePrice).Order().SequenceEqual(new[]{1,2,4,8}),"catalogue and frog sale prices");
         ResetClassicFixture();
-        Console.WriteLine("[AUTOTEST] Sprint B PASS: audit choices, office combos, both prop fallbacks, galley conflict, patrol, eleven purchases, armed harness escort, 24 species, three boss phases, both verdicts and save/load");
+        Console.WriteLine("[AUTOTEST] Sprint B PASS: live east-wing inspection, office combos, both prop fallbacks, galley conflict, patrol, eleven purchases, armed harness escort, 24 species, three boss phases, both verdicts and save/load");
     }
 }
 

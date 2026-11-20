@@ -41,19 +41,19 @@
   },
   "vo_veronika_bait": {
     "character": "veronika",
-    "duration": 6.215,
-    "rms": 0.119,
+    "duration": 11.243,
+    "rms": 0.1185,
     "sr": 24000,
-    "bytes": 298374,
-    "text": "Net in hand! Now walk over to the AppleBook in the center atrium and switch on free Wi-Fi — vibe coders will swarm right in."
+    "bytes": 539700,
+    "text": "Net equipped! Your first AppleBook is free. Drop bait [G], back off and hide [Ctrl]. Sneak up behind the seated coder."
   },
   "vo_veronika_capture": {
     "character": "veronika",
-    "duration": 5.616,
-    "rms": 0.1165,
+    "duration": 9.233,
+    "rms": 0.1296,
     "sr": 24000,
-    "bytes": 269630,
-    "text": "Here come the clients! Stun one with the net, press one again to holster it, and haul the vibe coder bare-handed!"
+    "bytes": 443236,
+    "text": "Here they come! Wait until the coder sits down. Sneak up from behind and stun them with the net [LMB]. Swing again or press [E] to scoop them up."
   },
   "vo_veronika_done": {
     "character": "veronika",

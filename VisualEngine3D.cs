@@ -153,6 +153,7 @@ internal static unsafe partial class VisualEngine3D
         in vec4 tint;
         uniform sampler2D texture0;
         uniform int boothColor;
+        uniform float hitFlash;
         uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
         uniform float power, clock, flashStrength, cabinPower;
@@ -283,6 +284,11 @@ internal static unsafe partial class VisualEngine3D
                 return;
             }
             vec4 ink=colDiffuse*tint;
+            if(hitFlash>.001) {
+                vec3 flash=mix(vec3(.98,.075,.13),vec3(1.5,1.32,1.08),smoothstep(.36,.90,hitFlash));
+                tex.rgb=mix(tex.rgb,flash,hitFlash);
+                ink.rgb=mix(ink.rgb,vec3(1.),hitFlash);
+            }
             vec3 base=tex.rgb*ink.rgb;
             bool leather=finish==6 || (finish==17 && colSpecular.a>.49 && colSpecular.a<.51);
             vec3 emission=(finish==17 || finish==21) ? colSpecular.rgb*tex.rgb : vec3(0.);
@@ -497,6 +503,11 @@ internal static unsafe partial class VisualEngine3D
         }
         """;
 
+    private static int hitFlashLoc;
+    internal static void SetHitFlash(float strength)
+    {
+        if(!CastingShadows) Raylib.SetShaderValue(shader,hitFlashLoc,strength,ShaderUniformDataType.Float);
+    }
     internal static bool HasAsset(string name) => imports.ContainsKey(name);
 
     public static void Load()
@@ -506,6 +517,7 @@ internal static unsafe partial class VisualEngine3D
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         shader.Locs[(int)ShaderLocationIndex.ColorSpecular]=Loc("colSpecular");
+        hitFlashLoc=Loc("hitFlash");
         boothColorLoc=Loc("boothColor");
         emptyJugLoc=Loc("emptyJug");
         reelLoc=Loc("slotReels"); skinLoc=Loc("weaponSkin"); handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
