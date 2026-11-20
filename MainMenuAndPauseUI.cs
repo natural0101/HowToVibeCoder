@@ -101,12 +101,14 @@ public static class MainMenuAndPauseUI
     public static Action<GameSaveData>? ApplyLoadedGameState { get; set; }
 
     private static readonly string[] MainMenuButtonLabels =
-        ["Создать игру", "Продолжить", "Кооператив", "Настройки", "Архив", "Персонаж", "Настройки модов", "Создатели", "КОМИКС", "Выход"];
+        ["Играть", "Продолжить", "Персонаж", "Настройки", "Выход"];
     private static readonly string[] SettingsTabs = ["Игра", "Графика", "Аудио", "Язык"];
     internal static readonly CoopNetworkSystem Coop = new();
     internal static Action<bool>? OnIntroComicRequested;
     internal static Action? SummonPartner;
     private static int coopFocus;
+    private static bool _playModeOpen;
+    private static int _playModeIndex;
     private static string address = "127.0.0.1:27094";
     private static bool addressEdited, selectAddress;
     internal static bool JoinPanel => IsInMainMenu && IsSaveLoadPanelOpen && !IsSaveMode;
@@ -159,7 +161,8 @@ public static class MainMenuAndPauseUI
         Raylib.DrawRectangleRounded(rect, rounding, 8, fill);
         if (border > 0) Raylib.DrawRectangleRoundedLinesEx(rect, rounding, 8, border, Edge);
     }
-    internal static Rectangle MainButton(int i) => new(56, UiViewport.Height - 412 + i * 39, 310, 36);
+    internal static Rectangle MainButton(int i) => new(56, UiViewport.Height - 332 + i * 50, 310, 42);
+    internal static Rectangle PlayChoiceButton(int i) => new(UiViewport.Width / 2f - 230, UiViewport.Height / 2f - 64 + i * 58, 460, 46);
     private static Rectangle SettingsRect(float x, float y, float w, float h) =>
         new(UiViewport.Width / 2f - 343 + x, UiViewport.Height / 2f - 276 + y, w, h);
     private static Rectangle SettingsTab(int i) => SettingsRect(i * 173, 32, 166, 39);
@@ -172,14 +175,13 @@ public static class MainMenuAndPauseUI
     private static Rectangle ModAction(int i) => new(UiViewport.Width/2 - 95 + i*249, UiViewport.Height/2 + 213, 240, 40);
     private static Rectangle ModMixer => new(UiViewport.Width/2 - 408, UiViewport.Height/2 + 213, 275, 40);
 
-    // 7 кнопок Меню Паузы (по ESC в игре)
+    // 6 кнопок Меню Паузы (по ESC в игре)
     private static readonly string[] PauseButtonLabels =
     {
         "ПРОДОЛЖИТЬ",
         "СОХРАНИТЬ ИГРУ",
         "ЗАГРУЗИТЬ ИГРУ",
         "НАСТРОЙКИ",
-        "МОДЫ",
         "В ГЛАВНОЕ МЕНЮ",
         "ВЫХОД"
     };
@@ -325,6 +327,9 @@ public static class MainMenuAndPauseUI
         return data;
     }
 
+    internal static int LatestSave => Enumerable.Range(0,_cachedSlots.Length).Where(i=>_cachedSlots[i]!=null)
+        .OrderByDescending(i=>File.GetLastWriteTimeUtc(GetSaveFilePath(i))).FirstOrDefault(-1);
+
     public static GameSaveData? LoadGameState(int slotIndex)
     {
         EnsureStorageInitialized();
@@ -433,6 +438,7 @@ public static class MainMenuAndPauseUI
 
     public static void StartNewOrResumeFloor()
     {
+        _playModeOpen = false;
         IsSaveLoadPanelOpen = false;
         IsModsPanelOpen = false;
         IsSettingsPanelOpen = false;
@@ -460,6 +466,7 @@ public static class MainMenuAndPauseUI
 
     public static void OpenMainMenu()
     {
+        _playModeOpen = false;
         IsSaveLoadPanelOpen = false;
         IsModsPanelOpen = false;
         IsSettingsPanelOpen = false;
@@ -522,6 +529,42 @@ public static class MainMenuAndPauseUI
 
         if (IsInMainMenu)
         {
+            if (_playModeOpen)
+            {
+                if (Raylib.IsCursorHidden()) Raylib.EnableCursor();
+                if (Raylib.IsKeyPressed(KeyboardKey.Escape) || Clicked(new Rectangle(UiViewport.Width / 2f - 83, UiViewport.Height / 2f + 126, 166, 38)))
+                {
+                    _playModeOpen = false;
+                    PlayUiSound();
+                    return;
+                }
+                if (Raylib.IsKeyPressed(KeyboardKey.Down) || Raylib.IsKeyPressed(KeyboardKey.S)) { _playModeIndex = (_playModeIndex + 1) % 3; PlayUiSound(); }
+                if (Raylib.IsKeyPressed(KeyboardKey.Up) || Raylib.IsKeyPressed(KeyboardKey.W)) { _playModeIndex = (_playModeIndex + 2) % 3; PlayUiSound(); }
+                bool trigger = Raylib.IsKeyPressed(KeyboardKey.Enter) || Raylib.IsKeyPressed(KeyboardKey.KpEnter);
+                for (int i = 0; i < 3; i++)
+                {
+                    if (Raylib.CheckCollisionPointRec(UiViewport.Pointer, PlayChoiceButton(i)))
+                    {
+                        if (_playModeIndex != i && Raylib.GetMouseDelta().LengthSquared() > 0) { _playModeIndex = i; PlayUiSound(); }
+                        if (Raylib.IsMouseButtonPressed(MouseButton.Left)) { _playModeIndex = i; trigger = true; }
+                    }
+                }
+                if (trigger)
+                {
+                    PlayUiSound();
+                    _playModeOpen = false;
+                    if (_playModeIndex == 0) StartNewOrResumeFloor();
+                    else if (_playModeIndex == 1) OpenJoinPanel();
+                    else
+                    {
+                        RefreshSaveSlotsCache();
+                        IsSaveMode = false;
+                        IsSaveLoadPanelOpen = true;
+                        IsModsPanelOpen = IsSettingsPanelOpen = false;
+                    }
+                }
+                return;
+            }
             if (_infoPage != null)
             {
                 if (Raylib.IsKeyPressed(KeyboardKey.Escape) || Clicked(SettingsRect(0, 505, 166, 38))) _infoPage = null;
@@ -625,22 +668,22 @@ public static class MainMenuAndPauseUI
         PlayUiSound();
         switch (index)
         {
-            case 0: // НОВАЯ ИГРА
-                OnIntroComicRequested?.Invoke(true);
+            case 0: // ИГРАТЬ (выбор: Соло/Хост или Кооп 1-3)
+                _playModeOpen = true;
+                _playModeIndex = 0;
                 break;
 
-            case 1:
+            case 1: // ПРОДОЛЖИТЬ
                 RefreshSaveSlotsCache();
-                int latest=Enumerable.Range(0,_cachedSlots.Length).Where(i=>_cachedSlots[i]!=null)
-                    .OrderByDescending(i=>File.GetLastWriteTimeUtc(GetSaveFilePath(i))).FirstOrDefault(-1);
+                int latest=LatestSave;
                 if(latest>=0) LoadGameState(latest);
                 else Notify(Loc.T("Нет сохранённой игры","No saved game yet"));
                 break;
-            case 2:
-                OpenJoinPanel();
+
+            case 2: // ПЕРСОНАЖ
+                _infoPage = "Персонаж";
                 break;
 
-            case 5: _infoPage = "Персонаж"; break;
             case 3: // НАСТРОЙКИ
                 _settingsTab = 1;
                 IsSettingsPanelOpen = true;
@@ -648,17 +691,7 @@ public static class MainMenuAndPauseUI
                 IsModsPanelOpen = false;
                 break;
 
-            case 6: // МОДЫ
-                LoadModsConfig();
-                IsModsPanelOpen = true;
-                IsSaveLoadPanelOpen = false;
-                IsSettingsPanelOpen = false;
-                break;
-
-            case 7: _infoPage = "Создатели"; break;
-            case 4: LoreAndMenusUI.IsLoreOpen=true; break;
-            case 8: OnIntroComicRequested?.Invoke(false); break;
-            case 9: // ВЫХОД
+            case 4: // ВЫХОД
                 ShouldExitGame = true;
                 OnExitRequested?.Invoke();
                 break;
@@ -761,20 +794,12 @@ public static class MainMenuAndPauseUI
                 IsModsPanelOpen = false;
                 break;
 
-            case 4: // МОДЫ
-                LoadModsConfig();
-                IsModsPanelOpen = true;
-                IsSaveLoadPanelOpen = false;
-                IsSettingsPanelOpen = false;
-                break;
-
-            case 5: // В ГЛАВНОЕ МЕНЮ
+            case 4: // В ГЛАВНОЕ МЕНЮ
                 SaveGameState(0); // Автосохранение при выходе в Главное Меню
                 OpenMainMenu();
                 break;
 
-            case 7: LoreAndMenusUI.IsLoreOpen=true; break;
-            case 6: // ВЫХОД
+            case 5: // ВЫХОД
                 SaveGameState(0);
                 ShouldExitGame = true;
                 OnExitRequested?.Invoke();
@@ -1112,8 +1137,21 @@ public static class MainMenuAndPauseUI
         for(int i=0;i<MainMenuButtonLabels.Length;i++)
         {
             Rectangle r=MainButton(i);
-            bool selected=i==_selectedMainIndex;
-            DrawMenuItem(i == 8 ? Loc.T("КОМИКС", "INTRO COMIC") : MainMenuButtonLabels[i], r, selected);
+            bool selected=i==_selectedMainIndex && !_playModeOpen && _infoPage==null;
+            DrawMenuItem(MainMenuButtonLabels[i], r, selected);
+        }
+        if (_playModeOpen)
+        {
+            DrawSlateWindow(Loc.T("Играть","Play"), 540, 360);
+            string[] choices =
+            [
+                Loc.T("Новая игра (Соло / Хост 1–3)", "New Game (Solo / Host 1-3)"),
+                Loc.T("Подключиться к другу (Кооп 1–3)", "Join Friend (Co-op 1-3)"),
+                Loc.T("Загрузить сохранение", "Load Save Slot")
+            ];
+            for (int i = 0; i < choices.Length; i++)
+                NativeButton(choices[i], PlayChoiceButton(i), i == _playModeIndex);
+            NativeButton("Назад", new Rectangle(UiViewport.Width / 2f - 83, UiViewport.Height / 2f + 126, 166, 38));
         }
         if (_infoPage != null)
         {
@@ -1162,7 +1200,7 @@ public static class MainMenuAndPauseUI
         if (IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen) return;
         DrawSlateWindow("Пауза",580,560);
         if(Coop.Host || Coop.Guest)
-            Center(font,(Coop.Host ? Loc.Tr("Адрес для друга: ")+Coop.HostAddress : Loc.Tr(Coop.Status))+$"   {Coop.ActivePlayerCount}/3",
+            Center(font,(Coop.Host ? Loc.Tr("Адрес для друга: ")+Coop.HostAddress : Loc.Tr(Coop.Status))+"   "+Program.PausePlayerCount,
                 new(screenW/2-265,screenH/2-216,530,34),17,Edge);
         for(int i=0;i<PauseButtonLabels.Length;i++)
             DrawMenuItem(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);

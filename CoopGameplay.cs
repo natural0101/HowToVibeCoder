@@ -131,6 +131,11 @@ public static partial class Program
     private static bool awaitingFirstFloor;
     private static void HandleCoopMessage(CoopMessage message)
     {
+        if(Net.Host && health[actorSlot]==0)
+        {
+            if(message.Kind=="wake") { PayWakePenalty(); health[actorSlot]=100; GuestCups=Math.Max(1,GuestCups); downUntil[actorSlot]=0; }
+            return;
+        }
         if(Net.Guest && message is {Kind:"floor", Floor:{} state})
         {
             if(state.Boss==null || state.Coders==null || state.Desks?.Length!=4 || state.Projectiles==null) return;
@@ -146,6 +151,8 @@ public static partial class Program
                 FloorSystems.CheerFirstFrog();
             awaitingFirstFloor=false;
             _playerCash=state.Cash; _playerHp=state.GuestHp; health[0]=state.HostHp;
+            if(_playerHp==0) BeginKnockout();
+            else if(_knockoutActive) FinishWake();
             if(state.Health is {Length:3}) Array.Copy(state.Health,health,3);
             if(state.Escorts is {Length:3}) Array.Copy(state.Escorts,escorts,3);
             foreach(var ally in _world.Teammates)
@@ -355,6 +362,7 @@ public static partial class Program
     }
     private static void DamageSlot(int slot,int damage,string label,Vector3 source)
     {
+        if(health[slot]<=0) return;
         if(health[slot]<=damage) MarkDown(slot);
         health[slot]=AfterDamage(health[slot],damage);
         Net.Send(new("hurt",Text:label,Amount:damage,Source:source),slot);
@@ -365,7 +373,7 @@ public static partial class Program
     {
         if(hp>damage) return hp-damage;
         if(_world.Systems.JobId>=0 || _world.Systems.Friday>0) _world.Systems.CrewLost=true;
-        return 100;
+        return 0;
     }
 
     private static void StagePartner(Vector3 feet,Vector3 target)
@@ -474,10 +482,8 @@ public static partial class Program
             LookAtTarget(recruit.CombatCenter);
             _weapons.SelectSlot(1);
             _world.ProcessPlayerAttack(BuildPlayerCamera(),_weapons,GrantCash,out _);
-            if(_world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash,_weapons.CurrentWeapon)!=SkyscraperFloor1World.HandsFullMessage)
-                throw new InvalidDataException("Host picked up with weapon");
-            _weapons.SelectOwnedSlot(_weapons.SelectedHotbarSlot);
             _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash,_weapons.CurrentWeapon);
+            HolsterForEscort();
             if(_world.CarriedCoder!=recruit) throw new InvalidDataException("Coop NDA setup");
         }
         while(clock.Elapsed.TotalSeconds<15)

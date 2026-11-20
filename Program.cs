@@ -41,6 +41,7 @@ public static partial class Program
     private static float _lastDamageTimer, HealFlashTimer;
     private static bool guestInteraction;
     private static ref int GuestCups => ref ((Net.Guest ? Net.LocalSlot : actorSlot)==2 ? ref Floor.SecondCoffeeCups : ref Floor.GuestCoffeeCups);
+    internal static string PausePlayerCount => $"{Net.ActivePlayerCount}/3";
     internal static bool NeedsHealing => (guestInteraction ? guestHp : _playerHp)<100;
 
     private static void ShowHit(int amount,string label,Vector3 source)
@@ -51,11 +52,83 @@ public static partial class Program
     private static void ReceiveDamage(int amount,string label,Vector3 source)
     {
         if(guestInteraction) { GuestDamage(amount,label,source); return; }
+        if(_knockoutActive) return;
         if(Net.Host && _playerHp<=amount) MarkDown(0);
         _playerHp=AfterDamage(_playerHp,amount);
         ShowHit(amount,label,source);
+        if(_playerHp==0) { BeginKnockout(); return; }
         BeginHealLesson();
     }
+    private static bool _knockoutActive;
+    private static float _knockoutTime;
+    private static int _knockoutSave;
+
+    private static void BeginKnockout()
+    {
+        if(_knockoutActive) return;
+        _knockoutActive=true; _knockoutTime=0;
+        AudioMusicSystem.PlayKnockout();
+        Raylib.EnableCursor();
+        MainMenuAndPauseUI.RefreshSaveSlotsCache();
+        _knockoutSave=Net.Guest ? -1 : MainMenuAndPauseUI.LatestSave;
+    }
+    private static void PayWakePenalty()=>_playerCash-=Math.Min(100,(int)(_playerCash*.15m));
+    private static void FinishWake()
+    {
+        _knockoutActive=false; _playerHp=_lastHudHp=100;
+        _eyeHeight=1.72f; _playerPos=_world.ResolvePlayerCollision(LobbyEntrance);
+        _dashTime=_playerVelY=_lastDamageTimer=_damageFlash=_jumpBufferTimer=0;
+        _isGrounded=true; _toggleCrouch=_isCrouching=false;
+        LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.4f);
+        Raylib.DisableCursor();
+    }
+    private static Rectangle KnockoutButton(int i)=>new(68,395+64*i,455,48);
+    private static void UpdateKnockout(float dt)
+    {
+        _knockoutTime+=dt;
+        if(_knockoutTime<.55f) return;
+        var mouse=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
+        bool Click(int i)=>Raylib.IsMouseButtonPressed(MouseButton.Left) && Raylib.CheckCollisionPointRec(mouse,KnockoutButton(i));
+        if(Raylib.IsKeyPressed(KeyboardKey.R) || Raylib.IsKeyPressed(KeyboardKey.Enter) || Click(0))
+        {
+            if(Net.Guest) { Net.Send(new("wake")); return; }
+            PayWakePenalty(); Floor.PocketCoffeeCups=Math.Max(1,Floor.PocketCoffeeCups);
+            foreach(var coder in _world.ActiveCoders) { coder.Aggro=false; coder.Windup=0; coder.AttackCooldown=3; coder.ReleaseAttacker=false; }
+            if(_world.ElevatorBoss.IsActive) _world.ElevatorBoss=new(){Position=_world.CentralElevatorCorePos+Vector3.UnitY*.16f};
+            _world.EnemyProjectiles.Clear(); Floor.HostStun=0; downUntil[0]=0;
+            FinishWake();
+        }
+        else if(_knockoutSave>=0 && (Raylib.IsKeyPressed(KeyboardKey.L) || Click(1))) MainMenuAndPauseUI.LoadGameState(_knockoutSave);
+        else if(Raylib.IsKeyPressed(KeyboardKey.M) || Click(2)) { _knockoutActive=false; MainMenuAndPauseUI.OpenMainMenu(); }
+    }
+    private static void DrawKnockout()
+    {
+        float fade=Math.Clamp(_knockoutTime/.55f,0,1);
+        int w=Raylib.GetScreenWidth(),h=Raylib.GetScreenHeight();
+        Raylib.DrawRectangleGradientH(0,0,w,h,new Color(62,9,21,(int)(242*fade)),new Color(89,12,24,(int)(72*fade)));
+        Raylib.DrawRectangleGradientV(0,0,w,h/3,new Color(68,3,18,(int)(142*fade)),Color.Blank);
+        Raylib.DrawRectangleGradientV(0,0,w,h,Color.Blank,new Color(69,9,21,(int)(135*fade)));
+        if(fade<1) return;
+        Raylib.BeginMode2D(new Camera2D{Zoom=PanelScale,Offset=PanelOffset});
+        Color paper=new(255,235,207,255);
+        GameFonts.Draw(_serif,Loc.T("НОКАУТ","KNOCKED OUT"),new(64,169),74,paper);
+        GameFonts.Draw(_uiFont,Loc.T("Тебя срубил: ","Knocked out by: ")+Loc.Tr(_lastDamageLabel),new(68,271),25,paper);
+        GameFonts.Draw(_uiFont,Loc.KnockoutRevival,new(68,325),19,paper);
+        string[] buttons=[Loc.T("[R / Enter] Очнуться у Вероники","[R / Enter] Wake up at Veronika’s"),
+            Loc.T("[L] Загрузить сохранение","[L] Load Last Save"),Loc.T("[M] В главное меню","[M] Main Menu")];
+        var mouse=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
+        for(int i=0;i<buttons.Length;i++)
+        {
+            if(i==1 && _knockoutSave<0) continue;
+            var rect=KnockoutButton(i);
+            bool light=i==0 || Raylib.CheckCollisionPointRec(mouse,rect);
+            if(light) Raylib.DrawRectangleRec(rect,paper);
+            else Raylib.DrawRectangleLinesEx(rect,1,paper);
+            GameFonts.Draw(_uiFont,buttons[i],new(rect.X+16,rect.Y+12),20,light ? new Color(88,18,36,255) : paper);
+        }
+        Raylib.EndMode2D();
+    }
+
     private static void BeginHealLesson()
     {
         if(Floor.Onboarding!=OnboardingStep.StunAndHeal) return;
@@ -358,6 +431,7 @@ public static partial class Program
         };
         MainMenuAndPauseUI.OnReturnToMainMenuRequested = () =>
         {
+            _knockoutActive=false;
             Net.Dispose();
             preparedFloor=new SkyscraperFloor1World(fixtureSeed);
             Raylib.EnableCursor();
@@ -426,6 +500,7 @@ public static partial class Program
     private static SkyscraperFloor1World? preparedFloor;
     private static void ResetNewGameFloor(SkyscraperFloor1World? ready=null,bool greet=true)
     {
+        _knockoutActive=false;
         floorPanel=FloorPanel.None; seenReport=0;
         bot=awaitingSpawn=pendingCase=false; Array.Clear(escorts); Array.Clear(downUntil); Array.Fill(health,100);
         _world = ready ?? new SkyscraperFloor1World(fixtureSeed);
@@ -486,11 +561,13 @@ public static partial class Program
         float yaw = _playerYaw+_recoilYaw+_shake*MathF.Cos(_shake*860);
         Vector3 forward = new(MathF.Sin(yaw)*MathF.Cos(pitch),MathF.Sin(pitch),MathF.Cos(yaw)*MathF.Cos(pitch));
 
+        float fall=_knockoutActive ? Math.Clamp(_knockoutTime/.55f,0,1) : 0;
+        eyePos.Y+=(.42f-eyePos.Y)*fall;
         return new Camera3D
         {
             Position = eyePos,
             Target = eyePos + forward,
-            Up = Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromAxisAngle(forward,.015f*_weapons.ClosingImpulse)),
+            Up = Vector3.Transform(Vector3.UnitY,Quaternion.CreateFromAxisAngle(forward,.419f*fall+.015f*_weapons.ClosingImpulse)),
             FovY = Math.Clamp(LoreAndMenusUI.CameraFov, 60f, 100f)+_fovKick,
             Projection = CameraProjection.Perspective
         };
@@ -528,6 +605,9 @@ public static partial class Program
             StartHosting(newShift:true);
         }
         Net.Pump(LocalPose,CaptureForSlot);
+
+        if(_playerHp==0 && !_knockoutActive && !MainMenuAndPauseUI.IsInMainMenu) BeginKnockout();
+        if(_knockoutActive) { if(Net.Host && Net.Ready) TickFloor(dt); UpdateKnockout(dt); return; }
 
         if(_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu) { UpdateSlot(dt); return; }
 
@@ -646,16 +726,13 @@ public static partial class Program
                 FloorPanel station=_world.PanelAt(camera,_weapons.CurrentWeapon);
                 if(station!=FloorPanel.None) { OpenFloorPanel(station); return; }
             }
-            if(_weapons.CurrentWeapon==WeaponType.BareHands && _world.FocusPrompt(camera)=="Поймать Джаба-жабу")
-            {
-                UpdateTrigger(dt,false,true,false,isMoving);
-                TickFloor(dt);
-                return;
-            }
+            if(_world.FocusPrompt(camera)=="Поймать Джаба-жабу")
+                _weapons.Equip(WeaponType.BareHands);
             if(Net.Guest) Net.Send(new("interact",LocalPose));
             else
             {
                 string result=_world.Interact(camera,TrySpendCash,GrantCash,_weapons.CurrentWeapon,OpenFloorPanel);
+                HolsterForEscort();
                 if(floorPanel!=FloorPanel.None) return;
                 SetHudBanner(result,2.4f,foreground:true);
             }
@@ -692,7 +769,7 @@ public static partial class Program
             _dashTime=.16f; _dashCooldown=.85f; _energy-=22; _regenDelay=.65f; _fovKick=8;
         }
         if (_energy>=12) _exhausted=false;
-        _sprinting=moving && sprint && !_isCrouching && !_exhausted && _energy>0 && _dashTime<=0;
+        _sprinting=(_world.CarriedCoder==null || Floor.Has(Sidegrade.CarryHarness)) && moving && sprint && !_isCrouching && !_exhausted && _energy>0 && _dashTime<=0;
         if (_sprinting)
         {
             _energy=Math.Max(0,_energy-(_world.Systems.Coffee>0 ? 6 : 17)*dt); _regenDelay=.65f;
@@ -700,6 +777,7 @@ public static partial class Program
         }
         else if (_dashTime<=0 && (_regenDelay-=dt)<=0) _energy=Math.Min(100,_energy+20*dt);
         float speed = _isCrouching ? 4.25f : 6.6f*(_sprinting ? 1.48f : 1);
+        if(_world.CarriedCoder!=null) speed*=Floor.Has(Sidegrade.CarryHarness) ? 1.12f : .78f;
         if(_world.Systems.Coffee>0) speed*=1.35f;
         float burst = Math.Min(dt,_dashTime);
         Vector3 travel = move*speed*(dt-burst) + _dashDirection*18*burst;
@@ -811,6 +889,7 @@ public static partial class Program
                 _weapons.TriggerWeaponAttack(cam,distance<range ? cam.Position+aim*distance : null,false,shotDirection:aim);
             }
             else if (_world.ProcessPlayerAttack(cam,_weapons,GrantCash,out var msg,aim) && msg.Length>0) SetHudBanner(msg,1.3f,foreground:capture);
+            HolsterForEscort();
             float kick=gun==WeaponType.SawedOff ? .077f : gun==WeaponType.CaptureNet ? .022f : melee ? .009f : .023f;
             // Impulse the spring velocity. The camera starts at the firing sightline.
             float yawKick=(2*ShotRandom.NextSingle()-1)*kick*steady;
@@ -913,12 +992,13 @@ public static partial class Program
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
 
-        bool modalOpen = _world.Slot.Active || floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
+        bool modalOpen = _knockoutActive || _world.Slot.Active || floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
             || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen
             || MainMenuAndPauseUI.IsSettingsPanelOpen;
         if(!modalOpen)
             _weapons.DrawFirstPersonHandsAndWeapon(playerCam,_walkBobPhase,_isCrouching,_uiFont,showCombatText:false);
         VisualEngine3D.Composite();
+        if(_knockoutActive) { DrawKnockout(); EndSceneFrame(); return; }
         if(!modalOpen && showHud)
         {
             UiViewport.Begin();
@@ -946,14 +1026,6 @@ public static partial class Program
         int sw=UiViewport.Width, sh=UiViewport.Height;
         int cx = sw/2, cy = sh/2;
         Color white = new(250,249,245,255), dark = new(22,24,38,142);
-        if(Net.Host || Net.ActivePlayerCount>1)
-        {
-            string badge=FormattableString.Invariant($"{(Loc.IsEn ? "CO-OP" : "КООП")} {Net.ActivePlayerCount}/3   ×{CoopBalance.For(Net.ActivePlayerCount).EnemyHpScale:F2}");
-            float width=GameFonts.Measure(_uiFont,badge,17).X+22;
-            Rectangle pill=new(sw-width-24,sh-86,width,29);
-            Raylib.DrawRectangleRounded(pill,.8f,8,new Color(25,27,30,216));
-            MainMenuAndPauseUI.Center(_uiFont,badge,pill,17,white);
-        }
         string money = "$" + _playerCash;
         ShadowText(_serif, money, 36, sh - 92, 26, white);
         if(_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated)
@@ -1030,9 +1102,9 @@ public static partial class Program
         bool healingLesson=Floor.Onboarding==OnboardingStep.HealAtCoffee;
         if(target.Length>0 && (healingLesson || !(_foregroundBanner && _hudStatusTimer>0)))
         {
-            string prompt=target==SkyscraperFloor1World.HandsFullPrompt ? target : "[E] "+target;
+            string prompt=target==Loc.CoolerEmpty ? target : "[E] "+target;
             float width=GameFonts.Measure(_serif,prompt,19).X;
-            GameFonts.Draw(_serif,prompt,new(cx-width/2,cy+26),19,white);
+            GameFonts.Draw(_serif,prompt,new(cx-width/2,sh-178),19,white);
         }
         else if (!healingLesson && _hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && (_foregroundBanner || !CoachingSubtitle))
         {
@@ -1301,7 +1373,7 @@ public static partial class Program
         void Key(KeyboardKey key) => PressTestKey(key);
         void Approach(Vector3 point,float gap=1.25f)
         {
-            _playerPos=_world.ResolvePlayerCollision(new(point.X,1.48f,point.Z+gap));
+            _playerPos=_world.ResolvePlayerCollision(new(point.X,_eyeHeight,point.Z+gap));
             LookAtTarget(point);
         }
         void Attack()
@@ -1514,28 +1586,36 @@ public static partial class Program
         capture("31_heal_station_and_hud.png");
         _playerHp=42; _energy=25; Floor.PocketCoffeeCups=1;
         Approach(SkyscraperFloor1World.CoffeePos+Vector3.UnitY*1.15f); Key(KeyboardKey.E);
-        Check(_playerHp==87 && _energy>=75 && Floor.PocketCoffeeCups==2 && Floor.EspressoWait>11,"espresso +45 +50 and refill");
+        Check(_playerHp==87 && _energy>=75 && Floor.PocketCoffeeCups==2 && Floor.EspressoWait>11,$"espresso +45 +50 and refill hp={_playerHp} energy={_energy} cups={Floor.PocketCoffeeCups} wait={Floor.EspressoWait} focus={_world.FocusPrompt(BuildPlayerCamera())} msg={_hudStatusBanner}");
         Guided(OnboardingStep.CaptureFirstCoder,"Бодрящий");
         _playerHp=40; Key(KeyboardKey.H);
         Check(_playerHp==70 && Floor.PocketCoffeeCups==1,"pocket +30");
         _playerHp=35; Approach(new(4,.95f,13)); Key(KeyboardKey.E);
         Check(_playerHp==70,"pizza +35");
-        Approach(new(3.15f,.9f,14.75f)); Key(KeyboardKey.E);
+        Approach(_world.Coolers.First()+Vector3.UnitY*.9f); Key(KeyboardKey.E);
         Check(_playerHp==95,"water +25");
         _playerHp=35; Key(KeyboardKey.E); Key(KeyboardKey.E);
         Check(_playerHp==60,"cooler has two drinks");
         Approach(new(4,.95f,13)); Key(KeyboardKey.E); Check(_playerHp==60,"pizza on cooldown");
         Approach(SkyscraperFloor1World.CoffeePos+Vector3.UnitY*1.15f); Key(KeyboardKey.E);
         Check(_playerHp==60 && Floor.PocketCoffeeCups==1,"espresso on cooldown");
-        Approach(intern.Position+Vector3.UnitY*.45f);
-        Check(_world.FocusPrompt(BuildPlayerCamera(),_weapons.CurrentWeapon)==SkyscraperFloor1World.HandsFullPrompt,"armed pickup prompt");
-        int cashBeforeNda=_playerCash;
-        var knownBeforeNda=Floor.DiscoveredSpecies.ToArray();
+        intern.Position=new(-1.7f,0,6.7f);
+        intern.FacingYaw=0;
+        _playerPos=intern.Position+new Vector3(.34f,1.72f,1.75f);
+        LookAtTarget(intern.Position+Vector3.UnitY*.50f);
+        var runner=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
+        runner.Position=intern.Position+new Vector3(1.1f,0,.28f);
+        runner.ExitingRoom=false;
+        var start=runner.Position;
+        for(int i=0;i<9;i++) TickFloor(1f/60);
+        Check(runner.State==CoderAIState.PanickedFleeing && runner.SpeechTimer>0 && runner.WalkCycle>0 &&
+            Vector3.Distance(runner.Position,start)>.6f,"approached coder sprints and cries out");
+        Floor.DiscoveryTime=_lastDamageTimer=AudioMusicSystem.VoiceTimer=0;
+        SetHudBanner("",0);
+        capture("51_coder_flee_and_stun_stars.png");
+        _world.ActiveCoders.Remove(runner);
         Key(KeyboardKey.E);
-        Check(_hudStatusBanner==SkyscraperFloor1World.HandsFullMessage && _world.CarriedCoder==null &&
-            _world.ActiveCoders.Contains(intern) && _playerCash==cashBeforeNda && knownBeforeNda.SequenceEqual(Floor.DiscoveredSpecies),"armed pickup refused before NDA");
-        Key(KeyboardKey.One); Key(KeyboardKey.E);
-        Check(_world.CarriedCoder==intern && intern.IdentityRevealed,"bare-hand NDA");
+        Check(_world.CarriedCoder==intern && _weapons.CurrentWeapon==WeaponType.BareHands && intern.IdentityRevealed,"armed E auto holsters and signs NDA");
         Key(KeyboardKey.One);
         Check(_weapons.CurrentWeapon==WeaponType.BareHands && _weapons.SelectedHotbarSlot==-1 &&
             _world.CarriedCoder==intern && _hudStatusBanner.Contains("Отнеси вайбкодера"),"draw blocked during escort");
@@ -1547,8 +1627,12 @@ public static partial class Program
             for(int tick=0;tick<120;tick++) TickFloor(1f/60);
             var candidate=_world.ActiveCoders.First(c=>c.TimidIntern);
             if(sale==3) Check(candidate.Rarity==VibeCoderRarity.Uncommon,"third atrium candidate uncommon");
-            _world.ActiveCoders.Remove(candidate);
-            _world.CarriedCoder=candidate;
+            candidate.State=CoderAIState.Subdued;
+            candidate.ExitingRoom=false;
+            candidate.Position=new(-4.5f,0,6);
+            _weapons.Equip(WeaponType.CaptureNet);
+            Approach(candidate.CombatCenter); Attack();
+            Check(_world.CarriedCoder==candidate && _weapons.CurrentWeapon==WeaponType.BareHands,"net scoops stunned intern");
             _world.SellCarriedCoderToHrVeronika(GrantCash);
             Check(Floor.WingsUnlocked==(sale==3),"quarantine delivery "+sale);
         }
@@ -1558,6 +1642,7 @@ public static partial class Program
         LookAtTarget(_world.HrTarotBoothPos+new Vector3(0,1.32f,0));
         for(int i=0;i<72;i++){UpdateSlot(1f/60); _world.PoseVeronika(_playerPos,1f/60);}
         capture("33_veronika_slot_head_spin.png");
+        capture("50_veronika_slot_clean_no_cubes.png");
         for(int i=0;i<170;i++) UpdateSlot(1f/60);
         DrawFrame(); // Render the prize mesh through the live reveal pass before accepting.
         var prize=_world.Slot.Prize;
@@ -1620,12 +1705,6 @@ public static partial class Program
         }
         Check(Floor.OwnedWeaponsMask==FloorSystems.ClassicMask && VibeCoderCollection.All.Length==24,"full arsenal and catalogue");
         RoundTrip();
-        if(Floor.Audit>0)
-        {
-            UpdateFrame(1f/60,ref exit);
-            Check(floorPanel==FloorPanel.Audit,"payroll audit");
-            Key(KeyboardKey.Three);
-        }
         Key(KeyboardKey.N); Key(KeyboardKey.Three);
         Check(LoreAndMenusUI.IsLoreOpen,"frog dossier opens");
         int frogIndex=Array.FindIndex(VibeCoderCollection.All,s=>s.Id=="frog_hopper");
@@ -1659,8 +1738,30 @@ public static partial class Program
         Check(_weapons.CurrentWeapon==WeaponType.BareHands,"holster boss trophy");
         _weapons.UnlockedSawedOff=true;
         _weapons.UnlockedChatGun=false;
+        _playerHp=100; Floor.PocketCoffeeCups=0; _playerCash=920;
+        var cooler=_world.CoolerPos;
+        _playerPos=cooler+new Vector3(1.82f,1.72f,.76f); LookAtTarget(cooler+Vector3.UnitY*.86f);
+        Key(KeyboardKey.E);
+        Check(Floor.Puddles.Any(x=>x.Position==cooler && x.Wet>0),"spill visible cooler");
+        var spill=Floor.Puddles.Single(x=>x.Position==cooler);
+        spill.Wet=12;
+        _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
+        Check(spill.Wet==12 && _world.FocusPrompt(BuildPlayerCamera())==Loc.CoolerEmpty,"empty jug cannot spill again");
+        SetHudBanner("",0); capture("52_cooler_empty_bottle_puddle.png");
+        Floor.Tick(12.1f,_world,null);
+        Check(_world.FocusPrompt(BuildPlayerCamera())==Loc.CoolerSpill,"dry cooler refills");
+        _playerPos=LobbyEntrance; LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.44f);
+        ReceiveDamage(101,"Охрана СБ (Шокер)",cooler);
+        Check(_playerHp==0 && _knockoutActive && !Raylib.IsCursorHidden(),"knockout trigger");
+        for(int i=0;i<36;i++) UpdateFrame(1f/60,ref exit);
+        var fallen=BuildPlayerCamera();
+        Check(Math.Abs(fallen.Position.Y-.42f)<.001f && fallen.Up.Y<.96f,"floor fall and roll");
+        capture("53_knockout_death_screen.png");
+        Key(KeyboardKey.R);
+        Check(!_knockoutActive && _playerHp==100 && _playerCash==820 && Floor.PocketCoffeeCups==1 &&
+            _playerPos==LobbyEntrance && Raylib.IsCursorHidden(),"wake at reception");
         Console.WriteLine("[AUTOTEST] PASS Guided Floor 1: six steps, live beacons, early skips, save/load and legacy slots");
-        Console.WriteLine("[AUTOTEST] PASS Zero-to-Empire: $0, hand and E catches, terminal, net, intern NDA, payroll, four empty slots, five purchased weapons, carry lock and save migration");
+        Console.WriteLine("[AUTOTEST] PASS Zero-to-Empire: $0, hand and E catches, terminal, net, intern NDA, payroll, four empty slots, five purchased weapons, one-click armed pickup, net scoop and save migration");
     }
 
     private static void ResetClassicFixture()
@@ -1753,14 +1854,6 @@ public static partial class Program
         {
             for(int i=0;i<frames;i++)
             {
-                // Count simulated FPS time while the player is on the floor. Settle any
-                // audit caused by the ammunition test before timing the next shot.
-                if(Floor.Audit>0)
-                {
-                    if(floorPanel!=FloorPanel.Audit) UpdateFrame(dt,ref exit);
-                    var decision=_playerCash>=180 || Floor.Badge>0 ? KeyboardKey.One : KeyboardKey.Three;
-                    Key(decision,true); UpdateFrame(dt,ref exit); Key(decision,false);
-                }
                 UpdateFrame(dt,ref exit);
                 if(sequence!=null && !string.IsNullOrEmpty(frameDir))
                 {
@@ -1937,7 +2030,7 @@ public static partial class Program
         _weapons.SelectSlot(3);
         float wallHp=wallTarget.Hp;
         Mouse(true); Tick(); Mouse(false);
-        Require(wallTarget.Hp==wallHp && Math.Abs(_weapons.BulletTracers[^1].End.Z-.5f)<.02f,"wall stops ray and tracer");
+        Require(wallTarget.Hp==wallHp && Math.Abs(_weapons.BulletTracers[^1].End.Z-(_world.SouthElevatorDoorPos.Z+.15f))<.02f,"wall stops ray and tracer");
         Console.WriteLine("[AUTOTEST] Jump dodge, recoil recovery, wall impact, non-lethal melee and lethal shotgun PASS");
         Console.WriteLine($"[AUTOTEST] Fighters={fighters.Length} HP={enemy.MaxHp} cube={pr.Velocity.Length():F0}m/s damage=7 slap=6 knockback={knockback:F2}m KO={shots} rounds cash=+35 XP=+7");
     }
@@ -1964,6 +2057,10 @@ public static partial class Program
             Require(MainMenuAndPauseUI.IsSettingsPanelOpen,"main menu settings");
             Click(818,238);
             Require(Loc.IsEn && DisplaySettings.Load(path).Language=="en","English pill");
+            foreach(var (label,english) in new[]{
+                ("Играть","Play"),("Новая игра (Соло / Хост 1–3)","New Game (Solo / Host 1-3)"),
+                ("Подключиться к другу (Кооп 1–3)","Join Friend (Co-op 1-3)"),("Загрузить сохранение","Load Save Slot")})
+                Require(Loc.RenderText(label)==english,"English Play panel: "+label);
             PressTestKey(KeyboardKey.Left);
             Require(!Loc.IsEn && DisplaySettings.Load(path).Language=="ru","Russian keyboard selection");
             for(int mode=0;mode<2;mode++)
@@ -1977,21 +2074,16 @@ public static partial class Program
                 }
             }
             Click(380,650);
-            Click(150,(int)MainMenuAndPauseUI.MainButton(8).Y+18);
-            Require(comic.Active, "menu replay opens");
-            PressTestKey(KeyboardKey.Escape);
-            Require(!comic.Active && MainMenuAndPauseUI.IsInMainMenu, "replay returns to menu");
             Click(150,(int)MainMenuAndPauseUI.MainButton(0).Y+18);
-            Require(comic.Active && MainMenuAndPauseUI.IsInMainMenu,"new game opens comic");
-            PressTestKey(KeyboardKey.Escape);
-            Require(!comic.Active && !MainMenuAndPauseUI.IsMenuBlockingGameplay && Raylib.IsCursorHidden() && _world.ActiveCoders.Count==0,"skip starts fresh floor");
+            Click((int)MainMenuAndPauseUI.PlayChoiceButton(0).X+80,(int)MainMenuAndPauseUI.PlayChoiceButton(0).Y+22);
+            Require(!comic.Active && !MainMenuAndPauseUI.IsMenuBlockingGameplay && Raylib.IsCursorHidden() && _world.ActiveCoders.Count==0,"play starts fresh floor directly");
             MainMenuAndPauseUI.OpenMainMenu();
             Input(2,(int)KeyboardKey.Enter); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
             Input(1,(int)KeyboardKey.Enter); Raylib.PollInputEvents();
-            Require(comic.Active, "Enter starts comic");
-            for(int frame=0; frame<850 && comic.Active; frame++) UpdateFrame(.05f,ref exit);
-            Require(!comic.Active && !MainMenuAndPauseUI.IsInMainMenu && Raylib.IsCursorHidden(),"comic auto-advances into floor");
-            Console.WriteLine("[AUTOTEST] PASS comic replay, skip and muted auto-advance into Floor 1");
+            Input(2,(int)KeyboardKey.Enter); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
+            Input(1,(int)KeyboardKey.Enter); Raylib.PollInputEvents();
+            Require(!comic.Active && !MainMenuAndPauseUI.IsInMainMenu && Raylib.IsCursorHidden(),"Enter starts floor directly");
+            Console.WriteLine("[AUTOTEST] PASS clean 5-button menu and instant Floor 1 launch");
             var before=_playerPos;
             Input(2,(int)KeyboardKey.W); UpdateFrame(1f/60,ref exit); Raylib.PollInputEvents();
             Input(1,(int)KeyboardKey.W); Raylib.PollInputEvents();
@@ -2211,6 +2303,49 @@ public static partial class Program
         foreach(var station in new[]{SkyscraperFloor1World.TerminalPos,SkyscraperFloor1World.CoffeePos,
             _world.CentralMacBookPos,_world.RackPos,_world.ExtinguisherPos,_world.CoolerPos,
             _world.HrTarotBoothPos,_world.ElevatorButtonPos}) Approach(station,1.85f);
+        if(PausePlayerCount!="1/3") throw new InvalidDataException("Solo HUD badge");
+        foreach(var cooler in _world.Coolers)
+        {
+            Vector3 tap=cooler+Vector3.UnitY*.90f;
+            bool usable=reachable.Any(feet=>{
+                if(Vector3.DistanceSquared(feet,cooler)>1.75f*1.75f) return false;
+                var eye=feet+Vector3.UnitY*1.72f;
+                var ray=tap-eye;
+                var cam=new Camera3D { Position=eye,Target=tap,Up=Vector3.UnitY,FovY=67 };
+                return _world.PelletDistance(eye,Vector3.Normalize(ray),ray.Length())>=ray.Length()-.52f &&
+                    _world.FocusPrompt(cam)==Loc.CoolerSpill;
+            });
+            if(!usable) throw new InvalidDataException("No reachable dispenser tap at "+cooler);
+            if(!_world.CoolerHasBacking(cooler)) throw new InvalidDataException("Unbacked cooler "+cooler);
+        }
+        void Blocked(Vector3 probe,float feet)
+        {
+            if(Vector3.DistanceSquared(probe,_world.ResolvePlayerCollision(probe,.40f,feet))<.01f)
+                throw new InvalidDataException($"Missing collision at {probe}, height {feet}");
+        }
+        for(int angle=0;angle<360;angle++)
+        {
+            float t=angle*MathF.PI/180;
+            Vector3 dir=new(MathF.Cos(t),0,MathF.Sin(t));
+            var probe=_world.CentralElevatorCorePos+dir*(4.51f/Math.Max(Math.Abs(dir.X),Math.Abs(dir.Z)));
+            Blocked(probe,0);
+            Blocked(probe,SkyscraperFloor1World.CeilingHeight-.4f);
+        }
+        foreach(var door in SkyscraperFloor1World.RoomDoors)
+        {
+            for(float z=-2.1f;z<=0;z+=.18f)
+                foreach(int side in new[]{-1,1}) Blocked(door+new Vector3(side*1.9f,0,z),2.5f);
+            for(float x=-1.85f;x<1.9f;x+=.18f) Blocked(door+new Vector3(x,0,-2.1f),2.5f);
+        }
+        for(float z=-8.5f;z<=.5f;z+=.125f)
+            foreach(int side in new[]{-1,1})
+                for(float x=6.24f;x<=7.66f;x+=.10f)
+                {
+                    Vector3 p=new(side*x,0,z);
+                    if(Vector3.DistanceSquared(p,_world.ResolvePlayerCollision(p))>.00001f)
+                        throw new InvalidDataException("Narrow shaft aisle "+p);
+                }
+        Console.WriteLine("[AUTOTEST] PASS 360 shaft perimeter, four enclosed pods, 2.2m aisles, backed reachable coolers, solo HUD");
         foreach(var desk in _world.GalleyDesks) Approach(desk.ChairPosition,1.15f);
         foreach(var aisle in new Vector3[]{new(0,0,8),new(-11,0,5),new(11,0,5),new(0,0,-10)})
             Approach(aisle,.51f);
@@ -2234,6 +2369,7 @@ public static partial class Program
             if(visited.Add(room))
             {
                 var door=SkyscraperFloor1World.RoomDoors[room];
+                if(room<2 && Vector3.Distance(door,world.CentralMacBookPos) is <7.5f or >12f) throw new InvalidDataException("Atrium run distance");
                 if(coder.Position.Z>=door.Z || Math.Abs(coder.Position.X-door.X)>.5f)
                     throw new InvalidDataException("Coder spawned outside alcove");
                 Tick(75);
@@ -2502,6 +2638,7 @@ public static partial class Program
         MainMenuAndPauseUI.IsSettingsPanelOpen = false;
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         CaptureShot("00_main_menu_classic.png");
+        CaptureShot("46_clean_main_menu_5buttons.png");
         CheckDisplayAndStart(displayPath);
         // Switch into active 3D gameplay
         MainMenuAndPauseUI.IsInMainMenu = false;
@@ -2524,6 +2661,49 @@ public static partial class Program
         for(int i=0;i<72;i++) _world.UpdateWorld(1f/60,new(1,2,12),false,null,null);
         CaptureShot("44_atrium_clear_coworking_doors.png",sceneCamera:new Camera3D {
             Position=new(2.62f,2.85f,8.45f),Target=new(-4.65f,1.22f,2.7f),Up=Vector3.UnitY,FovY=67 });
+        void View(string file,Vector3 eye,Vector3 target,float fov) =>
+            CaptureShot(file,sceneCamera:new Camera3D { Position=eye,Target=target,Up=Vector3.UnitY,FovY=fov });
+        View("47_elevator_side_solid_check.png",new(-8.58f,1.76f,-1.89f),new(-4.60f,1.82f,-5.17f),74);
+        View("48_side_corridor_furnished_check.png",new(7.11f,1.72f,.68f),new(5.92f,1.27f,-6.68f),72);
+        // Inspect the entire perimeter and the back and both sides of every spawn room.
+        // Keep the diagnostic contact sheet outside the four full-resolution deliverables.
+        void CapturePerimeterAudit()
+        {
+            var sheet=Raylib.GenImageColor(1280,900,Color.Black);
+            int frame=0;
+            void Sample(Vector3 eye,Vector3 target)
+            {
+                Camera3D cam=new(){Position=eye,Target=target,Up=Vector3.UnitY,FovY=75};
+                Raylib.BeginDrawing(); BeginLitWorld(_world,cam); Raylib.EndMode3D();
+                VisualEngine3D.Composite(); Raylib.EndDrawing();
+                var image=Raylib.LoadImageFromScreen();
+                try { Raylib.ImageDraw(ref sheet,image,new(0,0,image.Width,image.Height),
+                    new((frame%4)*320,(frame/4)*180,320,180),Color.White); }
+                finally { Raylib.UnloadImage(image); }
+                frame++;
+            }
+            try
+            {
+                for(int i=0;i<8;i++)
+                {
+                    float angle=i*MathF.PI/4;
+                    Vector3 dir=new(MathF.Cos(angle),0,MathF.Sin(angle));
+                    var eye=_world.CentralElevatorCorePos+dir*(7.45f/Math.Max(Math.Abs(dir.X),Math.Abs(dir.Z)));
+                    if(dir.Z>.5f && Math.Abs(dir.X)>.5f) eye.Z=.68f; // Stay in front of the spawn pods.
+                    Sample(eye+Vector3.UnitY*2.3f,_world.CentralElevatorCorePos+Vector3.UnitY*2.1f);
+                }
+                foreach(var door in SkyscraperFloor1World.RoomDoors)
+                    foreach(var offset in new Vector3[]{new(-3.6f,2.2f,-1.3f),new(0,2.2f,-5),new(3.6f,2.2f,-1.3f)})
+                        Sample(door+offset,door+new Vector3(0,1.4f,-1.3f));
+                string path=Path.Combine(Path.GetTempPath(),"vibecoder-perimeter-audit.png");
+                if(!Raylib.ExportImage(sheet,path)) throw new IOException(path);
+            }
+            finally { Raylib.UnloadImage(sheet); }
+        }
+        CapturePerimeterAudit();
+        _world.ElevatorDoorOpenAmount=1;
+        View("49_elevator_front_cabin_check.png",new(-.84f,1.65f,-14.34f),new(.2f,2.06f,-7.8f),67);
+        _world.ElevatorDoorOpenAmount=0;
         var vent=_world.VentMouth(0);
         var hopper=_world.SpawnFrog(0,"frog_hopper");
         for(int i=0;i<25;i++) _world.UpdateWorld(1f/60,vent+Vector3.UnitZ*3,false,null,null);
@@ -2816,8 +2996,8 @@ public static partial class Program
         var cooler=_world.CoolerPos;
         Use(cooler,.9f); Check(Floor.Puddles.Single().Wet==18,"physical cooler spill");
         crypto.Position=cooler+new Vector3(1.25f,0,.65f);
-        var water=cooler+new Vector3(.6f,0,1.5f);
-        At(cooler+new Vector3(1.9f,1.72f,3.5f),water);
+        var water=cooler+new Vector3(1.45f,0,-.8f);
+        At(cooler+new Vector3(2.80f,1.72f,-1.30f),water);
         Strike(WeaponType.SolderingIron,water);
         Check(Floor.Puddles.Single().Electric==6 && crypto.StunTimer>0 && crypto.Fear>=45,"solder conducts through water");
         var junior2=_world.SpawnCoderForTier(SubscriptionBaitTier.FreeTier);
@@ -2968,12 +3148,9 @@ public static partial class Program
         Check(Floor.RackHeat==0 && Floor.PT<hot,"physical B12 cool-down");
         Floor.IncidentNow(Incident.Printer,_world); Use(printer.Position,.9f);
         Check(Floor.Jam>0 && Floor.PrinterWait==0,"jam blocks pass");
-        Floor.IncidentNow(Incident.Audit,_world); Floor.Tick(15,_world,null);
-        Check(Floor.SEC>=22 && Floor.Audit==0,"unanswered audit raises security");
         Floor.IncidentNow(Incident.Audit,_world);
-        int balance=_playerCash;
-        Use(_world.ContractBoardFeet,1.35f);
-        Check(_playerCash==balance-180 && Floor.Audit==0,"audit bribe paid once");
+        Check(Floor.Raid && Floor.Audit==0 && _world.ActiveCoders.Any(c=>c.RaidGuard),"live inspection");
+        int balance;
         Floor.IncidentNow(Incident.Fire,_world); balance=_playerCash;
         Use(rack,1.2f); Use(rack,1.2f);
         Check(!Floor.FireIncident && _playerCash==balance+120,"single emergency cooling payout");

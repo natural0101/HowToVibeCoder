@@ -46,6 +46,30 @@ internal static unsafe partial class VisualEngine3D
         }
         """;
 
+    internal static void SetCoderStride(Vector2 stride)
+    {
+        var pass=CastingShadows ? shadowShader : shader;
+        Raylib.SetShaderValue(pass,CastingShadows ? depthStride : litStride,stride,ShaderUniformDataType.Vec2);
+    }
+    private static int depthStride,litStride,emptyJugLoc;
+    private const string StrideShader="""
+        uniform vec2 coderStride;
+        void stride(inout vec3 p) {
+            if(coderStride.x==0.) return;
+            if(coderStride.x<0.) {
+                float shin=1.-smoothstep(.10,.80,p.y);
+                p.z-=.40*shin;
+                p.y+=.55*shin;
+                return;
+            }
+            float side=sign(p.x), swing=sin(coderStride.y)*side;
+            float leg=1.-smoothstep(.22,.93,p.y);
+            float arm=smoothstep(.15,.24,abs(p.x))*smoothstep(.86,1.,p.y)*(1.-smoothstep(1.36,1.48,p.y));
+            p.z+=leg*.34*swing;
+            p.y+=leg*.13*max(0.,swing);
+            p.xy+=arm*vec2(side*(.14+.07*swing),.18+.14*swing);
+        }
+        """;
     private const string Vertex = """
         #version 330 core
         in vec3 vertexPosition;
@@ -66,7 +90,7 @@ internal static unsafe partial class VisualEngine3D
         void main() {
             vec3 p = vertexPosition;
             vec3 n = vertexNormal;
-            posePod(p,n);
+            posePod(p,n); stride(p);
             // Only jacket rings carry this UV channel. Rotate each complete section
             // toward its shoulder, preserving its radius and the rigid wrist opening.
             if (vertexTexCoord.x>1.99 && dot(sleevePull,sleevePull)>.0001) {
@@ -123,7 +147,7 @@ internal static unsafe partial class VisualEngine3D
         uniform float rackLoad;
         uniform vec3 muzzle;
         uniform int firstPerson;
-        uniform int finish,handSurface;
+        uniform int finish,handSurface,emptyJug;
         uniform float slotReels;
         uniform vec2 weaponFinish;
         /*SKIN*/
@@ -238,6 +262,12 @@ internal static unsafe partial class VisualEngine3D
             if(finish==8) {
                 float halo=1.-smoothstep(.35,1.,length(uv*2.-1.));
                 color=vec4(.008,.010,.019,halo*.55); return;
+            }
+            if(emptyJug==1) {
+                float rim=pow(1.-abs(dot(normalize(norm),v)),1.7);
+                float glint=pow(max(0.,dot(reflect(-v,normalize(norm)),normalize(vec3(-.4,.8,.5)))),8.);
+                color=vec4(mix(vec3(.55,.67,.73),vec3(.98,.96,.90),glint),.10+.57*rim+.42*glint);
+                return;
             }
             vec4 ink=colDiffuse*tint;
             vec3 base=tex.rgb*ink.rgb;
@@ -458,12 +488,13 @@ internal static unsafe partial class VisualEngine3D
 
     public static void Load()
     {
-        shader = Raylib.LoadShaderFromMemory(Vertex.Replace("void main()",PodGeometry+"\nvoid main()"), Fragment.Replace("/*SKIN*/",WeaponSkins.ShaderCode));
+        shader = Raylib.LoadShaderFromMemory(Vertex.Replace("void main()",PodGeometry+"\n"+StrideShader+"\nvoid main()"), Fragment.Replace("/*SKIN*/",WeaponSkins.ShaderCode));
         if (shader.Id == 0 || shader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Failed to compile the world lighting shader.");
         int Loc(string name) => Raylib.GetShaderLocation(shader, name);
         shader.Locs[(int)ShaderLocationIndex.ColorSpecular]=Loc("colSpecular");
         boothColorLoc=Loc("boothColor");
+        emptyJugLoc=Loc("emptyJug");
         reelLoc=Loc("slotReels"); skinLoc=Loc("weaponSkin"); handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
@@ -684,6 +715,24 @@ internal static unsafe partial class VisualEngine3D
         Asset(name,Vector3.Zero,assemblyTransform:transform);
     }
 
+    internal static void DrawCooler(Vector3 feet,float yaw,bool empty)
+    {
+        if(!empty) { Asset("prop_water_cooler",feet,yaw); return; }
+        var model=imports["prop_water_cooler"];
+        var pose=Matrix4x4.Transpose(Matrix4x4.CreateRotationY(yaw*MathF.PI/180)*Matrix4x4.CreateTranslation(feet));
+        if(!CastingShadows) Surface(Finish.Imported,0);
+        for(int i=0;i<model.MeshCount;i++)
+        {
+            // glTF InnerWaterVolume and WaterMeniscusRing, after raylib's default material.
+            int material=model.MeshMaterial[i];
+            if(material is 12 or 13) continue;
+            bool clearJug=!CastingShadows && material==15;
+            if(clearJug) Raylib.SetShaderValue(shader,emptyJugLoc,1,ShaderUniformDataType.Int);
+            Raylib.DrawMesh(model.Meshes[i],CastingShadows ? depthMaterial : model.Materials[material],pose);
+            if(clearJug) Raylib.SetShaderValue(shader,emptyJugLoc,0,ShaderUniformDataType.Int);
+        }
+    }
+
     public static void Asset(string name, Vector3 position, float yaw = 0, float scale = 1,
                              Color? tint = null, float tilt = 0, Vector3? stretch = null, bool hideProp = false, Matrix4x4? assemblyTransform = null,int skin=0)
     {
@@ -744,6 +793,20 @@ internal static unsafe partial class VisualEngine3D
         }
         DrawPaintedModel(model,name,position,yaw,(stretch ?? Vector3.One)*scale,tint ?? Color.White);
         CapturedAssets?.Add(name);
+    }
+
+    internal static void MountedWhiteboard(Vector3 origin,float yaw)
+    {
+        // Keep the porcelain, markers and notes from the easel GLB. Steel,
+        // aluminium and caster materials belong to the freestanding frame.
+        Model board=imports["prop_whiteboard"];
+        var transform=Matrix4x4.Transpose(Matrix4x4.CreateRotationY(yaw*MathF.PI/180)*Matrix4x4.CreateTranslation(origin));
+        if(!CastingShadows) Surface(Finish.Imported,0);
+        for(int i=0;i<board.MeshCount;i++)
+        {
+            int material=board.MeshMaterial[i];
+            if(material>=4) Raylib.DrawMesh(board.Meshes[i],CastingShadows ? depthMaterial : board.Materials[material],transform);
+        }
     }
 
     // Raylib reserves slot zero. glTF material zero is the satin shell.
@@ -1224,14 +1287,15 @@ internal static unsafe partial class VisualEngine3D
             uniform mat4 lightVP,matModel;
             uniform float taper;
             void main() {
-                vec3 p=vertexPosition,n=vec3(0); posePod(p,n); p.xz*=1.+p.y*taper;
+                vec3 p=vertexPosition,n=vec3(0); posePod(p,n); stride(p); p.xz*=1.+p.y*taper;
                 gl_Position=lightVP*matModel*vec4(p,1.);
             }
-            """.Replace("void main()",PodGeometry+"\nvoid main()"),"""
+            """.Replace("void main()",PodGeometry+"\n"+StrideShader+"\nvoid main()"),"""
             #version 330
             void main() { }
             """);
         shadowVp=Raylib.GetShaderLocation(shadowShader,"lightVP");
+        depthStride=Raylib.GetShaderLocation(shadowShader,"coderStride"); litStride=Raylib.GetShaderLocation(shader,"coderStride");
         depthTaper=Raylib.GetShaderLocation(shadowShader,"taper");
         worldVp=Raylib.GetShaderLocation(shader,"lightVP");
         puddlePosLoc=Raylib.GetShaderLocation(shader,"puddleLight");

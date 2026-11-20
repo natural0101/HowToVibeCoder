@@ -42,7 +42,7 @@ internal sealed partial class FloorSystems
         new("NDA на копирке","Отлов и подготовка NDA вдвое быстрее. За подпись +6 СБ.",150),
         new("Печатка Авторитета","Авторитет и страх +30%. Цены +15%, кроме паяльника и пропуска.",210),
         new("Карманный CO2-баллон","[Q] Облако дыма и −15 ПРОД. Перезарядка 25 с.",190),
-        new("Плечевой ремень","Позволяет поднимать и тащить вайбкодера, не убирая оружие",175)
+        new("Плечевой ремень","Быстрее несёшь кадра, можешь бежать и стрелять",175)
     ];
 
     internal static readonly WeaponType[] WeaponOrder = [WeaponType.CaptureNet,
@@ -108,9 +108,9 @@ internal sealed partial class FloorSystems
             OnboardingStep.DepositFrogs => "Отличный улов! Скинь жаб в Баг-трекер рядом со стойкой [E] — он сразу выдаст наличку.",
             OnboardingStep.BuyNet => "Наличка в кармане! Подойди ко мне [E] и возьми Сачок-ловушку за $3.",
             OnboardingStep.ActivateBait => "Сачок в руках! Теперь подойди к ЯблоБуку в центре зала [E] и включи бесплатный Wi-Fi — на него сразу сбегутся первые вайбкодеры.",
-            OnboardingStep.StunAndHeal => "Пошли клиенты! Оглуши первого сачком (ЛКМ), убери сачок повторным [1] и подними вайбкодера голыми руками [E]!",
+            OnboardingStep.StunAndHeal => "Пошли клиенты! Оглуши первого сачком (ЛКМ), подхвати его вторым взмахом или нажми [E]!",
             OnboardingStep.HealAtCoffee => "Тебя задели! Вайбкодеры кидаются багами и больно бьют. Подойди к кофе-машине рядом со стойкой и выпей эспрессо — восстановишь здоровье! В бою ещё спасают пицца, кулеры и стакан кофе на кнопку Эйч.",
-            OnboardingStep.CaptureFirstCoder => "Бодрящий эспрессо творит чудеса! Теперь убери сачок повторным нажатием единицы, подними оглушённого вайбкодера голыми руками и неси ко мне!",
+            OnboardingStep.CaptureFirstCoder => "Бодрящий эспрессо творит чудеса! Теперь подними оглушённого вайбкодера сачком или клавишей [E] и неси ко мне!",
             OnboardingStep.SeatFirstGalley => "Отлично, карантин снят — Западное и Восточное крылья открыты! Слева Опенспейс: сажай туда вайбкодеров промптить за пассивный доход. Справа серверная и охрана эс-бэ — у них есть пропуск, но дерутся они жёстко!",
             _ => "Дело пошло! Чтобы уехать на 2-й этаж, перепаяй Северный лифт Паяльником и сними замок СБ — могу перепрошить Ключ-карту за $1000 у меня [E], либо отбери оригинал у СБ."
         };
@@ -384,13 +384,17 @@ internal sealed partial class FloorSystems
                 foreach(var d in world.GalleyDesks) if(d.IsOccupied) d.Morale=.65f;
                 break;
             case Incident.Bugs: world.SpawnWave(2); message="Выброс багов. Дежурная смена идёт в зал."; break;
-            case Incident.Audit: Audit=15; AuditPresented=false; message="Поступило предписание аудита Башни."; break;
+            case Incident.Audit:
+            case Incident.Raid:
+                Audit=0; Raid=true; world.SpawnWave(3,raid:true);
+                message="Проверка СБ! Охрана входит из восточного крыла.";
+                AudioMusicSystem.Speak("SYSTEM ZERO",message,SpeakerVoiceType.RoboticAgent); break;
             case Incident.Ddos: Ddos=true; message="DDoS: выход Опенспейса упал вдвое. Перезапусти B12."; break;
             case Incident.Burnout:
                 var worker=world.GalleyDesks.Where(d=>d.IsOccupied).MaxBy(d=>d.Burnout);
                 if(worker!=null) { worker.Burnout=100; worker.IsSlackingInTwitter=true; }
                 message="Кадр выгорел. Кофе или ремень вернут его в смену."; break;
-            case Incident.Raid: Raid=true; world.SpawnWave(3,raid:true); message="Рейд СБ. Крыша на связи по пейджеру."; break;
+
             default: FireIncident=true; Overheat(world); message="B12 горит. За срочное охлаждение касса выделила $120."; break;
         }
         Announce(message,6);
@@ -417,8 +421,7 @@ internal sealed partial class FloorSystems
         if(!FireIncident) RackHeat=Down(RackHeat);
         StyleTime=Down(StyleTime);
         if(StyleTime==0) { Recent.Clear(); Repeats=0; Variety=1; Authority=Down(Authority); }
-        if(Audit>0 && !AuditPresented && (Audit=Down(Audit))==0)
-        { Risk(security:22); Announce("Срок ответа истёк. СБ +22"); }
+        if(Audit>0) IncidentNow(Incident.Audit,world); // Convert pending inspections from older saves.
         if(WingsUnlocked) WingBarrierSlide=Math.Min(1,WingBarrierSlide+dt/1.4f);
         EspressoWait=Math.Max(0,EspressoWait-dt/Balance.HealCooldownScale); BarrierVoiceWait=Down(BarrierVoiceWait);
         foreach(int id in StationWait.Keys.ToArray())
@@ -444,7 +447,7 @@ internal sealed partial class FloorSystems
         if(Raid && !world.ActiveCoders.Exists(c=>c.RaidGuard && c.State!=CoderAIState.Subdued)) Raid=false;
         if(WingsUnlocked && (NextIncident-=dt)<=0)
         {
-            List<Incident> options=[Incident.Printer,Incident.Audit];
+            List<Incident> options=[Incident.Printer];
             if(world.IsMacBookTrapActive) options.Add(Incident.Bugs);
             if(staff>0) { options.Add(Incident.Coffee); options.Add(Incident.Ddos); if(R>=40) options.Add(Incident.Burnout); }
             if(world.IsMacBookTrapActive && SEC>=55 && !Raid) options.Add(Incident.Raid);
@@ -635,7 +638,6 @@ public static partial class Program
         }
         if(index>=0 && index<FloorSystems.Jobs.Length) return Floor.Start(index,_world);
         if(index>=BuyOffset && index<BuyOffset+FloorSystems.GearList.Length) return Floor.Buy(index-BuyOffset,TrySpendCash);
-        if(index>=AuditAction && index<AuditAction+3) return Floor.ResolveAudit(index-AuditAction,_world,TrySpendCash);
         if(index>=FinaleAction && index<FinaleAction+2) return Floor.ResolveFinale(index-FinaleAction,GrantCash);
         if(index==PagerAction) return Floor.UsePager(_world);
         if(index==BaitAction)
@@ -794,7 +796,7 @@ public static partial class Program
             Floor.JobId>=0 ? Loc.Tr(objective) : $"[{(Floor.HasWeapon(WeaponType.SolderingIron)?"×":" ")}] Паяльник ($90)    [{(_world.HasElevatorKey?"×":" ")}] Ключ-карта СБ";
         ShadowText(_uiFont,heading,28,Floor.WingsUnlocked ? 54 : 22,16,paper);
         ShadowText(_uiFont,detail,28,Floor.WingsUnlocked ? 77 : 45,17,WorldLabelLayout.Ivory);
-        string notice=Floor.NoticeTime>0 ? Floor.Notice : Floor.Audit>0 ? "Ожидается решение по аудиту" :
+        string notice=Floor.NoticeTime>0 ? Floor.Notice :
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)
         {
@@ -892,7 +894,7 @@ public static partial class Program
         if(floorPanel==FloorPanel.Upgrades) { DrawBriefcase(); return; }
         Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),DossierPrint.Studio);
         Raylib.BeginMode2D(new Camera2D { Zoom=PanelScale, Offset=PanelOffset });
-        if (floorPanel is FloorPanel.Audit or FloorPanel.BossFinale) DrawDecision();
+        if (floorPanel==FloorPanel.BossFinale) DrawDecision();
         else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
         else
         {

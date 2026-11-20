@@ -76,24 +76,11 @@ internal sealed class SlotRoulette
     internal bool Reveal=>Time>=SpinDuration;
     internal float RevealTime=>Math.Max(0,Time-SpinDuration);
     internal float Dance=>Active && Reveal ? MathF.Sin(RevealTime*MathF.PI*130/60) : 0;
-    internal readonly record struct ConfettiPiece(Vector2 Origin,Vector2 Velocity,float Rotation,float Spin,Vector2 Size,Color Ink);
-    internal readonly ConfettiPiece[] Confetti=new ConfettiPiece[95];
-    private static readonly Color[] PartyColors=[new(255,204,73,255),new(248,58,89,255),new(179,101,254,255),
-        new(53,221,249,255),new(113,249,182,255),new(255,242,208,255)];
     internal void BeginSpin()
     {
         Time=0; Active=true;
         AudioMusicSystem.StartSlotLoop();
         FloorSystems.SpeakCoaching(SpinLine);
-    }
-    internal void Scatter()
-    {
-        var random=new Random(777+Prize.Skin);
-        for(int i=0;i<Confetti.Length;i++) {
-            float Range(float min,float max)=>min+(max-min)*random.NextSingle();
-            Confetti[i]=new(new(Range(510,770),Range(675,738)),new(Range(-980,980),Range(-1390,-345)),
-                Range(0,360),Range(-300,300),new(Range(5,9),Range(10,19)),PartyColors[i%PartyColors.Length]);
-        }
     }
     internal float Position=>Winner*(1-MathF.Exp(-5*Math.Min(Time/SpinDuration,1)))/(1-MathF.Exp(-5));
     internal (int Row,int Skin) Prize=>Tickets[Winner];
@@ -153,15 +140,12 @@ public static partial class Program
         if(!landed && slot.Reveal) {
             AudioMusicSystem.StopSlotLoop();
             AudioMusicSystem.PlaySfx(slot.Prize.Skin>=7 ? "slot_win_jackpot" : "slot_win_fanfare");
-            slot.Scatter();
-            _world.SpawnSlotCoins(45);
             if(slot.Prize.Skin>=7) FloorSystems.SpeakCoaching(SlotRoulette.JackpotLine);
 
             Raylib.EnableCursor();
             return;
         }
         if(!slot.Reveal) return;
-        if(slot.Prize.Skin>=7 && slot.RevealTime>=.45f && slot.RevealTime-dt<.45f) _world.SpawnSlotCoins(19);
         Vector2 p=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
         bool click=Raylib.IsMouseButtonPressed(MouseButton.Left);
         bool equip=Raylib.IsKeyPressed(KeyboardKey.Enter) || click && Raylib.CheckCollisionPointRec(p,EquipPrize);
@@ -180,16 +164,7 @@ public static partial class Program
         Texture2D preview=slot.Reveal ? LoreAndMenusUI.RenderShopExhibit(FloorSystems.WeaponModels[row],18+slot.RevealTime*37,PanelScale*2,skin) : default;
         Raylib.BeginMode2D(new Camera2D{Zoom=PanelScale,Offset=PanelOffset});
         Rectangle caseRect=new(78,400,1124,207);
-        if(slot.Reveal && slot.RevealTime<3.5f) {
-            float age=slot.RevealTime;
-            foreach(var piece in slot.Confetti) {
-                Vector2 pos=piece.Origin+piece.Velocity*age+new Vector2(24*(MathF.Sin(age*4+piece.Rotation)-MathF.Sin(piece.Rotation)),480*age*age);
-                Vector2 size=new(piece.Size.X*(.3f+.7f*MathF.Abs(MathF.Cos(age*6+piece.Rotation))),piece.Size.Y);
-                Raylib.DrawRectanglePro(new(pos.X,pos.Y,size.X,size.Y),size/2,piece.Rotation+piece.Spin*age,piece.Ink);
-            }
-            float flash=Math.Clamp(1-age/.38f,0,1);
-            Raylib.DrawRectangle(0,0,1280,720,Raylib.ColorAlpha(WeaponSkins.Inks[tier],115/255f*flash*flash));
-        }
+
         Raylib.DrawTexturePro(shopBackdrop,new(0,85,55,485),caseRect,Vector2.Zero,0,Color.White);
         Raylib.DrawRectangleRoundedLinesEx(caseRect,.06f,10,3,shopGold);
         Rectangle velvet=new(96,414,1088,178);

@@ -9,7 +9,7 @@ internal enum AgentVerdict { Pending, Contained, Released }
 internal sealed partial class FloorSystems
 {
     public AgentVerdict Verdict;
-    public bool FinalePending, Protection, Conflict, AuditPresented, AuditThreshold, PatrolThreshold;
+    public bool FinalePending, Protection, Conflict, AuditThreshold, PatrolThreshold;
     public float Steam, RackSmoke, PocketSmoke, PocketRecharge, HostStun, GuestStun, SecondStun;
     public float ConflictWait, NodeIncome, Defiance, ShutdownTime;
     public Vector3 PocketOrigin;
@@ -27,30 +27,6 @@ internal sealed partial class FloorSystems
         if(WingsUnlocked && SEC>=55 && !AuditThreshold && Audit<=0) IncidentNow(Incident.Audit,world);
         AuditThreshold=SEC>=55;
         if(Protection) Risk(security:-1.2f*dt);
-    }
-
-    internal string ResolveAudit(int choice,SkyscraperFloor1World world,Func<int,bool> spend)
-    {
-        if(Audit<=0) return "";
-        string receipt;
-        switch(choice)
-        {
-            case 0:
-                if(Badge<=0 && !spend(180)) return "Для подделки нужен пропуск или $180.";
-                Badge=0; Risk(debt:12,security:-25);
-                receipt="Аудитор принял ведомость."; break;
-            case 1:
-                var worker=world.GalleyDesks.FirstOrDefault(d=>d.IsOccupied);
-                if(worker==null) return "В Опенспейсе нет кодера для передачи.";
-                worker.IsOccupied=false; worker.CoderName=""; Risk(security:-40);
-                receipt="Кодер передан аудитору."; break;
-            case 2:
-                Risk(security:28); Defiance=45; Raid=true; world.SpawnWave(1,raid:true);
-                receipt="Аудитор вызвал СБ. Авторитет и жадность усилены на 45 секунд."; break;
-            default: return "";
-        }
-        Audit=0; AuditThreshold=SEC>=55;
-        Announce(receipt); return receipt;
     }
 
     internal string ResolveFinale(int choice,Action<int,string> grant)
