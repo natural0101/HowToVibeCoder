@@ -1130,25 +1130,24 @@ def build_head_part(idx, r, human_obj, joints, M):
         _mk_blade_fin(bm, uv, (-0.130, -0.005, 0.295), (-0.178, 0.052, 0.384), (-0.228, 0.148, 0.392), 0.019, M["accent"], "accent")
 
     elif idx == 1:
-        # 1: SMOOTHIE MANIAC — Snug Ribbed Cuffed Charcoal-Sage Slouch Beanie (encloses crown cleanly, brows 100% clear!)
-        beanie_xf = Matrix.Translation((0, 0.010, 0.208)) @ Euler((math.radians(18), 0, 0)).to_matrix().to_4x4()
-        tmp = bmesh.new(); t_uv = tmp.loops.layers.uv.new("UVMap")
-        _mk_loft(tmp, t_uv, [
-            ((0, 0.000, -0.016), 0.114, 0.126),
-            ((0, 0.000,  0.020), 0.116, 0.128),
-            ((0, 0.005,  0.048), 0.108, 0.120),
-            ((0, 0.018,  0.088), 0.094, 0.104),
-            ((0, 0.026,  0.112), 0.060, 0.066),
-            ((0, 0.030,  0.124), 0.020, 0.022),
-        ], M["trim"], "trim", 24, folds=0.014)
-        _mk_loft(tmp, t_uv, [
-            ((0, 0.000, -0.018), 0.118, 0.130),
-            ((0, 0.000,  0.012), 0.120, 0.132),
-            ((0, 0.002,  0.022), 0.114, 0.126),
-        ], M["coal"], "coal", 24, False, False, folds=0.018)
-        _mk_curved_shell(tmp, t_uv, [((0, 0, -0.010), 0.118, 0.130), ((0, 0, 0.010), 0.119, 0.131)], -102, -78, 0.004, M["accent"], "accent", 6)
-        bmesh.ops.transform(tmp, matrix=beanie_xf, verts=tmp.verts)
-        _merge_bm(tmp, bm, t_uv, uv)
+        # 1: SMOOTHIE MANIAC — Expressive Tousled Indie-Dev Messy Hair (ZERO bowling-ball beanie!) + Retro Headphones Around Neck!
+        # Swept layered stylized chestnut fringe & crown tufts built naturally over scalp!
+        tufts = [
+            ((-0.052, -0.090, 0.218), (-0.015, -0.104, 0.228), (-0.070, -0.126, 0.194), 0.014),
+            ((-0.022, -0.104, 0.232), ( 0.024, -0.106, 0.234), ( 0.008, -0.132, 0.196), 0.016),
+            (( 0.018, -0.102, 0.230), ( 0.058, -0.088, 0.220), ( 0.068, -0.118, 0.192), 0.015),
+            ((-0.032, -0.048, 0.268), ( 0.018, -0.030, 0.274), (-0.012, -0.072, 0.305), 0.019),
+            (( 0.006, -0.018, 0.274), ( 0.048,  0.018, 0.264), ( 0.052, -0.008, 0.302), 0.018),
+            ((-0.048,  0.012, 0.262), (-0.005,  0.042, 0.258), (-0.045,  0.052, 0.292), 0.016),
+        ]
+        for ba, bb, tp, hw in tufts:
+            _mk_blade_fin(bm, uv, ba, bb, tp, hw, M["hair"], "hair")
+        # Chunky retro studio headphones resting casually around his NECK (padded cups + sage LED ring!)
+        hp_arc = [(0.088 * math.sin(math.radians(-118 + k * 23.6)), 0.012 + 0.082 * math.cos(math.radians(-118 + k * 23.6)), 0.028) for k in range(11)]
+        _mk_tube(bm, uv, hp_arc, 0.010, M["coal"], "coal", 10)
+        for s in (-1, 1):
+            _mk_cyl(bm, uv, (s * 0.078, -0.058, 0.024), 0.034, 0.032, 0.026, M["coal"], "coal", 16, Euler((math.radians(14), math.radians(s * 76), math.radians(s * 22))))
+            _mk_cyl(bm, uv, (s * 0.084, -0.064, 0.024), 0.024, 0.024, 0.008, M["accent"], "accent", 14, Euler((math.radians(14), math.radians(s * 76), math.radians(s * 22))))
 
     elif idx == 2:
         # 2: TINFOIL CRYPTO-BRO — Crisp Origami-Folded Metallic Silver Tinfoil Hat + Thin Copper Spiral Antenna!
@@ -1364,20 +1363,26 @@ def build_torso_part(idx, r, human_obj, joints, M):
         _mk_box(bm, uv, (0.0, CY - 0.156, 0.285), (0.046, 0.012, 0.044), M["gold"], "gold", bevel=0.004, segs=1)
 
     elif idx == 1:
-        # 1: SMOOTHIE MANIAC — Soft relaxed hoodie hood + CLEAN BODY-HUGGING BARISTA APRON (zero z-fighting!)
-        _mk_loft(bm, uv, [((0, CY + 0.105, 0.425), 0.132, 0.064, 22), ((0, CY + 0.112, 0.488), 0.142, 0.068, 10), ((0, CY + 0.036, 0.535), 0.100, 0.084, -18)], M["upper"], "upper", 22)
+        # 1: SMOOTHIE MANIAC — Oversized Soft Dusty-Lavender Hoodie (ZERO black belly box! Sculpted hood + kangaroo pocket + drawstrings + cream rib hem!)
+        _mk_loft(bm, uv, [((0, CY + 0.102, 0.425), 0.132, 0.064, 22), ((0, CY + 0.110, 0.488), 0.144, 0.070, 10), ((0, CY + 0.034, 0.535), 0.102, 0.086, -18)], M["upper"], "upper", 22)
+        # Soft matching-fabric lavender hoodie hem + subtle warm-cream ribbed bottom cuff
+        _mk_loft(bm, uv, [((0, CY, -0.025), 0.194, 0.144), ((0, CY, 0.028), 0.198, 0.148), ((0, CY, 0.068), 0.192, 0.142)], M["upper"], "upper", 24, False, False, folds=0.025)
+        _mk_loft(bm, uv, [((0, CY, -0.048), 0.188, 0.138), ((0, CY, -0.022), 0.192, 0.142)], M["ivory"], "ivory", 24, False, False)
+        # Matching lavender kangaroo pouch pocket curving naturally over lower stomach!
         _mk_curved_shell(bm, uv, [
-            ((0, CY, -0.115), 0.188, 0.136),
-            ((0, CY,  0.045), 0.186, 0.134),
-            ((0, CY,  0.155), 0.184, 0.134),
-        ], -150, -30, 0.007, M["trim"], "trim", 16)
-        _mk_curved_shell(bm, uv, [
-            ((0, CY, 0.150), 0.184, 0.134),
-            ((0, CY, 0.255), 0.186, 0.142),
-            ((0, CY, 0.340), 0.178, 0.138),
-        ], -120, -60, 0.007, M["trim"], "trim", 10)
-        _mk_loft(bm, uv, [((0, CY, 0.122), 0.194, 0.144), ((0, CY, 0.148), 0.194, 0.144)], M["coal"], "coal", 24, False, False)
-        _mk_tube(bm, uv, [(-0.072, CY - 0.128, 0.338), (-0.064, CY - 0.044, 0.502), (0.0, CY + 0.092, 0.506), (0.064, CY - 0.044, 0.502), (0.072, CY - 0.128, 0.338)], 0.006, M["coal"], "coal", 8)
+            ((0, CY, 0.020), 0.196, 0.146),
+            ((0, CY, 0.095), 0.194, 0.144),
+            ((0, CY, 0.145), 0.188, 0.138),
+        ], -126, -54, 0.012, M["upper"], "upper", 12)
+        # Two natural hanging cream hoodie drawstrings with tiny brushed-steel aglets!
+        for s in (-1, 1):
+            _mk_tube(bm, uv, [
+                (s * 0.034, CY - 0.095, 0.472),
+                (s * 0.040, CY - 0.138, 0.380),
+                (s * 0.036, CY - 0.144, 0.275),
+                (s * 0.038, CY - 0.142, 0.215),
+            ], 0.0048, M["ivory"], "ivory", 7)
+            _mk_cyl(bm, uv, (s * 0.038, CY - 0.142, 0.205), 0.0055, 0.0055, 0.018, M["steel"], "steel", 8)
 
     elif idx == 2:
         # 2: TINFOIL CRYPTO-BRO — Stand-up zip windbreaker collar + Snug Cuban Gold Chain & Medallion!

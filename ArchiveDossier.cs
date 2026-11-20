@@ -7,7 +7,7 @@ namespace HowToVibeCoder;
 
 public static partial class LoreAndMenusUI
 {
-    private const int ArchiveWidth = 1280, ArchiveHeight = 720, RowHeight = 62, VisibleRows = 5;
+    private const int ArchiveWidth = 1280, ArchiveHeight = 720, RowHeight = 68, VisibleRows = 5;
     private static readonly string[] ArchiveTabs = ["Переписка", "Досье HR", "Коллекция", "Словарь"];
     private static readonly string[] IndexTitles = ["Переписка цеха", "Таро-досье HR", "Картотека", "Словарь цеха"];
     private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Лог-файл 01","Агент v0.1"];
@@ -18,12 +18,59 @@ public static partial class LoreAndMenusUI
     internal static string CollectionEntry(int i) => Catches(i)>0 ? VibeCoderCollection.All[i].Name : "??? — НЕ ПОЙМАН";
     private const string CoderModel = "char_vibe_coder", TarotModel = "char_hr_veronika",
                          AgentModel = "escaped_ai_boss", PartnerModel = "char_partner_90s", SolderModel = "weapon_solder_90s";
-    private static readonly Rectangle Selector = new(38, 237, 282, VisibleRows * RowHeight);
-    private static readonly Rectangle Exhibit = new(319, 151, 401, 483);
+    private static readonly Rectangle Selector = new(44, 232, 286, VisibleRows * RowHeight);
+    private static readonly Rectangle Exhibit = new(328, 134, 386, 514);
     private static RenderTexture2D _exhibitTexture;
-    private static Shader _stageAtmosphere;
-    private static int _atmosphereSize;
+    private static Texture2D _deskBackdrop, _folderSheet;
+    private static bool _archiveArtTried;
     private static float _exhibitTime;
+
+    private static readonly Color BrassBright = new(218, 179, 108, 255);
+    private static readonly Color BrassDim    = new(146, 114, 66, 255);
+    private static readonly Color WalnutDark  = new(27, 18, 13, 248);
+    private static readonly Color WalnutEdge  = new(74, 52, 36, 255);
+    private static readonly Color KraftCard   = new(232, 217, 186, 255);
+    private static readonly Color KraftShadow = new(184, 165, 132, 255);
+    private static readonly Color SepiaInk    = new(52, 38, 26, 255);
+    private static readonly Color SepiaMuted  = new(116, 94, 72, 255);
+    private static readonly Color SepiaRule   = new(168, 144, 114, 195);
+    private static readonly Color StampRed    = new(156, 26, 36, 232);
+    private static readonly Color StampSlate  = new(96, 86, 74, 220);
+
+    private static string ResolveUiAsset(string fileName)
+    {
+        string[] roots =
+        [
+            Path.Combine(AppContext.BaseDirectory, "assets", "ui"),
+            Path.Combine(Directory.GetCurrentDirectory(), "assets", "ui"),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "assets", "ui")),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "assets", "ui"))
+        ];
+        foreach (string dir in roots)
+        {
+            string full = Path.Combine(dir, fileName);
+            if (File.Exists(full)) return full;
+        }
+        return Path.Combine(AppContext.BaseDirectory, "assets", "ui", fileName);
+    }
+
+    private static void EnsureArchiveArt()
+    {
+        if (_archiveArtTried) return;
+        _archiveArtTried = true;
+        string bgPath = ResolveUiAsset("archive_desk_bg.png");
+        if (File.Exists(bgPath))
+        {
+            _deskBackdrop = Raylib.LoadTexture(bgPath);
+            Raylib.SetTextureFilter(_deskBackdrop, TextureFilter.Bilinear);
+        }
+        string sheetPath = ResolveUiAsset("archive_folder_sheet.png");
+        if (File.Exists(sheetPath))
+        {
+            _folderSheet = Raylib.LoadTexture(sheetPath);
+            Raylib.SetTextureFilter(_folderSheet, TextureFilter.Bilinear);
+        }
+    }
 
     private static float ArchiveScale => Math.Min(Raylib.GetScreenWidth() / (float)ArchiveWidth, Raylib.GetScreenHeight() / (float)ArchiveHeight);
     private static Rectangle ArchiveScreen(Rectangle r)
@@ -33,8 +80,8 @@ public static partial class LoreAndMenusUI
                    (Raylib.GetScreenHeight() - ArchiveHeight * s) / 2 + r.Y * s, r.Width * s, r.Height * s);
     }
 
-    private static Rectangle LoreTab(int tab) => new(38 + tab * 184, 77, 160, 43);
-    private static readonly Rectangle LoreClose = new(1130, 17, 112, 40);
+    private static Rectangle LoreTab(int tab) => new(42 + tab * 172, 68, 162, 36);
+    private static readonly Rectangle LoreClose = new(1118, 15, 126, 38);
     internal static Rectangle ArchiveTabBounds(int tab) => ArchiveScreen(LoreTab(tab));
     internal static Rectangle ArchiveCloseBounds => ArchiveScreen(LoreClose);
     internal static Rectangle ArchiveRowBounds(int index) => ArchiveScreen(Row(index));
@@ -94,48 +141,126 @@ public static partial class LoreAndMenusUI
 
     private static void DrawSelector()
     {
-        Type(IndexTitles[ActiveLoreTab], 38, 155, 27, Ivory, Typeface.SerifBold);
-        string range = $"Записи {FirstVisibleArchiveEntry + 1:00}–{Math.Min(EntryCount, FirstVisibleArchiveEntry + VisibleRows):00} из {EntryCount:00}";
-        Type(ActiveLoreTab == 2 ? $"Открыто {Program.Discoveries.Count} из {EntryCount} дел" : range, 39, 207, 16, Quiet);
-        Rectangle clip = ArchiveScreen(Selector);
+        // Tactile walnut & aged-brass filing box holding physical specimen index cards!
+        Rectangle tray = new(32, 138, 310, 496);
+        Raylib.DrawRectangleRec(new(tray.X + 5, tray.Y + 7, tray.Width, tray.Height), new Color(6, 4, 3, 150));
+        Raylib.DrawRectangleRec(tray, WalnutDark);
+        Raylib.DrawRectangleRec(new(tray.X + 7, tray.Y + 7, tray.Width - 14, tray.Height - 14), new Color(17, 13, 10, 248));
+        Raylib.DrawRectangleLinesEx(tray, 2, WalnutEdge);
+        Raylib.DrawRectangleLinesEx(new(tray.X + 4, tray.Y + 4, tray.Width - 8, tray.Height - 8), 1, new Color(122, 95, 56, 145));
+
+        // Riveted brass drawer nameplate at top of the filing tray
+        Rectangle plate = new(46, 152, 282, 64);
+        Raylib.DrawRectangleRec(plate, new Color(36, 26, 19, 255));
+        Raylib.DrawRectangleLinesEx(plate, 1.5f, BrassDim);
+        foreach (var (rx, ry) in new[] { (plate.X + 7, plate.Y + 7), (plate.X + plate.Width - 7, plate.Y + 7), (plate.X + 7, plate.Y + plate.Height - 7), (plate.X + plate.Width - 7, plate.Y + plate.Height - 7) })
+            Raylib.DrawCircle((int)rx, (int)ry, 2.5f, BrassBright);
+
+        Type(IndexTitles[ActiveLoreTab], 60, 159, 24, BrassBright, Typeface.SerifBold);
+        string tally = ActiveLoreTab == 2
+            ? $"Открыто {Program.Discoveries.Count} из {EntryCount} дел"
+            : $"Записи {FirstVisibleArchiveEntry + 1:00}–{Math.Min(EntryCount, FirstVisibleArchiveEntry + VisibleRows):00} из {EntryCount:00}";
+        Type(tally, 60, 190, 14, new Color(198, 178, 146, 235));
+
+        Rectangle clip = ArchiveScreen(new(Selector.X - 4, Selector.Y - 4, Selector.Width + 16, Selector.Height + 8));
         Raylib.BeginScissorMode((int)clip.X, (int)clip.Y, (int)Math.Ceiling(clip.Width), (int)Math.Ceiling(clip.Height));
         for (int i = 0; i < EntryCount; i++)
         {
-            Rectangle row = Row(i);
-            if (row.Y + row.Height <= Selector.Y || row.Y >= Selector.Y + Selector.Height) continue;
+            Rectangle raw = Row(i);
+            if (raw.Y + raw.Height <= Selector.Y - 8 || raw.Y >= Selector.Y + Selector.Height + 8) continue;
             bool active = i == SelectedArchiveEntry;
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveRowBounds(i));
-            Raylib.DrawRectangleRec(row, active ? Selected : hover ? new Color(36, 31, 28, 255) : new Color(26, 23, 21, 240));
-            Fill(row.X, row.Y + row.Height - 1, row.Width, 1, new Color(58, 52, 46, 200));
-            Type($"{i + 1:00}", row.X + 13, row.Y + 13, 14, active ? Ivory : Quiet);
+            bool unlocked = ActiveLoreTab != 2 || Catches(i) > 0;
+
+            // Physical manila index card — active card slides physically right (+8px) out of the drawer!
+            float pull = active ? 8f : hover ? 3f : 0f;
+            Rectangle card = new(raw.X + pull, raw.Y + 4, raw.Width - 6, raw.Height - 8);
+            // Small raised physical file-card tab notch on top-left
+            Rectangle notch = new(card.X + 8, card.Y - 5, 58, 7);
+
+            Color cardBg = active ? KraftCard
+                : unlocked ? (hover ? new Color(76, 61, 46, 255) : new Color(58, 46, 35, 248))
+                : (hover ? new Color(42, 35, 29, 255) : new Color(30, 25, 21, 248));
+            Color cardEdge = active ? BrassBright : unlocked ? new Color(128, 102, 72, 220) : new Color(68, 56, 45, 200);
+            Color titleCol = active ? SepiaInk : unlocked ? Ivory : new Color(184, 170, 152, 235);
+            Color subCol   = active ? SepiaMuted : unlocked ? new Color(204, 184, 150, 220) : new Color(132, 118, 102, 210);
+
+            Raylib.DrawRectangleRec(new(card.X + 3, card.Y + 4, card.Width, card.Height), new Color(5, 3, 2, active ? 165 : 105));
+            Raylib.DrawRectangleRec(notch, cardBg);
+            Raylib.DrawRectangleRec(card, cardBg);
+            Raylib.DrawRectangleLinesEx(card, active ? 1.5f : 1f, cardEdge);
+
+            // Subtle faint index line inside physical card
+            if (active)
+                Fill(card.X + 10, card.Y + 34, card.Width - 20, 1, new Color(180, 160, 128, 140));
+
+            // Stamped dossier index number inside brass/ink tag
+            Type($"№{i + 1:00}", card.X + 10, card.Y + 12, 13, active ? StampRed : BrassBright, Typeface.InterfaceBold);
+
             string name = EntryName(i);
-            int size = 20;
-            while (size > 13 && GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, size), name, size).X > row.Width - 53) size--;
-            Type(name, row.X + 43, row.Y + 7, size, Ivory, Typeface.InterfaceBold);
+            int size = 19;
+            while (size > 13 && GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, size), name, size).X > card.Width - 78) size--;
+            Type(name, card.X + 48, card.Y + 8, size, titleCol, Typeface.InterfaceBold);
+
             string context = EntryContext(i);
             if (ActiveLoreTab == 3)
             {
-                var lines = Wrap(context, (int)row.Width - 60, 14);
+                var lines = Wrap(context, (int)card.Width - 64, 13);
                 if (lines.Length > 1) context = lines[0] + "…";
             }
-            Type(context, row.X + 43, row.Y + 34, 14, Quiet);
+            Type(context, card.X + 48, card.Y + 36, 13, subCol);
+
+            // Tiny crimson wax seal dot on caught collection cards so progress pops tactilely!
+            if (ActiveLoreTab == 2 && unlocked)
+            {
+                float sx = card.X + card.Width - 16, sy = card.Y + card.Height * 0.5f;
+                Raylib.DrawCircle((int)sx, (int)sy, 6.5f, StampRed);
+                Raylib.DrawCircleLines((int)sx, (int)sy, 6.5f, active ? KraftShadow : BrassDim);
+            }
         }
         Raylib.EndScissorMode();
+
+        // Compact physical scroll indicator at tray bottom when list overflows
+        if (EntryCount > VisibleRows)
+        {
+            float frac = ArchiveScrollLimit > 0 ? Math.Clamp(LoreScrollOffset / ArchiveScrollLimit, 0, 1) : 0;
+            float barX = tray.X + 22, barW = tray.Width - 44, barY = tray.Y + tray.Height - 24;
+            Fill(barX, barY, barW, 4, new Color(46, 35, 26, 255));
+            float thumbW = Math.Max(36, barW * (VisibleRows / (float)EntryCount));
+            Fill(barX + (barW - thumbW) * frac, barY - 1, thumbW, 6, BrassDim);
+        }
     }
 
-    private const int SheetX = 746, TextWidth = 466;
+    private const int SheetX = 776, TextWidth = 422;
 
     private static float SectionHeading(string title, float y)
     {
-        Fill(SheetX, y, TextWidth, 1, Rule);
-        Text(title, SheetX, y + 9, 14, RedInk, Typeface.InterfaceBold);
-        return y + 32;
+        Fill(SheetX, y, TextWidth, 1, SepiaRule);
+        Text(title, SheetX, y + 8, 13, StampRed, Typeface.InterfaceBold);
+        return y + 30;
     }
 
     private static float Speaker(string name, string words, float y, Color accent)
     {
         Text(name, SheetX, y, 17, accent, Typeface.InterfaceBold);
-        return Paragraph(words, SheetX, y + 26, TextWidth, 20, 25, Ink) + 19;
+        return Paragraph(words, SheetX, y + 25, TextWidth, 19, 24, SepiaInk) + 18;
+    }
+
+    private static void DrawRubberStamp(string label, float centerX, float centerY, float angleDeg, Color ink)
+    {
+        Font f = GameFonts.Get(Typeface.InterfaceBold, 16);
+        Vector2 sz = GameFonts.Measure(f, label, 16);
+        float w = sz.X + 26, h = 34;
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(centerX, centerY, 0);
+        Rlgl.Rotatef(angleDeg, 0, 0, 1);
+        Rectangle outer = new(-w * 0.5f, -h * 0.5f, w, h);
+        Rectangle inner = new(-w * 0.5f + 3.5f, -h * 0.5f + 3.5f, w - 7, h - 7);
+        Raylib.DrawRectangleRec(outer, new Color(ink.R, ink.G, ink.B, (byte)20));
+        Raylib.DrawRectangleLinesEx(outer, 2.6f, ink);
+        Raylib.DrawRectangleLinesEx(inner, 1.0f, new Color(ink.R, ink.G, ink.B, (byte)175));
+        GameFonts.Draw(f, label, new(-sz.X * 0.5f, -8.5f), 16, ink, shadowed: false);
+        Rlgl.PopMatrix();
     }
 
     private static void DrawCollectionSheet(int i)
@@ -153,103 +278,105 @@ public static partial class LoreAndMenusUI
             };
         string title = known ? species.Name : "Неизвестный экземпляр";
         string biography = known ? species.Bio : clue;
-        if(known && !species.IsFrog && species.Id!="ai_agent_v01") biography+=" "+FloorSystems.VibeCheck(species.Archetype);
-        float ledgerTop = 212 + 43 * Wrap(title, TextWidth, 35, Typeface.SerifBold).Length;
-        float bioTop = ledgerTop + 116;
-        float tacticsTop = bioTop + 32 + 27 * Wrap(biography, TextWidth, 22).Length + 12;
-        float end = tacticsTop + 32 + 25 * Wrap(species.Hint, TextWidth, 21).Length;
-        DrawPage(end + (species.IsFrog ? 72 : 20));
-        Color seal = known ? new(166, 28, 46, 255) : new(108, 102, 94, 255);
-        string stamp = known ? "ПОЙМАН" : "В РОЗЫСКЕ";
-        int stampWidth = known ? 86 : 116;
-        float stampX = SheetX + TextWidth - stampWidth;
-        Text($"ЛИЧНОЕ ДЕЛО №{i + 1:00}", SheetX, 165, 15, Muted, Typeface.InterfaceBold);
-        Raylib.DrawRectangleLinesEx(new(stampX, 159, stampWidth, 31), 2, seal);
-        Text(stamp, stampX + 11, 165, 16, seal, Typeface.InterfaceBold);
-        Paragraph(title, SheetX, 200, TextWidth, 35, 43, Ink, Typeface.SerifBold);
+        if (known && !species.IsFrog && species.Id != "ai_agent_v01") biography += " " + FloorSystems.VibeCheck(species.Archetype);
 
-        void Field(string label, string value, int column, int row, Color color)
+        DrawPage(646);
+
+        // Header line + angled wet-ink rubber stamp tucked cleanly clear of both curled corner & steel paperclip!
+        Text($"ЛИЧНОЕ ДЕЛО №{i + 1:00}", SheetX, 174, 14, SepiaMuted, Typeface.InterfaceBold);
+        DrawRubberStamp(known ? "ПОЙМАН" : "В РОЗЫСКЕ", SheetX + TextWidth - 134, 188, -6.5f, known ? StampRed : StampSlate);
+
+        float titleBottom = Paragraph(title, SheetX, 206, TextWidth - 10, 32, 39, SepiaInk, Typeface.SerifBold);
+        float metaY = titleBottom + 10;
+
+        // Clean editorial HR dossier strip (NO sterile SaaS 2x2 grey box table!)
+        Fill(SheetX, metaY, TextWidth, 2, SepiaInk);
+        Fill(SheetX, metaY + 4, TextWidth, 1, SepiaRule);
+
+        var (rarity, rarityInk) = species.Rarity switch
         {
-            float x = SheetX + column * (TextWidth / 2) + 9, top = ledgerTop + row * 58;
-            Text(label, x, top + 5, 16, Muted);
-            Text(value, x, top + 25, 23, color, Typeface.InterfaceBold);
-        }
-        Fill(SheetX, ledgerTop, TextWidth, 1, Rule);
-        Fill(SheetX, ledgerTop + 58, TextWidth, 1, Rule);
-        Fill(SheetX + TextWidth / 2, ledgerTop, 1, 116, Rule);
-        var (rarity, ink) = species.Rarity switch
-        {
-            VibeCoderRarity.Uncommon => ("Необычный", Muted),
-            VibeCoderRarity.Rare => ("Редкий", RedInk),
-            VibeCoderRarity.Epic => ("Эпический", new Color(99, 54, 94, 255)),
-            VibeCoderRarity.Legendary => ("Легендарный", new Color(34, 99, 73, 255)),
-            _ => ("Обычный", Muted)
+            VibeCoderRarity.Uncommon  => ("Необычный", SepiaMuted),
+            VibeCoderRarity.Rare      => ("Редкий", StampRed),
+            VibeCoderRarity.Epic      => ("Эпический", new Color(96, 46, 92, 255)),
+            VibeCoderRarity.Legendary => ("Легендарный", new Color(28, 92, 64, 255)),
+            _                         => ("Обычный", SepiaMuted)
         };
-        Field("Редкость", rarity, 0, 0, ink);
-        Field("Категория", species.Id=="ai_agent_v01" ? "ИИ-агент" : species.IsFrog ? "Джаба-жаба" : "Вайбкодер", 1, 0, Ink);
-        Field("Выплата", species.IsFrog ? $"${species.SalePrice}" : $"+${species.BonusPayout}", 0, 1, Ink);
-        if(species.Id=="ai_agent_v01" && Program.AgentOutcome!=AgentVerdict.Pending)
-            Field("Решение",Program.AgentOutcome==AgentVerdict.Contained ? "Контейнирован" : "Отпущен",1,1,Ink);
-        else Field("Поймано", caught.ToString(), 1, 1, Ink);
+        string category = species.Id == "ai_agent_v01" ? "ИИ-агент" : species.IsFrog ? "Джаба-жаба" : "Вайбкодер";
+        string payout = species.IsFrog ? $"${species.SalePrice}" : $"+${species.BonusPayout}";
+        string statLabel = species.Id == "ai_agent_v01" && Program.AgentOutcome != AgentVerdict.Pending ? "Решение" : "Поймано";
+        string statVal = species.Id == "ai_agent_v01" && Program.AgentOutcome != AgentVerdict.Pending
+            ? (Program.AgentOutcome == AgentVerdict.Contained ? "Контейнирован" : "Отпущен")
+            : caught.ToString();
 
-        Paragraph(biography, SheetX, SectionHeading("ИЗ ЛИЧНОГО ДЕЛА", bioTop), TextWidth, 22, 27, Ink);
-        Paragraph(species.Hint, SheetX, SectionHeading("ТАКТИКА ОТЛОВА", tacticsTop), TextWidth, 21, 25, Ink);
+        void MetaCol(string lbl, string val, float x, Color valCol)
+        {
+            Text(lbl, x, metaY + 12, 12, SepiaMuted, Typeface.InterfaceBold);
+            Text(val, x, metaY + 29, 18, valCol, Typeface.InterfaceBold);
+        }
+        MetaCol("Редкость", rarity, SheetX + 2, rarityInk);
+        MetaCol("Категория", category, SheetX + 126, SepiaInk);
+        MetaCol("Выплата", payout, SheetX + 252, StampRed);
+        MetaCol(statLabel, statVal, SheetX + 336, SepiaInk);
+
+        float bioTop = metaY + 60;
+        float afterBio = Paragraph(biography, SheetX, SectionHeading("ИЗ ЛИЧНОГО ДЕЛА", bioTop), TextWidth, 19, 25, SepiaInk);
+        float tacticsTop = afterBio + 16;
+        float end = Paragraph(species.Hint, SheetX, SectionHeading("ТАКТИКА ОТЛОВА", tacticsTop), TextWidth, 19, 24, SepiaInk);
         if (species.IsFrog)
         {
-            Fill(SheetX, end + 10, TextWidth, 1, Rule);
-            Rlgl.PushMatrix();
-            Rlgl.Translatef(SheetX + 5, end + 20, 0);
-            var oblique = Matrix4x4.Identity;
-            oblique.M12 = -.16f;
-            Rlgl.MultMatrixf(oblique);
-            Paragraph("Справка цеха: материализовавшиеся баги из перегретых стоек, сбегающие через вентиляцию серверной.", 0, 0, TextWidth - 8, 15, 18, Muted);
-            Rlgl.PopMatrix();
+            Fill(SheetX, end + 12, TextWidth, 1, SepiaRule);
+            Paragraph("Справка цеха: материализовавшиеся баги из перегретых стоек, сбегающие через вентиляцию серверной.", SheetX, end + 20, TextWidth, 14, 18, SepiaMuted);
         }
     }
 
     private static void DrawPage(float bottom)
     {
-        Sheet(new(720, 136, 520, bottom - 136));
+        EnsureArchiveArt();
+        Rectangle paperRect = new(718, 122, 536, Math.Max(528, bottom - 122));
+        if (_folderSheet.Id != 0)
+        {
+            Raylib.DrawTexturePro(_folderSheet, new(0, 0, _folderSheet.Width, _folderSheet.Height), paperRect, Vector2.Zero, 0f, Color.White);
+        }
+        else
+        {
+            Sheet(new(726, 136, 514, bottom - 136));
+        }
     }
 
     private static void DrawReading()
     {
         int i = SelectedArchiveEntry;
         if (ActiveLoreTab == 2) { DrawCollectionSheet(i); return; }
-        if (ActiveLoreTab != 3) DrawPage(606);
+        DrawPage(646);
         if (ActiveLoreTab == 0)
         {
             var m = _leakedChats[i];
-            Text($"ПЕРЕХВАТ №{i + 1:00}     {m.Time}", SheetX, 170, 15, Muted, Typeface.InterfaceBold);
-            float y = Paragraph(ChatTitles[i], SheetX, 202, TextWidth, 36, 43, Ink, Typeface.SerifBold) + 6;
-            y = Paragraph(m.RoleBadge, SheetX, y, TextWidth, 15, 19, Muted) + 16;
-            Fill(SheetX, y, TextWidth, 1, Rule);
-            y = Speaker(m.Handle, m.Text, y + 15, RedInk);
-            Speaker(m.ReplyAuthor, m.ReplyText, y, new Color(99, 103, 69, 255));
+            Text($"ПЕРЕХВАТ №{i + 1:00}     {m.Time}", SheetX, 174, 14, SepiaMuted, Typeface.InterfaceBold);
+            float y = Paragraph(ChatTitles[i], SheetX, 206, TextWidth - 10, 32, 39, SepiaInk, Typeface.SerifBold) + 6;
+            y = Paragraph(m.RoleBadge, SheetX, y, TextWidth, 14, 18, SepiaMuted) + 14;
+            Fill(SheetX, y, TextWidth, 1, SepiaRule);
+            y = Speaker(m.Handle, m.Text, y + 14, StampRed);
+            Speaker(m.ReplyAuthor, m.ReplyText, y, new Color(62, 84, 52, 255));
         }
         else if (ActiveLoreTab == 1)
         {
             var entry = TarotEntries[i];
-            Text($"ОТДЕЛ КАДРОВ     Заключение №{i + 1:00}", SheetX, 170, 15, Muted, Typeface.InterfaceBold);
-            float y = Paragraph(TarotCards[i], SheetX, 202, TextWidth, 38, 45, Ink, Typeface.SerifBold) + 6;
-            y = Paragraph(entry.title, SheetX, y, TextWidth, 18, 22, Muted) + 14;
+            Text($"ОТДЕЛ КАДРОВ     Заключение №{i + 1:00}", SheetX, 174, 14, SepiaMuted, Typeface.InterfaceBold);
+            float y = Paragraph(TarotCards[i], SheetX, 206, TextWidth - 10, 33, 40, SepiaInk, Typeface.SerifBold) + 6;
+            y = Paragraph(entry.title, SheetX, y, TextWidth, 17, 21, SepiaMuted) + 14;
             y = SectionHeading("ЗАПИСЬ ВЕРОНИКИ", y);
-            y = Paragraph(entry.body, SheetX, y, TextWidth, 20, 25, Ink) + 15;
+            y = Paragraph(entry.body, SheetX, y, TextWidth, 19, 24, SepiaInk) + 14;
             y = SectionHeading("ЗАКЛЮЧЕНИЕ ОРАКУЛА", y);
-            Paragraph(entry.verdict, SheetX, y, TextWidth, 17, 22, Ink, Typeface.InterfaceBold);
+            Paragraph(entry.verdict, SheetX, y, TextWidth, 17, 22, SepiaInk, Typeface.InterfaceBold);
         }
         else
         {
             var entry = DictionaryEntries[i];
-            float bottom = 208 + 44 * Wrap(entry.zoomer, TextWidth, 37, Typeface.SerifBold).Length + 14 + 32
-                + 28 * Wrap(entry.nineties, TextWidth, 23, Typeface.InterfaceBold).Length + 19
-                + 27 * Wrap(entry.comment + ".", TextWidth, 21).Length + 20;
-            DrawPage(bottom);
-            Text($"СЛОВАРНАЯ КАРТОЧКА №{i + 1:00}", SheetX, 170, 15, Muted, Typeface.InterfaceBold);
-            float y = Paragraph(entry.zoomer, SheetX, 208, TextWidth, 37, 44, Ink, Typeface.SerifBold) + 14;
+            Text($"СЛОВАРНАЯ КАРТОЧКА №{i + 1:00}", SheetX, 174, 14, SepiaMuted, Typeface.InterfaceBold);
+            float y = Paragraph(entry.zoomer, SheetX, 208, TextWidth - 10, 33, 40, SepiaInk, Typeface.SerifBold) + 14;
             y = SectionHeading("НА ЯЗЫКЕ ЦЕХА", y);
-            y = Paragraph(entry.nineties, SheetX, y, TextWidth, 23, 28, Ink, Typeface.InterfaceBold) + 19;
-            Paragraph(entry.comment + ".", SheetX, y, TextWidth, 21, 27, Ink);
+            y = Paragraph(entry.nineties, SheetX, y, TextWidth, 22, 27, SepiaInk, Typeface.InterfaceBold) + 18;
+            Paragraph(entry.comment + ".", SheetX, y, TextWidth, 19, 25, SepiaInk);
         }
     }
 
@@ -295,78 +422,65 @@ public static partial class LoreAndMenusUI
         Raylib.EndTextureMode();
     }
 
-    private static void DrawStageAtmosphere()
-    {
-        if (_stageAtmosphere.Id == 0)
-        {
-            _stageAtmosphere = Raylib.LoadShaderFromMemory(null, """
-                #version 330
-                uniform vec4 stage;
-                out vec4 color;
-                void main() {
-                    vec2 uv = (gl_FragCoord.xy - stage.xy) / stage.zw;
-                    vec2 edge = min(uv,1.-uv);
-                    float fade = smoothstep(0.,.21,edge.x) * smoothstep(0.,.14,edge.y);
-                    vec2 lamp = (uv - vec2(.35,.78)) * vec2(1.3,.84);
-                    float glow = exp(-7.*dot(lamp,lamp));
-                    float across = uv.x-.49-(uv.y-.5)*.31;
-                    float beam = exp(-24.*across*across)*uv.y;
-                    vec3 ink = vec3(.079,.071,.063) + glow*vec3(.17,.14,.112) + beam*vec3(.055,.045,.032);
-                    color = vec4(ink,.985*fade);
-                }
-                """);
-            if (_stageAtmosphere.Id == 0 || _stageAtmosphere.Id == Rlgl.GetShaderIdDefault())
-                throw new InvalidOperationException("Failed to compile archive backdrop");
-            _atmosphereSize = Raylib.GetShaderLocation(_stageAtmosphere, "stage");
-        }
-        Rectangle local = new(210, 86, 730, 590);
-        Rectangle dst = ArchiveScreen(local);
-        float px = Raylib.GetRenderWidth() / (float)Raylib.GetScreenWidth();
-        float py = Raylib.GetRenderHeight() / (float)Raylib.GetScreenHeight();
-        Vector4 stage = new(dst.X * px, (Raylib.GetScreenHeight() - dst.Y - dst.Height) * py, dst.Width * px, dst.Height * py);
-        Raylib.SetShaderValue(_stageAtmosphere, _atmosphereSize, stage, ShaderUniformDataType.Vec4);
-        Raylib.BeginShaderMode(_stageAtmosphere);
-        Raylib.DrawRectangleRec(local, Color.White);
-        Raylib.EndShaderMode();
-    }
-
     public static void DrawLoreWindow(Font font)
     {
+        EnsureArchiveArt();
         RenderExhibit();
-        Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), Studio);
+        Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), new Color(18, 11, 8, 255));
         Rectangle frame = ArchiveScreen(new(0, 0, ArchiveWidth, ArchiveHeight));
         Raylib.BeginMode2D(new Camera2D { Offset = new(frame.X, frame.Y), Zoom = ArchiveScale });
-        DrawStageAtmosphere();
-        Type("АРХИВ «ЭНТРОПИК»", 38, 15, 42, Ivory, Typeface.SerifBold);
+
+        // Bespoke painted mahogany desk + stitched green leather blotter + warm brass-lamp spotlight!
+        if (_deskBackdrop.Id != 0)
+            Raylib.DrawTexturePro(_deskBackdrop, new(0, 0, _deskBackdrop.Width, _deskBackdrop.Height), new(0, 0, ArchiveWidth, ArchiveHeight), Vector2.Zero, 0f, Color.White);
+        else
+            Raylib.DrawRectangle(0, 0, ArchiveWidth, ArchiveHeight, WalnutDark);
+
+        // Engraved mahogany rail header + brass nameplate close plaque
+        Type("АРХИВ «ЭНТРОПИК»", 42, 12, 38, new Color(242, 224, 186, 255), Typeface.SerifBold);
         bool closeHover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveCloseBounds);
-        if (closeHover) Raylib.DrawRectangleRounded(LoreClose, .55f, 8, Selected);
-        Raylib.DrawRectangleRoundedLinesEx(LoreClose, .55f, 8, 1, new Color(113, 99, 86, 255));
-        MainMenuAndPauseUI.Center(GameFonts.Get(Typeface.Interface, 16), "Закрыть [N]", LoreClose, 16, Ivory);
+        Raylib.DrawRectangleRec(new(LoreClose.X + 2, LoreClose.Y + 3, LoreClose.Width, LoreClose.Height), new Color(6, 4, 2, 150));
+        Raylib.DrawRectangleRec(LoreClose, closeHover ? new Color(66, 46, 30, 255) : new Color(36, 24, 17, 245));
+        Raylib.DrawRectangleLinesEx(LoreClose, 1.5f, closeHover ? BrassBright : BrassDim);
+        MainMenuAndPauseUI.Center(GameFonts.Get(Typeface.InterfaceBold, 15), "Закрыть [N]", LoreClose, 15, closeHover ? Color.White : BrassBright);
+
+        // Physical raised manila/brass filing divider tabs along the top brass desk rail!
         for (int i = 0; i < ArchiveTabs.Length; i++)
         {
             Rectangle r = LoreTab(i);
             bool active = i == ActiveLoreTab;
             bool hover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveTabBounds(i));
-            Type($"[{i + 1}]", r.X, r.Y + 10, 15, active ? Ivory : Quiet);
-            Type(ArchiveTabs[i], r.X + 31, r.Y + 7, 20, active ? Color.White : hover ? Ivory : Quiet, Typeface.InterfaceBold);
+            Rectangle tabRect = active ? new(r.X, r.Y - 3, r.Width, r.Height + 5) : new(r.X, r.Y + 3, r.Width, r.Height - 2);
+            Color tabBg = active ? KraftCard : hover ? new Color(56, 42, 30, 245) : new Color(34, 25, 19, 235);
+            Color tabBorder = active ? BrassBright : hover ? BrassDim : new Color(92, 70, 46, 210);
+            Raylib.DrawRectangleRec(new(tabRect.X + 2, tabRect.Y + 3, tabRect.Width, tabRect.Height), new Color(6, 4, 2, 135));
+            Raylib.DrawRectangleRec(tabRect, tabBg);
+            Raylib.DrawRectangleLinesEx(tabRect, active ? 1.8f : 1f, tabBorder);
+            Type($"[{i + 1}]", tabRect.X + 11, tabRect.Y + 10, 13, active ? StampRed : BrassDim, Typeface.InterfaceBold);
+            Type(ArchiveTabs[i], tabRect.X + 36, tabRect.Y + 8, 17, active ? SepiaInk : hover ? Ivory : new Color(214, 198, 172, 235), Typeface.InterfaceBold);
         }
+
         DrawSelector();
         Raylib.DrawTexturePro(_exhibitTexture.Texture, new(0, 0, _exhibitTexture.Texture.Width, -_exhibitTexture.Texture.Height),
                              Exhibit, Vector2.Zero, 0, Color.White);
         DrawReading();
-        Fill(38, 668, 1204, 1, Stone);
-        Type("1–4 / Tab   Раздел", 38, 682, 15, Quiet);
-        Type("Колесо / стрелки   Запись", 235, 682, 15, Quiet);
-        Type("Esc   В игру", 1151, 682, 15, Quiet);
+
+        // Quiet engraved brass key hints along the lower mahogany bevel
+        Type("1–4 / Tab   Раздел", 44, 682, 14, new Color(196, 174, 138, 220));
+        Type("Колесо / стрелки   Запись", 242, 682, 14, new Color(196, 174, 138, 220));
+        Type("Esc   В игру", 1140, 682, 14, new Color(196, 174, 138, 220));
         Raylib.EndMode2D();
     }
 
     internal static void UnloadArchive()
     {
         if (_exhibitTexture.Id != 0) Raylib.UnloadRenderTexture(_exhibitTexture);
-        if (_stageAtmosphere.Id != 0) Raylib.UnloadShader(_stageAtmosphere);
+        if (_deskBackdrop.Id != 0) Raylib.UnloadTexture(_deskBackdrop);
+        if (_folderSheet.Id != 0) Raylib.UnloadTexture(_folderSheet);
         _exhibitTexture = default;
-        _stageAtmosphere = default;
+        _deskBackdrop = default;
+        _folderSheet = default;
+        _archiveArtTried = false;
         VisualEngine3D.UnloadArchiveShader();
     }
 }
@@ -426,11 +540,11 @@ internal static unsafe partial class VisualEngine3D
                         float highlight = pow(max(dot(n,normalize(v+key)),0.),34.);
                         float contact = max(exp(-19.*length((posWS.xz-vec2(-.14,.015))*vec2(1.4,.70))),
                                             exp(-19.*length((posWS.xz-vec2(.14,.015))*vec2(1.4,.70))));
-                        vec3 metal = surface==2 ? vec3(.53,.35,.15) : vec3(.105,.135,.146);
-                        float pool = max(0.,1.-length(posWS.xz-vec2(-.52,-.55))*.86);
-                        vec3 lit = metal*(.42+.47*max(dot(n,key),0.)+.65*pool+.13*brushing)
-                                  + vec3(.12,.18,.19)*edge + highlight*.43;
-                        color = vec4(lit*(1.-.90*contact),1.); return;
+                        vec3 metal = surface==2 ? vec3(.72,.52,.22) : vec3(.145,.098,.066);
+                        float pool = max(0.,1.-length(posWS.xz-vec2(-.48,-.52))*.82);
+                        vec3 lit = metal*(.42+.48*max(dot(n,key),0.)+.68*pool+.14*brushing)
+                                  + vec3(.24,.18,.10)*edge + highlight*.46;
+                        color = vec4(lit*(1.-.88*contact),1.); return;
                     }
                     vec3 pigment = pow(swatch.rgb,vec3(.455));
                     if(weaponSkin>0) pigment=finishSkin(skinPos,n,v,skinClock,pigment);
@@ -438,9 +552,9 @@ internal static unsafe partial class VisualEngine3D
                     vec3 back = normalize(vec3(.66,.48,-.72));
                     float rim = pow(1.-max(dot(n,v),0.),1.65) * max(dot(n,back),0.);
                     float bounce = max(dot(n,normalize(vec3(.5,.05,.82))),0.);
-                    vec3 light = vec3(.34,.36,.39) + vec3(.87,.72,.55)*max(dot(n,key),0.)
-                                 + vec3(.09,.18,.21)*bounce;
-                    vec3 result=pigment*light+rim*vec3(.31,.63,.68);
+                    vec3 light = vec3(.38,.36,.34) + vec3(.92,.76,.54)*max(dot(n,key),0.)
+                                 + vec3(.14,.16,.13)*bounce;
+                    vec3 result=pigment*light+rim*vec3(.68,.54,.32);
                     if(surface==4) {
                         float gleam=pow(max(0.,dot(n,normalize(key+v))),16.);
                         result+=pigment*vec3(.28,.21,.15)+vec3(.29,.22,.15)*gleam;
