@@ -73,7 +73,9 @@ public static partial class Program
             else
             {
                 Texture2D icon=_slotIcons[(i+4)%5];
-                Rectangle crop=iconCrops[i];
+                Rectangle raw=iconCrops[i];
+                float sx=icon.Width/256f, sy=icon.Height/256f;
+                Rectangle crop=new(raw.X*sx,raw.Y*sy,raw.Width*sx,raw.Height*sy);
                 float k=Math.Min(148/crop.Width,73/crop.Height);
                 Raylib.DrawTexturePro(icon,crop,new(cx,r.Y+43,crop.Width*k,crop.Height*k),
                     new(crop.Width*k/2,crop.Height*k/2),0,Color.White);

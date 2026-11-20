@@ -118,9 +118,16 @@ def build_tilted_weapon_net():
         o.matrix_world = Matrix.Identity(4)
         bm = bmesh.new()
         bm.from_mesh(o.data)
+        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-5)
         bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
         bm.to_mesh(o.data)
         bm.free()
+        for poly in o.data.polygons:
+            poly.use_smooth = True
+        bpy.context.view_layer.objects.active = o
+        o.select_set(True)
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+        o.select_set(False)
         o.data.update()
 
     out_net = OUT_MODELS / "weapon_net_90s.glb"
@@ -132,7 +139,7 @@ def build_tilted_weapon_net():
         export_cameras=False,
         export_lights=False,
     )
-    for sub in ("bin/Release/net10.0/assets/models", "bin/Debug/net10.0/assets/models"):
+    for sub in ("bin/Release/net10.0/assets/models", "bin/Debug/net10.0/assets/models", "bin/Release/net10.0/win-x64/assets/models"):
         dest = ROOT / sub
         if dest.exists():
             shutil.copy2(out_net, dest / "weapon_net_90s.glb")
@@ -191,22 +198,27 @@ def build_net_right_pose(ga):
     rest_k_mat = Matrix((k_rest, t_rest, palm_rest))
     away_rest = -palm_rest
 
-    # Palm faces inward-left (+X_ga) and slightly down-back, perpendicular to shaft S_GA:
-    N_raw = V((0.91, -0.12, -0.39)).normalized()
-    N_palm = (N_raw - S_GA * S_GA.dot(N_raw)).normalized()
+    # Roll = -24 deg around S_GA so in screen space:
+    # - palm faces INWARD-LEFT directly into the blue electrical tape (zero palm gap)
+    # - dorsal (back of hand) faces OUTWARD-RIGHT & UP
+    # - T_fwd points FORWARD-LEFT from the lower-right wrist into the handle!
+    B1 = (V((1.0, 0.0, 0.0)) - S_GA * S_GA.x).normalized()
+    B2 = S_GA.cross(B1).normalized()
+    roll_rad = math.radians(-24.0)
+    N_palm = (B1 * math.cos(roll_rad) + B2 * math.sin(roll_rad)).normalized()
     T_fwd = N_palm.cross(S_GA).normalized()
 
-    # -16 deg ulnar grip slant in the palm plane so 3D angle(f_target, S_GA) ~ 63 deg
-    # and the forearm enters smoothly from the lower-right corner of the screen:
-    ag = math.radians(-16.0)
+    # -12 deg ulnar grip slant in the palm plane so 3D angle(f_target, S_GA) ~ 63 deg:
+    ag = math.radians(-12.0)
     K_t = (S_GA * math.cos(ag) + T_fwd * math.sin(ag)).normalized()
     T_t = (T_fwd * math.cos(ag) - S_GA * math.sin(ag)).normalized()
     hand_rot = Matrix((K_t, T_t, N_palm)).transposed() @ rest_k_mat
     f_target = (hand_rot @ f_rest).normalized()
 
-    # Place middle MCP knuckle at (-N_palm * 0.0185 + T_fwd * 0.0125) (theta_0 ~ -55 deg)
-    # and curl the 4 fingers tightly at radii (19.6..16.8 mm) so they sweep ~240 deg around the tape!
-    mid_knuckle = C_FIST_GA - N_palm * 0.0185 + T_fwd * 0.0125 + S_GA * 0.0020
+    # Place middle MCP knuckle at (-N_palm * 0.0192 + T_fwd * 0.0085) (theta_0 ~ -66 deg)
+    # so the 4 fingers wrap snugly around the left side and onto the front crease of the blue tape
+    # with zero dark shadow gap between the fingers and the tape:
+    mid_knuckle = C_FIST_GA - N_palm * 0.0192 + T_fwd * 0.0085 + S_GA * 0.0010
     dest_wrist = mid_knuckle - hand_rot @ (mid_rest - wrist_rest)
     # 100% straight wrist: forearm axis is strictly collinear with f_target!
     forearm_len = (wrist_rest - j("elbow")).length
@@ -226,22 +238,39 @@ def build_net_right_pose(ga):
         transforms[name + "_r"] = (a, p, rotation @ stretch)
     transforms["hand_r"] = (wrist_rest, dest_wrist, hand_rot)
 
+    s_slots = {2: 0.0165, 3: 0.0055, 4: -0.0053, 5: -0.0148}
+    arch_off = {
+        2: T_fwd * 0.0072 - S_GA * 0.0032 + N_palm * 0.0010,
+        3: V((0.0, 0.0, 0.0)),
+        4: T_fwd * 0.0022 + S_GA * 0.0038 + N_palm * 0.0015,
+        5: T_fwd * 0.0115 + S_GA * 0.0142 + N_palm * 0.0045,
+    }
+    per_digit_radii = {
+        2: (0.0185, 0.0178, 0.0170),
+        3: (0.0252, 0.0180, 0.0172),
+        4: (0.0226, 0.0178, 0.0170),
+        5: (0.0162, 0.0166, 0.0162),
+    }
+
     signet = None
     for d, name in enumerate(DIGITS, 1):
-        # Exact anatomical root socket on hand_r (NEVER teleport digit roots!):
+        # Exact anatomical root socket on hand_r + natural transverse metacarpal fist arch:
         pos = dest_wrist + hand_rot @ (j(f"finger-{d}-1") - wrist_rest)
+        if d >= 2:
+            pos = pos + arch_off[d]
 
         if d == 1:
-            # Thumb: starts at its anatomical CMC socket (now flush behind the handle at t ~ -4.3cm),
-            # wraps tightly around the top-front/left (+T_fwd -> +N_palm) of the blue electrical tape,
-            # and curls its distal phalanx down (-S_GA, -T_fwd) over the middle phalanx of the index/middle finger!
+            # Thumb: starts at its anatomical CMC socket,
+            # advances along +T_fwd across the camera side of the handle to the left edge (n ~ +1.8cm),
+            # and curls its distal phalanx k=3 INWARD (-N_palm) and forward (+T_fwd) around the blue tape
+            # to lock snugly against the index/middle finger (zero protruding thumb tip on the left!):
             thumb_segs = [
-                # k=1 (metacarpal): forward (+T_fwd) and slightly up (+S_GA) along the upper outer side of the handle
-                (T_fwd * 0.88 + S_GA * 0.36 + N_palm * 0.31, -N_palm * 0.72 + S_GA * 0.54 - T_fwd * 0.43),
-                # k=2 (proximal phalanx): wraps over the top-left of the blue electrical tape (+T_fwd, +N_palm)
-                (T_fwd * 0.52 + N_palm * 0.84 + S_GA * 0.14, S_GA * 0.76 + T_fwd * 0.52 - N_palm * 0.38),
-                # k=3 (distal phalanx): curls inward and downward (-T_fwd, -S_GA, +N_palm) to lock against index/middle finger
-                (-T_fwd * 0.62 + N_palm * 0.58 - S_GA * 0.53, N_palm * 0.78 + T_fwd * 0.48 + S_GA * 0.40),
+                # k=1 (metacarpal): forward (+T_fwd) and up (+S_GA) to reach the front of the blue tape
+                (T_fwd * 0.86 + S_GA * 0.48 + N_palm * 0.16, -N_palm * 0.72 + S_GA * 0.52 - T_fwd * 0.46),
+                # k=2 (proximal phalanx): wraps across the front face to the left edge (n -> +1.8cm, t -> 0.0cm)
+                (T_fwd * 0.80 + N_palm * 0.56 + S_GA * 0.21, S_GA * 0.78 - T_fwd * 0.48 + N_palm * 0.40),
+                # k=3 (distal phalanx): curls inward (-N_palm) and around (+T_fwd, -S_GA) onto the index/middle finger
+                (T_fwd * 0.76 - N_palm * 0.48 - S_GA * 0.44, N_palm * 0.78 + T_fwd * 0.52 + S_GA * 0.35),
             ]
             for k, (dir_v, dor_v) in enumerate(thumb_segs, 1):
                 rest_start = j(f"finger-1-{k}")
@@ -260,8 +289,10 @@ def build_net_right_pose(ga):
                 pos = pos + rot @ delta_rest
         else:
             # Four fingers (index d=2 .. pinky d=5):
-            # Curl smoothly around the cylindrical blue-taped handle (C_FIST_GA, S_GA) in the
-            # (T_fwd, N_palm) plane from their exact anatomical MCP root sockets!
+            # Adduct tightly to 11.6 mm axial slots (zero blue-tape gaps between fingers!),
+            # absorb middle/ring extra L1 into +T_fwd depth (r1 = 25.4/22.6 mm) so all 4 fingers
+            # align along the exact same left-edge crest (n = 17.2..17.9 mm, zero middle-finger bulge!),
+            # and tuck the distal phalanges into the palm crease!
             rel = pos - C_FIST_GA
             s_cur = rel.dot(S_GA)
             t_cur = rel.dot(T_fwd)
@@ -269,7 +300,8 @@ def build_net_right_pose(ga):
             r_cur = math.hypot(t_cur, n_cur)
             theta_cur = math.atan2(n_cur, t_cur)
 
-            radii = (0.0188, 0.0172, 0.0164) if d == 5 else (0.0198, 0.0180, 0.0170)
+            radii = per_digit_radii[d]
+            s_targ = s_slots[d]
             for k in range(1, 4):
                 rest_start = j(f"finger-{d}-{k}")
                 rest_end = j(f"finger-{d}-{k+1}")
@@ -277,12 +309,13 @@ def build_net_right_pose(ga):
                 L = delta_rest.length
 
                 r_next = radii[k - 1]
-                ds = -0.0012 if k == 1 else (-0.0018 if k == 2 else -0.0010)
+                blend_s = (0.76, 0.96, 1.0)[k - 1]
+                s_next = s_cur + blend_s * (s_targ - s_cur)
+                ds = s_next - s_cur
                 chord_sq = max(1e-6, L * L - ds * ds)
                 cos_dtheta = (r_cur * r_cur + r_next * r_next - chord_sq) / (2.0 * r_cur * r_next)
                 dtheta = math.acos(max(-1.0, min(1.0, cos_dtheta)))
                 theta_next = theta_cur + dtheta
-                s_next = s_cur + ds
 
                 joint_next = (
                     C_FIST_GA
@@ -291,8 +324,10 @@ def build_net_right_pose(ga):
                 )
                 along = (joint_next - pos).normalized()
 
-                # Outward radial dorsal normal on the cylinder -> zero phalanx roll twist!
-                theta_mid = 0.5 * (theta_cur + theta_next)
+                # Outward radial dorsal normal clamped so the dorsal nail side
+                # of hands.jpg faces LEFT-BACK (+N_palm, +T_fwd) away from the camera!
+                max_dor_ang = math.radians(32.0 if k == 3 else 62.0)
+                theta_mid = min(0.5 * (theta_cur + theta_next), max_dor_ang)
                 dor_raw = T_fwd * math.cos(theta_mid) + N_palm * math.sin(theta_mid)
                 dorsal = (dor_raw - along * along.dot(dor_raw)).normalized()
 
@@ -346,11 +381,61 @@ def build_and_export_fps_hands_net():
                 end = orig_fitted_sleeve(side, transforms)
             finally:
                 ga["JOINT"]["r-elbow"] = old_r_elbow
+            # Remove the 4 tucked fingers' nail plates on Right (keeping ONLY the nail plate
+            # closest to thumb_03_r so zero 3D nail plates remain on index, middle, ring, or pinky!):
+            thumb_tip_bl = V(ga["xyz"](transforms["thumb_03_r"][1]))
+            nail_objs = [o for o in bpy.context.scene.objects if o.type == "MESH" and o.name.startswith("Nail plate")]
+            if nail_objs:
+                thumb_nail = min(nail_objs, key=lambda o: (o.data.vertices[0].co - thumb_tip_bl).length)
+                for o in nail_objs:
+                    if o != thumb_nail:
+                        bpy.data.objects.remove(o, do_unlink=True)
+            # Also remap the distal phalanx UVs of the 4 curled fingers (index..pinky) on "MPFB r"
+            # away from the photographed white fingernails in hands.jpg onto smooth mid-finger skin!
+            body_obj = bpy.data.objects.get("MPFB r")
+            if body_obj and body_obj.data.uv_layers.get("ViewModel"):
+                uv_layer = body_obj.data.uv_layers["ViewModel"]
+                tip_centers = []
+                mid_centers = []
+                for d_idx, d_name in enumerate(("index", "middle", "ring", "pinky"), 2):
+                    org3, pos3, rot3 = transforms[f"{d_name}_03_r"]
+                    tip3 = pos3 + rot3 @ (ga["JOINT"][f"r-finger-{d_idx}-4"] - org3)
+                    tip_centers.append((V(ga["xyz"](pos3)), V(ga["xyz"](tip3))))
+                    org2, pos2, rot2 = transforms[f"{d_name}_02_r"]
+                    mid2 = pos2 + 0.5 * (rot2 @ (ga["JOINT"][f"r-finger-{d_idx}-3"] - org2))
+                    mid_centers.append(V(ga["xyz"](mid2)))
+                # Find a clean smooth skin UV near each finger's middle phalanx:
+                mid_uvs = [(0.52, 0.52)] * 4
+                for d_i, mc in enumerate(mid_centers):
+                    best_loop = min(
+                        body_obj.data.loops,
+                        key=lambda lp: (body_obj.data.vertices[lp.vertex_index].co - mc).length_squared,
+                    )
+                    mid_uvs[d_i] = tuple(uv_layer.data[best_loop.index].uv)
+                for lp in body_obj.data.loops:
+                    v_co = body_obj.data.vertices[lp.vertex_index].co
+                    for d_i, (p3_bl, t3_bl) in enumerate(tip_centers):
+                        # If vertex is on the distal half of the 4 curled fingers, blend its UV to smooth mid-finger skin
+                        seg = t3_bl - p3_bl
+                        seg_len_sq = max(1e-8, seg.length_squared)
+                        proj = (v_co - p3_bl).dot(seg) / seg_len_sq
+                        if -0.15 <= proj <= 1.25:
+                            closest = p3_bl + seg * max(0.0, min(1.0, proj))
+                            if (v_co - closest).length < 0.0105:
+                                u_m, v_m = mid_uvs[d_i]
+                                cur_u, cur_v = uv_layer.data[lp.index].uv
+                                w_uv = min(1.0, max(0.0, (proj + 0.15) / 0.55))
+                                uv_layer.data[lp.index].uv = (cur_u * (1.0 - w_uv) + u_m * w_uv, cur_v * (1.0 - w_uv) + v_m * w_uv)
+                                break
             # Shift Right jacket sleeve uv.x from 2+u to u (< 1.99) so the runtime sleevePull
-            # vertex shader does not kink the right wrist toward the Uzi/Shotgun elbow anchor
-            # (fragment shader twill weave sin(6.283 * 235 * uv.x) is 2*pi periodic and identical!).
+            # vertex shader does not kink the right wrist, and slide the crimson jacket back by 14 mm
+            # along the forearm axis so 16 mm of crisp white poplin shirt cuff is clearly visible!
+            j_shift = ga["xyz"](direction * 0.014)
+            j_shift_vec = V(j_shift)
             for obj in bpy.context.scene.objects:
                 if obj.type == "MESH" and obj.name in ("Tailored jacket", "Horn button", "Button thread", "Sleeve vent"):
+                    for v in obj.data.vertices:
+                        v.co += j_shift_vec
                     uv_layer = obj.data.uv_layers.get("ViewModel")
                     if uv_layer:
                         for loop in obj.data.loops:
@@ -373,7 +458,7 @@ def build_and_export_fps_hands_net():
     ga["export"]("fps_net", "fps_hands_net")
 
     out_glb = OUT_MODELS / "fps_hands_net.glb"
-    for sub in ("bin/Release/net10.0/assets/models", "bin/Debug/net10.0/assets/models"):
+    for sub in ("bin/Release/net10.0/assets/models", "bin/Debug/net10.0/assets/models", "bin/Release/net10.0/win-x64/assets/models"):
         dest = ROOT / sub
         if dest.exists():
             shutil.copy2(out_glb, dest / "fps_hands_net.glb")
@@ -431,9 +516,16 @@ def build_runtime_posed_pair(collection_name):
         o.matrix_world = Matrix.Identity(4)
         bm = bmesh.new()
         bm.from_mesh(o.data)
+        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-5)
         bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
         bm.to_mesh(o.data)
         bm.free()
+        for poly in o.data.polygons:
+            poly.use_smooth = True
+        bpy.context.view_layer.objects.active = o
+        o.select_set(True)
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+        o.select_set(False)
         o.data.update()
 
     for o in h_imp:
@@ -486,9 +578,16 @@ def build_runtime_posed_pair(collection_name):
         o.matrix_world = Matrix.Identity(4)
         bm = bmesh.new()
         bm.from_mesh(o.data)
+        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-5)
         bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
         bm.to_mesh(o.data)
         bm.free()
+        for poly in o.data.polygons:
+            poly.use_smooth = True
+        bpy.context.view_layer.objects.active = o
+        o.select_set(True)
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+        o.select_set(False)
         o.data.update()
 
     return w_imp, h_imp
