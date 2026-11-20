@@ -12,26 +12,39 @@ namespace HowToVibeCoder;
 internal sealed record FloorSnapshot(int Cash, EscapedAgentBoss Boss, float Door, bool Key, bool Unlocked,
     bool Trap, SubscriptionBaitTier Bait, VibeCoderEntity[] Coders, GalleyDeskSlot[] Desks,
     EnemyProjectile3D[] Projectiles, VibeCoderEntity? Carried, int Sold, int GuestHp, int HostHp = 100, FloorSystems? Systems = null,VibeCoderEntity? HostCarried=null, int ProgressionVersion=0,
-    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands, OnboardingStep? OnboardingStep=null, bool? ElevatorRepaired=null, float? ElevatorGlassOpacity=null, int? SelectedHotbarSlot=null);
+    BugFrog[]? Frogs=null, WeaponType Equipped=WeaponType.BareHands, OnboardingStep? OnboardingStep=null, bool? ElevatorRepaired=null, float? ElevatorGlassOpacity=null, int? SelectedHotbarSlot=null,int[]? Health=null,VibeCoderEntity?[]? Escorts=null,bool[]? Downed=null);
 
-internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0, FloatingCombatText3D? Impact=null,int Amount=0,Vector3? Source=null,int[]? Tickets=null);
-internal sealed record Motion(string Session, long Sequence, PlayerPose Pose);
+internal sealed record CoopMessage(string Kind, PlayerPose? Pose=null, FloorSnapshot? Floor=null, string? Text=null,long Sequence=0, FloatingCombatText3D? Impact=null,int Amount=0,Vector3? Source=null,int[]? Tickets=null,int Slot=0,int Mask=1);
+internal sealed record Motion(string Session, long Sequence, PlayerPose Pose,int AllySlot=0,PlayerPose? Ally=null);
 
 internal sealed class CoopNetworkSystem : IDisposable
 {
+    public const int MaxPlayers=3;
+    internal const string Full="Лобби заполнено (макс. 3 игрока)";
     public const int DefaultPort=27094;
-    private const string Hello="HowToVibeCoder/5", Search=Hello+"/search", Offer=Hello+"/host";
+    private const string Hello="HowToVibeCoder/6", Search=Hello+"/search", Offer=Hello+"/host";
     private static readonly JsonSerializerOptions Json=new() {
         IncludeFields=true, IgnoreReadOnlyProperties=true, DefaultIgnoreCondition=JsonIgnoreCondition.WhenWritingNull
     };
     private TcpListener? listener;
-    private TcpClient? tcp;
+    private sealed class Peer(TcpClient client,int slot)
+    {
+        internal readonly TcpClient Tcp=client;
+        internal readonly int Slot=slot;
+        internal readonly Queue<byte[]> Outgoing=new();
+        internal readonly byte[] Buffer=new byte[256*1024];
+        internal int Used;
+        internal double Deadline=Now+6, NextPose, NextWorld, LastUdp, NextFallback;
+        internal Task? Connecting, Writing;
+        internal long Sequence, Received;
+        internal string Session="";
+        internal IPEndPoint? Endpoint;
+        internal bool HasPose;
+        internal PlayerPose? Pose;
+    }
+    private readonly List<Peer> peers=[];
     private UdpClient? udp;
-    private Task? connecting, writing;
-    private readonly Queue<byte[]> outgoing=new();
-    private readonly byte[] incoming=new byte[256*1024];
-    private int used;
-    private double deadline, nextDiscovery, nextPose, nextWorld, lastUdp, nextFallback;
+    private double nextDiscovery;
     private IPAddress[] discoveryTargets=[];
     private Task<string>? hostAddresses;
     public string HostAddress => hostAddresses is {IsCompletedSuccessfully:true} ? hostAddresses.Result : "Локальная сеть";
@@ -47,19 +60,23 @@ internal sealed class CoopNetworkSystem : IDisposable
         return new IPAddress(ip);
     }
     private static double Now => Environment.TickCount64*.001;
-    private long sequence, received;
-    private IPEndPoint? peerUdp;
-    private string session="";
     private bool discovering;
+    private int? advertisedCount;
+    public int? LobbyCount => Host || Ready ? ActivePlayerCount : advertisedCount;
     public string? DiscoveredAddress {get; private set;}
     public string Status {get; private set;}="";
     public bool Host => listener!=null;
-    public bool Guest => !Host && tcp!=null;
-    public bool Ready => session.Length!=0;
-    public bool HasPeerPose {get; private set;}
-    public Action<PlayerPose>? OnPose;
-    public Action<CoopMessage>? OnMessage;
-    public Action? OnJoined, OnLost;
+    public bool Guest => !Host && peers.Count>0;
+    public bool Ready => peers.Any(p=>p.Session.Length>0);
+    public bool HasPeerPose => peers.Any(p=>p.HasPose);
+    public int LocalSlot {get; private set;}
+    private int mask=1;
+    private int HostMask => peers.Where(p=>p.Session.Length>0).Aggregate(1,(m,p)=>m | 1<<p.Slot);
+    public int ActivePlayerCount => BitOperations.PopCount((uint)(Host ? HostMask : mask));
+    public Action<int,PlayerPose>? OnPose;
+    public Action<int,CoopMessage>? OnMessage;
+    public Action? OnJoined, OnCountChanged;
+    public Action<int>? OnLost;
 
     private static UdpClient OpenUdp(int port)
     {
@@ -77,7 +94,7 @@ internal sealed class CoopNetworkSystem : IDisposable
         try
         {
             listener=new TcpListener(IPAddress.Any,port);
-            listener.Start(2);
+            listener.Start();
             udp=OpenUdp(port);
             hostAddresses=Task.Run(()=>string.Join("   ",Interfaces().Select(ip=>$"{ip.Address}:{port}")));
             Status=$"Игра открыта: {HostAddress}";
@@ -109,27 +126,37 @@ internal sealed class CoopNetworkSystem : IDisposable
         try
         {
             udp=OpenUdp(0);
-            peerUdp=endpoint;
-            tcp=new TcpClient(AddressFamily.InterNetwork) { NoDelay=true };
-            connecting=tcp.ConnectAsync(endpoint.Address,endpoint.Port);
-            deadline=Now+6;
+            var tcp=new TcpClient(AddressFamily.InterNetwork) { NoDelay=true };
+            var peer=new Peer(tcp,0) { Endpoint=endpoint };
+            peers.Add(peer);
+            peer.Connecting=tcp.ConnectAsync(endpoint.Address,endpoint.Port);
             Status="Подключение к "+endpoint;
         }
-        catch(SocketException e) { Fail(e.Message); }
+        catch(SocketException e) { Dispose(); Status=e.Message; }
     }
 
-    public void Send(CoopMessage message)
+    public void Send(CoopMessage message,int? to=null)
     {
-        if(tcp==null || connecting!=null) return;
-        if(outgoing.Count>=48) { Fail("Соединение перегружено"); return; }
-        outgoing.Enqueue(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message,Json)+"\n"));
+        foreach(var peer in peers.ToArray())
+            if(peer.Session.Length>0 && (to==null || peer.Slot==to))
+            {
+                if(peer.Outgoing.Count>=64) Drop(peer,"Соединение перегружено");
+                else Queue(peer,message);
+            }
     }
 
-    public void Pump(PlayerPose self, Func<FloorSnapshot> snapshot)
+    private static void Queue(Peer peer,CoopMessage message)
     {
+        if(peer.Outgoing.Count>=64) throw new IOException("Соединение перегружено");
+        peer.Outgoing.Enqueue(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message,Json)+"\n"));
+    }
+
+    public void Pump(PlayerPose self,Func<FloorSnapshot> snapshot) => Pump(self,_=>snapshot());
+    public void Pump(PlayerPose self,Func<int,FloorSnapshot> snapshot)
+    {
+        double now=Now;
         try
         {
-            double now=Now;
             if(discovering && now>=nextDiscovery)
             {
                 nextDiscovery=now+1.5;
@@ -144,89 +171,128 @@ internal sealed class CoopNetworkSystem : IDisposable
             if(listener?.Pending()==true)
             {
                 var candidate=listener.AcceptTcpClient();
-                if(tcp!=null) candidate.Dispose();
-                else { tcp=candidate; tcp.NoDelay=true; deadline=now+6; }
+                int slot=Enumerable.Range(1,MaxPlayers-1).FirstOrDefault(i=>peers.All(p=>p.Slot!=i));
+                candidate.NoDelay=true;
+                if(slot==0)
+                {
+                    using(candidate) candidate.GetStream().Write(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new CoopMessage("full"),Json)+"\n"));
+                }
+                else peers.Add(new(candidate,slot));
             }
             ReadDatagrams();
-            if(tcp==null) return;
-            if(!Ready && now>deadline) { Fail("Время подключения истекло"); return; }
-            if(connecting!=null)
-            {
-                if(!connecting.IsCompleted) return;
-                connecting.GetAwaiter().GetResult();
-                connecting=null;
-                Send(new("hello",Text:Hello));
-            }
-            var stream=tcp.GetStream();
-            if(tcp.Client.Poll(0,SelectMode.SelectRead) && tcp.Available==0)
-            { Fail("Друг отключился"); return; }
-            if(stream.DataAvailable)
-            {
-                int n=stream.Read(incoming,used,incoming.Length-used);
-                if(n==0) { Fail("Соединение закрыто"); return; }
-                used+=n;
-                int offset=0, end;
-                while((end=Array.IndexOf(incoming,(byte)'\n',offset,used-offset))>=0)
-                {
-                    var message=JsonSerializer.Deserialize<CoopMessage>(incoming.AsSpan(offset,end-offset),Json);
-                    if(message==null) throw new InvalidDataException();
-                    Receive(message,self);
-                    if(tcp==null) return;
-                    offset=end+1;
-                }
-                if(offset>0) { used-=offset; Buffer.BlockCopy(incoming,offset,incoming,0,used); }
-                if(used==incoming.Length) throw new InvalidDataException("Пакет слишком велик");
-            }
-            if(Ready && peerUdp!=null && now>=nextPose)
-            {
-                nextPose=now+.04;
-                byte[] data=JsonSerializer.SerializeToUtf8Bytes(new Motion(session,++sequence,self),Json);
-                udp!.Send(data,peerUdp);
-            }
-            if(Ready && now-lastUdp>1 && now>=nextFallback && outgoing.Count==0)
-            {
-                nextFallback=now+.12;
-                Send(new("pose",self,Sequence:++sequence));
-            }
-            if(Ready && Host && now>=nextWorld && outgoing.Count==0 && writing?.IsCompleted!=false)
-            {
-                nextWorld=now+.10;
-                Send(new("floor",Floor:snapshot()));
-            }
-            if(writing?.IsCompleted==true) { writing.GetAwaiter().GetResult(); writing=null; }
-            if(writing==null && outgoing.TryDequeue(out byte[]? bytes))
-                writing=stream.WriteAsync(bytes).AsTask();
         }
-        catch(Exception e) when(e is IOException or InvalidDataException or SocketException or JsonException or InvalidOperationException)
-        { Fail(e.Message); }
+        catch(Exception e) when(e is IOException or SocketException) { Status=e.Message; }
+        foreach(var peer in peers.ToArray())
+        {
+            if(!peers.Contains(peer)) continue;
+            try { PumpPeer(peer,self,snapshot,now); }
+            catch(Exception e) when(e is IOException or InvalidDataException or SocketException or JsonException or InvalidOperationException)
+            { Drop(peer,e.Message); }
+        }
     }
 
-    private void Receive(CoopMessage m,PlayerPose self)
+    private void PumpPeer(Peer p,PlayerPose self,Func<int,FloorSnapshot> snapshot,double now)
     {
-        if(!Ready)
+        var tcp=p.Tcp;
+        bool ready=p.Session.Length>0;
+        if(!ready && now>p.Deadline) { Drop(p,"Время подключения истекло"); return; }
+        if(p.Connecting!=null)
+        {
+            if(!p.Connecting.IsCompleted) return;
+            p.Connecting.GetAwaiter().GetResult();
+            p.Connecting=null;
+            Queue(p,new("hello",Text:Hello));
+        }
+        var stream=tcp.GetStream();
+        if(tcp.Client.Poll(0,SelectMode.SelectRead) && tcp.Available==0)
+        { Drop(p,"Друг отключился"); return; }
+        if(stream.DataAvailable)
+        {
+            int n=stream.Read(p.Buffer,p.Used,p.Buffer.Length-p.Used);
+            if(n==0) { Drop(p,"Соединение закрыто"); return; }
+            p.Used+=n;
+            int offset=0, end;
+            while((end=Array.IndexOf(p.Buffer,(byte)'\n',offset,p.Used-offset))>=0)
+            {
+                var message=JsonSerializer.Deserialize<CoopMessage>(p.Buffer.AsSpan(offset,end-offset),Json);
+                if(message==null) throw new InvalidDataException();
+                Receive(p,message,self);
+                if(!peers.Contains(p)) return;
+                offset=end+1;
+            }
+            if(offset>0) { p.Used-=offset; Buffer.BlockCopy(p.Buffer,offset,p.Buffer,0,p.Used); }
+            if(p.Used==p.Buffer.Length) throw new InvalidDataException("Пакет слишком велик");
+        }
+        if(ready && p.Endpoint!=null && now>=p.NextPose)
+        {
+            p.NextPose=now+.04;
+            var ally=Host ? peers.Find(other=>other!=p && other.Session.Length>0) : null;
+            byte[] data=JsonSerializer.SerializeToUtf8Bytes(new Motion(p.Session,++p.Sequence,self,ally?.Slot ?? 0,ally?.Pose),Json);
+            udp!.Send(data,p.Endpoint);
+        }
+        if(ready && now-p.LastUdp>1 && now>=p.NextFallback && p.Outgoing.Count==0)
+        {
+            p.NextFallback=now+.12;
+            Queue(p,new("pose",self,Sequence:++p.Sequence));
+            if(Host && peers.Find(other=>other!=p && other.Session.Length>0) is {Pose:{} ally} other)
+                Queue(p,new("teammate",ally,Slot:other.Slot));
+        }
+        if(ready && Host && now>=p.NextWorld && p.Outgoing.Count<4 && p.Writing?.IsCompleted!=false)
+        {
+            p.NextWorld=now+.10;
+            Queue(p,new("floor",Floor:snapshot(p.Slot)));
+        }
+        if(p.Writing?.IsCompleted==true) { p.Writing.GetAwaiter().GetResult(); p.Writing=null; }
+        if(p.Writing==null && p.Outgoing.TryDequeue(out byte[]? bytes))
+            p.Writing=stream.WriteAsync(bytes).AsTask();
+    }
+
+    private void Receive(Peer p,CoopMessage m,PlayerPose self)
+    {
+        if(p.Session.Length==0)
         {
             if(Host && m.Kind=="hello" && m.Text==Hello)
             {
-                session=Guid.NewGuid().ToString("N");
-                Send(new("welcome",self,Text:session));
+                p.Session=Guid.NewGuid().ToString("N");
+                Queue(p,new("welcome",self,Text:p.Session,Slot:p.Slot,Mask:HostMask));
+                Membership();
             }
-            else if(Guest && m.Kind=="welcome" && Guid.TryParseExact(m.Text,"N",out _) && m.Pose?.Valid==true)
+            else if(Guest && m.Kind=="full") { advertisedCount=MaxPlayers; Drop(p,Loc.Tr(Full)); return; }
+            else if(Guest && m.Kind=="welcome" && Guid.TryParseExact(m.Text,"N",out _) && m.Pose?.Valid==true && m.Slot is 1 or 2)
             {
-                session=m.Text!;
-                OnJoined?.Invoke();
-                OnPose?.Invoke(m.Pose);
+                p.Session=m.Text!; LocalSlot=m.Slot; mask=m.Mask;
+                OnJoined?.Invoke(); OnPose?.Invoke(0,m.Pose);
             }
             else throw new InvalidDataException("Несовместимая версия игры");
-            Status="Друг в игре";
-            return;
+            Status="Друг в игре"; return;
         }
-        if(m.Pose!=null && !m.Pose.Valid) return;
-        if(m.Kind=="pose")
+        if(m.Pose is {Valid:false}) return;
+        if(!Host && m.Kind=="roster")
         {
-            if(m.Sequence>received && m.Pose!=null) { received=m.Sequence; OnPose?.Invoke(m.Pose); }
+            int gone=mask & ~m.Mask;
+            mask=m.Mask;
+            for(int i=1;i<MaxPlayers;i++) if((gone & 1<<i)!=0) OnLost?.Invoke(i);
             return;
         }
-        OnMessage?.Invoke(m);
+        if(!Host && m.Kind=="teammate" && m.Pose!=null && m.Slot!=LocalSlot && (mask & 1<<m.Slot)!=0)
+        { OnPose?.Invoke(m.Slot,m.Pose); return; }
+        if(m.Kind=="pose" && m.Pose!=null)
+        { AcceptPose(p,m.Sequence,m.Pose); return; }
+        OnMessage?.Invoke(Host ? p.Slot : m.Slot,m);
+    }
+
+    private void AcceptPose(Peer p,long seq,PlayerPose pose)
+    {
+        if(seq<=p.Received) return;
+        p.Received=seq; p.HasPose=true; p.Pose=pose;
+        OnPose?.Invoke(p.Slot,pose);
+
+    }
+
+    private void Membership()
+    {
+        Send(new("roster",Mask:HostMask));
+        OnCountChanged?.Invoke();
     }
 
     private void ReadDatagrams()
@@ -239,51 +305,55 @@ internal sealed class CoopNetworkSystem : IDisposable
             if(data.Length>1024) continue;
             if(Host && data.AsSpan().SequenceEqual(Encoding.ASCII.GetBytes(Search)))
             {
-                if(tcp==null) udp.Send(Encoding.ASCII.GetBytes(Offer),sender);
+                udp.Send(Encoding.ASCII.GetBytes(Offer+ActivePlayerCount),sender);
                 continue;
             }
-            if(discovering && data.AsSpan().SequenceEqual(Encoding.ASCII.GetBytes(Offer)))
+            if(discovering && data.Length==Offer.Length+1 && data[^1] is >=49 and <=51 &&
+                data.AsSpan(0,Offer.Length).SequenceEqual(Encoding.ASCII.GetBytes(Offer)))
             {
                 if(DiscoveredAddress==null || !IPAddress.IsLoopback(sender.Address))
+                {
                     DiscoveredAddress=sender.ToString();
+                    advertisedCount=data[^1]-(byte)'0';
+                }
                 Status="Найдена игра: "+DiscoveredAddress;
                 continue;
             }
-            if(!Ready || tcp?.Client.RemoteEndPoint is not IPEndPoint peer || !peer.Address.Equals(sender.Address)) continue;
-            if(peerUdp!=null && !peerUdp.Equals(sender)) continue;
             Motion? motion;
             try { motion=JsonSerializer.Deserialize<Motion>(data,Json); } catch(JsonException) { continue; }
-            if(motion?.Session!=session || motion.Sequence<=received || motion.Pose?.Valid!=true) continue;
-            lastUdp=Now;
-            received=motion.Sequence;
-            peerUdp=sender;
-            HasPeerPose=true;
-            OnPose?.Invoke(motion.Pose);
+            if(motion?.Pose?.Valid!=true) continue;
+            var p=peers.Find(p=>p.Session.Length>0 && p.Session==motion.Session &&
+                p.Tcp.Client.RemoteEndPoint is IPEndPoint ep && ep.Address.Equals(sender.Address) &&
+                (p.Endpoint==null || p.Endpoint.Equals(sender)));
+            if(p==null) continue;
+            p.LastUdp=Now; p.Endpoint=sender;
+            if(motion.Sequence<=p.Received) continue;
+            AcceptPose(p,motion.Sequence,motion.Pose);
+            if(Guest && motion.Ally is {Valid:true} ally && motion.AllySlot is 1 or 2 && motion.AllySlot!=LocalSlot && (mask & 1<<motion.AllySlot)!=0)
+                OnPose?.Invoke(motion.AllySlot,ally);
         }
     }
 
-    private void Fail(string reason)
+    private void Drop(Peer p,string reason)
     {
-        bool wasGuest=Guest;
-        DropPeer();
-        if(!Host) { discovering=false; udp?.Dispose(); udp=null; }
-        Status=reason;
-        if(wasGuest || Host) OnLost?.Invoke();
-    }
-
-    private void DropPeer()
-    {
-        tcp?.Dispose(); tcp=null;
-        connecting=writing=null; used=0; outgoing.Clear();
-        peerUdp=null; session=""; sequence=received=0; HasPeerPose=false;
-        nextPose=nextWorld=nextFallback=lastUdp=0;
+        peers.Remove(p); p.Tcp.Dispose(); Status=reason;
+        if(Host)
+        {
+            if(p.Session.Length>0) { OnLost?.Invoke(p.Slot); Membership(); }
+        }
+        else
+        {
+            mask=1; LocalSlot=0; discovering=false; udp?.Dispose(); udp=null;
+            OnLost?.Invoke(0);
+        }
     }
 
     public void Dispose()
     {
-        DropPeer();
+        foreach(var p in peers) p.Tcp.Dispose();
+        peers.Clear(); mask=1; LocalSlot=0;
         listener?.Stop(); listener=null;
         udp?.Dispose(); udp=null;
-        discovering=false; DiscoveredAddress=null; nextDiscovery=0; Status="";
+        discovering=false; advertisedCount=null; DiscoveredAddress=null; nextDiscovery=0; Status="";
     }
 }

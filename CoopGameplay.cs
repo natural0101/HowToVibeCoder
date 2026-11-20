@@ -8,13 +8,21 @@ public static partial class Program
 {
     private static CoopNetworkSystem Net => MainMenuAndPauseUI.Coop;
     private static bool bot, awaitingSpawn, pendingCase;
-    private static int guestHp=100, hostHp=100;
-    internal static int PartnerHp => Net.Guest ? hostHp : Net.Ready ? guestHp : 100;
-    private static VibeCoderEntity? guestCarried, peerEscort;
-    private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon);
+    private static readonly int[] health=[100,100,100];
+    private static readonly VibeCoderEntity?[] escorts=new VibeCoderEntity?[3];
+    private static readonly double[] downUntil=new double[3];
+    private static int actorSlot=1;
+    private static bool Downed(int slot) => Environment.TickCount64*.001<downUntil[slot];
+    private static void MarkDown(int slot) => downUntil[slot]=Environment.TickCount64*.001+.8;
+    private static ref int guestHp => ref health[actorSlot];
+    private static ref VibeCoderEntity? guestCarried => ref escorts[actorSlot];
+    private static ref VibeCoderEntity? peerEscort => ref escorts[0];
+    private static PartnerAvatar Avatar(int slot) => _world.Partners[slot]??=new PartnerAvatar(slot);
+    private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon,_weapons.BeltSwingPhase);
     private static void StartHosting(bool newShift = false)
     {
         bool online = Net.StartHost(CoopNetworkSystem.DefaultPort);
+        _world.AdaptPlayers(Net.ActivePlayerCount);
         if (!newShift) SetHudBanner(Net.Status);
         else if (!online) Floor.Announce(Net.Status);
     }
@@ -36,23 +44,39 @@ public static partial class Program
             MainMenuAndPauseUI.IsPaused=MainMenuAndPauseUI.IsInMainMenu=MainMenuAndPauseUI.IsSaveLoadPanelOpen=false;
             Raylib.DisableCursor();
         };
-        Net.OnPose=pose =>
+        Net.OnCountChanged=()=>
         {
-            if(awaitingSpawn)
+            _world.AdaptPlayers(Net.ActivePlayerCount);
+            Floor.UpdateOnboarding(_world,_playerCash);
+        };
+        Net.OnPose=(slot,pose) =>
+        {
+            if(awaitingSpawn && slot==0)
             {
-                _playerPos=_world.ResolvePlayerCollision(pose.Eye+new Vector3(1.6f,0,.5f));
+                _playerPos=_world.ResolvePlayerCollision(pose.Eye+new Vector3(Net.LocalSlot==2 ? -1.6f : 1.6f,0,.5f));
                 _playerYaw=pose.Yaw;
                 awaitingSpawn=false;
             }
-            bot=false;
-            (_world.Partner??=new PartnerAvatar()).Move(pose);
+            if(bot) Array.Clear(_world.Partners);
+            bot=false; Avatar(slot).Move(pose);
         };
-        Net.OnMessage=HandleCoopMessage;
-        Net.OnLost=() =>
+        Net.OnMessage=(slot,message)=>
         {
-            if(guestCarried!=null && Net.Host) _world.ActiveCoders.Add(guestCarried);
-            guestCarried=peerEscort=null; guestHp=100; pendingCase=false;
-            if(!bot) _world.Partner=null;
+            actorSlot=slot;
+            try { HandleCoopMessage(message); } finally { actorSlot=1; }
+        };
+        Net.OnLost=slot =>
+        {
+            if(Net.Host && escorts[slot] is {} prisoner) _world.ActiveCoders.Add(prisoner);
+            escorts[slot]=null; health[slot]=100; downUntil[slot]=0;
+            if(!bot) _world.Partners[slot]=null;
+            if(Net.Host)
+            {
+                if(slot==2) { Floor.SecondCoffeeCups=2; Floor.SecondStun=0; }
+                else { Floor.GuestCoffeeCups=2; Floor.GuestStun=0; }
+            }
+            if(slot!=0) return;
+            Array.Clear(_world.Partners); pendingCase=false;
             if(!Net.Host && !MainMenuAndPauseUI.IsInMainMenu)
             {
                 string reason=Net.Status;
@@ -63,12 +87,13 @@ public static partial class Program
         };
     }
 
-    private static FloorSnapshot CaptureFloor() => new(_playerCash,_world.ElevatorBoss,_world.ElevatorDoorOpenAmount,
+    private static FloorSnapshot CaptureFloor() => CaptureForSlot(1);
+    private static FloorSnapshot CaptureForSlot(int slot) => new(_playerCash,_world.ElevatorBoss,_world.ElevatorDoorOpenAmount,
         _world.HasElevatorKey,_world.IsFloor2Unlocked,_world.IsMacBookTrapActive,_world.SelectedBaitTier,
         _world.ActiveCoders.ToArray(),_world.GalleyDesks.ToArray(),_world.EnemyProjectiles.ToArray(),
-        guestCarried,_world.TotalCodersSoldToHr,guestHp,_playerHp,_world.Systems,_world.CarriedCoder,
+        escorts[slot],_world.TotalCodersSoldToHr,health[slot],_playerHp,_world.Systems,_world.CarriedCoder,
         ProgressionVersion:2,Frogs:_world.Frogs.ToArray(),Equipped:_weapons.CurrentWeapon,OnboardingStep:Floor.Onboarding,
-        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot);
+        ElevatorRepaired:_world.ElevatorRepaired,ElevatorGlassOpacity:_world.ElevatorGlassOpacity,SelectedHotbarSlot:_weapons.SelectedHotbarSlot,Health:[_playerHp,health[1],health[2]],Escorts:[_world.CarriedCoder,escorts[1],escorts[2]],Downed:[Downed(0),Downed(1),Downed(2)]);
 
     private static void ApplyElevator(FloorSnapshot state)
     {
@@ -85,7 +110,7 @@ public static partial class Program
         Floor.Onboarding=state?.OnboardingStep ?? OnboardingStep.Done;
         if(state is {ProgressionVersion:<2,OnboardingStep:{} old} && (int)old>=5)
             Floor.Onboarding=(int)old==5 ? OnboardingStep.StunAndHeal : OnboardingStep.Done;
-        if(Floor.Onboarding==OnboardingStep.Done || state?.Sold>=3 || state is {ProgressionVersion:<2} && (state.Sold>0 || state.Desks.Any(d=>d.IsOccupied)))
+        if(Floor.Onboarding==OnboardingStep.Done || state?.Sold>=Floor.Balance.QuarantineUnlockTarget || state is {ProgressionVersion:<2} && (state.Sold>0 || state.Desks.Any(d=>d.IsOccupied)))
         {
             if(state is {ProgressionVersion:<2} && Floor.Onboarding!=OnboardingStep.Done)
                 Floor.Onboarding=state.Desks.Any(d=>d.IsOccupied) ? OnboardingStep.Done : OnboardingStep.SeatFirstGalley;
@@ -120,7 +145,14 @@ public static partial class Program
             else if(!awaitingFirstFloor && !cheered && Floor.FirstFrogCheered && Floor.Onboarding<=OnboardingStep.CatchFrogs)
                 FloorSystems.CheerFirstFrog();
             awaitingFirstFloor=false;
-            _playerCash=state.Cash; _playerHp=state.GuestHp; hostHp=state.HostHp;
+            _playerCash=state.Cash; _playerHp=state.GuestHp; health[0]=state.HostHp;
+            if(state.Health is {Length:3}) Array.Copy(state.Health,health,3);
+            if(state.Escorts is {Length:3}) Array.Copy(state.Escorts,escorts,3);
+            foreach(var ally in _world.Teammates)
+            {
+                ally.Hp=health[ally.Slot]; ally.Carrying=escorts[ally.Slot]!=null;
+                ally.Downed=state.Downed is {Length:3} && state.Downed[ally.Slot];
+            }
             if (_world.ElevatorBoss.State != state.Boss.State)
                 SkyscraperFloor1World.PlayElevatorCue(state.Boss.State);
             ApplyElevator(state);
@@ -138,7 +170,8 @@ public static partial class Program
         {
             if(Net.Host && (!Floor.HasWeapon(shooter.Weapon) || guestCarried!=null && !_world.CanCarryWith(shooter.Weapon))) return;
             if(shooter.Weapon==WeaponType.ChatGun && !_world.IsFloor2Unlocked && !_weapons.UnlockedChatGun) return;
-            var partner=_world.Partner??=new PartnerAvatar();
+            var partner=Avatar(actorSlot);
+            if(Net.Host) Net.Send(message with {Slot=actorSlot},3-actorSlot);
             bot=false; partner.Move(shooter);
             // The host validates ownership before accepting a guest attack. On the guest a
             // fire packet may precede the next inventory snapshot.
@@ -154,7 +187,7 @@ public static partial class Program
                 try
                 {
                     if(_world.ProcessPlayerAttack(shooter.Camera,partner.Effects,GrantCash,out var feedback))
-                        Net.Send(new("status",Text:feedback));
+                        Net.Send(new("status",Text:feedback),actorSlot);
                     guestCarried=_world.CarriedCoder;
                 }
                 finally { guestInteraction=false; _world.CarriedCoder=hostCarry; }
@@ -162,14 +195,14 @@ public static partial class Program
             else partner.Attack(_world,GrantCash,Net.Host);
             if(Net.Host)
                 for(int i=previousHits;i<partner.Effects.FloatingTexts.Count;i++)
-                    Net.Send(new("impact",Impact:partner.Effects.FloatingTexts[i]));
+                    Net.Send(new("impact",Impact:partner.Effects.FloatingTexts[i]),actorSlot);
             if(Net.Host && _world.IsFloor2Unlocked) _weapons.UnlockedChatGun=true;
             PlayCurrentWeaponAudio(shooter.Weapon);
         }
         else if(Net.Host && message is {Kind:"interact", Pose:{} actor})
         {
             string? joint=CoopEscort(actor.Camera,true,apply:true);
-            if(joint!=null) { Net.Send(new("status",Text:joint)); return; }
+            if(joint!=null) { Net.Send(new("status",Text:joint),actorSlot); return; }
             var carried=_world.CarriedCoder;
             _world.CarriedCoder=guestCarried;
             string result;
@@ -178,7 +211,7 @@ public static partial class Program
             finally { guestInteraction=false; }
             guestCarried=_world.CarriedCoder;
             _world.CarriedCoder=carried;
-            Net.Send(new("status",Text:result));
+            Net.Send(new("status",Text:result),actorSlot);
         }
         else if(Net.Guest && message is {Kind:"hurt",Source:{} source,Text:{} label}) ShowHit(message.Amount,label,source);
         else if(Net.Guest && message.Kind=="healed") HealFeedback(message.Amount);
@@ -203,13 +236,13 @@ public static partial class Program
         else if(Net.Host && message.Kind=="floor-action" && int.TryParse(message.Text,out int index))
         {
             string result=ApplyFloorAction(index,guestBuyer:true);
-            Net.Send(new("status",Text:result));
+            Net.Send(new("status",Text:result),actorSlot);
         }
         else if(Net.Host && message is {Kind:"pocket-co2",Pose:{} pose})
-            Net.Send(new("status",Text:Floor.UsePocket(pose.Eye)));
+            Net.Send(new("status",Text:Floor.UsePocket(pose.Eye)),actorSlot);
         else if(Net.Host && message.Kind=="bonus") GrantCash(2000,"Бонус напарника");
         else if(Net.Host && message.Kind=="case")
-            Net.Send(new(TrySpendCash(LoreAndMenusUI.CaseSpinCost) ? "case-paid" : "case-denied"));
+            Net.Send(new(TrySpendCash(LoreAndMenusUI.CaseSpinCost) ? "case-paid" : "case-denied"),actorSlot);
         else if(Net.Guest && message.Kind is "case-paid" or "case-denied")
         {
             pendingCase=false;
@@ -249,14 +282,19 @@ public static partial class Program
     {
         _lastDamageTimer=Math.Max(0,_lastDamageTimer-dt); HealFlashTimer=Math.Max(0,HealFlashTimer-dt);
         if(bot && !Net.Ready) _world.Partner?.Follow(dt,LocalPose,_world,GrantCash);
-        _world.Partner?.Tick(dt);
+        foreach(var ally in _world.Teammates)
+        {
+            ally.Tick(dt); ally.Hp=health[ally.Slot]; ally.Carrying=escorts[ally.Slot]!=null;
+            if(Net.Host) ally.Downed=Downed(ally.Slot);
+        }
         if(Net.Guest)
         {
             _world.AdvanceLighting(dt);
             foreach(var frog in _world.Frogs) if(frog.Rest<=0) frog.AdvanceArc(dt);
             return;
         }
-        _world.UpdateWorld(dt,_playerPos,_isCrouching,(amount,_)=>_playerCash=Math.Max(0,_playerCash+amount),ReceiveDamage,Net.Ready ? _world.Partner?.Pose.Eye : null,GuestDamage);
+        _world.UpdateWorld(dt,_playerPos,_isCrouching,(amount,_)=>_playerCash=Math.Max(0,_playerCash+amount),ReceiveDamage,Net.Ready ? _world.Partners[1]?.Pose.Eye : null,GuestDamage,
+            Net.Ready ? _world.Partners[2]?.Pose.Eye : null,(damage,label,source)=>DamageSlot(2,damage,label,source));
         Floor.UpdateOnboarding(_world,_playerCash);
     }
 
@@ -265,19 +303,32 @@ public static partial class Program
     private static string? CoopEscort(Camera3D camera,bool guestActor,bool apply)
     {
         if(!Net.Ready || _world.Partner==null) return null;
-        Vector3 peer=guestActor ? _playerPos : _world.Partner.Pose.Eye;
-        Vector3 offset=peer-Vector3.UnitY*.28f-camera.Position;
-        if(offset.LengthSquared()<.01f || offset.LengthSquared()>7) return null;
-        Vector3 dir=Vector3.Normalize(offset);
-        if(Vector3.Dot(dir,Vector3.Normalize(camera.Target-camera.Position))<.91f ||
-            _world.PelletDistance(camera.Position,dir,offset.Length())+.04f<offset.Length()) return null;
-        var mine=guestActor ? guestCarried : _world.CarriedCoder;
-        var theirs=guestActor ? _world.CarriedCoder : Net.Guest ? peerEscort : guestCarried;
+        int mineSlot=guestActor ? actorSlot : Net.LocalSlot;
+        int target=-1;
+        float best=7;
+        for(int i=0;i<3;i++)
+        {
+            if(i==mineSlot) continue;
+            Vector3? eye=i==Net.LocalSlot ? _playerPos : _world.Partners[i]?.Pose.Eye;
+            if(eye==null) continue;
+            Vector3 offset=eye.Value-Vector3.UnitY*.28f-camera.Position;
+            float distance=offset.LengthSquared();
+            if(distance<.01f || distance>best) continue;
+            Vector3 dir=Vector3.Normalize(offset);
+            if(Vector3.Dot(dir,Vector3.Normalize(camera.Target-camera.Position))<.91f ||
+                _world.PelletDistance(camera.Position,dir,offset.Length())+.04f<offset.Length()) continue;
+            target=i; best=distance;
+        }
+        if(target<0) return null;
+        var mine=mineSlot==Net.LocalSlot ? _world.CarriedCoder : escorts[mineSlot];
+        var theirs=target==Net.LocalSlot ? _world.CarriedCoder : escorts[target];
         if(mine!=null && theirs==null)
         {
             if(!apply) return "Передать кандидата напарнику";
-            if(guestActor) { _world.CarriedCoder=mine; guestCarried=null; HolsterForEscort(); }
-            else { guestCarried=mine; _world.CarriedCoder=null; }
+            if(target==Net.LocalSlot) { _world.CarriedCoder=mine; HolsterForEscort(); }
+            else escorts[target]=mine;
+            if(mineSlot==Net.LocalSlot) _world.CarriedCoder=null;
+            else escorts[mineSlot]=null;
             return "Кандидат передан напарнику";
         }
         if(mine==null && theirs is {JointNda:false})
@@ -298,8 +349,13 @@ public static partial class Program
 
     private static void GuestDamage(int damage,string label,Vector3 source)
     {
-        guestHp=AfterDamage(guestHp,damage);
-        Net.Send(new("hurt",Text:label,Amount:damage,Source:source));
+        DamageSlot(actorSlot,damage,label,source);
+    }
+    private static void DamageSlot(int slot,int damage,string label,Vector3 source)
+    {
+        if(health[slot]<=damage) MarkDown(slot);
+        health[slot]=AfterDamage(health[slot],damage);
+        Net.Send(new("hurt",Text:label,Amount:damage,Source:source),slot);
         BeginHealLesson();
     }
 
@@ -332,7 +388,7 @@ public static partial class Program
         double settled=0;
         while(timer.Elapsed.TotalSeconds<20)
         {
-            Net.Pump(LocalPose,CaptureFloor);
+            Net.Pump(LocalPose,CaptureForSlot);
             if(guest && Floor.JobId<0 && Floor.Seated==0 && _world.Frogs.Count>0)
             {
                 if(sent<3 && _playerCash==0 && Floor.PocketFrogs.Count==sent)
@@ -425,7 +481,7 @@ public static partial class Program
         while(clock.Elapsed.TotalSeconds<15)
         {
             if(!Net.Ready && (guest || phase!=2)) throw new IOException("Coop escort disconnected: "+Net.Status);
-            Net.Pump(LocalPose,CaptureFloor);
+            Net.Pump(LocalPose,CaptureForSlot);
             if(guest)
             {
                 if(phase==0 && peerEscort!=null && _world.Partner is {} partner && Vector3.Distance(partner.Pose.Eye,meeting)<.1f)

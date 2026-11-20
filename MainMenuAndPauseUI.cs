@@ -846,7 +846,7 @@ public static class MainMenuAndPauseUI
         DrawTextCrisp(font,address+(coopFocus==0 && (_menuClock%1)<.55f ? "|" : ""),x+15,(int)field.Y+8,23,Color.White);
         NativeButton("ПОДКЛЮЧИТЬСЯ К ИГРЕ ДРУГА",CoopRow(1),coopFocus==1);
         NativeButton("ВЫЗВАТЬ БРАТАНА В КООП (НАПАРНИК)",CoopRow(2),coopFocus==2);
-        DrawTextCrisp(font,Coop.Status,x,y+263,16,Edge);
+        DrawTextCrisp(font,(Coop.LobbyCount is int count ? $"{count}/3   " : "")+Loc.Tr(Coop.Status),x,y+263,16,Edge);
         DrawTextCrisp(Serif,"Загрузка сохранения",x,y+292,22,Color.White);
         for(int i=1;i<=3;i++)
         {
@@ -1162,7 +1162,7 @@ public static class MainMenuAndPauseUI
         if (IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen) return;
         DrawSlateWindow("Пауза",580,560);
         if(Coop.Host || Coop.Guest)
-            Center(font,Coop.Host ? "Адрес для друга: "+Coop.HostAddress : Coop.Status,
+            Center(font,(Coop.Host ? Loc.Tr("Адрес для друга: ")+Coop.HostAddress : Loc.Tr(Coop.Status))+$"   {Coop.ActivePlayerCount}/3",
                 new(screenW/2-265,screenH/2-216,530,34),17,Edge);
         for(int i=0;i<PauseButtonLabels.Length;i++)
             DrawMenuItem(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);

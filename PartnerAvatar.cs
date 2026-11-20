@@ -3,16 +3,21 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponType Weapon)
+internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponType Weapon,float Swing=0)
 {
     public Vector3 Forward => new(MathF.Sin(Yaw)*MathF.Cos(Pitch), MathF.Sin(Pitch), MathF.Cos(Yaw)*MathF.Cos(Pitch));
     public Camera3D Camera => new() { Position=Eye, Target=Eye+Forward, Up=Vector3.UnitY, FovY=76 };
-    public bool Valid => float.IsFinite(Yaw) && float.IsFinite(Pitch) && Math.Abs(Pitch)<=1.6f &&
+    public bool Valid => Swing is >=0 and <=1 && float.IsFinite(Yaw) && float.IsFinite(Pitch) && Math.Abs(Pitch)<=1.6f &&
         Math.Abs(Eye.X)<=38 && Math.Abs(Eye.Z)<=38 && Eye.Y is >=.8f and <=5.0f && Enum.IsDefined(Weapon);
 }
 
-internal sealed class PartnerAvatar
+internal sealed class PartnerAvatar(int slot=0)
 {
+    internal int Slot {get;}=slot;
+    internal int Hp=100;
+    internal bool Carrying,Downed;
+    internal Color Blazer => Slot switch { 1=>new(35,75,142,255), 2=>new(31,110,74,255), _=>new(181,34,46,255) };
+    internal string Label => Loc.Tr(Slot==0 ? "Хозяин" : $"Гость {Slot}")+(Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
     public PlayerPose Pose = new(new(2,1.72f,10),MathF.PI,0,WeaponType.MicroUzi);
     public Vector3 Feet => new(Pose.Eye.X,0,Pose.Eye.Z);
     public readonly WeaponAndCombatView Effects = new();
@@ -22,6 +27,7 @@ internal sealed class PartnerAvatar
     {
         stride += Math.Min(.4f,Vector3.Distance(Pose.Eye,pose.Eye))*5;
         Pose=pose;
+        Effects.BeltSwingPhase=pose.Swing;
     }
 
     public void Attack(SkyscraperFloor1World world, Action<int,string> grant, bool authoritative)
@@ -73,8 +79,9 @@ internal sealed class PartnerAvatar
         // The authored SMG is a separate material group in the character asset.
         bool smg = Pose.Weapon == WeaponType.MicroUzi;
         VisualEngine3D.Asset("char_partner_90s",Feet+Vector3.UnitY*step,yaw*180/MathF.PI,
-            stretch:new Vector3(1,height,1), hideProp:true);
+            stretch:new Vector3(1,height,1), hideProp:true,tint:Blazer);
         float kick=flash>0 ? .045f : 0;
+        float lash=MathF.Sin(Pose.Swing*MathF.PI)*.6f;
         if (smg)
         {
             VisualEngine3D.Asset("weapon_uzi_90s",P(-.094f,1.324f,.258f-kick)+Vector3.UnitY*step,
@@ -84,7 +91,7 @@ internal sealed class PartnerAvatar
         {
             case WeaponType.Belt:
                 Tube(P(-.10f,1.26f,.32f),P(-.13f,1.16f,.56f),.027f,.021f,new(115,66,41,255));
-                Tube(P(-.13f,1.16f,.56f),P(-.17f,.87f,.69f+kick),.021f,.012f,dark);
+                Tube(P(-.13f,1.16f,.56f),P(-.17f,.87f+lash,.69f+kick+lash),.021f,.012f,dark);
                 break;
             case WeaponType.SolderingIron:
                 Tube(P(-.10f,1.25f,.30f),P(-.10f,1.29f,.47f),.025f,.023f,dark);

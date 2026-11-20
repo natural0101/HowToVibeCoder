@@ -64,10 +64,24 @@ internal sealed partial class FloorSystems
     public int OwnedWeaponsMask=1<<(int)WeaponType.BareHands;
     public List<string> PocketFrogs=new();
     internal OnboardingStep Onboarding { get; set; }
+    internal static string VibeCheck(CoderArchetype role)
+    {
+        var (card,type,verdict)=role switch
+        {
+            CoderArchetype.SeniorArchitect => ("XVI Башня","INTJ","Culture Fit 12%"),
+            CoderArchetype.TeamLeadMeeter => ("X Колесо Фортуны","ENTJ","Culture Fit 98%"),
+            CoderArchetype.CryptoBro => ("XV Дьявол","ENFP","Меркурий ретрограден"),
+            _ => ("0 Шут","INFP","Меркурий ретрограден")
+        };
+        return $"{Loc.Tr("Вайб-Чек")}   {Loc.Tr(card)}   {type}   {Loc.Tr(verdict)}";
+    }
+
     public int TrainingSpawns;
+    public int PlayerCount=1;
+    internal CoopBalance Balance => CoopBalance.For(PlayerCount);
     public bool WingsUnlocked, GalleyTipPending;
     public float WingBarrierSlide, EspressoWait, BarrierVoiceWait;
-    public int PocketCoffeeCups=2, GuestCoffeeCups=2;
+    public int PocketCoffeeCups=2, GuestCoffeeCups=2, SecondCoffeeCups=2;
     public Dictionary<int,float> StationWait=new();
     public Dictionary<int,int> CoolerDrinks=new();
     public bool FirstFrogCheered;
@@ -83,7 +97,7 @@ internal sealed partial class FloorSystems
         OnboardingStep.HealAtCoffee => "Выпей эспрессо у стойки (+45 HP) [E]",
         OnboardingStep.StunAndHeal => "Оглуши стажёра сачком [ЛКМ]",
         OnboardingStep.SeatFirstGalley => carrying ? "Отведи кадра на свободный стол Опенспейса [E]" : "Примани вайбкодера для Опенспейса [E]",
-        OnboardingStep.CaptureFirstCoder => $"Сдай вайбкодеров Веронике ({Math.Min(sold,3)}/3)",
+        OnboardingStep.CaptureFirstCoder => $"Сдай вайбкодеров Веронике ({Math.Min(sold,Balance.QuarantineUnlockTarget)}/{Balance.QuarantineUnlockTarget})",
         _ => ""
     };
 
@@ -120,7 +134,7 @@ internal sealed partial class FloorSystems
         if(!WingsUnlocked && world.TotalCodersSoldToHr is 1 or 2 && Onboarding<OnboardingStep.CaptureFirstCoder)
             Onboarding=OnboardingStep.CaptureFirstCoder;
         bool seated=world.GalleyDesks.Exists(d=>d.IsOccupied);
-        if(!WingsUnlocked && world.TotalCodersSoldToHr>=3)
+        if(!WingsUnlocked && world.TotalCodersSoldToHr>=Balance.QuarantineUnlockTarget)
         {
             WingsUnlocked=true;
             AudioMusicSystem.PlayMacbookBait();
@@ -406,10 +420,10 @@ internal sealed partial class FloorSystems
         if(Audit>0 && !AuditPresented && (Audit=Down(Audit))==0)
         { Risk(security:22); Announce("Срок ответа истёк. СБ +22"); }
         if(WingsUnlocked) WingBarrierSlide=Math.Min(1,WingBarrierSlide+dt/1.4f);
-        EspressoWait=Down(EspressoWait); BarrierVoiceWait=Down(BarrierVoiceWait);
+        EspressoWait=Math.Max(0,EspressoWait-dt/Balance.HealCooldownScale); BarrierVoiceWait=Down(BarrierVoiceWait);
         foreach(int id in StationWait.Keys.ToArray())
         {
-            StationWait[id]=Down(StationWait[id]);
+            StationWait[id]=Math.Max(0,StationWait[id]-dt/Balance.HealCooldownScale);
             if(StationWait[id]==0) { StationWait.Remove(id); CoolerDrinks.Remove(id); }
         }
         TickOffice(dt,world);
@@ -549,7 +563,10 @@ public static partial class Program
         _weapons.UnlockedChatGun=state.Unlocked;
         _world.SelectedBaitTier=state.Bait; _world.IsMacBookTrapActive=state.Trap; _world.TotalCodersSoldToHr=state.Sold;
         _world.ActiveCoders.Clear(); _world.ActiveCoders.AddRange(state.Coders);
-        if(state.Carried!=null) _world.ActiveCoders.Add(state.Carried);
+        if(state.Escorts is {Length:3})
+            _world.ActiveCoders.AddRange(state.Escorts.Skip(1).OfType<VibeCoderEntity>());
+        else if(state.Carried!=null) _world.ActiveCoders.Add(state.Carried);
+        _world.AdaptPlayers(Net.ActivePlayerCount);
         foreach(var desk in state.Desks)
             if((uint)desk.Index<_world.GalleyDesks.Count) desk.DeskPosition=_world.GalleyDesks[desk.Index].DeskPosition;
         _world.GalleyDesks.Clear(); _world.GalleyDesks.AddRange(state.Desks);
@@ -603,8 +620,8 @@ public static partial class Program
             {
                 if(guestBuyer)
                 {
-                    if(!owned) Net.Send(new("floor",Floor:CaptureFloor()));
-                    Net.Send(new("equip-purchase",Text:weapon.ToString()));
+                    if(!owned) Net.Send(new("floor",Floor:CaptureForSlot(actorSlot)),actorSlot);
+                    Net.Send(new("equip-purchase",Text:weapon.ToString()),actorSlot);
                 }
                 else _weapons.Equip(weapon);
             }
@@ -811,10 +828,13 @@ public static partial class Program
         string rarity = VibeCoderCollection.Tag(species.Rarity);
         float width = Math.Max(GameFonts.Measure(display, title, 26).X,
             GameFonts.Measure(small, rarity + "    " + note, 15).X) + 36;
+        string appraisal=species.IsFrog || species.Id=="ai_agent_v01" ? "" : FloorSystems.VibeCheck(species.Archetype);
+        width=Math.Max(width,GameFonts.Measure(small,appraisal,15).X+36);
         float xToast = (UiViewport.Width - width) / 2;
         int top = _world.ElevatorBoss.IsActive ? 96 : 18;
-        Raylib.DrawRectangleRec(new(xToast, top, width, 56), new Color(24, 22, 20, (int)(225 * fade)));
+        Raylib.DrawRectangleRec(new(xToast, top, width, appraisal.Length==0 ? 56 : 78), new Color(24, 22, 20, (int)(225 * fade)));
         DossierPrint.Text(rarity + "    " + note, xToast + 16, top + 5, 15, Raylib.Fade(amber, fade), Typeface.InterfaceBold);
+        if(appraisal.Length>0) DossierPrint.Text(appraisal,xToast+16,top+54,15,Raylib.Fade(paper,fade));
         DossierPrint.Text(title, xToast + 16, top + 23, 26, Raylib.Fade(DossierPrint.Ivory, fade), Typeface.SerifBold);
     }
 

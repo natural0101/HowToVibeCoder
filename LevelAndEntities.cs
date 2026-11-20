@@ -311,7 +311,13 @@ public sealed partial class SkyscraperFloor1World
     public readonly List<EnemyProjectile3D> EnemyProjectiles = new(64);
     public readonly List<CashBurstParticle3D> CashParticles = new(64);
     public EscapedAgentBoss ElevatorBoss = new();
-    internal PartnerAvatar? Partner;
+    internal readonly PartnerAvatar?[] Partners=new PartnerAvatar?[3];
+    internal IEnumerable<PartnerAvatar> Teammates => Partners.OfType<PartnerAvatar>();
+    internal PartnerAvatar? Partner
+    {
+        get => Partners[0] ?? Partners[1] ?? Partners[2];
+        set { Array.Clear(Partners); if(value!=null) Partners[value.Slot]=value; }
+    }
 
     // Central MacBook Trap State
     public SubscriptionBaitTier SelectedBaitTier = SubscriptionBaitTier.FreeTier;
@@ -1037,6 +1043,25 @@ public sealed partial class SkyscraperFloor1World
     // =========================================================================
     // TRAP ACTIVATION, CODER SPAWNING & AI LOOP
     // =========================================================================
+    internal void AdaptPlayers(int count)
+    {
+        if(Systems.PlayerCount==count) return;
+        var old=Systems.Balance;
+        Systems.PlayerCount=count;
+        var balance=Systems.Balance;
+        foreach(var c in ActiveCoders)
+        {
+            if(c.State==CoderAIState.Subdued || c.Hp<=0) continue;
+            float ratio=balance.EnemyHpScale/old.EnemyHpScale;
+            c.Hp*=ratio; c.MaxHp*=ratio;
+        }
+        if(ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated)
+        {
+            float ratio=balance.BossHpScale/old.BossHpScale;
+            ElevatorBoss.Hp*=ratio; ElevatorBoss.MaxHp*=ratio;
+        }
+    }
+
     private void SpawnAtriumIntern()
     {
         int ordinal=++Systems.TrainingSpawns;
@@ -1044,7 +1069,7 @@ public sealed partial class SkyscraperFloor1World
         intern.TimidIntern=intern.IdentityRevealed=intern.LaptopLost=intern.BaitTaken=true;
         intern.Rarity=ordinal>=3 || TotalCodersSoldToHr>=2 ? VibeCoderRarity.Uncommon : VibeCoderRarity.Common;
         intern.Name=ordinal==1 ? "Стажёр-Одуванчик" : $"Промптер №{ordinal}";
-        intern.MaxHp=intern.Hp=24; intern.TarotPayoutValue=10;
+        intern.MaxHp=intern.Hp=24*Systems.Balance.EnemyHpScale; intern.TarotPayoutValue=10;
         intern.AttackCooldown=1.2f;
         CoderSpawnTimer=1.5f;
     }
@@ -1064,7 +1089,7 @@ public sealed partial class SkyscraperFloor1World
             return true;
         }
         var info = GetBaitInfo(tier);
-        if(IsMacBookTrapActive && ActiveCoders.Count>=22)
+        if(IsMacBookTrapActive && ActiveCoders.Count>=Systems.Balance.Cap(22))
         {
             statusMessage="Зал заполнен";
             return false;
@@ -1086,7 +1111,7 @@ public sealed partial class SkyscraperFloor1World
                 var intern=SpawnCoderForTier(tier,1);
                 intern.TimidIntern=intern.IdentityRevealed=intern.LaptopLost=true;
                 intern.Name="Стажёр-Одуванчик";
-                intern.MaxHp=intern.Hp=24;
+                intern.MaxHp=intern.Hp=24*Systems.Balance.EnemyHpScale;
                 intern.TarotPayoutValue=10;
             }
         }
@@ -1132,6 +1157,7 @@ public sealed partial class SkyscraperFloor1World
         }
         Vector3 toMac = CentralMacBookPos - spawnPos;
         coder.FacingYaw = MathF.Atan2(toMac.X, toMac.Z);
+        coder.Hp*=Systems.Balance.EnemyHpScale; coder.MaxHp*=Systems.Balance.EnemyHpScale;
         ActiveCoders.Add(coder);
 
         if (coder.IsMiniBoss)
@@ -1182,6 +1208,7 @@ public sealed partial class SkyscraperFloor1World
         ElevatorGlassOpacity = 1f;
         ElevatorDoorOpenAmount = 0f;
         ElevatorBoss = new() {
+            Hp=600*Systems.Balance.BossHpScale, MaxHp=600*Systems.Balance.BossHpScale,
             IsActive = true, Position = NorthElevatorPos + new Vector3(0,.16f,1.35f), FacingYaw = MathF.PI,
             State = ElevatorBossState.Repairing, StateTimer = RepairSeconds
         };
@@ -1221,14 +1248,19 @@ public sealed partial class SkyscraperFloor1World
         WarningBeaconPhase += dt*6.5f;
     }
 
-    private float hostShock,guestShock;
+    private float hostShock,guestShock,secondShock;
+    private static Vector3 NearestEye(Vector3 source,Vector3 host,Vector3? first,Vector3? second)
+    {
+        var near=first is {} a && Vector3.DistanceSquared(source,a)<Vector3.DistanceSquared(source,host) ? a : host;
+        return second is {} b && Vector3.DistanceSquared(source,b)<Vector3.DistanceSquared(source,near) ? b : near;
+    }
     public int UpdateWorld(
         float dt,
         Vector3 playerPos,
         bool isCrouching,
         Action<int, string>? onPassiveIncomeOrPayout,
         Action<int, string, Vector3>? onPlayerHitByProjectile,
-        Vector3? guestPosition=null, Action<int,string,Vector3>? onGuestHit=null)
+        Vector3? guestPosition=null, Action<int,string,Vector3>? onGuestHit=null, Vector3? second=null, Action<int,string,Vector3>? hitSecond=null)
     {
         AdvanceLighting(dt);
         ApplyElectricField();
@@ -1241,9 +1273,9 @@ public sealed partial class SkyscraperFloor1World
         }
         hostShock=TickShock(playerPos,hostShock,onPlayerHitByProjectile);
         if(guestPosition is {} guestEye) guestShock=TickShock(guestEye,guestShock,onGuestHit);
+        if(second is {} secondEye) secondShock=TickShock(secondEye,secondShock,hitSecond);
         Systems.AgentHealth=BossRevealed || ElevatorBoss.IsDefeated ? ElevatorBoss.Hp/ElevatorBoss.MaxHp : -1;
-        Vector3 Nearest(Vector3 enemy) => guestPosition is {} guest &&
-            Vector3.DistanceSquared(enemy,guest)<Vector3.DistanceSquared(enemy,playerPos) ? guest : playerPos;
+        Vector3 Nearest(Vector3 enemy) => NearestEye(enemy,playerPos,guestPosition,second);
 
         if (TarotVerdictTimer > 0f)
             TarotVerdictTimer = MathF.Max(0f, TarotVerdictTimer - dt);
@@ -1251,9 +1283,9 @@ public sealed partial class SkyscraperFloor1World
         UpdateAmbushState(playerPos, isCrouching);
 
         // 1. Spawn coder when MacBook Trap is active and no live non-subdued coder is walking
-        if(IsMacBookTrapActive && !Systems.WingsUnlocked && TotalCodersSoldToHr<3 &&
+        if(IsMacBookTrapActive && !Systems.WingsUnlocked && TotalCodersSoldToHr<Systems.Balance.QuarantineUnlockTarget &&
             (CoderSpawnTimer-=dt)<=0 && ActiveCoders.Count(c=>(c.Hp>0 || c.CanSignNda) &&
-            Math.Abs(c.Position.X)<9 && c.Position.Z is >=4 and <=15)<2)
+            Math.Abs(c.Position.X)<9 && c.Position.Z is >=4 and <=15)<Systems.Balance.Cap(2))
             SpawnAtriumIntern();
         if (IsMacBookTrapActive && Systems.WingsUnlocked)
         {
@@ -1264,7 +1296,7 @@ public sealed partial class SkyscraperFloor1World
                     activeCount++;
             }
 
-            if (activeCount < 2 && ActiveCoders.Count<22)
+            if (activeCount < Systems.Balance.Cap(2) && ActiveCoders.Count<Systems.Balance.Cap(22))
             {
                 CoderSpawnTimer -= dt;
                 if (CoderSpawnTimer <= 0f)
@@ -1276,13 +1308,13 @@ public sealed partial class SkyscraperFloor1World
         }
 
         // 2. Update Active Vibe Coders & SaaS Mini-Boss
-        UpdateVibeCoders(dt, playerPos,guestPosition,onPlayerHitByProjectile,onGuestHit,onPassiveIncomeOrPayout);
+        UpdateVibeCoders(dt, playerPos,guestPosition,onPlayerHitByProjectile,onGuestHit,onPassiveIncomeOrPayout,second,hitSecond);
 
         // 3. Update Floor 1 Elevator Boss
         UpdateElevatorBoss(dt, Nearest(ElevatorBoss.Position));
 
         // 4. Update Enemy Projectiles (500 ERROR blocks & 40GB node_modules cubes)
-        UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile,guestPosition,onGuestHit,onPassiveIncomeOrPayout);
+        UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile,guestPosition,onGuestHit,onPassiveIncomeOrPayout,second,hitSecond);
 
         // 5. Update 4 Galley Desks (Passive +$20/sec per working coder, or Twitter slack state)
         int passiveEarned = UpdateGalleyDesks(dt, onPassiveIncomeOrPayout);
@@ -1290,16 +1322,16 @@ public sealed partial class SkyscraperFloor1World
         UpdateCashParticles(dt);
 
         Systems.Tick(dt,this,onPassiveIncomeOrPayout);
-        TickFrogs(dt,playerPos,guestPosition);
+        TickFrogs(dt,playerPos,guestPosition,second);
         return passiveEarned;
     }
 
-    private void UpdateVibeCoders(float dt, Vector3 hostPos, Vector3? guestPos, Action<int,string,Vector3>? hitHost, Action<int,string,Vector3>? hitGuest,Action<int,string>? pay)
+    private void UpdateVibeCoders(float dt, Vector3 hostPos, Vector3? guestPos, Action<int,string,Vector3>? hitHost, Action<int,string,Vector3>? hitGuest,Action<int,string>? pay,Vector3? second,Action<int,string,Vector3>? hitSecond)
     {
         for (int i = ActiveCoders.Count - 1; i >= 0; i--)
         {
             VibeCoderEntity c = ActiveCoders[i];
-            Vector3 playerPos=guestPos is {} guest && Vector3.DistanceSquared(c.Position,guest)<Vector3.DistanceSquared(c.Position,hostPos) ? guest : hostPos;
+            Vector3 playerPos=NearestEye(c.Position,hostPos,guestPos,second);
 
             c.Deadline=Math.Max(0,c.Deadline-dt);
             if(c.Ignition>0 && c.Hp>0)
@@ -1350,7 +1382,8 @@ public sealed partial class SkyscraperFloor1World
                 if (UpdateFighter(c,dt,playerPos))
                 {
                     bool baton=c.Archetype==CoderArchetype.SecurityGuard;
-                    if (guestPos == playerPos) { hitGuest?.Invoke(baton ? 10 : 6,baton ? "Охрана СБ (Шокер)" : c.Name+" (Удар ноутбуком)",c.Position); if(baton) Systems.GuestStun=.8f; }
+                    if(second==playerPos) { hitSecond?.Invoke(baton ? 10 : 6,baton ? "Охрана СБ (Шокер)" : c.Name+" (Удар ноутбуком)",c.Position); if(baton) Systems.SecondStun=.8f; }
+                    else if (guestPos == playerPos) { hitGuest?.Invoke(baton ? 10 : 6,baton ? "Охрана СБ (Шокер)" : c.Name+" (Удар ноутбуком)",c.Position); if(baton) Systems.GuestStun=.8f; }
                     else { hitHost?.Invoke(baton ? 10 : 6,baton ? "Охрана СБ (Шокер)" : c.Name+" (Удар ноутбуком)",c.Position); if(baton) Systems.HostStun=.8f; }
                 }
                 continue;
@@ -1758,7 +1791,7 @@ public sealed partial class SkyscraperFloor1World
             case ElevatorBossState.SpinningWhileTrue:
             {
                 b.FacingYaw += dt * 11.5f;
-                b.AttackSubTimer -= dt;
+                b.AttackSubTimer -= dt*Systems.Balance.BossCadenceScale;
                 if (b.AttackSubTimer <= 0f)
                 {
                     b.AttackSubTimer = b.Phase switch { 3=>.28f,2=>.4f,_=>.75f };
@@ -1776,7 +1809,7 @@ public sealed partial class SkyscraperFloor1World
             {
                 Vector3 toPlayer = playerPos - b.Position;
                 b.FacingYaw = MathF.Atan2(toPlayer.X, toPlayer.Z);
-                b.AttackSubTimer -= dt;
+                b.AttackSubTimer -= dt*Systems.Balance.BossCadenceScale;
                 if (b.AttackSubTimer <= 0f)
                 {
                     b.AttackSubTimer = b.Phase>=2 ? .45f : .95f;
@@ -1828,7 +1861,7 @@ public sealed partial class SkyscraperFloor1World
         });
     }
 
-    private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string, Vector3>? onPlayerHit, Vector3? guestPosition, Action<int,string,Vector3>? onGuestHit, Action<int,string>? projectilePayout)
+    private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string, Vector3>? onPlayerHit, Vector3? guestPosition, Action<int,string,Vector3>? onGuestHit, Action<int,string>? projectilePayout,Vector3? second,Action<int,string,Vector3>? hitSecond)
     {
         for (int i = EnemyProjectiles.Count - 1; i >= 0; i--)
         {
@@ -1883,7 +1916,7 @@ public sealed partial class SkyscraperFloor1World
             // Check hit against Player
             bool hitHost=Vector3.DistanceSquared(pr.Position,playerPos)<MathF.Pow(pr.Radius+.55f,2);
             bool hitGuest=guestPosition is {} guest && Vector3.DistanceSquared(pr.Position,guest)<MathF.Pow(pr.Radius+.55f,2);
-            if(hitHost || hitGuest)
+            if(hitHost || hitGuest || second is {} other && Vector3.DistanceSquared(pr.Position,other)<MathF.Pow(pr.Radius+.55f,2))
             {
                 var owner=ActiveCoders.Find(c=>c.Id==pr.OwnerId);
                 if(owner?.TimidIntern!=true || Systems.WingsUnlocked || Systems.Onboarding==OnboardingStep.StunAndHeal)
@@ -1891,7 +1924,7 @@ public sealed partial class SkyscraperFloor1World
                     string attacker=pr.IsNodeModulesCube ? "ИИ-Агент v0.1" : owner?.IsMiniBoss==true ? "Гуру Табсора" :
                         owner?.Archetype is CoderArchetype.ToxicPM or CoderArchetype.SeniorArchitect ? owner.Name : "Вайбкодер";
                     Vector3 source=pr.IsNodeModulesCube ? ElevatorBoss.Position : owner?.Position ?? pr.Position-pr.Velocity;
-                    (hitHost ? onPlayerHit : onGuestHit)?.Invoke(pr.Damage,$"{attacker} ({pr.Label})",source);
+                    (hitHost ? onPlayerHit : hitGuest ? onGuestHit : hitSecond)?.Invoke(pr.Damage,$"{attacker} ({pr.Label})",source);
                 }
                 EnemyProjectiles.RemoveAt(i);
                 continue;
@@ -2350,18 +2383,9 @@ public sealed partial class SkyscraperFloor1World
                 trainee.Rarity=VibeCoderRarity.Uncommon;
         Systems.Deliver(c.Archetype,false,c.TarotPayoutValue);
 
-        string[] tarotCards =
-        {
-            "XVI БАШНЯ (УРОНИЛ ПРОД)",
-            "0 ШУТ (НАЖАЛ ACCEPT ALL)",
-            "X КОЛЕСО ФОРТУНЫ (ГПХ БЕЗ ОТПУСКА)",
-            "XV ДЬЯВОЛ (СЛИЛ API-КЛЮЧИ)",
-            "XII ПОВЕШЕННЫЙ (ВЕЧНЫЙ ДЕДЛАЙН)"
-        };
-        LastTarotCardDrawn = tarotCards[_rng.Next(tarotCards.Length)];
-
+        LastTarotCardDrawn=FloorSystems.VibeCheck(c.Archetype);
         int payout = c.TarotPayoutValue;
-        LastTarotVerdictText = $"Карта «{LastTarotCardDrawn}»! {c.Name} продан за +${payout}!";
+        LastTarotVerdictText = $"{LastTarotCardDrawn}   {c.Name}   +${payout}";
         TarotVerdictTimer = 6.5f;
 
         Systems.Earned+=payout;
@@ -2377,7 +2401,7 @@ public sealed partial class SkyscraperFloor1World
             Program.ShareSlot(Slot);
         }
 
-        return $"HR-ТАРОЛОГ ВЕРОНИКА: «{LastTarotCardDrawn} - аура дешёвая, берём!» Выплачено +${payout} наличными!";
+        return LastTarotVerdictText;
     }
 
     public string SeatCarriedCoderAtGalley(int deskIndex = -1)
@@ -2495,11 +2519,12 @@ public sealed partial class SkyscraperFloor1World
             }
         }
         DrawElevatorDoors(false);
-        if(Partner is {} ally && ally.Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
+        foreach(var ally in Teammates)
+        if(ally.Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
         {
             float yaw=ally.Pose.Yaw, height=ally.Pose.Eye.Y<1.4f ? .75f : 1;
             VisualEngine3D.DrawCharacterDirectionalShadow(ally.Feet,1.7f*height,.32f);
-            VisualEngine3D.Asset("char_partner_90s",ally.Feet,yaw*180/MathF.PI,stretch:new Vector3(1,height,1),hideProp:true);
+            VisualEngine3D.Asset("char_partner_90s",ally.Feet,yaw*180/MathF.PI,stretch:new Vector3(1,height,1),hideProp:true,tint:ally.Blazer);
             if(ally.Pose.Weapon==WeaponType.CaptureNet)
             {
                 var grip=ally.Feet+Vector3.Transform(new Vector3(-.095f,1.25f*height,.26f),Quaternion.CreateFromAxisAngle(Vector3.UnitY,yaw));
@@ -2512,7 +2537,7 @@ public sealed partial class SkyscraperFloor1World
                 }
             }
         }
-        else Partner?.Draw();
+        else ally.Draw();
 
         // Draw all active Vibe Coders & SaaS Guru Mini-Boss
         for (int i = 0; i < ActiveCoders.Count; i++)
@@ -2701,7 +2726,13 @@ public sealed partial class SkyscraperFloor1World
             if(Math.Abs(side ? d.Z : d.X)<=1.9f && Math.Abs(side ? d.X : d.Z)<.54f) { barrierContact=.3f; break; }
         }
     }
-    private string BarrierHint=>$"КАРАНТИН КРЫЛА СБ — СДАЙ 3 ВАЙБКОДЕРОВ ВЕРОНИКЕ ({Math.Min(TotalCodersSoldToHr,3)}/3)";
+    private string ReceptionTicker()
+    {
+        var role=(CoderArchetype)((int)(_worldClock/5)%4);
+        return ((int)(_worldClock/2.5f)%2)==0 ? Loc.Tr("HR Вероника") : FloorSystems.VibeCheck(role);
+    }
+
+    private string BarrierHint=>$"КАРАНТИН КРЫЛА СБ — СДАЙ {Systems.Balance.QuarantineUnlockTarget} ВАЙБКОДЕРОВ ВЕРОНИКЕ ({Math.Min(TotalCodersSoldToHr,Systems.Balance.QuarantineUnlockTarget)}/{Systems.Balance.QuarantineUnlockTarget})";
     internal static readonly (Vector3 Feet,bool Side)[] Gates=
         (from side in new[]{-1,1} from z in new[]{-11f,5.2f,14.5f} select (new Vector3(side*9.6f,0,z),true))
         .Concat(new[]{(new Vector3(-6,0,-15.8f),false),(new Vector3(6,0,-15.8f),false)}).ToArray();
@@ -3815,7 +3846,7 @@ public sealed partial class SkyscraperFloor1World
                 if(distance>11 || Vector3.Dot(Vector3.Normalize(camera.Target-camera.Position),ray/distance)<.68f ||
                     TraceSurface(camera.Position,ray/distance,distance)<distance-.3f) continue;
                 var point=UiViewport.Project(anchor,camera);
-                string plate=$"ЗАКРЫТО   КАРАНТИН ({Math.Min(TotalCodersSoldToHr,3)}/3)";
+                string plate=$"ЗАКРЫТО   КАРАНТИН ({Math.Min(TotalCodersSoldToHr,Systems.Balance.QuarantineUnlockTarget)}/{Systems.Balance.QuarantineUnlockTarget})";
                 Program.ShadowText(font,plate,point.X-GameFonts.Measure(font,plate,16).X/2,point.Y,16,new Color(255,213,170,255));
             }
         var waypoint=OnboardingWaypoint(camera.Position);
@@ -3831,7 +3862,7 @@ public sealed partial class SkyscraperFloor1World
             WorldLabelLayout.ReserveProjectedBox(camera,feet+Vector3.UnitY*(1.36f*height),
                 new Vector3(.14f*scale,.12f*height,.18f*scale));
         }
-        if(Partner is {} partner) ProtectHead(partner.Feet,1,partner.Pose.Eye.Y<1.4f?.75f:1);
+        foreach(var partner in Teammates) ProtectHead(partner.Feet,1,partner.Pose.Eye.Y<1.4f?.75f:1);
         foreach(var actor in ActiveCoders)
         {
             if(actor.State==CoderAIState.Subdued || Vector3.DistanceSquared(camera.Position,actor.Position)>100) continue;
@@ -3870,10 +3901,11 @@ public sealed partial class SkyscraperFloor1World
             Plate(frog.Feet+Vector3.UnitY*.38f,label,-1,frog.Species.HoodieColor,true);
         }
         if(waypoint?.Position!=HrTarotBoothPos && Vector3.DistanceSquared(camera.Position,HrTarotBoothPos)<100 && FindFocus(camera).Kind!=FocusKind.Veronika)
-            Plate(HrTarotBoothPos+Vector3.UnitY*1.87f,"HR Вероника",1f,new Color(168,153,202,255));
-        if(Partner is {} ally && Vector3.DistanceSquared(camera.Position,ally.Feet)<400)
-            Plate(ally.Feet+Vector3.UnitY*(ally.Pose.Eye.Y<1.4f?1.30f:1.72f),"БРАТАН [КООП]",
-                Program.PartnerHp/100f,new Color(109,202,162,255));
+            Plate(HrTarotBoothPos+Vector3.UnitY*1.87f, ReceptionTicker(),-1,new Color(168,153,202,255));
+        foreach(var ally in Teammates)
+        if(Vector3.DistanceSquared(camera.Position,ally.Feet)<400)
+            Plate(ally.Feet+Vector3.UnitY*(ally.Pose.Eye.Y<1.4f?1.30f:1.72f),ally.Label,
+                ally.Hp/100f,ally.Blazer);
         foreach(var c in ActiveCoders)
         {
             if(waypoint?.Position==c.Position && c.Composure>=99) continue;
@@ -3991,6 +4023,7 @@ public sealed partial class SkyscraperFloor1World
         c.TarotPayoutValue=role switch { CoderArchetype.SeniorArchitect=>440,CoderArchetype.TeamLeadMeeter=>280,
             CoderArchetype.CryptoBro=>250,_=>160 };
         if(role==CoderArchetype.SecurityGuard) c.LaptopLost=true;
+        c.Hp*=Systems.Balance.EnemyHpScale; c.MaxHp*=Systems.Balance.EnemyHpScale;
         ActiveCoders.Add(c);
         return c;
     }
@@ -4004,7 +4037,7 @@ public sealed partial class SkyscraperFloor1World
     internal void SpawnWave(int count,bool raid=false)
     {
         if(!Systems.WingsUnlocked || !IsMacBookTrapActive) return;
-        for(int i=0;i<count && (ActiveCoders.Count<22 || raid && i==0);i++)
+        for(int i=0;i<count && (ActiveCoders.Count<Systems.Balance.Cap(22) || raid && i==0);i++)
         {
             float side=i%2==0 ? 1 : -1;
             Vector3 spawn=Systems.Friday>0 ? new(7+i*1.6f,0,5) : new(side*(11+i),0,6+i);
@@ -4308,23 +4341,23 @@ public sealed partial class SkyscraperFloor1World
         }
     }
 
-    private void TickFrogs(float dt,Vector3 eye,Vector3? guest)
+    private void TickFrogs(float dt,Vector3 eye,Vector3? guest,Vector3? second=null)
     {
         refill-=dt; croakDelay-=dt;
         if(Systems.TD<previousDebt) previousDebt=Systems.TD;
-        if(Systems.WingsUnlocked && Frogs.Count<24 && Systems.TD>previousDebt && (previousDebt==0 || Systems.TD-previousDebt>=1))
+        if(Systems.WingsUnlocked && Frogs.Count<Systems.Balance.Cap(24) && Systems.TD>previousDebt && (previousDebt==0 || Systems.TD-previousDebt>=1))
         {
             SpawnFrog(RackPos+new Vector3(frogRandom.NextSingle()*3-1.5f,0,1.4f+frogRandom.NextSingle()));
             previousDebt=Systems.TD;
         }
-        if(refill<=0 && Frogs.Count<8)
+        if(refill<=0 && Frogs.Count<Systems.Balance.Cap(8))
         {
             SpawnFrog(new(frogRandom.NextSingle()*5-2.5f,0,7+frogRandom.NextSingle()*3));
             refill=3.5f;
         }
         foreach(var frog in Frogs)
         {
-            Vector3 near=guest is {} g && Vector3.DistanceSquared(frog.Feet,g)<Vector3.DistanceSquared(frog.Feet,eye) ? g : eye;
+            Vector3 near=NearestEye(frog.Feet,eye,guest,second);
             if(frog.Rest>0)
             {
                 frog.Rest-=dt;

@@ -1,3 +1,4 @@
+#nullable enable
 using System.Diagnostics;
 using System.Numerics;
 using Raylib_cs;
@@ -6,6 +7,113 @@ namespace HowToVibeCoder;
 
 public static partial class Program
 {
+    private static void CheckThreePlayerLobby()
+    {
+        using var first=new CoopNetworkSystem();
+        using var second=new CoopNetworkSystem();
+        using var fourth=new CoopNetworkSystem();
+        var peers=new[]{Net,first,second};
+        var seen=new Dictionary<int,PlayerPose>[] {new(),new(),new()};
+        PlayerPose[] poses=[new(new(0,1.72f,10),MathF.PI,0,WeaponType.BareHands),
+            new(new(-1.05f,1.72f,6.8f),0,.1f,WeaponType.MicroUzi),
+            new(new(1.05f,1.72f,6.8f),0,-.1f,WeaponType.Belt,.5f)];
+        FloorSnapshot?[] floors=new FloorSnapshot?[3];
+        bool sawSecondFire=false;
+        first.OnMessage=(slot,m)=>
+        {
+            if(m.Kind=="floor") floors[1]=m.Floor;
+            if(slot==2 && m.Kind=="fire" && m.Pose==poses[2]) sawSecondFire=true;
+        };
+        second.OnMessage=(_,m)=> { if(m.Kind=="floor") floors[2]=m.Floor; };
+        first.OnPose=(slot,pose)=>seen[1][slot]=pose;
+        second.OnPose=(slot,pose)=>seen[2][slot]=pose;
+        _playerPos=poses[0].Eye; _playerYaw=poses[0].Yaw; _playerPitch=0;
+        poses[0]=LocalPose;
+        var enemy=_world.SpawnFighter(CoderArchetype.JuniorPrompter,new(25,0,18));
+        enemy.Hp=enemy.MaxHp*.4f;
+        var boss=_world.ElevatorBoss;
+        boss.IsActive=true; boss.Hp=boss.MaxHp*.6f;
+        float original=enemy.MaxHp, originalBoss=boss.MaxHp;
+        void CheckScale(int n,float e,float b,int target)
+        {
+            var balance=Floor.Balance;
+            var (cadence,cap,heal)=n switch {2=>(1.12f,1.45f,.85f),3=>(1.22f,1.85f,.72f),_=>(1f,1f,1f)};
+            if(balance.BossCadenceScale!=cadence || balance.SpawnCapScale!=cap || balance.HealCooldownScale!=heal ||
+                Net.ActivePlayerCount!=n || balance.EnemyHpScale!=e || balance.BossHpScale!=b ||
+                balance.QuarantineUnlockTarget!=target || Math.Abs(enemy.MaxHp-original*e)>.01f ||
+                Math.Abs(boss.MaxHp-originalBoss*b)>.01f || Math.Abs(enemy.Hp/enemy.MaxHp-.4f)>.001f ||
+                Math.Abs(boss.Hp/boss.MaxHp-.6f)>.001f) throw new InvalidDataException($"Live balance {n}");
+            Console.WriteLine(FormattableString.Invariant($"COOP PASS {n}/3 enemy x{e:F2} boss x{b:F2} quarantine {target} HP 40%/60%"));
+        }
+        void Until(Func<bool> condition)
+        {
+            var timer=Stopwatch.StartNew();
+            while(timer.Elapsed.TotalSeconds<8)
+            {
+                Net.Pump(poses[0],CaptureForSlot);
+                first.Pump(poses[1],CaptureFloor);
+                second.Pump(poses[2],CaptureFloor);
+                fourth.Pump(poses[2],CaptureFloor);
+                foreach(var ally in _world.Teammates) seen[0][ally.Slot]=ally.Pose;
+                if(condition()) return;
+                Thread.Sleep(3);
+            }
+            throw new TimeoutException($"Trio roster {Net.ActivePlayerCount}, {first.Status}, {second.Status}, {fourth.Status}");
+        }
+        const string address="127.0.0.1";
+        CheckScale(1,1,1,3);
+        first.Join(address); Until(()=>first.Ready); CheckScale(2,1.35f,1.55f,4);
+        second.Join(address);
+        Until(()=>peers.All(p=>p.ActivePlayerCount==3) &&
+            Enumerable.Range(0,3).All(i=>peers[i].LocalSlot==i &&
+                Enumerable.Range(0,3).All(j=>i==j || seen[i].GetValueOrDefault(j)==poses[j])));
+        CheckScale(3,1.70f,2.10f,5);
+        Console.WriteLine("COOP PASS slots 0,1,2 each received both remote poses, rotations, weapons and swing");
+        health[1]=64; health[2]=37;
+        escorts[2]=new VibeCoderEntity {Id=987};
+        MarkDown(1);
+        Until(()=>floors[1] is {GuestHp:64,Carried:null,Downed:[false,true,false],Escorts:[null,null,{Id:987}]} &&
+                  floors[2] is {GuestHp:37,Carried.Id:987,Health:[100,64,37],Downed:[false,true,false]});
+        escorts[2]=null; Array.Fill(health,100); Array.Clear(downUntil);
+        Console.WriteLine("COOP PASS personalized HP, downed and captive snapshots reached both guests");
+        Floor.OwnedWeaponsMask|=1<<(int)poses[2].Weapon;
+        second.Send(new("fire",poses[2]));
+        Until(()=>sawSecondFire);
+        fourth.Discover();
+        Until(()=>fourth.LobbyCount==3 && fourth.DiscoveredAddress!=null);
+        Console.WriteLine("COOP PASS guest 1 observed guest 2 attack; LAN discovery advertised 3/3");
+        var language=Loc.Current;
+        Loc.Set(GameLang.En,false);
+        fourth.Join(address);
+        Until(()=>!fourth.Guest && fourth.Status==Loc.Tr(CoopNetworkSystem.Full));
+        if(fourth.Status!="Lobby full (max 3 players)") throw new IOException(fourth.Status);
+        Loc.Set(GameLang.Ru,false);
+        fourth.Join(address);
+        Until(()=>!fourth.Guest && fourth.Status=="Лобби заполнено (макс. 3 игрока)");
+        Loc.Set(language,false);
+        poses[1]=poses[1] with {Pitch=.2f};
+        Until(()=>seen[0][1]==poses[1] && seen[2][1]==poses[1] && peers.All(p=>p.ActivePlayerCount==3));
+        Console.WriteLine("COOP PASS fourth rejected: Lobby full (max 3 players); all three still connected");
+        boss.IsActive=false;
+        Floor.Onboarding=OnboardingStep.Done;
+        AudioMusicSystem.VoiceTimer=_hudStatusTimer=0;
+        DrawFrame(); DrawFrame();
+        var image=Raylib.LoadImageFromScreen();
+        try
+        {
+            var path=Path.Combine(Directory.GetCurrentDirectory(),"screenshots","43_coop_3players_hud.png");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            if(image.Width!=1280 || image.Height!=720 || !Raylib.ExportImage(image,path)) throw new IOException(path);
+        }
+        finally { Raylib.UnloadImage(image); }
+        boss.IsActive=true;
+        second.Dispose(); Until(()=>Net.ActivePlayerCount==2 && first.ActivePlayerCount==2);
+        CheckScale(2,1.35f,1.55f,4);
+        first.Dispose(); Until(()=>Net.ActivePlayerCount==1);
+        CheckScale(1,1,1,3);
+        ResetNewGameFloor(greet:false);
+    }
+
     // Run two real game processes. The guest buys the lift key and fires at the
     // host's boss. Both processes must observe both players' shots and the payout.
     private static void RunCoopSmoke(bool guest)
@@ -30,7 +138,7 @@ public static partial class Program
             if(!guest && _world.ElevatorBoss.State is ElevatorBossState.Repairing or ElevatorBossState.IntroSpeech)
                 TickFloor((float)Math.Min(.15,now-previousTime));
             previousTime=now;
-            Net.Pump(LocalPose,CaptureFloor);
+            Net.Pump(LocalPose,CaptureForSlot);
             sawRepair |= _world.ElevatorRepaired && _world.ElevatorBoss.State==ElevatorBossState.Repairing && !_world.BossRevealed;
             sawReveal |= _world.ElevatorBoss.State==ElevatorBossState.IntroSpeech && _world.ElevatorGlassOpacity==0 && _world.ElevatorDoorOpenAmount>.5f;
             if(Net.Ready && Net.HasPeerPose && _world.Partner is {} ally)
@@ -105,7 +213,7 @@ public static partial class Program
         bool requested=false;
         while(timer.Elapsed.TotalSeconds<12)
         {
-            Net.Pump(LocalPose,CaptureFloor);
+            Net.Pump(LocalPose,CaptureForSlot);
             if(_world.Slot.Active)
             {
                 var (row,skin)=_world.Slot.Prize;
@@ -120,7 +228,7 @@ public static partial class Program
                     if(guest) return;
                     // Allow the next authoritative snapshot to reach the guest.
                     var until=timer.Elapsed.TotalSeconds+.6;
-                    while(timer.Elapsed.TotalSeconds<until) {Net.Pump(LocalPose,CaptureFloor); DrawFrame();}
+                    while(timer.Elapsed.TotalSeconds<until) {Net.Pump(LocalPose,CaptureForSlot); DrawFrame();}
                     return;
                 }
             }
@@ -150,7 +258,7 @@ public static partial class Program
         var timer=Stopwatch.StartNew();
         while(timer.Elapsed.TotalSeconds<18)
         {
-            Net.Pump(LocalPose,CaptureFloor);
+            Net.Pump(LocalPose,CaptureForSlot);
             var coder=_world.ActiveCoders.Find(c=>c.Position==pickup && c.CanSignNda);
             if(guest)
             {
@@ -201,7 +309,7 @@ public static partial class Program
                     LookAtTarget(dummy.CombatCenter);
                     Fire(BuildPlayerCamera()); phase++;
                 }
-                else if(phase==6 && _world.ActiveCoders.Any(c=>c.Position==target && c.Hp==38) &&
+                else if(phase==6 && _world.ActiveCoders.Any(c=>c.Position==target && MathF.Abs(c.Hp-(c.MaxHp-12))<.01f) &&
                     _world.CarriedCoder!=null && _weapons.CurrentWeapon==WeaponType.CaptureNet)
                 {
                     Console.WriteLine("COOP PASS guest: holster, empty slot, bare-hand delivery, armed harness pickup and attack"); return;
@@ -216,7 +324,7 @@ public static partial class Program
                     phase++;
                 }
                 if(phase==1 && guestCarried!=null && Floor.Has(Sidegrade.CarryHarness) &&
-                    _world.ActiveCoders.Any(c=>c.Position==target && c.Hp==38))
+                    _world.ActiveCoders.Any(c=>c.Position==target && MathF.Abs(c.Hp-(c.MaxHp-12))<.01f))
                 { completed=timer.Elapsed.TotalSeconds; phase++; }
                 if(phase==2 && timer.Elapsed.TotalSeconds-completed>.7)
                 {

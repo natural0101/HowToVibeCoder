@@ -40,6 +40,7 @@ public static partial class Program
     private static int _lastDamageAmount;
     private static float _lastDamageTimer, HealFlashTimer;
     private static bool guestInteraction;
+    private static ref int GuestCups => ref ((Net.Guest ? Net.LocalSlot : actorSlot)==2 ? ref Floor.SecondCoffeeCups : ref Floor.GuestCoffeeCups);
     internal static bool NeedsHealing => (guestInteraction ? guestHp : _playerHp)<100;
 
     private static void ShowHit(int amount,string label,Vector3 source)
@@ -50,6 +51,7 @@ public static partial class Program
     private static void ReceiveDamage(int amount,string label,Vector3 source)
     {
         if(guestInteraction) { GuestDamage(amount,label,source); return; }
+        if(Net.Host && _playerHp<=amount) MarkDown(0);
         _playerHp=AfterDamage(_playerHp,amount);
         ShowHit(amount,label,source);
         BeginHealLesson();
@@ -76,7 +78,7 @@ public static partial class Program
         if(guestInteraction)
         {
             guestHp=Math.Min(100,guestHp+hp);
-            Net.Send(new("healed",Amount:stamina));
+            Net.Send(new("healed",Amount:stamina),actorSlot);
         }
         else { _playerHp=Math.Min(100,_playerHp+hp); HealFeedback(stamina); }
         if(Floor.Onboarding==OnboardingStep.HealAtCoffee)
@@ -90,13 +92,13 @@ public static partial class Program
     }
     internal static void RefillCoffeeCup()
     {
-        if(guestInteraction) Floor.GuestCoffeeCups=Math.Min(2,Floor.GuestCoffeeCups+1);
+        if(guestInteraction) GuestCups=Math.Min(2,GuestCups+1);
         else Floor.PocketCoffeeCups=Math.Min(2,Floor.PocketCoffeeCups+1);
     }
     private static void DrinkPocketCoffee()
     {
         if(Net.Guest) { Net.Send(new("drink")); return; }
-        ref int cups=ref (guestInteraction ? ref Floor.GuestCoffeeCups : ref Floor.PocketCoffeeCups);
+        ref int cups=ref (guestInteraction ? ref GuestCups : ref Floor.PocketCoffeeCups);
         if(!NeedsHealing || cups==0) return;
         cups--;
         Heal(30,25,"СТАКАН КОФЕ");
@@ -204,6 +206,7 @@ public static partial class Program
         if (coopSmoke)
         {
             if(localPair && !Net.Host) throw new IOException(Net.Status);
+            if(localPair) CheckThreePlayerLobby();
             using var guest=localPair ? System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                 Path.Combine(AppContext.BaseDirectory,OperatingSystem.IsWindows() ? "HowToVibeCoder.exe" : "HowToVibeCoder"),"--coop-smoke --join 127.0.0.1") { UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true }) : null;
             var guestLog=guest?.StandardOutput.ReadToEndAsync();
@@ -424,8 +427,9 @@ public static partial class Program
     private static void ResetNewGameFloor(SkyscraperFloor1World? ready=null,bool greet=true)
     {
         floorPanel=FloorPanel.None; seenReport=0;
-        bot=awaitingSpawn=pendingCase=false; guestCarried=peerEscort=null; guestHp=100;
+        bot=awaitingSpawn=pendingCase=false; Array.Clear(escorts); Array.Clear(downUntil); Array.Fill(health,100);
         _world = ready ?? new SkyscraperFloor1World(fixtureSeed);
+        if(!Net.Guest) _world.AdaptPlayers(Net.ActivePlayerCount);
         AudioMusicSystem.VoiceTimer = 0;
         _playerPos = _world.ResolvePlayerCollision(LobbyEntrance);
         _isCrouching = false;
@@ -523,7 +527,7 @@ public static partial class Program
             hostOnNextUpdate=false;
             StartHosting(newShift:true);
         }
-        Net.Pump(LocalPose,CaptureFloor);
+        Net.Pump(LocalPose,CaptureForSlot);
 
         if(_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu) { UpdateSlot(dt); return; }
 
@@ -736,7 +740,7 @@ public static partial class Program
             Vector3.Dot(move,new Vector3(-facing.Z,0,facing.X)));
     }
 
-    private static bool PlayerStunned => (Net.Guest ? Floor.GuestStun : Floor.HostStun)>0;
+    private static bool PlayerStunned => (Net.Guest ? (Net.LocalSlot==2 ? Floor.SecondStun : Floor.GuestStun) : Floor.HostStun)>0;
 
     private static void UpdateTrigger(float dt,bool held,bool pressed,bool reload,bool moving)
     {
@@ -905,7 +909,7 @@ public static partial class Program
 
         // 1. 3D Skyscraper World + Entities + Combat Particles
         BeginLitWorld(_world,playerCam);
-        _world.Partner?.Effects.DrawWeaponWorldEffects3D(playerCam);
+        foreach(var ally in _world.Teammates) ally.Effects.DrawWeaponWorldEffects3D(playerCam);
         _weapons.DrawWeaponWorldEffects3D(playerCam);
         Raylib.EndMode3D();
 
@@ -942,6 +946,14 @@ public static partial class Program
         int sw=UiViewport.Width, sh=UiViewport.Height;
         int cx = sw/2, cy = sh/2;
         Color white = new(250,249,245,255), dark = new(22,24,38,142);
+        if(Net.Host || Net.ActivePlayerCount>1)
+        {
+            string badge=FormattableString.Invariant($"{(Loc.IsEn ? "CO-OP" : "КООП")} {Net.ActivePlayerCount}/3   ×{CoopBalance.For(Net.ActivePlayerCount).EnemyHpScale:F2}");
+            float width=GameFonts.Measure(_uiFont,badge,17).X+22;
+            Rectangle pill=new(sw-width-24,sh-86,width,29);
+            Raylib.DrawRectangleRounded(pill,.8f,8,new Color(25,27,30,216));
+            MainMenuAndPauseUI.Center(_uiFont,badge,pill,17,white);
+        }
         string money = "$" + _playerCash;
         ShadowText(_serif, money, 36, sh - 92, 26, white);
         if(_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated)
@@ -977,7 +989,7 @@ public static partial class Program
         ShadowText(_uiFont,"[H]",232,sh-51,18,white);
         Raylib.DrawRing(new(277,sh-41),3,4.5f,-95,95,12,white);
         Raylib.DrawRectangleRounded(new(262,sh-47,14,13),.42f,6,white);
-        ShadowText(_uiFont,$"×{(Net.Guest ? Floor.GuestCoffeeCups : Floor.PocketCoffeeCups)}",286,sh-51,18,white);
+        ShadowText(_uiFont,$"×{(Net.Guest ? GuestCups : Floor.PocketCoffeeCups)}",286,sh-51,18,white);
         if(_playerHp<65)
             ShadowText(_uiFont,"Хил: [H] Кофе или Кофе-машина / Пицца [E]",38,sh-120,15,new Color(178,238,201,(int)(205+42*MathF.Sin((float)Raylib.GetTime()*3))));
         if(HealFlashTimer>0)
