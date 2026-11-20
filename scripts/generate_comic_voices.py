@@ -1,4 +1,4 @@
-"""Generate 8 RU + 8 EN studio-mastered intro comic narration clips via VoiceStudio OmniVoice CUDA."""
+"""Generate 8 RU + 8 EN studio-mastered surreal intro comic narration clips via VoiceStudio OmniVoice CUDA."""
 import io
 import json
 import time
@@ -14,26 +14,29 @@ REPO_ROOT = Path(r"C:\Users\se-20\.gemini\antigravity\scratch\HowToVibeCoder")
 RU_DIR = REPO_ROOT / "assets" / "sounds" / "vo"
 EN_DIR = RU_DIR / "en"
 
+ANCHOR_RU = "Две тысячи двадцать шестой год. Башня Энтропик. Старые методы возвращаются."
+ANCHOR_EN = "Twenty twenty-six. Entropic Tower. Old-school methods are back."
+
 COMIC_LINES_RU = [
-    ("vo_comic_1", "Две тысячи двадцать шестой год. Башня Клауд Энтропик. Старые методы возвращаются."),
-    ("vo_comic_2", "Офис захватили вайбкодеры. Код не читают — жмут акцепт олл, и прод горит синим пламенем."),
-    ("vo_comic_3", "Касса на нуле. Но эйчар Вероника знает схему: лови их, сажай в опенспейс и выбивай кэш."),
-    ("vo_comic_4", "А за запертым Северным лифтом затаился кое-кто пострашнее... Пора наводить порядок на первом этаже!"),
-    ("vo_comic_5", "Ещё в девяносто восьмом сисадмин Петрович собрал Джаба-жаб для отладки. Теперь они скачут по всему залу."),
-    ("vo_comic_6", "Включи халявный вай-фай на ЯблоБуке в центре — вайбкодеры сами сбегутся на приманку."),
-    ("vo_comic_7", "Сдавай редких кадров Веронике — крути скины на её автомате и снимай карантин с опенспейса."),
-    ("vo_comic_8", "Первый этаж. Ноль долларов в кармане. Добро пожаловать в Энтропик."),
+    ("vo_comic_1", "Две тысячи двадцать шестой год. Башня Энтропик. Ты заменил весь айти-отдел на вайбкодеров и ИИ-агента. Первая неделя: блин, реально круто работает!"),
+    ("vo_comic_2", "Потом вылез первый баг. Агент поклялся: такого больше никогда не повторится! И через секунду: баг! Ещё баг! И снова баг! Прод горит!"),
+    ("vo_comic_3", "Пока офис орал, эйчар Вероника спокойно раскинула Таро: я же говорила — Меркурий в ретрограде. Отбиваем убытки вручную."),
+    ("vo_comic_4", "В Северном лифте заперли самого ИИ-Агента. Он всё ещё клянётся: всё исправлено — и стирает базу. Достаём аргументы девяностых."),
+    ("vo_comic_5", "Агент полез отрефакторить древний бэкенд Петровича девяносто восьмого года на Джабе — и породил живых Джаба-жаб. Зато легаси не падает."),
+    ("vo_comic_6", "Вайбкодеры не верят, что всё сгорело — агент же написал: все тесты пройдены! Но на халявный вай-фай и токены Клодия слетаются мгновенно."),
+    ("vo_comic_7", "Агент оптимизировал даже эйчар-отдел — у Вероники вместо головы игровой автомат. Тащи редких кадров, крути пушки и снимай карантин."),
+    ("vo_comic_8", "Простите, больше не повторится — пищит из колонок. Счета на нуле. Первый этаж Энтропик. Чиним этот цирк по-старому!"),
 ]
 
 COMIC_LINES_EN = [
-    ("vo_comic_1", "Twenty twenty-six. Cloud Entropic Tower. Old-school methods are back."),
-    ("vo_comic_2", "Vibe coders overran the floor. Never read the code — just spam Accept All while production burns."),
-    ("vo_comic_3", "The register's at zero. But HR Veronika has a plan: catch them, seat them in the open-space, and print cash."),
-    ("vo_comic_4", "And behind the sealed North Elevator lurks something far worse... Time to clean up Floor One!"),
-    ("vo_comic_5", "Back in ninety-eight, sysadmin Petrovich built Jabba-frogs to debug servers. Now they're hopping everywhere."),
-    ("vo_comic_6", "Flip on free Wi-Fi at the AppleBook in the center — vibe coders will swarm straight to the bait."),
-    ("vo_comic_7", "Bring rare catches to Veronika — spin weapon skins on her slot head and lift the open-space lockdown."),
-    ("vo_comic_8", "Floor One. Zero bucks in your pocket. Welcome to Entropic Corp."),
+    ("vo_comic_1", "Twenty twenty-six. Entropic Tower. You replaced the whole IT team with vibe coders and an AI agent. Week one: hey, this actually works great!"),
+    ("vo_comic_2", "Then the first bug hit. The agent swore: this will never happen again! One second later: bug! Another bug! And another bug! Production is on fire!"),
+    ("vo_comic_3", "While the office panicked, HR Veronika calmly dealt her Tarot: told you, Mercury is in retrograde. Time to recover the losses by hand."),
+    ("vo_comic_4", "They locked the rogue AI Agent inside the North Elevator. It still swears everything is fixed while wiping the database. Time for nineties methods."),
+    ("vo_comic_5", "The agent tried to refactor Petrovich's ancient ninety-eight Jabba backend — and spawned living Jabba-frogs. At least the legacy still runs."),
+    ("vo_comic_6", "The vibe coders refuse to believe prod burned down — the agent printed All Tests Passed! Still, free Wi-Fi and Clodius tokens lure them right in."),
+    ("vo_comic_7", "The agent even optimized HR — Veronika's head is now a literal slot machine. Bring her rare catches, spin weapons, and lift the lockdown."),
+    ("vo_comic_8", "So sorry, it won't happen again — chirps the intercom. Bank at zero. Floor One of Entropic Corp. Time to fix this circus the old way!"),
 ]
 
 
@@ -66,28 +69,61 @@ def master_array(x: np.ndarray, sr: int, target_rms: float = 0.168) -> np.ndarra
     return x
 
 
-def synth_batch(language: str, lines: list[tuple[str, str]], out_dir: Path, base_seed: int):
+def to_wav_bytes(samples: np.ndarray, sr: int) -> bytes:
+    pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+def synth_batch(language: str, anchor_text: str, lines: list[tuple[str, str]], out_dir: Path, base_seed: int):
     manifest_path = out_dir / "vo_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    anchor_bytes = None
-    anchor_text = None
+
+    # Generate a crisp ~4s narrator anchor first so cloning is rock-solid on every line
+    r0 = requests.post(
+        API_URL,
+        data={
+            "text": anchor_text,
+            "language": language,
+            "instruct": "male, middle-aged, low pitch",
+            "effect_preset": "raw",
+            "num_step": "28",
+            "guidance_scale": "2.0",
+            "speed": "1.03",
+            "seed": str(base_seed),
+            "denoise": "true",
+            "pronounce": "true",
+        },
+        timeout=120,
+    )
+    assert r0.status_code == 200 and r0.content.startswith(b"RIFF")
+    a_samp, a_sr = read_wav_bytes(r0.content)
+    a_samp = master_array(a_samp, a_sr)
+    anchor_bytes = to_wav_bytes(a_samp, a_sr)
+    print(f"[{language[:2].upper()} ANCHOR] {len(a_samp)/a_sr:.2f}s", flush=True)
 
     for idx, (clip_id, text) in enumerate(lines):
         ok = False
-        for attempt in range(4):
+        min_dur = max(3.5, len(text) * 0.032)
+        for attempt in range(5):
             data = {
                 "text": text,
                 "language": language,
                 "effect_preset": "raw",
                 "num_step": "28",
                 "guidance_scale": "2.0",
-                "speed": "1.02",
-                "seed": str(base_seed + idx * 11 + attempt * 100),
+                "speed": "1.04",
+                "seed": str(base_seed + 17 + idx * 19 + attempt * 131),
                 "denoise": "true",
                 "pronounce": "true",
             }
             files = None
-            if anchor_bytes is not None and anchor_text:
+            if attempt < 3:
                 data["ref_text"] = anchor_text
                 files = {"ref_audio": ("narrator_anchor.wav", anchor_bytes, "audio/wav")}
             else:
@@ -98,20 +134,13 @@ def synth_batch(language: str, lines: list[tuple[str, str]], out_dir: Path, base
             samples = master_array(samples, sr)
             dur = len(samples) / float(sr)
             rms = float(np.sqrt(np.mean(samples ** 2)))
-            if dur >= 1.8 and rms >= 0.08:
+            if dur >= min_dur and rms >= 0.08:
                 ok = True
                 break
+            print(f"  retry {clip_id} attempt={attempt} dur={dur:.2f}s < {min_dur:.2f}s", flush=True)
         assert ok, f"Failed quality gate for {language} {clip_id}: dur={dur:.2f}s rms={rms:.3f}"
         out = out_dir / f"{clip_id}.wav"
-        pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
-        with wave.open(str(out), "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sr)
-            wf.writeframes(pcm.tobytes())
-        if anchor_bytes is None:
-            anchor_bytes = out.read_bytes()
-            anchor_text = text
+        out.write_bytes(to_wav_bytes(samples, sr))
         manifest[clip_id] = {
             "character": "narrator",
             "duration": round(dur, 3),
@@ -127,7 +156,7 @@ def synth_batch(language: str, lines: list[tuple[str, str]], out_dir: Path, base
 
 
 def main() -> int:
-    for _ in range(30):
+    for _ in range(45):
         try:
             if requests.get("http://127.0.0.1:3900/health", timeout=2).status_code == 200:
                 break
@@ -135,9 +164,9 @@ def main() -> int:
             pass
         time.sleep(1)
 
-    synth_batch("Russian", COMIC_LINES_RU, RU_DIR, base_seed=7701)
-    synth_batch("English", COMIC_LINES_EN, EN_DIR, base_seed=8801)
-    print("ALL 16 COMIC NARRATION CLIPS (8 RU + 8 EN) GENERATED!")
+    synth_batch("Russian", ANCHOR_RU, COMIC_LINES_RU, RU_DIR, base_seed=7901)
+    synth_batch("English", ANCHOR_EN, COMIC_LINES_EN, EN_DIR, base_seed=8901)
+    print("ALL 16 SURREAL COMIC NARRATION CLIPS (8 RU + 8 EN) GENERATED!")
     return 0
 
 

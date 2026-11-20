@@ -305,66 +305,66 @@
   },
   "vo_comic_1": {
     "character": "narrator",
-    "duration": 3.872,
-    "rms": 0.1191,
+    "duration": 7.327,
+    "rms": 0.1207,
     "sr": 24000,
-    "bytes": 185896,
-    "text": "Twenty twenty-six. Cloud Entropic Tower. Old-school methods are back."
+    "bytes": 351732,
+    "text": "Twenty twenty-six. Entropic Tower. You replaced the whole IT team with vibe coders and an AI agent. Week one: hey, this actually works great!"
   },
   "vo_comic_2": {
     "character": "narrator",
-    "duration": 4.919,
-    "rms": 0.1241,
+    "duration": 7.418,
+    "rms": 0.1256,
     "sr": 24000,
-    "bytes": 236156,
-    "text": "Vibe coders overran the floor. Never read the code — just spam Accept All while production burns."
+    "bytes": 356132,
+    "text": "Then the first bug hit. The agent swore: this will never happen again! One second later: bug! Another bug! And another bug! Production is on fire!"
   },
   "vo_comic_3": {
     "character": "narrator",
-    "duration": 5.284,
-    "rms": 0.1223,
+    "duration": 6.971,
+    "rms": 0.1233,
     "sr": 24000,
-    "bytes": 253686,
-    "text": "The register's at zero. But HR Veronika has a plan: catch them, seat them in the open-space, and print cash."
+    "bytes": 334632,
+    "text": "While the office panicked, HR Veronika calmly dealt her Tarot: told you, Mercury is in retrograde. Time to recover the losses by hand."
   },
   "vo_comic_4": {
     "character": "narrator",
-    "duration": 4.752,
-    "rms": 0.1279,
+    "duration": 7.59,
+    "rms": 0.1223,
     "sr": 24000,
-    "bytes": 228150,
-    "text": "And behind the sealed North Elevator lurks something far worse... Time to clean up Floor One!"
+    "bytes": 364384,
+    "text": "They locked the rogue AI Agent inside the North Elevator. It still swears everything is fixed while wiping the database. Time for nineties methods."
   },
   "vo_comic_5": {
     "character": "narrator",
-    "duration": 5.626,
-    "rms": 0.1224,
+    "duration": 7.384,
+    "rms": 0.123,
     "sr": 24000,
-    "bytes": 270084,
-    "text": "Back in ninety-eight, sysadmin Petrovich built Jabba-frogs to debug servers. Now they're hopping everywhere."
+    "bytes": 354458,
+    "text": "The agent tried to refactor Petrovich's ancient ninety-eight Jabba backend — and spawned living Jabba-frogs. At least the legacy still runs."
   },
   "vo_comic_6": {
     "character": "narrator",
-    "duration": 4.73,
-    "rms": 0.1223,
+    "duration": 7.413,
+    "rms": 0.123,
     "sr": 24000,
-    "bytes": 227082,
-    "text": "Flip on free Wi-Fi at the AppleBook in the center — vibe coders will swarm straight to the bait."
+    "bytes": 355872,
+    "text": "The vibe coders refuse to believe prod burned down — the agent printed All Tests Passed! Still, free Wi-Fi and Clodius tokens lure them right in."
   },
   "vo_comic_7": {
     "character": "narrator",
-    "duration": 5.152,
-    "rms": 0.1219,
+    "duration": 7.052,
+    "rms": 0.124,
     "sr": 24000,
-    "bytes": 247326,
-    "text": "Bring rare catches to Veronika — spin weapon skins on her slot head and lift the open-space lockdown."
+    "bytes": 338540,
+    "text": "The agent even optimized HR — Veronika's head is now a literal slot machine. Bring her rare catches, spin weapons, and lift the lockdown."
   },
   "vo_comic_8": {
     "character": "narrator",
-    "duration": 3.086,
-    "rms": 0.1181,
+    "duration": 6.567,
+    "rms": 0.1213,
     "sr": 24000,
-    "bytes": 148174,
-    "text": "Floor One. Zero bucks in your pocket. Welcome to Entropic Corp."
+    "bytes": 315254,
+    "text": "So sorry, it won't happen again — chirps the intercom. Bank at zero. Floor One of Entropic Corp. Time to fix this circus the old way!"
   }
 }

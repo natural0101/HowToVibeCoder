@@ -11,14 +11,22 @@ internal sealed class IntroComic : IDisposable
     private static readonly Color Ground = new(18, 16, 26, 255), CaptionPaper = new(247, 231, 184, 255);
     private static readonly (string Ru, string En)[] Captions =
     [
-        ("2026. Башня «Клауд Энтропик».\nСтарые методы возвращаются.", "2026. Cloud Entropic Tower.\nOld-school methods are back."),
-        ("Офис захватили вайбкодеры.\nЖмут «Accept All» — прод горит.", "Vibe coders overran the floor.\nSpamming Accept All while prod burns."),
-        ("Касса на нуле. У Вероники план:\nлови их, сажай в опенспейс, руби кэш.", "Cash is zero. Veronika's plan:\ncatch 'em, fill the open-space, print cash."),
-        ("За Северным лифтом — угроза посерьёзней...\nПора наводить порядок на 1-м этаже!", "Behind the North Elevator lurks worse...\nTime to clean up Floor One!"),
-        ("1998. Петрович спаял Джаба-жаб\nдля отладки. Теперь они везде.", "1998. Petrovich soldered Jabba-frogs\nfor debugging. Now they're everywhere."),
-        ("Вруби халявный Wi-Fi на ЯблоБуке —\nвайбкодеры сами сбегутся на приманку.", "Flip free Wi-Fi on the AppleBook —\nvibe coders swarm straight to the bait."),
-        ("Сдавай редких кадров Веронике —\nкрути скины и снимай карантин.", "Bring rare catches to Veronika —\nspin skins and lift the wing lockdown."),
-        ("Этаж 1. $0 в кармане.\nДобро пожаловать в «ЭНТРОПИК»!", "Floor 1. $0 in your pocket.\nWelcome to Entropic Corp!")
+        ("2026. Башня «Энтропик». Ты заменил весь IT-отдел\nна вайбкодеров и ИИ-агента.\nПервая неделя: «Блин, реально круто работает!»",
+         "2026. Entropic Tower. You replaced the whole IT team\nwith vibe coders and an AI agent.\nWeek one: \"Hey, this actually works great!\""),
+        ("Потом вылез первый баг. Агент поклялся:\n«Такого больше не повторится!»\nИ через секунду: БАГ! БАГ! БАГ! Прод горит!",
+         "Then the first bug hit. The agent swore:\n\"This will never happen again!\"\nOne second later: BUG! BUG! BUG! Prod is on fire!"),
+        ("Пока офис орал, HR Вероника раскинула Таро:\n«Я же говорила — Меркурий в ретрограде.\nОтбиваем убытки вручную.»",
+         "While the office panicked, HR Veronika dealt Tarot:\n\"Told you — Mercury is in retrograde.\nTime to recover the losses by hand.\""),
+        ("В Северном лифте заперли самого ИИ-Агента.\nОн всё ещё клянётся «Всё исправлено!» — и стирает базу.\nДостаём аргументы 90-х.",
+         "They locked the rogue AI Agent in the North Elevator.\nStill swearing \"Everything is fixed!\" while wiping the DB.\nTime for nineties methods."),
+        ("Агент полез «отрефакторить» бэкенд\nПетровича 98-го на Джабе — и породил\nДжаба-жаб. Зато легаси не падает.",
+         "The agent tried to \"refactor\" Petrovich's\n'98 Jabba backend — spawning Jabba-frogs.\nAt least the legacy still runs."),
+        ("Вайбкодеры не верят, что всё сгорело —\nагент же написал «All tests passed!».\nНо на халявный Wi-Fi слетаются мгновенно.",
+         "Vibe coders don't believe prod burned down —\nthe agent printed \"All tests passed!\".\nFree Wi-Fi lures them straight in."),
+        ("Агент «оптимизировал» даже HR — у Вероники вместо головы\nигровой автомат. Тащи редких кадров, крути пушки и снимай карантин.",
+         "The agent even \"optimized\" HR — Veronika's head is now a slot machine.\nBring rare catches, spin weapons, and lift the lockdown."),
+        ("«Простите, больше не повторится!» — пищит из колонок.\nСчета на нуле. Первый этаж «Энтропик».\nЧиним этот цирк по-старому!",
+         "\"So sorry, it won't happen again!\" — chirps the intercom.\nBank at zero. Floor 1 of Entropic Corp.\nTime to fix this circus the old way!")
     ];
 
     private readonly Texture2D[] art = new Texture2D[8];
@@ -26,11 +34,11 @@ internal sealed class IntroComic : IDisposable
     private sealed record Burst(float Time, float X, float Y, float Angle, string Ru, string En, int Rgb, Cue Sound);
     private static readonly Burst[][] Bursts =
     [
-        [new(.40f,.78f,.22f,8,"ТУК-ТУК!","HE'S BACK!",0xF7C948,Cue.Slam)],
-        [new(.30f,.81f,.24f,-9,"БУМ!","BOOM!",0xFF4B3E,Cue.Boom), new(1.20f,.78f,.77f,10,"КВАК!","RIBBIT!",0x7CF252,Cue.Slam)],
-        [new(.40f,.20f,.72f,-7,"ВЖУХ!","MYSTIC!",0xB56BFF,Cue.Zap)],
-        [new(.36f,.74f,.74f,-9,"ЩЁЛК!","SNAP!",0xFFD23F,Cue.Snap), new(1.25f,.36f,.22f,7,"БАЦ!","DANGER!",0xE83B3B,Cue.Boom)],
-        [new(.40f,.23f,.76f,-8,"ПШШШ!","BZZZT!",0xFFE14D,Cue.Zap)],
+        [new(.40f,.78f,.22f,8,"МАГИЯ!","MAGIC!",0xF7C948,Cue.Slam)],
+        [new(.30f,.82f,.22f,-9,"БАГ!","BUG!",0xFF4B3E,Cue.Boom), new(.86f,.68f,.48f,7,"БАГ!!","BUG!!",0xFFD23F,Cue.Boom), new(1.38f,.79f,.78f,-8,"БАГ!!!","BUG!!!",0x7CF252,Cue.Boom)],
+        [new(.40f,.20f,.72f,-7,"ТАРО!","TAROT!",0xB56BFF,Cue.Zap)],
+        [new(.36f,.74f,.74f,-9,"ЩЁЛК!","SNAP!",0xFFD23F,Cue.Snap), new(1.25f,.36f,.22f,7,"ИСПРАВИЛ!","FIXED!",0xE83B3B,Cue.Boom)],
+        [new(.40f,.23f,.76f,-8,"КВАК!","RIBBIT!",0x7CF252,Cue.Slam)],
         [new(.38f,.79f,.23f,9,"ХАЛЯВА!","FREE WI-FI!",0xFFC83D,Cue.Slam)],
         [new(.34f,.22f,.36f,-8,"ДЖЕКПОТ!","JACKPOT!",0xFFD747,Cue.Jackpot)],
         [new(.42f,.78f,.24f,8,"ПОГНАЛИ!","SHOWTIME!",0xFF4F42,Cue.Boom)]
@@ -56,8 +64,8 @@ internal sealed class IntroComic : IDisposable
             if (art[i].Width != 960 || art[i].Height != 540) throw new InvalidDataException($"Comic panel {i+1}");
             Raylib.GenTextureMipmaps(ref art[i]);
             Raylib.SetTextureFilter(art[i], TextureFilter.Trilinear);
-            int limit = Splash(i) ? 530 : i switch { 4 => 248, 6 => 390, _ => 355 };
-            int size = Splash(i) ? 23 : 17;
+            int limit = Splash(i) ? 620 : i switch { 3 => 500, 4 => 295, 6 => 520, _ => 385 };
+            int size = Splash(i) ? 20 : 15;
             lettering[0,i] = Typeset(Captions[i].Ru, limit, size);
             lettering[1,i] = Typeset(Captions[i].En, limit, size);
         }
