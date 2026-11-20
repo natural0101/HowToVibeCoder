@@ -549,7 +549,7 @@ public sealed partial class SkyscraperFloor1World
             HalfWidth = 1.05f,
             HalfDepth = 1.05f,
             PosterTitle = "CLOUD ENTROPIC",
-            PosterSubtitle = "БЕЛАЯ АКУЛА IT-БИЗНЕСА",
+            PosterSubtitle = "КОРПОРАЦИЯ «ЭНТРОПИК»",
             AccentColor = new Color(90, 245, 175, 255)
         });
 

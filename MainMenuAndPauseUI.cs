@@ -1108,7 +1108,7 @@ public static class MainMenuAndPauseUI
         DrawTextCrisp(font,"МОСКВА-СИТИ, 2026",56,64,16,DossierPrint.Quiet);
         DrawTextCrisp(GameFonts.Get(Typeface.SerifBold,58),"HOW TO",52,100,58,Color.White);
         DrawTextCrisp(GameFonts.Get(Typeface.SerifBold,58),"VIBE CODER",52,156,58,Color.White);
-        DrawTextCrisp(font,"Этаж 01. Белая Акула IT",56,236,20,new Color(242,205,154,255));
+        DrawTextCrisp(font,"Этаж 01. «ЭНТРОПИК»",56,236,20,new Color(242,205,154,255));
         for(int i=0;i<MainMenuButtonLabels.Length;i++)
         {
             Rectangle r=MainButton(i);

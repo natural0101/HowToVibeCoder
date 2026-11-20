@@ -361,10 +361,10 @@
   },
   "vo_comic_8": {
     "character": "narrator",
-    "duration": 3.312,
-    "rms": 0.1218,
+    "duration": 3.086,
+    "rms": 0.1181,
     "sr": 24000,
-    "bytes": 159014,
-    "text": "Floor One. Zero bucks in your pocket. Welcome to White Shark IT."
+    "bytes": 148174,
+    "text": "Floor One. Zero bucks in your pocket. Welcome to Entropic Corp."
   }
 }

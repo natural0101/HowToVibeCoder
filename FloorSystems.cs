@@ -827,7 +827,7 @@ public static partial class Program
         void Print(string value, float x, float y, int size, Color color, Typeface face = Typeface.Interface)
             => DossierPrint.Text(value, x, y, size, color, face);
         void Line(int y, Color color) => Raylib.DrawLine(164, y, 1116, y, color);
-        Print("БЕЛАЯ АКУЛА IT     Бухгалтерия первого этажа", 164, 92, 17, muted);
+        Print("ЭНТРОПИК     Бухгалтерия первого этажа", 164, 92, 17, muted);
         Print("Ведомость расчёта", 161, 133, 51, ink, Typeface.SerifBold);
         Print(job.Title, 165, 205, 25, ink, Typeface.InterfaceBold);
         Print(r.Success ? "Работа принята заказчиком" : "Контракт сорван", 165, 240, 19, muted);
@@ -878,7 +878,7 @@ public static partial class Program
         {
             Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
             TypeAt("Доска контрактов",102,66,43,DossierPrint.Ivory,true);
-            TypeAt("БЕЛАЯ АКУЛА IT    ЭТАЖ 01",970,87,15,quiet);
+            TypeAt("ЭНТРОПИК    ЭТАЖ 01",970,87,15,quiet);
             TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Loc.Tr(Floor.Progress) : "Срок отсчитывается с момента подписи",105,149,22,paper);
             for(int i=0;i<FloorSystems.Jobs.Length;i++)
             {

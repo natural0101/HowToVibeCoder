@@ -22,7 +22,7 @@ COMIC_LINES_RU = [
     ("vo_comic_5", "Ещё в девяносто восьмом сисадмин Петрович собрал Джаба-жаб для отладки. Теперь они скачут по всему залу."),
     ("vo_comic_6", "Включи халявный вай-фай на ЯблоБуке в центре — вайбкодеры сами сбегутся на приманку."),
     ("vo_comic_7", "Сдавай редких кадров Веронике — крути скины на её автомате и снимай карантин с опенспейса."),
-    ("vo_comic_8", "Первый этаж. Ноль долларов в кармане. Добро пожаловать в Белую Акулу Ай-Ти."),
+    ("vo_comic_8", "Первый этаж. Ноль долларов в кармане. Добро пожаловать в Энтропик."),
 ]
 
 COMIC_LINES_EN = [
@@ -33,7 +33,7 @@ COMIC_LINES_EN = [
     ("vo_comic_5", "Back in ninety-eight, sysadmin Petrovich built Jabba-frogs to debug servers. Now they're hopping everywhere."),
     ("vo_comic_6", "Flip on free Wi-Fi at the AppleBook in the center — vibe coders will swarm straight to the bait."),
     ("vo_comic_7", "Bring rare catches to Veronika — spin weapon skins on her slot head and lift the open-space lockdown."),
-    ("vo_comic_8", "Floor One. Zero bucks in your pocket. Welcome to White Shark IT."),
+    ("vo_comic_8", "Floor One. Zero bucks in your pocket. Welcome to Entropic Corp."),
 ]
 
 

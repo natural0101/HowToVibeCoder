@@ -192,7 +192,7 @@ namespace HowToVibeCoder
                 SfxShotgunBlast = LoadAndRegister("shotgun_blast.wav");
                 SfxChatgunBeam = LoadAndRegister("chatgun_beam.wav");
                 SfxHitmarker = LoadAndRegister("hitmarker.wav");
-                foreach (string file in new[]{"comic_panel_slam.wav","comic_page_turn.wav","slot_lever_pull.wav","slot_win_fanfare.wav","slot_win_jackpot.wav"}) LoadAndRegister(file);
+                foreach (string file in new[]{"comic_panel_slam.wav","comic_page_turn.wav","comic_boom.wav","comic_whip_snap.wav","comic_zap.wav","slot_lever_pull.wav","slot_win_fanfare.wav","slot_win_jackpot.wav"}) LoadAndRegister(file);
                 _slotMusic=Raylib.LoadMusicStream(Path.Combine(SoundsDir,"slot_spin_loop.wav"));
                 if(!Raylib.IsMusicValid(_slotMusic)) throw new IOException("slot_spin_loop.wav");
                 _slotMusic.Looping=true;
@@ -230,6 +230,38 @@ namespace HowToVibeCoder
             Directory.CreateDirectory(SoundsDir);
             EnsureWavFile("comic_panel_slam.wav", () => ComposeComicEffect(false));
             EnsureWavFile("comic_page_turn.wav", () => ComposeComicEffect(true));
+            EnsureWavFile("comic_boom.wav", () => ComposeComicHit(ComicHit.Boom, .36));
+            EnsureWavFile("comic_whip_snap.wav", () => ComposeComicHit(ComicHit.Snap, .20));
+            EnsureWavFile("comic_zap.wav", () => ComposeComicHit(ComicHit.Zap, .28));
+        }
+
+        private enum ComicHit { Boom, Snap, Zap }
+
+        private static short[] ComposeComicHit(ComicHit hit, double length)
+        {
+            const int rate = 44100;
+            var samples = new short[(int)(rate * length)];
+            var random = new Random(430 + (int)hit);
+            double previous = 0;
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double t = (double)i / rate, u = t / length;
+                double noise = random.NextDouble() * 2 - 1;
+                double high = (noise - previous) * .5;
+                previous = noise;
+                double signal = hit switch
+                {
+                    ComicHit.Boom => .82 * Math.Sin(Math.Tau * (42*t + 1.4*(1-Math.Exp(-30*t)))) * Math.Exp(-10*t)
+                                      + .36 * noise * Math.Exp(-48*t),
+                    ComicHit.Snap => .20 * high * Math.Exp(-Math.Pow((t-.035)/.023,2))
+                                      + (t < .068 ? 0 : (.82*high + .22*Math.Sin(950*t))*Math.Exp(-65*(t-.068))),
+                    _ => (.46*Math.Sin(Math.Tau*(1700*t-2300*t*t) + 2*Math.Sin(220*t)) + .21*high)
+                         * (.65 + .35*Math.Cos(125*t)) * Math.Exp(-2.2*u)
+                };
+                double envelope = Math.Min(1,t*1200) * Math.Min(1,(length-t)*150);
+                samples[i] = (short)(32767 * Math.Clamp(signal * envelope,-1,1));
+            }
+            return samples;
         }
 
         private static short[] ComposeComicEffect(bool paper)
@@ -261,6 +293,9 @@ namespace HowToVibeCoder
             ? $"vo_comic_{panel}" : throw new ArgumentOutOfRangeException(nameof(panel));
         private static Dictionary<string,(Sound Sound,float Duration)> ComicBank => Loc.IsEn ? _voiceClipsEn : _voiceClips;
         public static void PlayComicPanelSlam() => PlaySfx("comic_panel_slam", volumeScale: .62f);
+        public static void PlayComicBoom() => PlaySfx("comic_boom", volumeScale: .76f);
+        public static void PlayComicWhipSnap() => PlaySfx("comic_whip_snap", volumeScale: .72f);
+        public static void PlayComicZap() => PlaySfx("comic_zap", volumeScale: .67f);
         public static void PlayComicPageTurn() => PlaySfx("comic_page_turn", volumeScale: .85f);
         public static float GetComicNarrationDuration(int panelIndex1To8) =>
             ComicBank.GetValueOrDefault(ComicClipId(panelIndex1To8)).Duration;

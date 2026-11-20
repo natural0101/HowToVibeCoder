@@ -19,7 +19,7 @@
    - Always stop the VoiceStudio daemon after generating WAVs to free 5 GB VRAM!
    - Existing batch generators: `scripts/generate_studio_voices.py` (RU), `scripts/generate_english_voices.py` (EN), and `scripts/generate_comic_voices.py` (8 RU + 8 EN comic narration). Currently **46 RU + 46 EN** mastered studio clips verified!
 
-## 3. Current Shipped State (Floor 1 — «Белая Акула IT» / Cloud Entropic Tower)
+## 3. Current Shipped State (Floor 1 — «ЭНТРОПИК» / Cloud Entropic Tower)
 - **Animated 2-Page Graphic-Novel Intro Comic (`IntroComic.cs`, `assets/ui/comic_p1..8.png`)**:
   - Plays automatically on **New Game** (Continue skips straight into saved run; replayable anytime via Main Menu `Комикс / Intro Comic`).
   - 8 full-bleed hand-inked noir-satire panels across 2 archival cream comic pages with panel-by-panel spring-slam animation, Ken Burns camera drift, spotlight gold rim focus, smooth page-turn wipe + paper/slam SFX, face-safe RU/EN inked caption boxes, and full studio narration (`vo_comic_1..8` in RU & EN).

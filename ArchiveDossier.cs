@@ -336,7 +336,7 @@ public static partial class LoreAndMenusUI
         Rectangle frame = ArchiveScreen(new(0, 0, ArchiveWidth, ArchiveHeight));
         Raylib.BeginMode2D(new Camera2D { Offset = new(frame.X, frame.Y), Zoom = ArchiveScale });
         DrawStageAtmosphere();
-        Type("АРХИВ «БЕЛОЙ АКУЛЫ»", 38, 15, 42, Ivory, Typeface.SerifBold);
+        Type("АРХИВ «ЭНТРОПИК»", 38, 15, 42, Ivory, Typeface.SerifBold);
         bool closeHover = Raylib.CheckCollisionPointRec(Raylib.GetMousePosition(), ArchiveCloseBounds);
         if (closeHover) Raylib.DrawRectangleRounded(LoreClose, .55f, 8, Selected);
         Raylib.DrawRectangleRoundedLinesEx(LoreClose, .55f, 8, 1, new Color(113, 99, 86, 255));

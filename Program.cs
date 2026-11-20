@@ -288,16 +288,19 @@ public static partial class Program
         comic.Open();
         for (int i = 1; i <= 8; i++)
         {
-            comic.Update(1.4f, false, false);
-            if (i == 4) Capture("39_intro_comic_page1.png");
-            if (i == 8)
+            // Sample the live timeline after both staggered bursts have settled.
+            for (int frame = 0; frame < 104; frame++) comic.Update(1f / 60, false, false);
+            switch (i)
             {
-                Capture("40_intro_comic_page2.png");
-                Loc.Set(GameLang.En, false);
-                Capture("40b_intro_comic_page2_en.png");
+                case 1: Capture("39_comic_splash1_start.png"); break;
+                case 4: Capture("40_comic_spread1_boom_snap.png"); break;
+                case 7: Capture("41_comic_spread2_jackpot.png"); break;
+                case 8: Capture("42_comic_splash8_entropic_en.png"); break;
             }
+            if (i == 7) Loc.Set(GameLang.En, false);
             comic.Update(0, true, false);
-            if (i == 4) comic.Update(.52f, false, false);
+            if (i is 1 or 4 or 7)
+                for (int frame = 0; frame < 19; frame++) comic.Update(1f / 60, false, false);
         }
         if (comic.Active) throw new InvalidDataException("Comic failed to finish");
         Loc.Set(GameLang.Ru, false);
