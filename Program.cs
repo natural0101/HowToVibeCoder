@@ -216,11 +216,12 @@ public static partial class Program
         bool polishTest=HasFlag("--polish-test");
         bool gripTest = HasFlag("--grip-test");
         bool captureComic = HasFlag("--capture-comic");
-        bool silent = captureComic || args.Any(arg => arg.StartsWith('-') &&
+        bool recordCutscene = HasFlag("--record-cutscene");
+        bool silent = captureComic || recordCutscene || args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
         bool localPair=coopSmoke && !HasFlag("--host") && !HasFlag("--join");
-        fixtureSeed=autoTest || coopSmoke || gripTest || polishTest ? 6 : null;
+        fixtureSeed=autoTest || coopSmoke || gripTest || polishTest || recordCutscene ? 6 : null;
         if (HasFlag("--regenerate-music"))
         {
             AudioMusicSystem.EnsureMusicFiles(Path.Combine(Environment.CurrentDirectory, "assets", "sounds"), force: true);
@@ -318,6 +319,7 @@ public static partial class Program
             }
             finally { if(guest is { HasExited:false }) guest.Kill(); }
         }
+        else if (recordCutscene) RecordCutsceneVideo();
         else if (autoTest || gripTest || polishTest) RunAutomatedScreenshotSuite(displayPath,polishTest);
         else
         {
@@ -726,9 +728,14 @@ public static partial class Program
             }
             float cinemaDt = MainMenuAndPauseUI.InteractiveDisplay && !Net.Ready
                 && _world.ElevatorBoss.State == ElevatorBossState.IntroSpeech
-                ? dt * 0.27f
+                ? dt * 0.165f
                 : dt;
             TickFloor(cinemaDt);
+            if (MainMenuAndPauseUI.InteractiveDisplay && !Net.Ready && BossIntroCutscene.ShouldRelocatePlayerAfterKnockback(_world))
+            {
+                _playerPos = BossIntroCutscene.KnockedBackStandPosition(_world);
+                LookAtTarget(_world.ElevatorBoss.Position + Vector3.UnitY * 1.68f);
+            }
             BossIntroCutscene.SyncState(_world);
             return;
         }
@@ -2728,6 +2735,79 @@ public static partial class Program
             }
         }
         Console.WriteLine("[AUTOTEST] PASS Russo One and Onest atlases, 65 GPU weapon exhibits");
+    }
+
+    private static unsafe void RecordCutsceneVideo()
+    {
+        MainMenuAndPauseUI.IsInMainMenu = false;
+        ResetNewGameFloor(greet: false);
+        Floor.Onboarding = OnboardingStep.Done;
+        Floor.WingsUnlocked = true;
+        Floor.HasRadio = true;
+        Floor.WingBarrierSlide = 1f;
+        Floor.OwnedWeaponsMask = FloorSystems.ClassicMask;
+        _playerCash = 450;
+        _weapons.SelectSlot(4);
+        _world.HasElevatorKey = true;
+        _playerPos = _world.NorthElevatorPos + new Vector3(0.06f, 1.72f, -1.85f);
+        LookAtTarget(_world.NorthElevatorPos + new Vector3(0f, 1.75f, 0.3f));
+        _weapons.UpdateWeapons(0.4f, BuildPlayerCamera());
+        _world.TrySummonElevatorBoss(out _);
+        BossIntroCutscene.Reset();
+
+        string outMp4 = @"C:\Users\se-20\.gemini\antigravity\brain\50fc13b9-24ea-4541-8bcc-1ae74f353f5a\scratch\cutscene_video_only.mp4";
+        Directory.CreateDirectory(Path.GetDirectoryName(outMp4)!);
+        var psi = new System.Diagnostics.ProcessStartInfo("ffmpeg",
+            $"-y -v error -f rawvideo -pix_fmt rgba -s {ScreenWidth}x{ScreenHeight} -r 30 -i - -c:v libx264 -preset medium -crf 17 -pix_fmt yuv420p \"{outMp4}\"")
+        {
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            CreateNoWindow = true
+        };
+        using var ff = System.Diagnostics.Process.Start(psi)!;
+        var stdin = ff.StandardInput.BaseStream;
+        byte[] buf = new byte[ScreenWidth * ScreenHeight * 4];
+        const float frameDt = 1f / 30f;
+
+        void CaptureFrame(float simDt)
+        {
+            BossIntroCutscene.SyncState(_world);
+            TickFloor(simDt);
+            if (BossIntroCutscene.ShouldRelocatePlayerAfterKnockback(_world))
+            {
+                _playerPos = BossIntroCutscene.KnockedBackStandPosition(_world);
+                LookAtTarget(_world.ElevatorBoss.Position + Vector3.UnitY * 1.68f);
+            }
+            BossIntroCutscene.SyncState(_world);
+            DrawFrame();
+            Image img = Raylib.LoadImageFromScreen();
+            try
+            {
+                System.Runtime.InteropServices.Marshal.Copy((IntPtr)img.Data, buf, 0, buf.Length);
+                stdin.Write(buf, 0, buf.Length);
+            }
+            finally { Raylib.UnloadImage(img); }
+        }
+
+        int repFrames = 0;
+        while (_world.ElevatorBoss.State == ElevatorBossState.Repairing && repFrames < 95)
+        {
+            CaptureFrame(frameDt);
+            repFrames++;
+        }
+        int introFrames = 0;
+        while (_world.ElevatorBoss.State == ElevatorBossState.IntroSpeech && introFrames < 520)
+        {
+            CaptureFrame(frameDt * 0.165f);
+            introFrames++;
+        }
+        for (int i = 0; i < 62; i++)
+            CaptureFrame(frameDt);
+
+        stdin.Flush();
+        stdin.Close();
+        ff.WaitForExit();
+        Console.WriteLine($"[RECORD] repFrames={repFrames} introFrames={introFrames} total={repFrames + introFrames + 62} exit={ff.ExitCode}");
     }
 
     private static void RunAutomatedScreenshotSuite(string displayPath,bool polishOnly)

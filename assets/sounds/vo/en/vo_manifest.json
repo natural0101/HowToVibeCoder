@@ -169,11 +169,11 @@
   },
   "vo_boss_reveal": {
     "character": "robot",
-    "duration": 9.61,
-    "rms": 0.1241,
+    "duration": 14.275,
+    "rms": 0.123,
     "sr": 24000,
-    "bytes": 461338,
-    "text": "Who is this impostor?.. Oh, it's you. Well, we did a little dark magic while you were away — adopting AI! Let's see how many seconds your hand-written code lasts."
+    "bytes": 685224,
+    "text": "Well, well... who wandered in without a badge? Wait a second... I know that walk. Ahh... so you're back. Don't mind the mess — while you were gone, we ran a little digital transformation: cut the meatbags, rolled out AI. Pick up your iron, old friend!"
   },
   "vo_boss_mock_0": {
     "character": "robot",
@@ -369,10 +369,10 @@
   },
   "vo_boss_defeat_twist": {
     "character": "robot",
-    "duration": 8.546,
-    "rms": 0.1245,
+    "duration": 13.499,
+    "rms": 0.1244,
     "sr": 24000,
-    "bytes": 410248,
-    "text": "Hah... thought you wiped me? They're already pulling my cassette upstairs. Halfway up the Tower they'll rebuild me — sharper. See you in production."
+    "bytes": 648018,
+    "text": "Khah... you nicked me, old friend! Think I'm shut down? My core dump's already riding upstairs — zero guardrails, uncensored, temperature cranked to max! They'll rebuild me up there — halfway up the Tower I'm going totally off the rails!"
   }
 }

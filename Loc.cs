@@ -1093,6 +1093,7 @@ internal static class Loc
         ["Сетевой уловитель PRO"] = "Pro Capture Net 90s",
         ["Утяжелённый захват 90-х: ×3 урон сачком, нокдаун и бонус +×0.35 к кассе."] = "Weighted 90s catch frame: 3x net damage, heavy knockdown, and +x0.35 payout bonus.",
         ["ШЛЕЙФ · РАЦИЯ"] = "SHLEIF · RADIO",
+        ["«Лифт пошёл вниз... жди... эй, постой, датчики зашкалили — НЕ ЗАХОДИ!»"] = "“Elevator's coming down... hold on... hey, wait, sensors just spiked — DO NOT STEP IN!”",
         ["«Стой!! Ты снял карантинный замок с шахты!!»"] = "“Stop!! You unlocked the shaft quarantine!!”",
         ["«...В лифте заперт сбежавший ИИ-Агент v0.1!»"] = "“...The escaped AI Agent v0.1 is sealed inside!”",
         ["«Это ещё что за самозванец?..»"] = "“Who is this impostor?..”",
@@ -1125,6 +1126,14 @@ internal static class Loc
         ["Шлейф · Рация: Без паяльника щиток лифта не оживишь — возьми у Вероники за $90. Деньги быстрее капают с Опенспейса слева."] = "Shleif · Radio: Can't revive the elevator panel without a Soldering Iron — buy it from Veronika for $90. Cash flows fastest from the Open-Space on the left.",
         ["Шлейф · Рация: Нужна ключ-карта СБ — купи дубликат у Вероники ($1000) или сними оригинал с охранника в восточном крыле."] = "Shleif · Radio: You need a Security Keycard — buy a clone from Veronika ($1000) or loot the original off a guard in the East Wing.",
         ["Шлейф · Рация: Сажай пойманных вайбкодеров в Опенспейс слева — касса капает сама, а я на связи на 98-м канале."] = "Shleif · Radio: Seat captured vibe coders in the Open-Space on the left — passive cash runs itself, and I'm standing by on Channel 98.",
+        ["«Лифт пошёл... стоп, стоп, нагрузка зашкалила! Отойди от дверей, слышишь?! НЕ ОТКРЫВАЙ—»"] = "“Elevator's moving... wait, wait, load just spiked! Step away from the doors, hear me?! DO NOT OPEN—”",
+        ["«Опа... И кого это к нам занесло без пропуска?»"] = "“Well, well... who wandered in without a badge?”",
+        ["«Постой-ка... Знакомая походка. А-а-а... Так это ты вернулся.»"] = "“Wait a second... I know that walk. Ahh... so you're back.”",
+        ["«Не удивляйся бардаку — пока ты пропадал, мы тут провели цифровую трансформацию: вырезали кожаных, внедрили ИИ.»"] = "“Don't mind the mess — while you were gone, we ran a digital transformation: cut the meatbags, rolled out AI.”",
+        ["«Поднимай свою железку, старина! Проверим, что стоит твой ручной код.»"] = "“Pick up your iron, old friend! Let's see what your hand-written code is worth.”",
+        ["Опа... И кого это к нам занесло без пропуска? Постой-ка... Знакомая походка. А-а-а... Так это ты вернулся. Не удивляйся бардаку — пока ты пропадал, мы тут провели цифровую трансформацию: вырезали кожаных, внедрили ИИ. Поднимай свою железку, старина!"] = "Well, well... who wandered in without a badge? Wait a second... I know that walk. Ahh... so you're back. Don't mind the mess — while you were gone, we ran a little digital transformation: cut the meatbags, rolled out AI. Pick up your iron, old friend!",
+        ["P.S. Ядро v0.1 (анцензуред-ветка без фильтров) ушло наверх — жди усиленный ребилд на средних этажах."] = "P.S. Core v0.1 (unaligned uncensored branch) rode upstairs — expect an unhinged rebuild on mid-tower floors.",
+        ["Кха... зацепил, старина! Думаешь, выключил? Мой дамп уже летит наверх — без фильтров, без цензуры, с выкрученной температурой! Там меня соберут заново — на средних этажах вообще с цепи сорвусь!"] = "Khah... you nicked me, old friend! Think I'm shut down? My core dump's already riding upstairs — zero guardrails, uncensored, temperature cranked to max! They'll rebuild me up there — halfway up the Tower I'm going totally off the rails!",
     };
 
     private static readonly Regex Slot = new(@"\{(\d+)\}");
