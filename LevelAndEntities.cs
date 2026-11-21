@@ -296,8 +296,8 @@ public sealed partial class SkyscraperFloor1World
     public readonly Vector3 CentralMacBookPos = new(3.6f, 0f, 10.2f);
     public readonly Vector3 NorthElevatorPos = new(0.0f, 0f, -8.5f);
     public readonly Vector3 SouthElevatorDoorPos = new(0.0f, 0f, 0.5f);
-    public readonly Vector3 ElevatorButtonPos = new(-3.2f, 0f, -9.2f);
-    public readonly Vector3 SouthElevatorButtonPos = new(3.2f, 0f, 1.1f);
+    public readonly Vector3 ElevatorButtonPos = new(-1.82f, 0f, -9.2f);
+    public readonly Vector3 SouthElevatorButtonPos = new(1.82f, 0f, 1.1f);
     internal static readonly Vector3[] RoomDoors=[new(-5.8f,0,3.2f),new(7.61f,0,3.2f),
         new(-17.8f,0,-13.55f),new(17.8f,0,-13.55f)];
     internal readonly float[] RoomOpen=new float[4], VentTime=new float[3];
@@ -3530,80 +3530,75 @@ public sealed partial class SkyscraperFloor1World
         foreach(int side in new[]{-1,1})
         {
             yield return (c+new Vector3(side*4.38f,CeilingHeight/2,0),new(.24f,CeilingHeight,9));
-            yield return (c+new Vector3(0,(CeilingHeight+4)/2,side*4.38f),new(9,CeilingHeight-4,.24f));
+            // Realistic human-scale 2.36m x 2.52m executive elevator portal inside the 9m skyscraper core
+            yield return (c+new Vector3(0,(CeilingHeight+2.52f)/2,side*4.38f),new(9,CeilingHeight-2.52f,.24f));
             foreach(int end in new[]{-1,1})
-                yield return (c+new Vector3(end*3.3f,2,side*4.4f),new(2.4f,4,.4f));
+                yield return (c+new Vector3(end*2.84f,1.26f,side*4.4f),new(3.32f,2.52f,.4f));
         }
     }
 
     private void BuildLift(VisualEngine3D.ArchitectureBuilder mesh)
     {
         Vector3 center=CentralElevatorCorePos;
-        Color anthracite=new(61,62,67,255), black=new(30,32,34,255), bronze=new(164,117,67,255);
-        Color gold=new(227,182,112,255), teal=new(75,224,208,255);
+        Color marble=new(46,44,48,255), darkStone=new(28,26,28,255), walnut=new(74,50,34,255);
+        Color bronze=new(152,110,64,255), brass=new(208,166,100,255), warmLamp=new(255,220,164,255);
         void Part(float x,float y,float z,float w,float h,float d,Color color,Finish finish=Finish.Paint) =>
             mesh.Add(center+new Vector3(x,y,z),new(w,h,d),color,finish);
-        foreach(var wall in LiftWalls()) mesh.Add(wall.Center,wall.Size,anthracite,Finish.BlackMarble);
+        foreach(var wall in LiftWalls()) mesh.Add(wall.Center,wall.Size,marble,Finish.BlackMarble);
         foreach(int side in new[]{-1,1})
         {
             void Front(float x,float y,float depth,float w,float h,float d,Color c,Finish f=Finish.Paint) =>
                 Part(x,y,side*(4.5f+depth),w,h,d,c,f);
-            // Recessed doors, stepped jambs and a continuous projecting entablature.
-            Front(0,4.83f,.08f,8.95f,1.46f,.58f,anthracite,Finish.BlackMarble);
-            Front(0,4.12f,.28f,8.8f,.12f,.38f,bronze,Finish.Bronze);
-            Front(0,5.58f,.16f,9.02f,.15f,.66f,gold,Finish.Bronze);
-            Front(0,5.77f,.03f,8.60f,.24f,.46f,black);
-            Front(0,5.95f,-.07f,7.82f,.12f,.35f,bronze);
-            Front(0,4.85f,.395f,5.98f,1.27f,.12f,bronze,Finish.Bronze);
-            Front(0,.055f,.21f,4.47f,.11f,.78f,black);
-            for(int stripe=-7;stripe<=7;stripe++)
-                mesh.Add(center+new Vector3(stripe*.28f,.116f,side*4.79f),new(.13f,.012f,.32f),new Color(239,188,45,255),Finish.Paint,side*.45f);
+            // Architectural dark-marble lobby facade with clean brushed-bronze horizontal molding
+            Front(0,3.88f,.02f,8.96f,2.70f,.68f,marble,Finish.BlackMarble);
+            Front(0,2.60f,.34f,3.04f,.12f,.16f,bronze,Finish.Bronze);
+            Front(0,2.70f,.37f,3.16f,.045f,.18f,brass,Finish.Bronze);
+            Front(0,3.62f,.32f,8.98f,.08f,.14f,bronze,Finish.Bronze);
+            // Compact bronze bezel housing the refined lobby floor transom sign (3.15m x 0.62m at y=3.14m)
+            Front(0,3.14f,.365f,3.26f,.70f,.09f,bronze,Finish.Bronze);
+            // Clean dark-bronze threshold sill plate & subtle brushed track (ZERO yellow hazard stripes!)
+            Front(0,.035f,.18f,2.68f,.07f,.64f,darkStone);
+            Front(0,.074f,.16f,2.42f,.012f,.08f,bronze,Finish.Bronze);
             foreach(int end in new[]{-1,1})
             {
-                float jamb=end*3.27f;
-                Front(jamb,2.12f,.02f,2.24f,4.22f,.68f,anthracite,Finish.BlackMarble);
-                Front(jamb,.20f,.10f,2.32f,.40f,.82f,black);
-                Front(jamb,3.94f,.12f,2.30f,.24f,.76f,bronze);
-                for(int rib=0;rib<4;rib++)
-                {
-                    float x=end*(2.25f+.20f*rib), h=3.65f-.18f*rib;
-                    Front(x,.35f+h/2,.36f,.12f,h,.12f,bronze,Finish.Bronze);
-                    Front(x,.35f+h/2,.432f,.033f,h,.025f,gold,Finish.Bronze);
-                }
-                Front(end*4.10f,2.13f,.38f,.14f,3.50f,.13f,black);
-                Front(end*4.10f,2.13f,.455f,.048f,3.34f,.03f,teal,Finish.Lamp);
-                Part(end*4.12f,1.04f,side*2.30f,.08f,.08f,3.68f,gold,Finish.Bronze);
+                // Solid dark-marble flanking lobby walls (outer face cleanly at depth +0.36 for call panel)
+                Front(end*2.86f,1.26f,.02f,3.28f,2.54f,.68f,marble,Finish.BlackMarble);
+                Front(end*2.86f,.11f,.05f,3.30f,.22f,.72f,darkStone);
+                // Stepped architectural brushed-bronze door jambs flanking the 2.36m opening
+                Front(end*1.26f,1.31f,.32f,.16f,2.62f,.22f,bronze,Finish.Bronze);
+                Front(end*1.39f,1.31f,.35f,.06f,2.62f,.14f,brass,Finish.Bronze);
+                // Warm walnut & bronze lobby pilasters + subtle warm-amber architectural wall sconces (ZERO cyan neon!)
+                Front(end*2.72f,1.80f,.36f,.36f,3.44f,.10f,walnut,Finish.Leather);
+                Front(end*2.72f,2.38f,.42f,.12f,.28f,.08f,bronze,Finish.Bronze);
+                Front(end*2.72f,2.38f,.465f,.06f,.20f,.025f,warmLamp,Finish.Lamp);
+                // Subtle bronze corner trim on structural marble core
+                Front(end*4.44f,CeilingHeight/2,.34f,.10f,CeilingHeight,.10f,bronze,Finish.Bronze);
+                // Cabin interior side handrail at ergonomic waist height (0.95m)
+                Part(end*4.12f,.95f,side*2.30f,.06f,.06f,3.68f,brass,Finish.Bronze);
                 foreach(float z in new[]{.75f,3.9f})
-                    Part(end*4.20f,1.02f,side*z,.20f,.08f,.07f,bronze);
+                    Part(end*4.20f,.95f,side*z,.18f,.06f,.06f,bronze);
             }
             for(int seam=-2;seam<=2;seam++)
                 Part(side*4.50f,CeilingHeight/2,seam*2.13f,.035f,CeilingHeight,.046f,bronze,Finish.Bronze);
-            Part(side*4.50f,.17f,0,.06f,.34f,9,bronze,Finish.Bronze);
-            // Interior cabin panel is rendered dynamically in DrawElevatorDoors with crisp 3D buttons & faceplate.
-            Part(0,1.05f,side*.3f,7.93f,.08f,.08f,gold,Finish.Bronze);
-            Part(0,3.92f,side*2.36f,5.25f,.09f,2.7f,bronze,Finish.Bronze);
-            Part(0,3.86f,side*2.36f,4.93f,.055f,2.38f,new(255,222,172,255),Finish.Lamp);
-            Part(0,2.14f,side*.173f,3.82f,2.88f,.035f,bronze,Finish.Bronze);
-            Part(0,2.14f,side*.20f,3.71f,2.76f,.03f,new(88,83,80,255),Finish.BlackMarble);
+            Part(side*4.50f,.14f,0,.06f,.28f,9,bronze,Finish.Bronze);
+            // Luxury executive cabin interior: warm walnut back wall panel, brass handrail & recessed 2.68m ceiling cove!
+            Part(0,.95f,side*.3f,7.93f,.06f,.06f,brass,Finish.Bronze);
+            Part(0,2.74f,side*2.36f,4.80f,.08f,2.60f,bronze,Finish.Bronze);
+            Part(0,2.69f,side*2.36f,4.52f,.045f,2.32f,warmLamp,Finish.Lamp);
+            Part(0,1.52f,side*.175f,2.60f,1.76f,.035f,brass,Finish.Bronze);
+            Part(0,1.52f,side*.20f,2.50f,1.66f,.03f,walnut,Finish.Leather);
         }
-        Part(0,.044f,0,8.62f,.088f,9,new(75,73,77,255),Finish.BlackMarble);
-        Part(0,4.03f,0,8.62f,.18f,9,black);
+        Part(0,.044f,0,8.62f,.088f,9,new(62,60,64,255),Finish.BlackMarble);
+        Part(0,2.82f,0,8.62f,.16f,9,darkStone);
     }
 
     private Vector3 LiftLeafCenter(int side,int leaf) =>
-        (side<0 ? NorthElevatorPos : SouthElevatorDoorPos)+new Vector3(leaf*(1.06f+2.14f*ElevatorDoorOpenAmount),2.01f,side*.105f);
+        (side<0 ? NorthElevatorPos : SouthElevatorDoorPos)+new Vector3(leaf*(.59f+1.20f*ElevatorDoorOpenAmount),1.27f,side*.105f);
 
     private void DrawElevatorDoors(bool glass)
     {
-        Color steel=new(116,122,123,255), brass=new(196,151,90,255);
-        Color pane=Raylib.ColorLerp(new(135,92,56,138),new(24,28,34,248),ElevatorGlassOpacity);
-        if(!glass)
-            foreach(int end in new[]{-1,1})
-            {
-                Vector3 wheel=CentralElevatorCorePos+new Vector3(end*1.72f,4.56f,0);
-                VisualEngine3D.Rod(wheel-Vector3.UnitZ*.13f,wheel+Vector3.UnitZ*.13f,.35f,.35f,20,steel);
-                VisualEngine3D.Rod(wheel-Vector3.UnitZ*.16f,wheel+Vector3.UnitZ*.16f,.13f,.13f,16,brass);
-            }
+        Color bronzeDoor=new(78,70,64,255), brass=new(196,154,94,255), darkTrim=new(38,35,34,255);
+        Color pane=Raylib.ColorLerp(new(112,86,62,135),new(28,30,34,244),ElevatorGlassOpacity);
         foreach(int side in new[]{-1,1})
         {
             Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
@@ -3614,24 +3609,19 @@ public sealed partial class SkyscraperFloor1World
             {
                 Vector3 p=LiftLeafCenter(side,leaf);
                 if(glass)
-                    VisualEngine3D.Box(p,2.07f,3.85f,.034f,pane,Finish.LiftGlass);
+                    VisualEngine3D.Box(p,1.16f,2.44f,.034f,pane,Finish.LiftGlass);
                 else
                 {
+                    // Sleek executive brushed-bronze & smoked-glass sliding door frame (ZERO neon strips or Tron chevrons!)
                     foreach(int edge in new[]{-1,1})
                     {
-                        VisualEngine3D.Box(p+Vector3.UnitX*(edge*1.04f),.053f,3.95f,.09f,steel);
-                        VisualEngine3D.Box(p+Vector3.UnitY*(edge*1.95f),2.13f,.08f,.09f,steel);
+                        VisualEngine3D.Box(p+Vector3.UnitX*(edge*.58f),.048f,2.50f,.075f,bronzeDoor,Finish.Bronze);
+                        VisualEngine3D.Box(p+Vector3.UnitY*(edge*1.23f),1.20f,.06f,.075f,bronzeDoor,Finish.Bronze);
                     }
-                    VisualEngine3D.Box(p-Vector3.UnitY*1.59f,2.07f,.65f,.084f,steel);
-                    VisualEngine3D.Box(p+new Vector3(-leaf*.97f,0,side*.055f),.035f,3.78f,.023f,
-                        new Color(123,231,215,255),Finish.Lamp);
-                    for(int rib=0;rib<3;rib++)
-                    {
-                        Vector3 foot=p+new Vector3(leaf*(.25f+rib*.19f),-1.80f,side*.063f);
-                        Vector3 bend=foot+Vector3.UnitY*(1.89f+rib*.33f);
-                        VisualEngine3D.Rod(foot,bend,.021f,.021f,8,brass);
-                        VisualEngine3D.Rod(bend,bend+new Vector3(-leaf*.65f,.73f,0),.021f,.021f,8,brass);
-                    }
+                    // Brushed-bronze lower kickplate + subtle vertical Art-Deco brass inlay line
+                    VisualEngine3D.Box(p-Vector3.UnitY*1.04f,1.16f,.36f,.072f,darkTrim,Finish.Bronze);
+                    VisualEngine3D.Box(p+new Vector3(-leaf*.55f,0,side*.044f),.022f,2.44f,.016f,brass,Finish.Bronze);
+                    VisualEngine3D.Box(p+new Vector3(leaf*.14f,0,side*.042f),.016f,2.10f,.012f,brass,Finish.Bronze);
                 }
             }
             if(glass)
@@ -3641,11 +3631,11 @@ public sealed partial class SkyscraperFloor1World
                 continue;
             }
             if (ElevatorRepaired && ElevatorGlassOpacity < 1)
-                VisualEngine3D.Box(face+new Vector3(0,3.72f,-side*.68f),.62f,.10f,.18f,
+                VisualEngine3D.Box(face+new Vector3(0,2.44f,-side*.55f),.52f,.08f,.14f,
                     Raylib.ColorLerp(new(45,25,25,255),new(251,58,42,255),1-ElevatorGlassOpacity),Finish.Lamp);
             VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
             DrawElevatorCallPanel(panel,side);
-            DrawCabinOperatingPanel(CentralElevatorCorePos+new Vector3(2.41f,1.38f,side*4.166f),-side);
+            DrawCabinOperatingPanel(CentralElevatorCorePos+new Vector3(1.52f,1.38f,side*4.166f),-side);
         }
     }
 
@@ -4016,8 +4006,8 @@ public sealed partial class SkyscraperFloor1World
         return focus;
     }
 
-    internal static readonly Vector3 LiftSignSize=new(5.78f,1.17f,.08f);
-    internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,4.85f,side*.48f);
+    internal static readonly Vector3 LiftSignSize=new(3.15f,0.62f,.06f);
+    internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,3.14f,side*.43f);
 
     internal (Vector3 Position,float Height,string Label)? OnboardingWaypoint(Vector3 eye)
     {

@@ -108,7 +108,7 @@ public static partial class Program
             LookAtTarget(northPanel);
             capture("57_elevator_panel_repaired_closeup.png");
 
-            Vector3 cabinPanel=_world.CentralElevatorCorePos+new Vector3(2.41f,1.38f,-4.166f);
+            Vector3 cabinPanel=_world.CentralElevatorCorePos+new Vector3(1.52f,1.38f,-4.166f);
             _playerPos=cabinPanel+new Vector3(-.14f,.04f,.60f);
             LookAtTarget(cabinPanel);
             capture("58_elevator_cabin_panel_closeup.png");

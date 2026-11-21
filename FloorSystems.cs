@@ -861,45 +861,40 @@ public static partial class Program
     {
         var r = Floor.Report!;
         var job = FloorSystems.Jobs[r.Job];
-        Color ink = DossierPrint.Ink, muted = DossierPrint.Muted, ruleInk = DossierPrint.Rule, red = DossierPrint.RedInk;
-        DossierPrint.Sheet(new(126, 52, 1028, 615));
+        Color ink = LoreAndMenusUI.ThemeSepiaInk, muted = LoreAndMenusUI.ThemeSepiaMuted, ruleInk = LoreAndMenusUI.ThemeSepiaRule, red = LoreAndMenusUI.ThemeStampRed;
+        LoreAndMenusUI.DrawManilaPaper(new(116, 26, 1048, 668));
         void Print(string value, float x, float y, int size, Color color, Typeface face = Typeface.Interface)
             => DossierPrint.Text(value, x, y, size, color, face);
-        void Line(int y, Color color) => Raylib.DrawLine(164, y, 1116, y, color);
-        Print("ЭНТРОПИК     Бухгалтерия первого этажа", 164, 92, 17, muted);
-        Print("Ведомость расчёта", 161, 133, 51, ink, Typeface.SerifBold);
-        Print(job.Title, 165, 205, 25, ink, Typeface.InterfaceBold);
-        Print(r.Success ? "Работа принята заказчиком" : "Контракт сорван", 165, 240, 19, muted);
+        void Line(int y, Color color) => Raylib.DrawLine(178, y, 1028, y, color);
+        Print("ЭНТРОПИК     Бухгалтерия первого этажа", 178, 96, 16, muted, Typeface.InterfaceBold);
+        Print("Ведомость расчёта", 175, 134, 48, ink, Typeface.SerifBold);
+        Print(job.Title, 178, 204, 24, ink, Typeface.InterfaceBold);
+        Print(r.Success ? "Работа принята заказчиком" : "Контракт сорван", 178, 238, 18, muted);
 
-        Rectangle stamp = new(947, 104, 166, 106);
-        Raylib.DrawRectangleLinesEx(stamp, 3, red);
-        Raylib.DrawRectangleLinesEx(new(stamp.X + 5, stamp.Y + 5, stamp.Width - 10, stamp.Height - 10), 1, red);
-        float middle = stamp.X + stamp.Width / 2;
-        void StampText(string value, int y, int size, Typeface face)
-            => Print(value, middle - GameFonts.Measure(GameFonts.Get(face, size), value, size).X / 2, y, size, red, face);
-        StampText(r.Rank, 111, 51, Typeface.SerifBold);
-        StampText("АВТОРИТЕТ", 177, 16, Typeface.InterfaceBold);
+        // Authentic angled crimson wet-ink rubber stamp completely clear of the top-right steel paperclip!
+        LoreAndMenusUI.DrawAngledGradeStamp(r.Rank, "АВТОРИТЕТ", 818, 172, -6.5f, red);
 
-        Line(283, ruleInk);
-        Print(r.Success ? "К ВЫПЛАТЕ" : "К УДЕРЖАНИЮ", 165, 306, 15, red, Typeface.InterfaceBold);
-        Print($"{(r.Success ? "+" : "-")}${Math.Abs(r.Amount)}", 161, 328, 68, red, Typeface.SerifBold);
+        Line(280, ink);
+        Line(284, ruleInk);
+        Print(r.Success ? "К ВЫПЛАТЕ" : "К УДЕРЖАНИЮ", 178, 304, 14, red, Typeface.InterfaceBold);
+        Print($"{(r.Success ? "+" : "-")}${Math.Abs(r.Amount)}", 175, 326, 64, red, Typeface.SerifBold);
         string basis = r.Success ? $"Ставка ${job.Base}   ×   риск {r.Greed:0.00}   ×   бонус {r.Bonus:0.00}"
             : "Штраф $350 и половина стоимости доставленных кадров";
-        Print(basis, 165, 433, 19, ink);
+        Print(basis, 178, 428, 18, ink);
         void Stat(int y, string label, string value)
         {
-            Print(label, 756, y, 19, muted);
-            float w = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 23), value, 23).X;
-            Print(value, 1114 - w, y - 3, 23, ink, Typeface.InterfaceBold);
-            Raylib.DrawLine(756, y + 37, 1116, y + 37, ruleInk);
+            Print(label, 706, y, 18, muted);
+            float w = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 22), value, 22).X;
+            Print(value, 1026 - w, y - 3, 22, ink, Typeface.InterfaceBold);
+            Raylib.DrawLine(706, y + 36, 1028, y + 36, ruleInk);
         }
-        Stat(320, "Доставлено кадров", r.Captured.ToString());
-        Stat(382, "Пиковый риск", r.Peak.ToString("0.0"));
-        Line(483, ruleInk);
-        Print("ЗАПИСЬ ДИСПЕТЧЕРА", 165, 505, 15, muted, Typeface.InterfaceBold);
-        Print(r.Diagnosis, 165, 532, 24, ink);
-        Line(594, ruleInk);
-        Print("[Enter]  Следующий контракт       [E]  Вернуться на этаж", 165, 613, 19, ink);
+        Stat(318, "Доставлено кадров", r.Captured.ToString());
+        Stat(380, "Пиковый риск", r.Peak.ToString("0.0"));
+        Line(478, ruleInk);
+        Print("ЗАПИСЬ ДИСПЕТЧЕРА", 178, 498, 14, red, Typeface.InterfaceBold);
+        Print(r.Diagnosis, 178, 524, 23, ink);
+        Line(586, ruleInk);
+        Print("[Enter]  Следующий контракт       [E]  Вернуться на этаж", 178, 606, 18, ink, Typeface.InterfaceBold);
     }
 
     private static readonly string[] UpgradeModels=["weapon_shotgun_90s","weapon_shotgun_90s","weapon_solder_90s",
@@ -909,31 +904,40 @@ public static partial class Program
     private static void DrawFloorPanel()
     {
         if(floorPanel==FloorPanel.Upgrades) { DrawBriefcase(); return; }
-        Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),DossierPrint.Studio);
+        Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),new Color(18,11,8,255));
         Raylib.BeginMode2D(new Camera2D { Zoom=PanelScale, Offset=PanelOffset });
+        LoreAndMenusUI.DrawDeskBackdrop(1280, 720);
         if (floorPanel==FloorPanel.BossFinale) DrawDecision();
         else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
         else
         {
-            Raylib.DrawRectangle(76, 52, 1128, 615, DossierPrint.Matte);
-            TypeAt("Доска контрактов",102,66,43,DossierPrint.Ivory,true);
-            TypeAt("ЭНТРОПИК    ЭТАЖ 01",970,87,15,quiet);
-            TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Loc.Tr(Floor.Progress) : "Срок отсчитывается с момента подписи",105,149,22,paper);
+            Rectangle board = new(76, 52, 1128, 615);
+            LoreAndMenusUI.DrawBrassWalnutFrame(board);
+            TypeAt("Доска контрактов", 108, 70, 40, LoreAndMenusUI.ThemeBrassBright, true);
+            TypeAt("ЭНТРОПИК    ЭТАЖ 01", 954, 88, 15, LoreAndMenusUI.ThemeBrassDim);
+            Raylib.DrawLine(108, 128, 1170, 128, LoreAndMenusUI.ThemeBrassDim);
+            TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Loc.Tr(Floor.Progress) : "Срок отсчитывается с момента подписи", 108, 146, 20, new Color(224,206,174,240));
             for(int i=0;i<FloorSystems.Jobs.Length;i++)
             {
                 var job=FloorSystems.Jobs[i];
-                Rectangle row=FloorRowRect(i);
+                Rectangle raw=FloorRowRect(i);
                 bool selected=i==floorRow;
-                Color ink=selected ? Color.White : paper;
-                if(selected) Raylib.DrawRectangleRec(row,DossierPrint.Selected);
-                else Raylib.DrawLine((int)row.X,(int)(row.Y+row.Height-1),1178,(int)(row.Y+row.Height-1),rule);
-                TypeAt(job.Title,row.X+12,row.Y+11,21,ink,true);
-                TypeAt(job.Objective,row.X+342,row.Y+15,16,selected ? paper : quiet);
-                TypeAt($"{job.Seconds} с    ${job.Base}",1041,row.Y+14,17,ink);
+                Rectangle card = new(raw.X + (selected ? 8 : 0), raw.Y + 4, raw.Width - 10, raw.Height - 8);
+                Color bg = selected ? LoreAndMenusUI.ThemeKraftCard : new Color(36, 27, 21, 240);
+                Color edge = selected ? LoreAndMenusUI.ThemeBrassBright : new Color(86, 66, 46, 200);
+                Color titleCol = selected ? LoreAndMenusUI.ThemeSepiaInk : DossierPrint.Ivory;
+                Color descCol = selected ? LoreAndMenusUI.ThemeSepiaMuted : new Color(196, 180, 156, 230);
+                Color payCol = selected ? LoreAndMenusUI.ThemeStampRed : LoreAndMenusUI.ThemeBrassBright;
+                Raylib.DrawRectangleRec(new(card.X + 3, card.Y + 4, card.Width, card.Height), new Color(5, 3, 2, selected ? 160 : 95));
+                Raylib.DrawRectangleRec(card, bg);
+                Raylib.DrawRectangleLinesEx(card, selected ? 1.8f : 1f, edge);
+                TypeAt(job.Title, card.X + 16, card.Y + 12, 20, titleCol, true);
+                TypeAt(job.Objective, card.X + 334, card.Y + 15, 16, descCol);
+                TypeAt($"{job.Seconds} с    ${job.Base}", card.X + card.Width - 150, card.Y + 13, 18, payCol, true);
             }
             string hint=Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
-            TypeAt(panelMessage.Length>0 ? panelMessage : hint,106,550,18,quiet);
-            TypeAt("[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж",106,610,19,paper);
+            TypeAt(panelMessage.Length>0 ? panelMessage : hint, 108, 554, 17, new Color(194,174,142,220));
+            TypeAt("[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж", 108, 608, 18, LoreAndMenusUI.ThemeBrassBright);
         }
         Raylib.EndMode2D();
     }

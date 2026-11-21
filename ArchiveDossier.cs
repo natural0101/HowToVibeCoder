@@ -72,6 +72,67 @@ public static partial class LoreAndMenusUI
         }
     }
 
+    internal static void DrawDeskBackdrop(float w = ArchiveWidth, float h = ArchiveHeight)
+    {
+        EnsureArchiveArt();
+        if (_deskBackdrop.Id != 0)
+            Raylib.DrawTexturePro(_deskBackdrop, new(0, 0, _deskBackdrop.Width, _deskBackdrop.Height), new(0, 0, w, h), Vector2.Zero, 0f, Color.White);
+        else
+            Raylib.DrawRectangle(0, 0, (int)w, (int)h, WalnutDark);
+    }
+
+    internal static void DrawManilaPaper(Rectangle dst)
+    {
+        EnsureArchiveArt();
+        if (_folderSheet.Id != 0)
+            Raylib.DrawTexturePro(_folderSheet, new(0, 0, _folderSheet.Width, _folderSheet.Height), dst, Vector2.Zero, 0f, Color.White);
+        else
+            Sheet(dst);
+    }
+
+    internal static void DrawBrassWalnutFrame(Rectangle frame)
+    {
+        Raylib.DrawRectangleRec(new(frame.X + 6, frame.Y + 8, frame.Width, frame.Height), new Color(6, 4, 2, 165));
+        Raylib.DrawRectangleRec(frame, WalnutDark);
+        Raylib.DrawRectangleRec(new(frame.X + 8, frame.Y + 8, frame.Width - 16, frame.Height - 16), new Color(20, 14, 11, 248));
+        Raylib.DrawRectangleLinesEx(frame, 2f, WalnutEdge);
+        Raylib.DrawRectangleLinesEx(new(frame.X + 5, frame.Y + 5, frame.Width - 10, frame.Height - 10), 1.2f, BrassDim);
+        foreach (var (rx, ry) in new[]
+        {
+            (frame.X + 13, frame.Y + 13), (frame.X + frame.Width - 13, frame.Y + 13),
+            (frame.X + 13, frame.Y + frame.Height - 13), (frame.X + frame.Width - 13, frame.Y + frame.Height - 13)
+        })
+            Raylib.DrawCircle((int)rx, (int)ry, 2.8f, BrassBright);
+    }
+
+    internal static void DrawAngledGradeStamp(string grade, string subtitle, float cx, float cy, float angleDeg, Color ink)
+    {
+        float w = 166, h = 104;
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(cx, cy, 0);
+        Rlgl.Rotatef(angleDeg, 0, 0, 1);
+        Rectangle outer = new(-w * 0.5f, -h * 0.5f, w, h);
+        Rectangle inner = new(-w * 0.5f + 5, -h * 0.5f + 5, w - 10, h - 10);
+        Raylib.DrawRectangleRec(outer, new Color(ink.R, ink.G, ink.B, (byte)18));
+        Raylib.DrawRectangleLinesEx(outer, 3f, ink);
+        Raylib.DrawRectangleLinesEx(inner, 1.2f, new Color(ink.R, ink.G, ink.B, (byte)185));
+        Font gf = GameFonts.Get(Typeface.SerifBold, 50);
+        Font sf = GameFonts.Get(Typeface.InterfaceBold, 15);
+        Vector2 gsz = GameFonts.Measure(gf, grade, 50);
+        Vector2 ssz = GameFonts.Measure(sf, subtitle, 15);
+        GameFonts.Draw(gf, grade, new(-gsz.X * 0.5f, -44), 50, ink, shadowed: false);
+        GameFonts.Draw(sf, subtitle, new(-ssz.X * 0.5f, 20), 15, ink, shadowed: false);
+        Rlgl.PopMatrix();
+    }
+
+    internal static readonly Color ThemeBrassBright = BrassBright;
+    internal static readonly Color ThemeBrassDim    = BrassDim;
+    internal static readonly Color ThemeKraftCard   = KraftCard;
+    internal static readonly Color ThemeSepiaInk    = SepiaInk;
+    internal static readonly Color ThemeSepiaMuted  = SepiaMuted;
+    internal static readonly Color ThemeSepiaRule   = SepiaRule;
+    internal static readonly Color ThemeStampRed    = StampRed;
+
     private static float ArchiveScale => Math.Min(Raylib.GetScreenWidth() / (float)ArchiveWidth, Raylib.GetScreenHeight() / (float)ArchiveHeight);
     private static Rectangle ArchiveScreen(Rectangle r)
     {

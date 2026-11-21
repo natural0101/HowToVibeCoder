@@ -1116,9 +1116,10 @@ public static partial class Program
         {
             Rectangle r=new(barX+i*70,barY,66,66);
             bool active=i==_weapons.SelectedHotbarSlot;
-            Raylib.DrawRectangleRounded(r,.13f,6,new Color(25,27,30,active ? 215 : 183));
-            if(active) Raylib.DrawRectangleRoundedLinesEx(r,.13f,6,2,white);
-            LoreAndMenusUI.DrawTextCrisp(_serif,(i+1).ToString(),(int)r.X+5,barY+3,16,active ? white : new Color(198,198,195,220));
+            Raylib.DrawRectangleRounded(new(r.X+2,r.Y+3,r.Width,r.Height),.12f,6,new Color(8,5,3,135));
+            Raylib.DrawRectangleRounded(r,.12f,6,active ? new Color(46,33,24,228) : new Color(24,18,14,196));
+            Raylib.DrawRectangleRoundedLinesEx(r,.12f,6,active ? 2f : 1f,active ? LoreAndMenusUI.ThemeBrassBright : new Color(118,92,56,165));
+            LoreAndMenusUI.DrawTextCrisp(_serif,(i+1).ToString(),(int)r.X+6,barY+4,15,active ? LoreAndMenusUI.ThemeBrassBright : new Color(196,178,146,215));
             if(tools[i] is {} weapon)
                 DrawSlotIcon(weapon==WeaponType.CaptureNet ? 4 : (int)weapon-1,new(r.X+34,r.Y+35),true);
         }

@@ -1172,31 +1172,42 @@ public static class MainMenuAndPauseUI
     private static void NativeButton(string label, Rectangle r, bool selected = false)
     {
         bool hover = Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
-        Raylib.DrawRectangleRec(r, selected || hover ? DossierPrint.Selected : DossierPrint.Matte);
-        Raylib.DrawRectangleLinesEx(r, 1, selected ? DossierPrint.Ivory : DossierPrint.Stone);
-        Center(GameFonts.Get(Typeface.Interface, 20), label, r, 20, selected || hover ? Color.White : DossierPrint.Ivory);
+        bool lit = selected || hover;
+        Raylib.DrawRectangleRec(new(r.X + 2, r.Y + 3, r.Width, r.Height), new Color(6, 4, 2, 130));
+        Raylib.DrawRectangleRec(r, lit ? LoreAndMenusUI.ThemeKraftCard : new Color(34, 25, 19, 246));
+        Raylib.DrawRectangleLinesEx(r, lit ? 1.6f : 1.1f, lit ? LoreAndMenusUI.ThemeBrassBright : LoreAndMenusUI.ThemeBrassDim);
+        Center(GameFonts.Get(lit ? Typeface.InterfaceBold : Typeface.Interface, 19), label, r, 19, lit ? LoreAndMenusUI.ThemeSepiaInk : DossierPrint.Ivory);
     }
 
     private static void DrawMenuItem(string label, Rectangle r, bool selected)
     {
         bool active = selected || Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
+        Rectangle card = new(r.X + (active ? 6 : 0), r.Y + 2, r.Width - 6, r.Height - 4);
         if (active)
         {
-            Raylib.DrawRectangleRec(r, new Color(44, 38, 34, 130));
+            Raylib.DrawRectangleRec(new(card.X + 3, card.Y + 4, card.Width, card.Height), new Color(5, 3, 2, 150));
+            Raylib.DrawRectangleRec(card, LoreAndMenusUI.ThemeKraftCard);
+            Raylib.DrawRectangleLinesEx(card, 1.5f, LoreAndMenusUI.ThemeBrassBright);
         }
-        int size = 22;
+        else
+        {
+            Raylib.DrawRectangleRec(card, new Color(32, 23, 18, 225));
+            Raylib.DrawRectangleLinesEx(card, 1f, new Color(78, 58, 40, 170));
+        }
+        int size = 20;
         var face = GameFonts.Get(active ? Typeface.InterfaceBold : Typeface.Interface, size);
-        GameFonts.Draw(face, label, new(r.X + 16, r.Y + (r.Height - size) / 2), size,
-            active ? Color.White : DossierPrint.Quiet);
+        GameFonts.Draw(face, label, new(card.X + 18, card.Y + (card.Height - size) / 2), size,
+            active ? LoreAndMenusUI.ThemeSepiaInk : new Color(220, 206, 182, 240), shadowed: false);
     }
 
     private static void DrawSlateWindow(string title,int width,int height)
     {
         int sw=UiViewport.Width, sh=UiViewport.Height;
-        Raylib.DrawRectangle(0,0,sw,sh,new Color(20,18,16,210));
+        Raylib.DrawRectangle(0,0,sw,sh,new Color(14,10,8,205));
         Rectangle panel=new((sw-width)/2,(sh-height)/2,width,height);
-        Surface(panel,new Color(24,22,20,250));
-        GameFonts.Draw(Serif, title, new(panel.X + 34, panel.Y + 15), title.Length > 35 ? 25 : 35, DossierPrint.Ivory);
+        LoreAndMenusUI.DrawBrassWalnutFrame(panel);
+        GameFonts.Draw(Serif, title, new(panel.X + 34, panel.Y + 22), title.Length > 35 ? 24 : 34, LoreAndMenusUI.ThemeBrassBright);
+        Raylib.DrawLine((int)panel.X + 32, (int)panel.Y + 70, (int)(panel.X + panel.Width - 32), (int)panel.Y + 70, LoreAndMenusUI.ThemeBrassDim);
     }
 
     public static void DrawPauseOverlay(Font font,int screenW,int screenH)
