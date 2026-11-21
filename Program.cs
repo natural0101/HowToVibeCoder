@@ -3077,6 +3077,7 @@ public static partial class Program
         _weapons.SelectSlot(1); // Father's Leather Belt
         _playerPos = new Vector3(0.0f, 1.72f, 10.15f);
         LookAtTarget(new Vector3(0.0f, 1.28f, 13.0f));
+        _weapons.UpdateWeapons(0.45f, BuildPlayerCamera());
         AudioMusicSystem.TriggerVoiceLine("HR-ТАРОЛОГ ВЕРОНИКА", "Расклад Таро готов! Приноси вайб-кодеров на разбор натальной карты!", (int)SpeakerVoiceType.VeronikaTarot);
         CaptureShot("01_office_hub_hr_tarot.png","crop_slot_1_belt.png",new(307,452,715,214));
 

@@ -1272,10 +1272,8 @@ public class WeaponAndCombatView
             }
         }
 
-        // Rigid 3/4 combat stance for the Belt + Hands assembly:
-        // Positioned at -0.028f Y so there is a clean gap BOTH above the buckle (to the Tarot subtitle box)
-        // and below the buckle (above the white border of hotbar slot [1]).
-        Vector3 assembly = baseOffset + swingHandOffset + new Vector3(0.012f, -0.028f, 0.015f);
+        // Rigid 3/4 combat stance for the Belt + Hands assembly cleanly visible in foreground above hotbar
+        Vector3 assembly = baseOffset + swingHandOffset + new Vector3(0.012f, -0.010f, 0.015f);
         Vector3 beltPos = new Vector3(.18f,-.155f,.592f) + assembly;
         Vector3 pivotCenter = beltPos + new Vector3(-0.18f, 0f, 0f);
         Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivotCenter)

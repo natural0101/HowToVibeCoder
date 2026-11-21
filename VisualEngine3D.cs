@@ -527,10 +527,14 @@ internal static unsafe partial class VisualEngine3D
             vec3 F=F0+(1.-F0)*pow(1.-max(0.,dot(v,normalize(v+key))),5.);
             lit+=vec3(1.48,1.02,.64)*F*min(3.,D)*max(0.,dot(n,key))*shadow/(.45+nv);
             if(weapon) {
-                // Broad overhead softbox across curved barrels and a softer satin lobe on wood.
+                // Crisp studio overhead softbox + cold-blued metallic Fresnel edge sheen so dark gunmetal reads cleanly!
                 vec3 r=reflect(-v,n);
-                float strip=pow(max(0.,1.-abs(dot(r,normalize(vec3(.32,.85,.41))))),gloss*.46);
-                lit+=mix(vec3(.045,.036,.028),vec3(.29,.34,.40),weaponFinish.x)*strip;
+                float strip=pow(max(0.,1.-abs(dot(r,normalize(vec3(.32,.85,.41))))),gloss*.38);
+                float broad=pow(max(0.,dot(n,normalize(v+vec3(-.25,.88,.38)))),7.);
+                float metal=weaponFinish.x;
+                lit+=mix(vec3(.055,.044,.032),vec3(.36,.42,.50),metal)*strip;
+                lit+=mix(vec3(.035,.028,.020),vec3(.16,.19,.24),metal)*broad;
+                lit+=vec3(.24,.28,.34)*fres*metal*1.15+base*.24*metal;
             }
             if(finish==22) {
                 vec2 p=vec2(abs(n.x)>.7 ? pos.z : pos.x,pos.y);

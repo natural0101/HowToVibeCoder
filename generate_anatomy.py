@@ -350,10 +350,12 @@ def keyed_grip(kind, side):
             transforms[name]=origin,root+V(shift)+turn@(pos-root),turn@rot
     if side=="l" and kind=="fps_shotgun":
         aim_digit("pinky",(.006,0,0),(.015,.001,.002))
+        aim_digit("thumb",(0,-.005,.005),(-.006,-.042,.034))
     if side=="l" and kind=="fps_uzi":
         aim_digit("pinky",(.018,.002,.007),(.029,.008,.012))
         aim_digit("middle",(.009,0,-.003),(.018,.005,-.008))
         aim_digit("index",(0,0,0),(.002,.005,-.006))
+        aim_digit("thumb",(0,-.005,.005),(-.007,-.046,.038))
     return transforms, signet
 
 
@@ -1584,7 +1586,7 @@ def game_prop():
 
 
 if __name__ == "__main__":
-    if "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv and "--net-and-bare-only" not in __import__("sys").argv and "--veronika-only" not in __import__("sys").argv:
+    if "--firearm-hands-only" not in __import__("sys").argv and "--solder-only" not in __import__("sys").argv and "--hands-only" not in __import__("sys").argv and "--coders-only" not in __import__("sys").argv and "--net-and-bare-only" not in __import__("sys").argv and "--veronika-only" not in __import__("sys").argv:
         game_prop()
     for kind, filename in [("boss","escaped_ai_boss"),("coder_seated","char_vibe_coder_seated"),
                            ("coder","char_vibe_coder"),("partner","char_partner_90s"),
@@ -1606,6 +1608,8 @@ if __name__ == "__main__":
             if kind.startswith("fps_"): export(kind,filename)
         elif "--workshop6" in __import__("sys").argv:
             if kind == "partner": export(kind,filename)
+        elif "--firearm-hands-only" in __import__("sys").argv:
+            if kind in ("fps_uzi","fps_shotgun"): export(kind,filename)
         elif "--workshop5" in __import__("sys").argv:
             if kind in ("partner","fps_uzi","fps_shotgun"): export(kind,filename)
         elif "--uzi-only" not in __import__("sys").argv:

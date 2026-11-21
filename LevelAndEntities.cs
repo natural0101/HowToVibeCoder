@@ -4361,7 +4361,7 @@ public sealed partial class SkyscraperFloor1World
         if(c.Ignition>0 && c.Hp>0)
             VisualEngine3D.Oval(c.CombatCenter+Vector3.UnitY*.12f,new(.12f,.17f+.04f*MathF.Sin(_worldClock*21),.1f),Color.Orange,Finish.Plasma);
         if(!VisualEngine3D.CastingShadows && c.Archetype==CoderArchetype.TeamLeadMeeter && c.State==CoderAIState.CombatHostile)
-            Raylib.DrawCircle3D(c.Position+Vector3.UnitY*.04f,5,Vector3.UnitX,90,new Color(128,224,149,155));
+            Raylib.DrawCylinder(c.Position+Vector3.UnitY*.012f,1.15f,1.22f,.005f,20,new Color(88,205,126,34));
         if (c.IsCombatCoder && c.Windup>0)
         {
             Vector3 forward=new(MathF.Sin(c.FacingYaw),0,MathF.Cos(c.FacingYaw));
