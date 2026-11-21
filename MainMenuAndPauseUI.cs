@@ -956,9 +956,10 @@ public static class MainMenuAndPauseUI
 
     private static void UpdateModsPanelInput()
     {
-        if (Clicked(ModAction(0))) { LoreAndMenusUI.TriggerGrantTestMoney(); return; }
-        if (Clicked(ModAction(1))) { LoreAndMenusUI.TriggerUnlockAllWeapons(); return; }
-        if (Clicked(ModMixer)) { LoreAndMenusUI.IsSettingsOpen = true; return; }
+        if (Program.DevMode && Clicked(ModAction(0))) { LoreAndMenusUI.TriggerGrantTestMoney(); return; }
+        if (Program.DevMode && Clicked(ModAction(1))) { LoreAndMenusUI.TriggerUnlockAllWeapons(); return; }
+        Rectangle mixerBtn = Program.DevMode ? ModMixer : new Rectangle(UiViewport.Width / 2f - 150, UiViewport.Height / 2f + 213, 300, 40);
+        if (Clicked(mixerBtn)) { LoreAndMenusUI.IsSettingsOpen = true; return; }
         if (Raylib.IsKeyPressed(KeyboardKey.Escape))
         {
             IsModsPanelOpen = false;
@@ -1175,21 +1176,28 @@ public static class MainMenuAndPauseUI
     {
         bool active = selected || Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
         Rectangle card = new(r.X + (active ? 6 : 0), r.Y + 2, r.Width - 6, r.Height - 4);
+        Raylib.DrawRectangleRounded(new(card.X + 3, card.Y + 4, card.Width, card.Height), .12f, 8, new Color(5, 3, 2, 165));
         if (active)
         {
-            Raylib.DrawRectangleRec(new(card.X + 3, card.Y + 4, card.Width, card.Height), new Color(5, 3, 2, 150));
-            Raylib.DrawRectangleRec(card, LoreAndMenusUI.ThemeKraftCard);
-            Raylib.DrawRectangleLinesEx(card, 1.5f, LoreAndMenusUI.ThemeBrassBright);
+            Raylib.DrawRectangleRounded(card, .12f, 8, LoreAndMenusUI.ThemeKraftCard);
+            Raylib.DrawRectangleGradientV((int)card.X + 2, (int)card.Y + 2, (int)card.Width - 4, (int)card.Height / 2,
+                new Color(255, 250, 232, 75), Color.Blank);
+            Raylib.DrawRectangleRoundedLinesEx(card, .12f, 8, 2.0f, LoreAndMenusUI.ThemeBrassBright);
         }
         else
         {
-            Raylib.DrawRectangleRec(card, new Color(32, 23, 18, 225));
-            Raylib.DrawRectangleLinesEx(card, 1f, new Color(78, 58, 40, 170));
+            Raylib.DrawRectangleRounded(card, .12f, 8, new Color(36, 25, 19, 236));
+            Raylib.DrawRectangleGradientV((int)card.X + 2, (int)card.Y + 2, (int)card.Width - 4, (int)card.Height / 2,
+                new Color(140, 108, 64, 28), Color.Blank);
+            Raylib.DrawRectangleRoundedLinesEx(card, .12f, 8, 1.2f, LoreAndMenusUI.ThemeBrassDim);
         }
+        // Subtle twin brass rivets anchoring the plaque
+        Color rivet = active ? LoreAndMenusUI.ThemeBrassDim : new Color(138, 108, 64, 175);
+        Raylib.DrawCircleV(new(card.X + card.Width - 14, card.Y + card.Height * 0.5f), 2.5f, rivet);
         int size = 20;
         var face = GameFonts.Get(active ? Typeface.InterfaceBold : Typeface.Interface, size);
         GameFonts.Draw(face, label, new(card.X + 18, card.Y + (card.Height - size) / 2), size,
-            active ? LoreAndMenusUI.ThemeSepiaInk : new Color(220, 206, 182, 240), shadowed: false);
+            active ? LoreAndMenusUI.ThemeSepiaInk : new Color(236, 222, 196, 248), shadowed: false);
     }
 
     private static void DrawSlateWindow(string title,int width,int height)
@@ -1271,27 +1279,38 @@ public static class MainMenuAndPauseUI
         for(int i=0;i<InstalledMods.Count;i++)
         {
             var mod=InstalledMods[i];
-            Rectangle row=new(x+32,y+104+i*94,816,82);
-            Surface(row,new Color(31,27,24,245),1);
-            DrawTextCrisp(Serif,mod.Name,(int)row.X+15,(int)row.Y+9,22,Color.White);
-            DrawTextCrisp(font,mod.Author+"   "+mod.Version,(int)row.X+16,(int)row.Y+37,14,Edge);
-            Center(font,mod.Description,new(row.X+10,row.Y+54,644,20),15,Edge);
+            Rectangle row=new(x+32,y+100+i*94,816,82);
+            Raylib.DrawRectangleRounded(new(row.X+2,row.Y+3,row.Width,row.Height),.08f,8,new Color(8,5,3,135));
+            Raylib.DrawRectangleRounded(row,.08f,8,new Color(42,31,24,244));
+            Raylib.DrawRectangleGradientV((int)row.X+3,(int)row.Y+2,(int)row.Width-6,28,new Color(172,134,76,22),Color.Blank);
+            Raylib.DrawRectangleRoundedLinesEx(row,.08f,8,1.2f,LoreAndMenusUI.ThemeBrassDim);
+            DrawTextCrisp(Serif,mod.Name,(int)row.X+18,(int)row.Y+9,22,DossierPrint.Ivory);
+            DrawTextCrisp(font,mod.Author+"   "+mod.Version,(int)row.X+19,(int)row.Y+37,14,LoreAndMenusUI.ThemeBrassBright);
+            DrawTextCrisp(font,mod.Description,(int)row.X+19,(int)row.Y+56,15,new Color(206,192,168,235));
             NativeButton(mod.Enabled ? "Включён" : "Выключен",new(row.X+660,row.Y+18,136,44),mod.Enabled);
         }
-        NativeButton("Звуковая рубка [F8]",ModMixer);
-        NativeButton("Тест: +$2000",ModAction(0));
-        NativeButton("Открыть оружие",ModAction(1));
+        if (Program.DevMode)
+        {
+            NativeButton("Звуковая рубка [F8]",ModMixer);
+            NativeButton("Тест: +$2000",ModAction(0));
+            NativeButton("Открыть оружие",ModAction(1));
+        }
+        else
+        {
+            NativeButton("Звуковая рубка [F8]",new Rectangle(UiViewport.Width / 2f - 150, UiViewport.Height / 2f + 213, 300, 40));
+        }
     }
 
     private static void DrawSettingsSubPanel(Font font, int screenW, int screenH)
     {
-        Raylib.DrawRectangle(0,0,screenW,screenH,new Color(20,18,16,215));
-        Center(Serif,"Настройки",SettingsRect(0,-26,686,54),48,Color.White);
+        Raylib.DrawRectangle(0,0,screenW,screenH,new Color(14,10,8,215));
+        Center(Serif,"Настройки",SettingsRect(0,-28,686,54),46,LoreAndMenusUI.ThemeBrassBright);
         for (int i=0;i<4;i++) NativeButton(SettingsTabs[i],SettingsTab(i),i==_settingsTab);
         Rectangle panel = SettingsRect(0,80,686,462);
-        Surface(panel,new Color(22,20,19,245));
+        LoreAndMenusUI.DrawBrassWalnutFrame(panel);
 
-        Center(Serif,SettingsTabs[_settingsTab],SettingsRect(0,84,686,37),27,Color.White);
+        Center(Serif,SettingsTabs[_settingsTab],SettingsRect(0,92,686,37),28,LoreAndMenusUI.ThemeBrassBright);
+        Raylib.DrawLine((int)panel.X+42,(int)panel.Y+54,(int)(panel.X+panel.Width-42),(int)panel.Y+54,LoreAndMenusUI.ThemeBrassDim);
         int[] rows = SettingRows[_settingsTab];
         for (int i=0;i<rows.Length;i++)
         {
@@ -1299,44 +1318,47 @@ public static class MainMenuAndPauseUI
             float t = LoreAndMenusUI.GetSliderNormalizedValue(id);
             Rectangle r = SettingsTrack(i);
             float y = r.Y+r.Height/2;
-            DrawTextCrisp(Serif,SettingNames[id],(int)panel.X+67,(int)y-13,23,Color.White);
-            Raylib.DrawLineEx(new(r.X,y),new(r.X+r.Width,y),1.7f,Edge);
+            DrawTextCrisp(Serif,SettingNames[id],(int)panel.X+67,(int)y-13,22,DossierPrint.Ivory);
+            Raylib.DrawRectangleRounded(new(r.X,y-3,r.Width,6),.8f,6,new Color(20,14,11,240));
+            Raylib.DrawRectangleRounded(new(r.X,y-3,Math.Max(6,t*r.Width),6),.8f,6,DossierPrint.Crimson);
             float x=r.X+t*r.Width;
-            Raylib.DrawLineEx(new(r.X,y),new(x,y),4,DossierPrint.Crimson);
-            Raylib.DrawRectangleRec(new(x-3,y-9,6,18),DossierPrint.Ivory);
+            Raylib.DrawRectangleRounded(new(x-5,y-11,10,22),.35f,6,LoreAndMenusUI.ThemeBrassBright);
+            Raylib.DrawRectangleRoundedLinesEx(new(x-5,y-11,10,22),.35f,6,1f,LoreAndMenusUI.ThemeSepiaInk);
             float value = id == 4 ? LoreAndMenusUI.MouseSensitivity : id == 5 ? LoreAndMenusUI.CameraFov : t;
             Rectangle val = new(r.X+r.Width+32, y-17,68,34);
-            Surface(val,new Color(48,40,34,112),0);
-            Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo(Loc.IsEn ? "en-US" : "ru-RU")),val,22,Edge);
+            Raylib.DrawRectangleRounded(val,.18f,6,new Color(28,20,15,235));
+            Raylib.DrawRectangleRoundedLinesEx(val,.18f,6,1f,LoreAndMenusUI.ThemeBrassDim);
+            Center(Serif,value.ToString(id==5?"0":"0.00",System.Globalization.CultureInfo.GetCultureInfo(Loc.IsEn ? "en-US" : "ru-RU")),val,21,LoreAndMenusUI.ThemeBrassBright);
         }
         if (_settingsTab==1)
         {
             for(int i=0;i<2;i++)
             {
                 var r=DisplayButton(i);
-                DrawTextCrisp(Serif,i==0 ? "Режим экрана" : "Разрешение",(int)panel.X+67,(int)r.Y+6,23,Color.White);
+                DrawTextCrisp(Serif,i==0 ? "Режим экрана" : "Разрешение",(int)panel.X+67,(int)r.Y+6,22,DossierPrint.Ivory);
                 NativeButton(i==1 ? Display.ResolutionLabel : Display.DisplayMode==DisplayMode.Fullscreen ? "На весь экран" : "В окне",r);
             }
         }
         if (_settingsTab==2)
         {
-            Center(Serif,"Голоса персонажей",SettingsRect(0,257,686,42),26,Color.White);
+            Center(Serif,"Голоса персонажей",SettingsRect(0,257,686,42),26,LoreAndMenusUI.ThemeBrassBright);
             NativeButton("Звуковая рубка [F8]",SettingsRect(140,478,406,36));
         }
-        if (_settingsTab is 0 or 1 or 3)
+        // Keep Language toggle strictly inside the Language tab (no misplaced duplicate inside Graphics tab!)
+        if (_settingsTab == 3)
         {
-            DrawTextCrisp(Serif,"Язык / Language",(int)panel.X+67,(int)LanguagePill(0).Y+6,23,Color.White);
+            DrawTextCrisp(Serif,"Язык / Language",(int)panel.X+67,(int)LanguagePill(0).Y+6,22,DossierPrint.Ivory);
             for(int i=0;i<2;i++)
             {
                 Rectangle pill=LanguagePill(i);
                 bool active=(int)Loc.Current==i;
                 bool hover=Raylib.CheckCollisionPointRec(UiViewport.Pointer,pill);
-                Raylib.DrawRectangleRounded(pill,.9f,12,active ? DossierPrint.Paper : hover ? DossierPrint.Selected : DossierPrint.Matte);
-                Raylib.DrawRectangleRoundedLinesEx(pill,.9f,12,1,DossierPrint.Quiet);
-                Center(font,i==0 ? "Русский" : "English",pill,19,active ? DossierPrint.Ink : DossierPrint.Ivory);
+                Raylib.DrawRectangleRounded(pill,.25f,8,active ? LoreAndMenusUI.ThemeKraftCard : hover ? new Color(56,42,32,245) : new Color(30,22,17,245));
+                Raylib.DrawRectangleRoundedLinesEx(pill,.25f,8,active ? 1.8f : 1.1f,active ? LoreAndMenusUI.ThemeBrassBright : LoreAndMenusUI.ThemeBrassDim);
+                Center(font,i==0 ? "Русский" : "English",pill,19,active ? LoreAndMenusUI.ThemeSepiaInk : DossierPrint.Ivory);
             }
             Center(font,Loc.T("Меняет весь интерфейс, субтитры и студийную озвучку (RU / EN)",
-                "Switches all UI, subtitles, and studio voice acting (RU / EN)"),SettingsRect(32,184,622,32),17,Edge);
+                "Switches all UI, subtitles, and studio voice acting (RU / EN)"),SettingsRect(32,196,622,32),17,new Color(208,192,166,230));
         }
         NativeButton("Назад",SettingsRect(0,550,166,38));
     }

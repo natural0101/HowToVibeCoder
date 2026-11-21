@@ -49,6 +49,15 @@ public static partial class Program
 
     private static void CatalogBadge(float x,float y)
     {
+        if(keycardIconTex.Id!=0)
+        {
+            float w=122f, h=w*(keycardIconTex.Height/(float)keycardIconTex.Width);
+            Raylib.DrawTexturePro(keycardIconTex,new(0,0,keycardIconTex.Width,keycardIconTex.Height),
+                new(x+2,y+3,w,h),new(w/2,h/2),0,new Color(14,7,6,115));
+            Raylib.DrawTexturePro(keycardIconTex,new(0,0,keycardIconTex.Width,keycardIconTex.Height),
+                new(x,y,w,h),new(w/2,h/2),0,Color.White);
+            return;
+        }
         Raylib.DrawRectangleRounded(new(x-53,y-31,106,62),.14f,8,new(67,54,51,255));
         Raylib.DrawRectangleRounded(new(x-51,y-29,102,58),.12f,8,new(208,202,182,255));
         Raylib.DrawRectangle((int)x-49,(int)y-24,98,10,new(126,31,40,255));
@@ -169,7 +178,20 @@ public static partial class Program
         PaperSlip(new(1044,24,156,48),new(236,226,206,255),new(165,148,120,255));
         ShopText($"${_playerCash}",1122,25,36,shopInk);
         for(int i=0;i<10;i++) Raylib.DrawEllipse(394,373,166-i*9,12-i*.65f,new(14,3,6,15));
-        Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),new(100,138,588,254),Vector2.Zero,0,Color.White);
+        if(model=="keycard" && keycardIconTex.Id!=0)
+        {
+            float w=324f, h=w*(keycardIconTex.Height/(float)keycardIconTex.Width);
+            float bob=MathF.Sin(t*2.1f)*5f;
+            float tilt=MathF.Sin(t*1.3f)*3.2f-2.4f;
+            Raylib.DrawTexturePro(keycardIconTex,new(0,0,keycardIconTex.Width,keycardIconTex.Height),
+                new(398,268+bob,w,h),new(w/2,h/2),tilt,new Color(12,4,6,150));
+            Raylib.DrawTexturePro(keycardIconTex,new(0,0,keycardIconTex.Width,keycardIconTex.Height),
+                new(394,262+bob,w,h),new(w/2,h/2),tilt,Color.White);
+        }
+        else
+        {
+            Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),new(100,138,588,254),Vector2.Zero,0,Color.White);
+        }
         ShopText((sidegrades ? item.Title : catalogNames[floorRow]).ToUpperInvariant(),394,382,38,shopCream,true,true,true,554);
         SkinSwitch(false);
         ShopMeters();

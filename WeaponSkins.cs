@@ -163,12 +163,21 @@ public static partial class Program
         int tier=(skin-1)/3;
         Texture2D preview=slot.Reveal ? LoreAndMenusUI.RenderShopExhibit(FloorSystems.WeaponModels[row],18+slot.RevealTime*37,PanelScale*2,skin) : default;
         Raylib.BeginMode2D(new Camera2D{Zoom=PanelScale,Offset=PanelOffset});
-        Rectangle caseRect=new(78,400,1124,207);
-
+        // Tactile Art-Deco walnut & brushed-brass mechanical slot window housing with corner rivets
+        Rectangle caseRect=new(78,398,1124,212);
+        Raylib.DrawRectangleRounded(new(caseRect.X+4,caseRect.Y+6,caseRect.Width,caseRect.Height),.05f,10,new Color(6,3,2,185));
         Raylib.DrawTexturePro(shopBackdrop,new(0,85,55,485),caseRect,Vector2.Zero,0,Color.White);
-        Raylib.DrawRectangleRoundedLinesEx(caseRect,.06f,10,3,shopGold);
-        Rectangle velvet=new(96,414,1088,178);
-        Raylib.DrawRectangleRounded(velvet,.06f,10,new(81,24,38,255));
+        Raylib.DrawRectangleRoundedLinesEx(caseRect,.05f,10,3.2f,shopGold);
+        Raylib.DrawRectangleRoundedLinesEx(new(caseRect.X+5,caseRect.Y+5,caseRect.Width-10,caseRect.Height-10),.045f,10,1.2f,new Color(138,104,54,205));
+        foreach(var rv in new Vector2[]{new(90,410),new(1190,410),new(90,598),new(1190,598)})
+        {
+            Raylib.DrawCircleV(rv,4.2f,new Color(142,106,52,255));
+            Raylib.DrawCircleV(rv-new Vector2(1,1),2.0f,new Color(246,218,142,240));
+        }
+        Rectangle velvet=new(96,414,1088,180);
+        Raylib.DrawRectangleRounded(velvet,.045f,10,new(46,16,22,255));
+        Raylib.DrawRectangleGradientV((int)velvet.X,(int)velvet.Y,(int)velvet.Width,26,new Color(8,3,5,160),Color.Blank);
+        Raylib.DrawRectangleGradientV((int)velvet.X,(int)(velvet.Y+velvet.Height-26),(int)velvet.Width,26,Color.Blank,new Color(8,3,5,165));
         if(slot.Reveal) {
             float age=slot.RevealTime;
             Vector2 center=new(347,503);
@@ -210,17 +219,19 @@ public static partial class Program
                 if(x< -10 || x>1290) continue;
                 var ticket=slot.Tickets[i];
                 int tTier=Math.Clamp((ticket.Skin-1)/3,0,3);
+                // Cohesive 1998 Art-Deco luxury enamel plaques (deep slate, royal plum, oxblood crimson, burnished gold — zero neon CS:GO boxes!)
                 (Color top,Color bot,Color edge)=tTier switch{
-                    0=>(new Color(22,52,110,255),new Color(58,132,235,255),new Color(128,192,255,255)),
-                    1=>(new Color(56,22,114,255),new Color(138,68,242,255),new Color(198,144,255,255)),
-                    2=>(new Color(102,14,50,255),new Color(224,44,110,255),new Color(255,134,178,255)),
-                    _=>(new Color(118,74,10,255),new Color(246,196,64,255),new Color(255,244,182,255))
+                    0=>(new Color(34,48,66,255),new Color(56,78,104,255),new Color(164,186,208,235)),
+                    1=>(new Color(58,34,76,255),new Color(94,56,122,255),new Color(204,174,224,240)),
+                    2=>(new Color(98,22,34,255),new Color(152,36,52,255),new Color(238,162,158,245)),
+                    _=>(new Color(118,80,22,255),new Color(206,158,64,255),new Color(252,234,168,255))
                 };
                 Rectangle card=new(x-98,429,196,143);
-                Raylib.DrawRectangleRounded(new(card.X+2,card.Y+3,card.Width,card.Height),.07f,8,new(12,4,8,175));
+                Raylib.DrawRectangleRounded(new(card.X+2,card.Y+4,card.Width,card.Height),.06f,8,new(10,4,6,185));
                 Raylib.DrawRectangleGradientV((int)card.X+2,(int)card.Y+2,(int)card.Width-4,(int)card.Height-4,top,bot);
-                Raylib.DrawRectangleGradientV((int)card.X+3,(int)card.Y+3,(int)card.Width-6,(int)(card.Height*.48f),new Color(255,255,255,tTier==3 ? 72 : 34),Color.Blank);
-                Raylib.DrawRectangleRoundedLinesEx(card,.06f,8,tTier==3 ? 2.6f : 1.6f,edge);
+                Raylib.DrawRectangleGradientV((int)card.X+3,(int)card.Y+3,(int)card.Width-6,(int)(card.Height*.42f),new Color(255,246,220,tTier==3 ? 64 : 26),Color.Blank);
+                Raylib.DrawRectangleRoundedLinesEx(card,.055f,8,tTier==3 ? 2.6f : 1.6f,edge);
+                Raylib.DrawRectangleRoundedLinesEx(new(card.X+5,card.Y+5,card.Width-10,card.Height-10),.04f,8,1f,new Color((int)edge.R,(int)edge.G,(int)edge.B,105));
                 var icon=_slotIcons[(ticket.Row+4)%5];
                 var raw=iconCrops[ticket.Row];
                 float sx=icon.Width/256f, sy=icon.Height/256f;
@@ -231,8 +242,11 @@ public static partial class Program
                 Raylib.DrawTexturePro(icon,crop,new(x,500,sz.X,sz.Y),sz/2,0,Color.White);
             }
             Raylib.EndScissorMode();
-            Raylib.DrawLineEx(new(640,418),new(640,586),2.5f,new Color(248,216,126,210));
-            Raylib.DrawTriangle(new(626,406),new(640,434),new(654,406),shopGold);
+            // Curved glass specular glare across top of mechanical slot reel window + twin brass pointer markers
+            Raylib.DrawRectangleGradientV(100,416,1080,34,new Color(255,244,218,34),Color.Blank);
+            Raylib.DrawLineEx(new(640,418),new(640,590),2.4f,new Color(246,210,120,215));
+            Raylib.DrawTriangle(new(627,406),new(640,432),new(653,406),shopGold);
+            Raylib.DrawTriangle(new(627,602),new(653,602),new(640,576),shopGold);
         }
         Raylib.EndMode2D();
         void Button(Rectangle r,string label){

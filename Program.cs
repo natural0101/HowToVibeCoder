@@ -97,7 +97,9 @@ public static partial class Program
         LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.4f);
         Raylib.DisableCursor();
     }
-    private static Rectangle KnockoutButton(int i)=>new(68,395+64*i,455,48);
+    internal static bool DevMode;
+    private static Texture2D keycardIconTex, knockoutClipboardTex;
+    private static Rectangle KnockoutButton(int i)=>new(368,368+64*i,540,50);
     private static void UpdateKnockout(float dt)
     {
         _knockoutTime+=dt;
@@ -120,15 +122,36 @@ public static partial class Program
     {
         float fade=Math.Clamp(_knockoutTime/.55f,0,1);
         int w=Raylib.GetScreenWidth(),h=Raylib.GetScreenHeight();
-        Raylib.DrawRectangleGradientH(0,0,w,h,new Color(62,9,21,(int)(242*fade)),new Color(89,12,24,(int)(72*fade)));
-        Raylib.DrawRectangleGradientV(0,0,w,h/3,new Color(68,3,18,(int)(142*fade)),Color.Blank);
-        Raylib.DrawRectangleGradientV(0,0,w,h,Color.Blank,new Color(69,9,21,(int)(135*fade)));
+        Raylib.DrawRectangle(0,0,w,h,new Color(38,6,12,(int)(210*fade)));
         if(fade<1) return;
         Raylib.BeginMode2D(new Camera2D{Zoom=PanelScale,Offset=PanelOffset});
-        Color paper=new(255,235,207,255);
-        GameFonts.Draw(_serif,Loc.T("НОКАУТ","KNOCKED OUT"),new(64,169),74,paper);
-        GameFonts.Draw(_uiFont,Loc.T("Тебя срубил: ","Knocked out by: ")+Loc.Tr(_lastDamageLabel),new(68,271),25,paper);
-        GameFonts.Draw(_uiFont,Loc.KnockoutRevival,new(68,325),19,paper);
+        if(knockoutClipboardTex.Id!=0)
+            Raylib.DrawTexturePro(knockoutClipboardTex,new(0,0,knockoutClipboardTex.Width,knockoutClipboardTex.Height),new(0,0,1280,720),Vector2.Zero,0,Color.White);
+        else
+            LoreAndMenusUI.DrawManilaPaper(new(280,64,720,600));
+
+        Color ink=LoreAndMenusUI.ThemeSepiaInk, muted=LoreAndMenusUI.ThemeSepiaMuted, red=LoreAndMenusUI.ThemeStampRed;
+        // Bold red incident header stamped directly onto the aged cream HR clipboard paper
+        GameFonts.Draw(GameFonts.Get(Typeface.SerifBold,54),Loc.T("НОКАУТ","KNOCKED OUT"),new(368,176),54,red,shadowed:false);
+        // Subtle tilted crimson rubber HR stamp on top-right of the sheet
+        string stampText=Loc.T("АКТ ЭКСТРЕННОЙ ОТКАЧКИ","EMERGENCY REVIVAL");
+        var stampFont=GameFonts.Get(Typeface.InterfaceBold,13);
+        float stW=GameFonts.Measure(stampFont,stampText,13).X+18;
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(824,205,0);
+        Rlgl.Rotatef(-6f,0,0,1);
+        Raylib.DrawRectangleLinesEx(new(-stW/2,-14,stW,28),2f,red);
+        GameFonts.Draw(stampFont,stampText,new(-stW/2+9,-7),13,red,shadowed:false);
+        Rlgl.PopMatrix();
+
+        Raylib.DrawLine(368,242,908,242,LoreAndMenusUI.ThemeSepiaRule);
+        GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold,22),Loc.T("Тебя срубил: ","Knocked out by: ")+Loc.Tr(_lastDamageLabel),new(368,256),22,ink,shadowed:false);
+        int wy=292;
+        foreach(var line in LoreAndMenusUI.Wrap(Loc.KnockoutRevival,540,17))
+        {
+            GameFonts.Draw(GameFonts.Get(Typeface.Interface,17),line,new(368,wy),17,muted,shadowed:false);
+            wy+=22;
+        }
         string[] buttons=[Loc.T("[R / Enter] Очнуться у Вероники","[R / Enter] Wake up at Veronika’s"),
             Loc.T("[L] Загрузить сохранение","[L] Load Last Save"),Loc.T("[M] В главное меню","[M] Main Menu")];
         var mouse=(Raylib.GetMousePosition()-PanelOffset)/PanelScale;
@@ -136,10 +159,21 @@ public static partial class Program
         {
             if(i==1 && _knockoutSave<0) continue;
             var rect=KnockoutButton(i);
-            bool light=i==0 || Raylib.CheckCollisionPointRec(mouse,rect);
-            if(light) Raylib.DrawRectangleRec(rect,paper);
-            else Raylib.DrawRectangleLinesEx(rect,1,paper);
-            GameFonts.Draw(_uiFont,buttons[i],new(rect.X+16,rect.Y+12),20,light ? new Color(88,18,36,255) : paper);
+            bool hover=Raylib.CheckCollisionPointRec(mouse,rect);
+            bool primary=i==0;
+            if(primary || hover)
+            {
+                Raylib.DrawRectangleRounded(new(rect.X+2,rect.Y+3,rect.Width,rect.Height),.08f,8,new(40,16,12,68));
+                Raylib.DrawRectangleRounded(rect,.08f,8,primary ? red : new Color(68,28,24,235));
+                Raylib.DrawRectangleRoundedLinesEx(rect,.08f,8,1.6f,new Color(196,154,84,220));
+                GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold,20),buttons[i],new(rect.X+20,rect.Y+14),20,new Color(252,242,222,255),shadowed:false);
+            }
+            else
+            {
+                Raylib.DrawRectangleRounded(rect,.08f,8,new Color(235,222,196,195));
+                Raylib.DrawRectangleRoundedLinesEx(rect,.08f,8,1.4f,LoreAndMenusUI.ThemeSepiaRule);
+                GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold,20),buttons[i],new(rect.X+20,rect.Y+14),20,ink,shadowed:false);
+            }
         }
         Raylib.EndMode2D();
     }
@@ -217,6 +251,7 @@ public static partial class Program
         bool gripTest = HasFlag("--grip-test");
         bool captureComic = HasFlag("--capture-comic");
         bool recordCutscene = HasFlag("--record-cutscene");
+        DevMode = HasFlag("--dev");
         bool silent = captureComic || recordCutscene || args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
@@ -272,6 +307,10 @@ public static partial class Program
         LoadSlotIcons();
         shopBackdrop=Raylib.LoadTexture(Path.Combine(AppContext.BaseDirectory,"assets","ui","shop_briefcase_bg.png"));
         Raylib.SetTextureFilter(shopBackdrop,TextureFilter.Bilinear);
+        string kcPath=Path.Combine(AppContext.BaseDirectory,"assets","ui","keycard_sb_icon.png");
+        if(File.Exists(kcPath)) { keycardIconTex=Raylib.LoadTexture(kcPath); Raylib.SetTextureFilter(keycardIconTex,TextureFilter.Bilinear); }
+        string koPath=Path.Combine(AppContext.BaseDirectory,"assets","ui","knockout_clipboard_bg.png");
+        if(File.Exists(koPath)) { knockoutClipboardTex=Raylib.LoadTexture(koPath); Raylib.SetTextureFilter(knockoutClipboardTex,TextureFilter.Bilinear); }
         preparedFloor=_world;
         WireUpSystems();
         ConfigureCoop();
