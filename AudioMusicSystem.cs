@@ -717,6 +717,7 @@ namespace HowToVibeCoder
         {
             if (speaker=="Петрович") return "vo_petrovich_quarantine";
             if (text==SkyscraperFloor1World.AgentQuarantineLine) return "vo_boss_reveal";
+            if (text==SkyscraperFloor1World.AgentDefeatTwistLine) return "vo_boss_defeat_twist";
             int n=Array.IndexOf(SkyscraperFloor1World.PaLines,text);
             if (n>=0) return "vo_pa_"+n;
             if (speakerType==(int)SpeakerVoiceType.VeronikaTarot)
@@ -763,6 +764,7 @@ namespace HowToVibeCoder
             for(int i=0;i<VeronikaTarotLines.Length;i++) Veronika(VeronikaTarotLines[i],"vo_veronika_tarot_"+i%3);
             Route("Петрович","",SpeakerVoiceType.Boss90s,"vo_petrovich_quarantine");
             Route("ИИ-Агент v0.1",SkyscraperFloor1World.AgentQuarantineLine,SpeakerVoiceType.RoboticAgent,"vo_boss_reveal");
+            Route("ИИ-Агент v0.1",SkyscraperFloor1World.AgentDefeatTwistLine,SpeakerVoiceType.RoboticAgent,"vo_boss_defeat_twist");
             for(int i=0;i<EscapedAgentBossLines.Length;i++)
                 Route("ИИ-Агент v0.1",EscapedAgentBossLines[i],SpeakerVoiceType.RoboticAgent,"vo_boss_mock_"+i);
             for(int i=0;i<SkyscraperFloor1World.PaLines.Length;i++)
@@ -777,7 +779,7 @@ namespace HowToVibeCoder
             while(project!=null && !File.Exists(Path.Combine(project.FullName,"HowToVibeCoder.csproj"))) project=project.Parent;
             string sourceRoot=project?.FullName ?? Directory.GetCurrentDirectory();
             for(int panel=1;panel<=8;panel++) routes.Add(ComicClipId(panel));
-            if(routes.Count!=46 || manifest.RootElement.EnumerateObject().Count()!=46) throw new InvalidDataException("Incomplete studio voice coverage");
+            if(routes.Count!=47 || manifest.RootElement.EnumerateObject().Count()!=47) throw new InvalidDataException("Incomplete studio voice coverage");
             foreach(var (id,subtitle) in new[]{
                 ("vo_veronika_slot_spin",SlotRoulette.SpinLine),("vo_veronika_slot_jackpot",SlotRoulette.JackpotLine),
                 ("vo_veronika_wings_locked",FloorSystems.LockedLine.Replace("СБ","эс-бэ")),
@@ -826,7 +828,7 @@ namespace HowToVibeCoder
                 }
             }
             finally { VoiceTimer=0; ActiveVoiceText=ActiveSpeaker=""; Loc.Set(GameLang.Ru,false); }
-            Console.WriteLine("[AUTOTEST] PASS studio voices: 46/46 RU and 46/46 EN decoded and matched manifest durations");
+            Console.WriteLine("[AUTOTEST] PASS studio voices: 47/47 RU and 47/47 EN decoded and matched manifest durations");
         }
 
         internal static void Speak(string speaker,string text,SpeakerVoiceType voice,string clipId=null) =>

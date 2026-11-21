@@ -11,7 +11,9 @@ public static partial class LoreAndMenusUI
     private static readonly string[] ArchiveTabs = ["Переписка", "Досье HR", "Коллекция", "Словарь"];
     private static readonly string[] IndexTitles = ["Переписка цеха", "Таро-досье HR", "Картотека", "Словарь цеха"];
     private static readonly string[] ChatNames = ["Данила", "Петрович", "Крипто-Бро", "Тимлид-Митингер", "Сеньор Помидор", "Лог-файл 01","Агент v0.1"];
-    private static readonly string[] ChatTitles = ["Пятничный деплой", "Стойка B12 и кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело «ЭНТРОПИК»","Пятидесятый этаж"];
+    private static readonly string[] ChatTitlesUnlocked = ["Пятничный деплой", "Стойка B12 и кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Ядро ZERO и Техдолг", "Дело «ЭНТРОПИК»","Пятидесятый этаж"];
+    private static readonly string[] ChatTitlesRedacted = ["Пятничный деплой", "Стойка B12 и кулер", "Охота на Жадность", "Дейлик и Эспрессо", "Засекреченный перехват №05", "Засекреченная запись №06","Пятидесятый этаж"];
+    private static string[] ChatTitles => BossTwistUnlocked ? ChatTitlesUnlocked : ChatTitlesRedacted;
     private static readonly string[] TarotNames = ["Сеньор Алексей", "Джуниор Данила", "Крипто и Митингер","Личный конверт Вероники"];
     private static readonly string[] TarotCards = ["Аркан XVI: Башня", "Аркан 0: Шут", "Аркан XV: Дьявол","Ведомость замещений"];
     private static int Catches(int i) => Program.Discoveries.GetValueOrDefault(VibeCoderCollection.All[i].Id);

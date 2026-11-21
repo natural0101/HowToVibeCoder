@@ -1369,18 +1369,19 @@ def build_forearm_part(sgn, tag, mats):
         outward_ref=fa_ref,
     ))
 
-    fb_g = []
-    for ir in range(5):
-        tv = ir / 4.0
-        t_arm = 0.18 + tv * 0.68
-        zc = el.z - t_arm * (el.z - wri.z)
-        rx = 0.072 - 0.016 * t_arm
-        row = []
-        for ic in range(2):
-            ang = (ic - 0.5) * math.radians(17.0)
-            row.append(Vector((el.x + sgn * math.cos(ang) * rx, el.y + math.sin(ang) * rx, zc)))
-        fb_g.append(row)
-    objs.append(make_loft(f"ForearmBrassInlay_{tag}", fb_g, mats["AntiqueBrass"], closed_u=False, solidify_t=0.0055, solidify_off=1.0, outward_ref=fa_ref))
+    if tag == "L":
+        fb_g = []
+        for ir in range(5):
+            tv = ir / 4.0
+            t_arm = 0.18 + tv * 0.68
+            zc = el.z - t_arm * (el.z - wri.z)
+            rx = 0.072 - 0.016 * t_arm
+            row = []
+            for ic in range(2):
+                ang = (ic - 0.5) * math.radians(17.0)
+                row.append(Vector((el.x + sgn * math.cos(ang) * rx, el.y + math.sin(ang) * rx, zc)))
+            fb_g.append(row)
+        objs.append(make_loft(f"ForearmBrassInlay_{tag}", fb_g, mats["AntiqueBrass"], closed_u=False, solidify_t=0.0055, solidify_off=1.0, outward_ref=fa_ref))
 
     objs.append(make_cyl(
         f"WristBrassRing_{tag}",
@@ -1438,6 +1439,615 @@ def build_forearm_part(sgn, tag, mats):
     objs.append(make_sphere(f"ThumbJ1_{tag}", t1, 0.0126, mats["SatinTitanium"], segs=10, rings=8))
     objs.append(make_cyl(f"Thumb2_{tag}", t1, t2, 0.0118, 0.0104, mats["DarkArmor"], segs=10, bevel_w=0.0008))
     objs.append(make_cyl(f"Thumb3_{tag}", t2, t3, 0.0100, 0.0072, mats["DarkArmor"], segs=10, bevel_w=0.0008))
+
+    if tag == "R":
+        objs.extend(build_token_gun_98(el, wri, mats))
+
+    return objs
+
+
+def build_token_gun_98(el, wri, mats):
+    """SYSTEM ZERO's iconic 3D Forearm Neuro-Cannon: «ТОКЕН-ГАН 98» (1998 Petrovich HF-90 Cassette-Coil Rail-Cannon).
+
+    Mounted flush along the outer-dorsal (-X) side of ForearmR_Mesh:
+      - Starts cleanly below the elbow rotary joint (z = 1.335, zero collision with UpperArmR)
+      - Extends 16.0cm past wrist cuff (z = 1.095 -> 0.935) as twin sculpted split-rail accelerator prongs
+      - Completely clear of ThighR/Hip (-X outer flank, x ~ -0.36..-0.44 vs ThighR outer x ~ -0.24)
+      - Recessed dark-obsidian cassette deck window with TWIN visible spoked brushed-brass HF-90 tape reels
+      - Triple brushed-brass induction accelerator coils + recessed crimson plasma emitter + twin crimson charge rails
+      - Braided dark hydraulic/data cable looping from receiver breech into outer elbow rotary housing
+    """
+    objs = []
+    sgn = -1.0  # ForearmR is strictly on -X side
+    bx = el.x - 0.116   # -0.401 (barrel / weapon centerline X)
+    by = el.y - 0.002   # -0.002 (centered along forearm Y; -Y is top when aimed forward, +Y is bottom)
+    fa_ref = (el.x, el.y, -999.0)
+
+    def make_beveled_frame(name, center, ex, ey, ez, out_y, out_z, in_y, in_z, x0, x1, mat, bw=0.0014, x_in_front=None):
+        """Build a watertight hollow chamfered octagonal/rectangular window bezel in local frame (ex, ey, ez)."""
+        if x_in_front is None:
+            x_in_front = x1
+        ch_o = min(out_y, out_z) * 0.22
+        ch_i = min(in_y, in_z) * 0.18
+
+        def oct_pts(hy, hz, ch):
+            return [
+                (-hy + ch, -hz), ( hy - ch, -hz),
+                ( hy, -hz + ch), ( hy,  hz - ch),
+                ( hy - ch,  hz), (-hy + ch,  hz),
+                (-hy,  hz - ch), (-hy, -hz + ch),
+            ]
+
+        po = oct_pts(out_y, out_z, ch_o)
+        pi = oct_pts(in_y, in_z, ch_i)
+        n = len(po)
+        bm = bmesh.new()
+        vob = [bm.verts.new(center + ex * x0 + ey * py + ez * pz) for py, pz in po]
+        vof = [bm.verts.new(center + ex * x1 + ey * py + ez * pz) for py, pz in po]
+        vif = [bm.verts.new(center + ex * x_in_front + ey * py + ez * pz) for py, pz in pi]
+        vib = [bm.verts.new(center + ex * x0 + ey * py + ez * pz) for py, pz in pi]
+        for i in range(n):
+            ni = (i + 1) % n
+            bm.faces.new((vob[i], vob[ni], vof[ni], vof[i]))
+            bm.faces.new((vof[i], vof[ni], vif[ni], vif[i]))
+            bm.faces.new((vif[i], vif[ni], vib[ni], vib[i]))
+            bm.faces.new((vib[i], vib[ni], vob[ni], vob[i]))
+        bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+        m = bpy.data.meshes.new(name)
+        bm.to_mesh(m)
+        bm.free()
+        o = bpy.data.objects.new(name, m)
+        bpy.context.collection.objects.link(o)
+        o.data.materials.append(mat)
+        if bw > 0.0:
+            bev = o.modifiers.new("Bevel", "BEVEL")
+            bev.width = bw
+            bev.segments = 2
+            bev.limit_method = "ANGLE"
+            bev.angle_limit = math.radians(34)
+            bev.use_clamp_overlap = True
+            apply_mod(o, bev)
+        return set_smooth_and_recalc(o)
+
+    def make_annulus(name, center, axis_ex, axis_ey, axis_ez, r_in, r_out, x0, x1, mat, segs=22, bw=0.0010):
+        """Watertight annular ring / tape spool / brass coil in arbitrary orthonormal frame."""
+        bm = bmesh.new()
+        vob, vof, vif, vib = [], [], [], []
+        for i in range(segs):
+            a = (2.0 * math.pi * i) / segs
+            ca, sa = math.cos(a), math.sin(a)
+            ro_v = axis_ey * (ca * r_out) + axis_ez * (sa * r_out)
+            ri_v = axis_ey * (ca * r_in) + axis_ez * (sa * r_in)
+            vob.append(bm.verts.new(center + axis_ex * x0 + ro_v))
+            vof.append(bm.verts.new(center + axis_ex * x1 + ro_v))
+            vif.append(bm.verts.new(center + axis_ex * x1 + ri_v))
+            vib.append(bm.verts.new(center + axis_ex * x0 + ri_v))
+        for i in range(segs):
+            ni = (i + 1) % segs
+            bm.faces.new((vob[i], vob[ni], vof[ni], vof[i]))
+            bm.faces.new((vof[i], vof[ni], vif[ni], vif[i]))
+            bm.faces.new((vif[i], vif[ni], vib[ni], vib[i]))
+            bm.faces.new((vib[i], vib[ni], vob[ni], vob[i]))
+        bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+        m = bpy.data.meshes.new(name)
+        bm.to_mesh(m)
+        bm.free()
+        o = bpy.data.objects.new(name, m)
+        bpy.context.collection.objects.link(o)
+        o.data.materials.append(mat)
+        if bw > 0.0:
+            bev = o.modifiers.new("Bevel", "BEVEL")
+            bev.width = bw
+            bev.segments = 2
+            bev.limit_method = "ANGLE"
+            bev.angle_limit = math.radians(36)
+            bev.use_clamp_overlap = True
+            apply_mod(o, bev)
+        return set_smooth_and_recalc(o)
+
+    def make_oriented_box(name, center, ex, ey, ez, hx, hy, hz, mat, bw=0.0010):
+        """Watertight chamfered oriented box in orthonormal frame (ex, ey, ez)."""
+        rings = []
+        for sx in (-hx, hx):
+            rings.append([
+                center + ex * sx + ey * (-hy) + ez * (-hz),
+                center + ex * sx + ey * ( hy) + ez * (-hz),
+                center + ex * sx + ey * ( hy) + ez * ( hz),
+                center + ex * sx + ey * (-hy) + ez * ( hz),
+            ])
+        return make_loft(name, rings, mat, closed_u=True, cap_start=True, cap_end=True, bevel_w=bw)
+
+    # -------------------------------------------------------------------------
+    # A) FLUSH FOREARM MOUNTING CRADLE + TWIN ART-DECO BRASS CLAMP STRAPS
+    # -------------------------------------------------------------------------
+    saddle_profile = [
+        # (z, x_in, x_out, hy_in, hy_out)
+        (1.326, el.x - 0.056, bx + 0.022, 0.024, 0.032),
+        (1.300, el.x - 0.058, bx + 0.018, 0.030, 0.038),
+        (1.225, el.x - 0.056, bx + 0.018, 0.032, 0.039),
+        (1.152, el.x - 0.048, bx + 0.020, 0.028, 0.036),
+        (1.124, el.x - 0.042, bx + 0.024, 0.020, 0.028),
+    ]
+    saddle_rings = []
+    for zs, xi, xo, hyi, hyo in saddle_profile:
+        saddle_rings.append([
+            Vector((xi, by - hyi, zs)),
+            Vector((xo, by - hyo, zs)),
+            Vector((xo, by + hyo, zs)),
+            Vector((xi, by + hyi, zs)),
+        ])
+    objs.append(make_loft(
+        "TG98_MountSaddle", saddle_rings, mats["DarkArmor"],
+        closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0020,
+    ))
+
+    # Twin brushed-brass Art-Deco clamping bands wrapping snugly around ForearmIvoryGauntlet_R
+    for si, (t_strap, strap_h) in enumerate([(0.29, 0.016), (0.76, 0.015)]):
+        z_mid = el.z - t_strap * (el.z - wri.z)
+        bulge = 0.012 * math.sin(math.pi * (t_strap ** 0.68))
+        rx_s = 0.060 - 0.016 * t_strap + bulge + 0.0135
+        ry_s = 0.063 - 0.016 * t_strap + bulge + 0.0125
+        st_grid = []
+        for ir in range(3):
+            zv = z_mid + (ir / 2.0 - 0.5) * strap_h
+            row = []
+            for ic in range(11):
+                tu = ic / 10.0
+                ang = (tu - 0.5) * math.radians(176.0)
+                ca, sa = math.cos(ang), math.sin(ang)
+                crest = 0.008 * (max(0.0, ca) ** 2.0) * math.sin(math.pi * (0.15 + 0.75 * t_strap))
+                row.append(Vector((el.x + sgn * ca * (rx_s + crest), el.y + sa * ry_s, zv)))
+            st_grid.append(row)
+        objs.append(make_loft(
+            f"TG98_ForearmStrap_{si}", st_grid, mats["AntiqueBrass"],
+            closed_u=False, solidify_t=0.0052, solidify_off=1.0, bevel_w=0.0012,
+            outward_ref=fa_ref,
+        ))
+        # Chrome hex anchor rivets flanking each brass clamp strap
+        for y_s in (-1.0, 1.0):
+            ang_b = y_s * math.radians(52.0)
+            p_b = Vector((el.x + sgn * math.cos(ang_b) * (rx_s + 0.005), el.y + math.sin(ang_b) * (ry_s + 0.005), z_mid))
+            n_b = Vector((sgn * math.cos(ang_b), math.sin(ang_b), 0.0)).normalized()
+            objs.append(make_cyl(
+                f"TG98_StrapBolt_{si}_{'U' if y_s < 0 else 'L'}",
+                p_b - n_b * 0.003, p_b + n_b * 0.0045, 0.0046, 0.0040,
+                mats["PistonChrome"], segs=8, bevel_w=0.0008,
+            ))
+
+    # -------------------------------------------------------------------------
+    # B) SCULPTED ART-DECO RECEIVER HOUSING (DARK TITANIUM + PEARL-IVORY SHROUD)
+    # -------------------------------------------------------------------------
+    # Chamfered octagonal cross-section housing transitioning seamlessly into twin barrel rails
+    rec_profile = [
+        # (z, x_in, x_out, hy_top(-Y), hy_bot(+Y), chamfer)
+        (1.336, bx + 0.032, bx - 0.022, 0.032, 0.030, 0.009),
+        (1.318, bx + 0.038, bx - 0.034, 0.048, 0.044, 0.011),
+        (1.265, bx + 0.040, bx - 0.036, 0.052, 0.046, 0.012),
+        (1.195, bx + 0.038, bx - 0.035, 0.050, 0.045, 0.011),
+        (1.150, bx + 0.034, bx - 0.030, 0.046, 0.043, 0.010),
+        (1.132, bx + 0.026, bx - 0.024, 0.036, 0.035, 0.008),
+    ]
+    rec_rings = []
+    for zr, xi, xo, hyt, hyb, ch in rec_profile:
+        rec_rings.append([
+            Vector((xi,          by - hyt + ch, zr)),
+            Vector((xi - ch,     by - hyt,      zr)),
+            Vector((xo + ch,     by - hyt,      zr)),
+            Vector((xo,          by - hyt + ch, zr)),
+            Vector((xo,          by + hyb - ch, zr)),
+            Vector((xo + ch,     by + hyb,      zr)),
+            Vector((xi - ch,     by + hyb,      zr)),
+            Vector((xi,          by + hyb - ch, zr)),
+        ])
+    objs.append(make_loft(
+        "TG98_ReceiverChassis", rec_rings, mats["DarkArmor"],
+        closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0020,
+    ))
+
+    # Sculpted Pearl-Ivory Art-Deco Dorsal Cowling wrapping the -Y top crest & rear breech!
+    shroud_profile = [
+        # (z, x_in, x_out, y_top, y_skirt)
+        (1.342, bx + 0.026, bx - 0.018, by - 0.036, by - 0.018),
+        (1.314, bx + 0.038, bx - 0.031, by - 0.059, by - 0.030),
+        (1.240, bx + 0.040, bx - 0.033, by - 0.063, by - 0.034),
+        (1.166, bx + 0.036, bx - 0.031, by - 0.058, by - 0.032),
+        (1.136, bx + 0.026, bx - 0.024, by - 0.048, by - 0.026),
+    ]
+    shroud_rings = []
+    for zs, xi, xo, yt, ys in shroud_profile:
+        xm = 0.5 * (xi + xo)
+        w = 0.5 * (xi - xo)
+        shroud_rings.append([
+            Vector((xi,            ys,              zs)),
+            Vector((xi - w * 0.20, yt + 0.007,      zs)),
+            Vector((xm + w * 0.28, yt,              zs)),
+            Vector((xm - w * 0.28, yt,              zs)),
+            Vector((xo + w * 0.20, yt + 0.007,      zs)),
+            Vector((xo,            ys,              zs)),
+            Vector((xo + 0.008,    ys + 0.004,      zs)),
+            Vector((xi - 0.008,    ys + 0.004,      zs)),
+        ])
+    objs.append(make_loft(
+        "TG98_IvoryDorsalShroud", shroud_rings, mats["WhiteCeramic"],
+        closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0022,
+    ))
+
+    # Champagne-Brass Art-Deco Stepped Dorsal Spine Rib along the Pearl-Ivory Crest!
+    spine_rings = []
+    for i in range(6):
+        t = i / 5.0
+        zs = 1.330 - t * 0.184
+        crest_bump = 0.0045 * math.sin(math.pi * t)
+        hw = 0.0105 * (0.78 + 0.22 * math.sin(math.pi * t))
+        yt = by - 0.061 - crest_bump
+        spine_rings.append([
+            Vector((bx + hw,        yt + 0.007, zs)),
+            Vector((bx + hw * 0.65, yt - 0.004, zs)),
+            Vector((bx - hw * 0.65, yt - 0.004, zs)),
+            Vector((bx - hw,        yt + 0.007, zs)),
+        ])
+    objs.append(make_loft(
+        "TG98_DorsalBrassSpine", spine_rings, mats["AntiqueBrass"],
+        closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0014,
+    ))
+
+    # SatinTitanium Ventral Heat-Sink Keel (+Y underside when aimed) + 4 transverse cooling fins
+    keel_rings = [
+        [Vector((bx + 0.022, by + 0.040, 1.318)), Vector((bx - 0.022, by + 0.040, 1.318)),
+         Vector((bx - 0.015, by + 0.056, 1.312)), Vector((bx + 0.015, by + 0.056, 1.312))],
+        [Vector((bx + 0.024, by + 0.042, 1.158)), Vector((bx - 0.024, by + 0.042, 1.158)),
+         Vector((bx - 0.016, by + 0.058, 1.162)), Vector((bx + 0.016, by + 0.058, 1.162))],
+    ]
+    objs.append(make_loft(
+        "TG98_VentralTiKeel", keel_rings, mats["SatinTitanium"],
+        closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0016,
+    ))
+    for fi in range(4):
+        zf = 1.294 - fi * 0.036
+        objs.append(make_oriented_box(
+            f"TG98_HeatFin_{fi}",
+            Vector((bx, by + 0.054, zf)),
+            Vector((-1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), Vector((0.0, 0.0, 1.0)),
+            0.022, 0.0085, 0.0045, mats["DarkArmor"], bw=0.0008,
+        ))
+
+    # -------------------------------------------------------------------------
+    # C) 1998 PETROVICH «HF-90» RECESSED CASSETTE DECK MODULE + TWIN BRASS REELS
+    # -------------------------------------------------------------------------
+    # Outer-cant orthonormal frame: proud of receiver outer wall with crisp 6 deg cant
+    # so ALL 4 sides of the chamfered brass bezel & HF-90 label sit 100% clean & unbroken!
+    deck_tilt = math.radians(6.0)
+    ex = Vector((-math.cos(deck_tilt), -math.sin(deck_tilt), 0.0)).normalized()  # outward normal of cassette window
+    ey = Vector(( math.sin(deck_tilt), -math.cos(deck_tilt), 0.0)).normalized()  # cassette "top" (up when aimed)
+    ez = Vector((0.0, 0.0, 1.0))                                                  # longitudinal along forearm (+Z=elbow, -Z=muzzle)
+    deck_c = Vector((bx - 0.037, by - 0.002, 1.236))
+
+    # 1) Recessed Obsidian Cassette Bay Backing Plate + Inner Dark Cartridge Cavity
+    objs.append(make_oriented_box(
+        "TG98_CassetteObsidianWell",
+        deck_c + ex * (-0.010), ex, ey, ez,
+        0.004, 0.027, 0.056, mats["VisorObsidian"], bw=0.0,
+    ))
+    # Dark inner cassette shell surround framing the obsidian well cleanly
+    objs.append(make_beveled_frame(
+        "TG98_CassetteInnerFrame", deck_c, ex, ey, ez,
+        out_y=0.036, out_z=0.068, in_y=0.0255, in_z=0.0545,
+        x0=-0.014, x1=+0.0055, mat=mats["DarkArmor"], bw=0.0012, x_in_front=-0.006,
+    ))
+    # 2) Bold Brushed-Brass Art-Deco Cassette Deck Window Bezel (proud chamfered surround!)
+    objs.append(make_beveled_frame(
+        "TG98_CassetteBrassBezel", deck_c, ex, ey, ez,
+        out_y=0.0385, out_z=0.072, in_y=0.0285, in_z=0.058,
+        x0=-0.004, x1=+0.0115, mat=mats["AntiqueBrass"], bw=0.0015, x_in_front=+0.0035,
+    ))
+
+    # 3) Iconic 1998 HF-90 Pearl-Ivory Label Bar along upper cassette margin + crimson tape stripe
+    objs.append(make_oriented_box(
+        "TG98_HF90_LabelBar",
+        deck_c + ex * (-0.0028) + ey * 0.0212, ex, ey, ez,
+        0.0024, 0.0038, 0.044, mats["WhiteCeramic"], bw=0.0005,
+    ))
+    objs.append(make_oriented_box(
+        "TG98_HF90_LabelStripe",
+        deck_c + ex * (-0.0004) + ey * 0.0212 + ez * 0.020, ex, ey, ez,
+        0.0014, 0.0018, 0.016, mats["CrimsonCore"], bw=0.0,
+    ))
+
+    # 4) TWIN VISIBLE MINIATURE BRUSHED-BRASS «HF-90» CASSETTE TAPE REELS!
+    # Asymmetric tape wind (upper/rear spool fuller, lower/front spool partly wound) for authentic 1998 analog lore!
+    reel_specs = [
+        ("Rear",  +0.0295, 0.0236),
+        ("Front", -0.0295, 0.0184),
+    ]
+    for r_tag, z_off, r_tape in reel_specs:
+        rc = deck_c + ez * z_off + ey * (-0.0028)
+        # Matte woven magnetic tape spool ring (CarbonSubframe)
+        objs.append(make_annulus(
+            f"TG98_TapeSpool_{r_tag}", rc, ex, ey, ez,
+            r_in=0.0124, r_out=r_tape, x0=-0.0070, x1=+0.0016,
+            mat=mats["CarbonSubframe"], segs=24, bw=0.0006,
+        ))
+        # Subtle concentric tape-winding metallic sheen ring so wound tape reads cleanly!
+        objs.append(make_annulus(
+            f"TG98_TapeWindRing_{r_tag}", rc, ex, ey, ez,
+            r_in=r_tape - 0.0036, r_out=r_tape - 0.0022, x0=+0.0002, x1=+0.0021,
+            mat=mats["SatinTitanium"], segs=24, bw=0.0003,
+        ))
+        # Subtle dark metallic magnetic-tape outer rim collar
+        objs.append(make_annulus(
+            f"TG98_TapeRim_{r_tag}", rc, ex, ey, ez,
+            r_in=r_tape - 0.0014, r_out=r_tape + 0.0006, x0=-0.0020, x1=+0.0020,
+            mat=mats["DarkArmor"], segs=24, bw=0.0004,
+        ))
+        # Gleaming Brushed-Brass Cassette Hub Ring (AntiqueBrass)
+        objs.append(make_annulus(
+            f"TG98_BrassReelHub_{r_tag}", rc, ex, ey, ez,
+            r_in=0.0078, r_out=0.0132, x0=-0.0060, x1=+0.0052,
+            mat=mats["AntiqueBrass"], segs=22, bw=0.0008,
+        ))
+        # 6 iconic radial brass cassette drive teeth/spokes around the inner hub!
+        for ti in range(6):
+            ang = (2.0 * math.pi * ti) / 6.0 + (0.25 if r_tag == "Front" else 0.0)
+            rad_dir = (ey * math.cos(ang) + ez * math.sin(ang)).normalized()
+            tan_dir = (-ey * math.sin(ang) + ez * math.cos(ang)).normalized()
+            tooth_c = rc + ex * 0.0015 + rad_dir * 0.0064
+            objs.append(make_oriented_box(
+                f"TG98_ReelTooth_{r_tag}_{ti}", tooth_c, ex, rad_dir, tan_dir,
+                0.0038, 0.0022, 0.0012, mats["AntiqueBrass"], bw=0.0003,
+            ))
+        # Dark recessed spindle bore + gleaming chrome drive capstan pin!
+        objs.append(make_cyl(
+            f"TG98_ReelSpindleDark_{r_tag}",
+            rc + ex * (-0.0070), rc + ex * 0.0018, 0.0046, 0.0044,
+            mats["DarkArmor"], segs=14,
+        ))
+        objs.append(make_cyl(
+            f"TG98_ReelCapstanPin_{r_tag}",
+            rc + ex * (-0.0055), rc + ex * 0.0072, 0.0025, 0.0021,
+            mats["PistonChrome"], segs=12, bevel_w=0.0004,
+        ))
+
+    # 5) Magnetic tape ribbon path bridging tangentially beneath both reels + twin chrome tape guide rollers
+    objs.append(make_oriented_box(
+        "TG98_MagneticTapeStrip",
+        deck_c + ex * (-0.0015) + ey * (-0.0205), ex, ey, ez,
+        0.0030, 0.0012, 0.044, mats["CarbonSubframe"], bw=0.0,
+    ))
+    for gi, z_g in enumerate((-0.044, +0.044)):
+        gc = deck_c + ey * (-0.0190) + ez * z_g
+        objs.append(make_cyl(
+            f"TG98_TapeRoller_{gi}",
+            gc + ex * (-0.0065), gc + ex * 0.0040, 0.0030, 0.0030,
+            mats["PistonChrome"], segs=10, bevel_w=0.0004,
+        ))
+
+    # 6) Glowing Crimson "TOKEN-REC" Status Tally Jewel + Titanium Eject Latch on Cassette Deck
+    tally_c = deck_c + ex * 0.0105 + ey * 0.0300 + ez * (-0.056)
+    objs.append(make_cyl(
+        "TG98_DeckTallyBezel",
+        tally_c - ex * 0.004, tally_c + ex * 0.0025, 0.0056, 0.0048,
+        mats["DarkArmor"], segs=12, bevel_w=0.0006,
+    ))
+    objs.append(make_sphere(
+        "TG98_DeckTallyCrimson",
+        tally_c + ex * 0.0022, (0.0036, 0.0036, 0.0036), mats["CrimsonCore"], segs=10, rings=8,
+    ))
+    objs.append(make_oriented_box(
+        "TG98_EjectLatch",
+        deck_c + ex * 0.0045 + ez * 0.077, ex, ey, ez,
+        0.0055, 0.016, 0.0055, mats["SatinTitanium"], bw=0.0010,
+    ))
+
+    # -------------------------------------------------------------------------
+    # D) TRIPLE BRUSHED-BRASS INDUCTION ACCELERATOR COILS + CORE TUBE
+    # -------------------------------------------------------------------------
+    # Faceted octagonal dark-titanium inner accelerator core running from receiver into muzzle funnel
+    core_rings = []
+    for zc, rc in [(1.158, 0.0235), (1.132, 0.0205), (1.010, 0.0195), (0.986, 0.0210)]:
+        core_rings.append([
+            Vector((bx + math.cos(2 * math.pi * k / 12) * rc, by + math.sin(2 * math.pi * k / 12) * rc, zc))
+            for k in range(12)
+        ])
+    objs.append(make_loft(
+        "TG98_AcceleratorCoreTube", core_rings, mats["DarkArmor"],
+        closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0012,
+    ))
+
+    # TRIPLE Brushed-Brass Induction Accelerator Coils interlocking between the twin rails!
+    ax_z = Vector((0.0, 0.0, 1.0))
+    ax_x = Vector((1.0, 0.0, 0.0))
+    ax_y = Vector((0.0, 1.0, 0.0))
+    coil_zs = [1.116, 1.066, 1.016]
+    for ci, cz in enumerate(coil_zs):
+        c_pos = Vector((bx, by, cz))
+        # Main bold brushed-brass induction torus/ring
+        objs.append(make_annulus(
+            f"TG98_InductionCoilBrass_{ci}", c_pos, ax_z, ax_x, ax_y,
+            r_in=0.0192, r_out=0.0322, x0=-0.0115, x1=+0.0115,
+            mat=mats["AntiqueBrass"], segs=22, bw=0.0018,
+        ))
+        # Sculpted central copper/brass induction rib crowning each coil
+        objs.append(make_annulus(
+            f"TG98_InductionCoilRib_{ci}", c_pos, ax_z, ax_x, ax_y,
+            r_in=0.0285, r_out=0.0352, x0=-0.0042, x1=+0.0042,
+            mat=mats["AntiqueBrass"], segs=22, bw=0.0012,
+        ))
+        # Twin thin brushed titanium insulator collars flanking each coil
+        for dz_s, tag_s in ((-0.0140, "Lo"), (+0.0140, "Hi")):
+            objs.append(make_annulus(
+                f"TG98_CoilSpacer_{ci}_{tag_s}", c_pos + Vector((0.0, 0.0, dz_s)), ax_z, ax_x, ax_y,
+                r_in=0.0195, r_out=0.0255, x0=-0.0022, x1=+0.0022,
+                mat=mats["SatinTitanium"], segs=18, bw=0.0005,
+            ))
+
+    # -------------------------------------------------------------------------
+    # E) TWIN SCULPTED SPLIT-RAIL ACCELERATOR PRONGS (16.0CM PAST WRIST!)
+    #    + DUAL GLOWING CRIMSON CHARGE-RAILS + PEARL-IVORY OUTER FAIRINGS
+    # -------------------------------------------------------------------------
+    for y_sgn, p_tag in ((-1.0, "Top"), (+1.0, "Bot")):
+        # 1) Dark Anodized Titanium Structural Accelerator Prong (z = 1.156 -> 0.935 = 16.0cm past wrist!)
+        prong_specs = [
+            # (z,      x_in,      x_out,     y_inner,             y_outer,             ch)
+            (1.158, bx + 0.028, bx - 0.029, by + y_sgn * 0.022, by + y_sgn * 0.048, 0.0045),
+            (1.100, bx + 0.027, bx - 0.028, by + y_sgn * 0.021, by + y_sgn * 0.046, 0.0045),
+            (1.020, bx + 0.025, bx - 0.027, by + y_sgn * 0.020, by + y_sgn * 0.043, 0.0042),
+            (0.964, bx + 0.022, bx - 0.025, by + y_sgn * 0.019, by + y_sgn * 0.038, 0.0040),
+            (0.935, bx + 0.013, bx - 0.018, by + y_sgn * 0.021, by + y_sgn * 0.030, 0.0030),
+        ]
+        pr_rings = []
+        for zp, xi, xo, yi, yo, ch in prong_specs:
+            # Order vertices consistently regardless of y_sgn (recalc_face_normals handles orientation cleanly)
+            y_lo = min(yi, yo)
+            y_hi = max(yi, yo)
+            pr_rings.append([
+                Vector((xi,      y_lo + ch, zp)),
+                Vector((xi - ch, y_lo,      zp)),
+                Vector((xo + ch, y_lo,      zp)),
+                Vector((xo,      y_lo + ch, zp)),
+                Vector((xo,      y_hi - ch, zp)),
+                Vector((xo + ch, y_hi,      zp)),
+                Vector((xi - ch, y_hi,      zp)),
+                Vector((xi,      y_hi - ch, zp)),
+            ])
+        objs.append(make_loft(
+            f"TG98_SplitProngDark_{p_tag}", pr_rings, mats["DarkArmor"],
+            closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0016,
+        ))
+
+        # 2) Sculpted Pearl-Ivory Ceramic Outer Armor Cap along each prong!
+        cap_specs = [
+            (1.152, bx + 0.022, bx - 0.024, by + y_sgn * 0.044, by + y_sgn * 0.056),
+            (1.065, bx + 0.020, bx - 0.022, by + y_sgn * 0.042, by + y_sgn * 0.053),
+            (0.985, bx + 0.017, bx - 0.019, by + y_sgn * 0.038, by + y_sgn * 0.047),
+            (0.956, bx + 0.011, bx - 0.013, by + y_sgn * 0.035, by + y_sgn * 0.041),
+        ]
+        cap_rings = []
+        for zc, xi, xo, yi, yo in cap_specs:
+            xm = 0.5 * (xi + xo)
+            hw = 0.5 * (xi - xo)
+            cap_rings.append([
+                Vector((xi,            yi, zc)),
+                Vector((xm + hw * 0.55, yo, zc)),
+                Vector((xm - hw * 0.55, yo, zc)),
+                Vector((xo,            yi, zc)),
+            ])
+        objs.append(make_loft(
+            f"TG98_ProngIvoryCap_{p_tag}", cap_rings, mats["WhiteCeramic"],
+            closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0016,
+        ))
+
+        # 3) Brushed-Brass Art-Deco Muzzle Tip Shoe & Rail Collar on each prong!
+        tip_rings = [
+            [Vector((bx + 0.022, by + y_sgn * 0.037, 0.986)), Vector((bx - 0.024, by + y_sgn * 0.037, 0.986)),
+             Vector((bx - 0.020, by + y_sgn * 0.045, 0.982)), Vector((bx + 0.018, by + y_sgn * 0.045, 0.982))],
+            [Vector((bx + 0.015, by + y_sgn * 0.029, 0.941)), Vector((bx - 0.019, by + y_sgn * 0.029, 0.941)),
+             Vector((bx - 0.015, by + y_sgn * 0.035, 0.944)), Vector((bx + 0.012, by + y_sgn * 0.035, 0.944))],
+        ]
+        objs.append(make_loft(
+            f"TG98_ProngBrassTip_{p_tag}", tip_rings, mats["AntiqueBrass"],
+            closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0012,
+        ))
+
+        # 4) Thin Glowing Crimson Electromagnetic Charge-Rail running down the inner split barrel groove!
+        rail_rings = []
+        for zr, rx_h, ry_off in [(1.148, 0.0068, 0.0196), (1.045, 0.0064, 0.0188), (0.944, 0.0052, 0.0192)]:
+            yc_r = by + y_sgn * ry_off
+            rail_rings.append([
+                Vector((bx + rx_h, yc_r - y_sgn * 0.0032, zr)),
+                Vector((bx - rx_h, yc_r - y_sgn * 0.0032, zr)),
+                Vector((bx - rx_h, yc_r + y_sgn * 0.0036, zr)),
+                Vector((bx + rx_h, yc_r + y_sgn * 0.0036, zr)),
+            ])
+        objs.append(make_loft(
+            f"TG98_CrimsonChargeRail_{p_tag}", rail_rings, mats["CrimsonCore"],
+            closed_u=True, cap_start=True, cap_end=True, bevel_w=0.0006,
+        ))
+
+    # -------------------------------------------------------------------------
+    # F) DEEPLY RECESSED GLOWING CRIMSON-RUBY PLASMA EMITTER APERTURE (MUZZLE)
+    # -------------------------------------------------------------------------
+    mz_pos = Vector((bx, by, 0.986))
+    # Outer chamfered AntiqueBrass octagonal muzzle bezel nested between the twin prongs
+    objs.append(make_annulus(
+        "TG98_MuzzleBrassBezel", mz_pos, ax_z, ax_x, ax_y,
+        r_in=0.0185, r_out=0.0255, x0=-0.014, x1=+0.008,
+        mat=mats["AntiqueBrass"], segs=16, bw=0.0015,
+    ))
+    # Recessed DarkArmor aperture funnel throat
+    objs.append(make_annulus(
+        "TG98_MuzzleDarkFunnel", mz_pos + Vector((0.0, 0.0, -0.008)), ax_z, ax_x, ax_y,
+        r_in=0.0142, r_out=0.0196, x0=-0.010, x1=+0.012,
+        mat=mats["DarkArmor"], segs=16, bw=0.0010,
+    ))
+    # Glowing Crimson outer aperture focus ring (recessed 2.8cm behind prong tips!)
+    objs.append(make_annulus(
+        "TG98_MuzzleCrimsonRing", mz_pos + Vector((0.0, 0.0, -0.012)), ax_z, ax_x, ax_y,
+        r_in=0.0112, r_out=0.0156, x0=-0.0045, x1=+0.0055,
+        mat=mats["CrimsonCore"], segs=18, bw=0.0006,
+    ))
+    # Deeply nested glowing Ruby-Crimson Plasma Emitter Core Dome
+    objs.append(make_sphere(
+        "TG98_MuzzleCrimsonCore",
+        Vector((bx, by, 0.977)), (0.0118, 0.0118, 0.0135), mats["CrimsonCore"], segs=16, rings=10,
+    ))
+    # Inner dark cross-baffle collimator ring around core (mirrors chest delta contrast!)
+    objs.append(make_annulus(
+        "TG98_MuzzleCoreCollar", Vector((bx, by, 0.974)), ax_z, ax_x, ax_y,
+        r_in=0.0082, r_out=0.0116, x0=-0.0030, x1=+0.0035,
+        mat=mats["DarkArmor"], segs=16, bw=0.0005,
+    ))
+
+    # -------------------------------------------------------------------------
+    # G) SUBTLE DARK BRAIDED HYDRAULIC / DATA CABLE (RECEIVER -> ELBOW RING)
+    # -------------------------------------------------------------------------
+    p0 = Vector((bx + 0.002, by + 0.024, 1.326))  # Rear outer-dorsal port of receiver
+    p1 = Vector((bx - 0.022, by + 0.048, 1.352))  # Crisp visible outward-rear arch
+    p2 = Vector((el.x - 0.082, 0.044, 1.374))     # Graceful S-curve into outer elbow ring
+    p3 = Vector((el.x - 0.056, 0.018, 1.375))     # Outer elbow rotary housing rear socket
+
+    # Brass bulkhead compression fittings at both ends
+    t0_dir = (p1 - p0).normalized()
+    t3_dir = (p2 - p3).normalized()
+    objs.append(make_cyl(
+        "TG98_CableFittingRear", p0 - t0_dir * 0.010, p0 + t0_dir * 0.011,
+        0.0116, 0.0102, mats["AntiqueBrass"], segs=10, bevel_w=0.0010,
+    ))
+    objs.append(make_cyl(
+        "TG98_CableFittingElbow", p3 - t3_dir * 0.008, p3 + t3_dir * 0.011,
+        0.0112, 0.0098, mats["AntiqueBrass"], segs=10, bevel_w=0.0010,
+    ))
+
+    # Ribbed braided dark hydraulic/data hose along smooth cubic Bezier curve
+    n_c = 18
+    n_seg = 12
+    cable_rings = []
+    prev_n = Vector((1.0, 0.0, 0.0))
+    for i in range(n_c):
+        t = i / (n_c - 1)
+        mt = 1.0 - t
+        pt = (mt ** 3) * p0 + 3 * (mt ** 2) * t * p1 + 3 * mt * (t ** 2) * p2 + (t ** 3) * p3
+        tan = (
+            3 * (mt ** 2) * (p1 - p0)
+            + 6 * mt * t * (p2 - p1)
+            + 3 * (t ** 2) * (p3 - p2)
+        ).normalized()
+        bn = tan.cross(prev_n)
+        if bn.length < 1e-5:
+            bn = tan.cross(Vector((0.0, 1.0, 0.0)))
+        bn.normalize()
+        nr = bn.cross(tan).normalized()
+        prev_n = nr
+        # Subtle braided-corrugation radius modulation along the hose
+        r_hose = 0.0080 + 0.0010 * math.sin(t * 16.0 * math.pi)
+        ring = []
+        for k in range(n_seg):
+            a = (2.0 * math.pi * k) / n_seg
+            ring.append(pt + (nr * math.cos(a) + bn * math.sin(a)) * r_hose)
+        cable_rings.append(ring)
+    objs.append(make_loft(
+        "TG98_BraidedDataCable", cable_rings, mats["CarbonSubframe"],
+        closed_u=True, cap_start=True, cap_end=True,
+    ))
 
     return objs
 
@@ -1987,7 +2597,7 @@ def render_studio_proof(part_objs, out_path):
         return lobj
 
     add_area_light("KeyLight",  ( 2.2, -3.1, 2.8), (0.0, 0.0, 1.25), 460.0, (1.00, 0.97, 0.94), 1.9)
-    add_area_light("FillLight", (-2.6, -2.3, 1.6), (0.0, 0.0, 1.15), 185.0, (0.94, 0.95, 1.00), 2.3)
+    add_area_light("FillLight", (-2.6, -2.3, 1.75), (-0.25, -0.15, 1.25), 290.0, (0.98, 0.96, 0.94), 2.1)
     add_area_light("RimLight",  (-0.9,  2.9, 2.7), (0.0, 0.0, 1.35), 540.0, (0.98, 0.92, 0.84), 1.6)
     add_area_light("TopRim",    ( 1.2,  2.1, 3.2), (0.0, 0.0, 1.65), 280.0, (0.90, 0.95, 1.00), 1.4)
 
@@ -1999,57 +2609,74 @@ def render_studio_proof(part_objs, out_path):
     neutral_pose = {
         "pelvis_z": 1.135,
         "arm_l_roll": math.radians(-8.0),
-        "arm_r_roll": math.radians( 8.0),
+        "arm_r_roll": math.radians(10.0),
         "elb_l_pitch": math.radians(-10.0),
         "elb_r_pitch": math.radians(-10.0),
     }
 
-    combat_action_pose = {
-        "pelvis_z": 1.045,
-        "pelvis_roll": math.radians(-3.0),
-        "torso_pitch": math.radians(14.0),
-        "torso_yaw": math.radians(-22.0),
-        "head_yaw": math.radians(32.0),
-        "head_pitch": math.radians(-8.0),
-        "arm_l_pitch": math.radians(-48.0),
-        "arm_l_roll": math.radians(-22.0),
-        "elb_l_pitch": math.radians(-52.0),
-        "elb_l_yaw": math.radians(-22.0),
-        "arm_r_pitch": math.radians(38.0),
-        "arm_r_roll": math.radians(28.0),
-        "elb_r_pitch": math.radians(-62.0),
-        "elb_r_yaw": math.radians(14.0),
-        "thigh_l_pitch": math.radians(-24.0),
-        "thigh_l_roll": math.radians(-9.0),
-        "shin_l_pitch": math.radians(32.0),
-        "thigh_r_pitch": math.radians(22.0),
-        "thigh_r_roll": math.radians(9.0),
-        "shin_r_pitch": math.radians(22.0),
+    action_aim_pose = {
+        "pelvis_z": 1.075,
+        "pelvis_roll": math.radians(2.0),
+        "torso_pitch": math.radians(8.0),
+        "torso_yaw": math.radians(22.0),
+        "head_yaw": math.radians(-24.0),
+        "head_pitch": math.radians(-4.0),
+        "arm_r_pitch": math.radians(-58.0),
+        "arm_r_roll": math.radians(16.0),
+        "arm_r_yaw": math.radians(-6.0),
+        "elb_r_pitch": math.radians(-30.0),
+        "elb_r_yaw": math.radians(10.0),
+        "arm_l_pitch": math.radians(20.0),
+        "arm_l_roll": math.radians(-18.0),
+        "elb_l_pitch": math.radians(-46.0),
+        "elb_l_yaw": math.radians(-12.0),
+        "thigh_l_pitch": math.radians(-18.0),
+        "thigh_l_roll": math.radians(-8.0),
+        "shin_l_pitch": math.radians(26.0),
+        "thigh_r_pitch": math.radians(16.0),
+        "thigh_r_roll": math.radians(8.0),
+        "shin_r_pitch": math.radians(16.0),
     }
 
-    closeup_pose = {
+    weapon_closeup_pose = {
         "pelvis_z": 1.135,
-        "torso_yaw": math.radians(10.0),
-        "head_yaw": math.radians(-12.0),
-        "head_pitch": math.radians(5.0),
-        "arm_l_roll": math.radians(-8.0),
-        "arm_r_roll": math.radians( 8.0),
+        "torso_yaw": math.radians(14.0),
+        "head_yaw": math.radians(-14.0),
+        "arm_r_pitch": math.radians(-58.0),
+        "arm_r_roll": math.radians(18.0),
+        "arm_r_yaw": math.radians(-4.0),
+        "elb_r_pitch": math.radians(-40.0),
+        "elb_r_yaw": math.radians(8.0),
+        "arm_l_roll": math.radians(-10.0),
     }
 
     shots = [
-        ("front_neutral", neutral_pose,       (0.00, -3.55, 1.16), (0.00,  0.00, 1.12), 54.0),
-        ("combat_34",     combat_action_pose, (1.85, -3.15, 1.18), (0.00, -0.02, 1.08), 54.0),
-        ("closeup",       closeup_pose,       (0.42, -1.42, 1.92), (0.00, -0.04, 1.87), 58.0),
+        ("front_neutral",  neutral_pose,        ( 0.00, -3.60, 1.16), (-0.04,  0.00, 1.12), 52.0, False),
+        ("action_aim",     action_aim_pose,     (-1.92, -2.90, 1.28), (-0.14, -0.14, 1.14), 52.0, False),
+        ("weapon_closeup", weapon_closeup_pose, None,                 None,                 46.0, True),
     ]
 
     panels, tmp_files = [], []
     OUT_SHOTS.mkdir(parents=True, exist_ok=True)
-    for tag, pose, loc, tgt, lens in shots:
+    for tag, pose, loc, tgt, lens, track_weapon in shots:
         pose_boss_hierarchy(part_objs, pose)
         bpy.context.view_layer.update()
         cam_data.lens = lens
-        cam.location = Vector(loc)
-        d = Vector(tgt) - cam.location
+        if track_weapon:
+            # Compute exact world-space center of TOKEN-GUN 98 on ForearmR (from elbow cable z=0 to muzzle z=-0.44)
+            fm = part_objs["ForearmR"].matrix_world
+            w_center = fm @ Vector((-0.114, -0.002, -0.215))
+            w_muzzle = fm @ Vector((-0.114, -0.002, -0.440))
+            w_out    = (fm.to_3x3() @ Vector((-1.0, -0.12, 0.0))).normalized()
+            w_fwd    = (w_muzzle - w_center).normalized()
+            w_up     = (fm.to_3x3() @ Vector((0.0, -1.0, 0.0))).normalized()
+            # Unclipped hero macro 3/4 view: captures elbow cable, full HF-90 brass reels, triple coils & crimson muzzle!
+            cam.location = w_center + w_out * 0.68 + w_fwd * 0.48 + w_up * 0.14
+            tgt_vec = w_center + w_fwd * 0.015
+        else:
+            cam.location = Vector(loc)
+            tgt_vec = Vector(tgt)
+        d = tgt_vec - cam.location
         cam.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
         tmp_p = OUT_SHOTS / f"_tmp_boss_{tag}.png"
         scene.render.filepath = str(tmp_p)

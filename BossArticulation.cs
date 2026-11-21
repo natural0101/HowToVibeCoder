@@ -163,73 +163,92 @@ internal static unsafe partial class VisualEngine3D
         {
             case ElevatorBossState.Repairing:
             {
-                // Coiled powered-down sentinel crouch rising slowly into combat readiness as glass clears.
+                // Predatory coiled sentinel crouch inside clearing smoked-glass shaft:
+                // deeply bent knees + hunched torso keep head & glowing crimson visor 100% clear below 2.30m door lintel!
                 float wake = SmoothStep(1f - glassOpacity);
-                float servo = 0.03f * MathF.Sin(clock * 6.5f) * wake;
-                p.PelvisY     = BossBasePelvisY - 0.14f * (1f - wake);
-                p.TorsoPitch  = LerpF(0.26f, 0.06f, wake);
-                p.TorsoYaw    = 0.04f * MathF.Sin(clock * 1.4f) * wake;
-                p.HeadPitch   = LerpF(0.48f, 0.02f, wake) + servo;
-                p.HeadYaw     = 0.12f * MathF.Sin(clock * 2.1f) * wake;
-                p.ThighLPitch = LerpF(-0.46f, -0.14f, wake);
-                p.ThighLRoll  = LerpF(+0.13f, +0.09f, wake);
-                p.ShinLPitch  = LerpF(+0.82f, +0.22f, wake);
-                p.ThighRPitch = LerpF(-0.46f, -0.10f, wake);
-                p.ThighRRoll  = LerpF(-0.13f, -0.09f, wake);
-                p.ShinRPitch  = LerpF(+0.82f, +0.18f, wake);
-                p.ArmLPitch   = LerpF(-0.24f, -0.38f, wake);
-                p.ArmLRoll    = LerpF(+0.15f, +0.22f, wake);
-                p.ElbowLPitch = LerpF(-0.42f, -0.88f, wake);
-                p.ElbowLYaw   = LerpF(-0.08f, -0.18f, wake);
-                p.ArmRPitch   = LerpF(-0.24f, -0.44f, wake);
-                p.ArmRRoll    = LerpF(-0.15f, -0.22f, wake);
-                p.ElbowRPitch = LerpF(-0.42f, -0.92f, wake);
-                p.ElbowRYaw   = LerpF(+0.08f, +0.18f, wake);
+                float servo = 0.020f * MathF.Sin(clock * 6.5f) * wake;
+                p.TorsoPitch  = LerpF(0.86f, 0.74f, wake);
+                p.TorsoYaw    = LerpF(0.02f, 0.08f, wake) + 0.025f * MathF.Sin(clock * 1.4f) * wake;
+                // Lift chin aggressively as glass clears so glowing crimson visor locks straight through the frosted glass!
+                p.HeadPitch   = LerpF(0.18f, -0.58f, wake) + servo;
+                p.HeadYaw     = 0.07f * MathF.Sin(clock * 1.8f) * (1f - wake * 0.7f);
+                p.ThighLPitch = LerpF(-1.24f, -1.16f, wake);
+                p.ThighLRoll  = +0.16f;
+                p.ShinLPitch  = LerpF(+2.02f, +1.92f, wake);
+                p.ThighRPitch = LerpF(-1.14f, -1.04f, wake);
+                p.ThighRRoll  = -0.16f;
+                p.ShinRPitch  = LerpF(+1.88f, +1.76f, wake);
+                p.ArmLPitch   = LerpF(-0.36f, -0.52f, wake);
+                p.ArmLRoll    = LerpF(+0.20f, +0.28f, wake);
+                p.ElbowLPitch = LerpF(-0.56f, -0.82f, wake);
+                p.ElbowLYaw   = -0.16f;
+                // Right forearm TOKEN-GUN 98 primed low-ready clear of hip & glass
+                p.ArmRPitch   = LerpF(-0.36f, -0.74f, wake);
+                p.ArmRYaw     = LerpF(+0.08f, +0.24f, wake);
+                p.ArmRRoll    = LerpF(-0.22f, -0.34f, wake);
+                p.ElbowRPitch = LerpF(-0.58f, -0.82f, wake);
+                p.ElbowRYaw   = LerpF(+0.10f, +0.20f, wake);
                 p.PelvisY     = ComputeBossGroundedPelvisY(p, allowKneeRest: false);
                 break;
             }
 
             case ElevatorBossState.IntroSpeech:
             {
-                // Commanding Terminator stride out of elevator + heroic staggered reveal posture.
+                // Phase A (introProgress < 0.46): predatory ducked stalk under 2.30m elevator lintel so head & visor stay 100% clear!
+                // Phase B (introProgress 0.46 -> 0.64): dramatic uncoil onto burgundy carpet to towering 2.95m height showcasing TOKEN-GUN 98!
                 float elapsed = Math.Clamp(SkyscraperFloor1World.IntroSeconds - b.StateTimer, 0f, SkyscraperFloor1World.IntroSeconds);
+                float introProgress = elapsed / SkyscraperFloor1World.IntroSeconds;
                 float walk = SmoothStep((elapsed - 0.28f) / (SkyscraperFloor1World.IntroSeconds - 0.28f));
+                float uncoil = SmoothStep((introProgress - 0.46f) / 0.18f);
                 float cyc = walk * MathF.PI * 3.5f + 0.55f;
                 float sinS = MathF.Sin(cyc);
                 float cosS = MathF.Cos(cyc);
 
-                // Strong asymmetric lead-step + predatory forward authority (never neutral A-pose!)
-                p.PelvisRoll  = 0.055f * sinS;
-                p.TorsoPitch  = 0.13f + 0.03f * MathF.Abs(sinS);
-                p.TorsoYaw    = -0.22f + 0.16f * sinS;
-                p.TorsoRoll   = -0.045f * sinS;
+                // Smoothly uncoil from deep stalking hunch into towering heroic authority on the carpet
+                p.PelvisRoll  = LerpF(0.038f, 0.050f, uncoil) * sinS;
+                p.TorsoPitch  = LerpF(0.68f, 0.08f, uncoil) + 0.022f * MathF.Abs(sinS);
+                p.TorsoYaw    = LerpF(0.08f, +0.18f, uncoil) + 0.08f * sinS;
+                p.TorsoRoll   = -0.038f * sinS;
 
-                p.ThighLPitch = -0.32f - 0.24f * MathF.Max(0f, sinS) + 0.14f * MathF.Max(0f, -sinS);
-                p.ThighLRoll  = +0.11f;
-                p.ShinLPitch  = Math.Clamp(-p.ThighLPitch + 0.22f * MathF.Max(0f, cosS), 0.14f, 0.72f);
+                // Deep crouched stalk legs under doorway -> towering athletic Terminator stride on carpet (strictly grounded!)
+                float stalkThighL = -1.14f - 0.12f * MathF.Max(0f, sinS);
+                float stalkShinL  = +1.88f + 0.10f * MathF.Max(0f, cosS);
+                float stalkThighR = -1.00f + 0.14f * MathF.Max(0f, sinS) - 0.14f * MathF.Max(0f, -sinS);
+                float stalkShinR  = +1.72f + 0.12f * MathF.Max(0f, -cosS);
 
-                p.ThighRPitch = +0.16f + 0.24f * MathF.Max(0f, sinS) - 0.36f * MathF.Max(0f, -sinS);
-                p.ThighRRoll  = -0.11f;
-                p.ShinRPitch  = Math.Clamp(0.20f + 0.45f * MathF.Max(0f, -cosS), 0.14f, 0.72f);
+                float tallThighL  = -0.30f - 0.20f * MathF.Max(0f, sinS) + 0.12f * MathF.Max(0f, -sinS);
+                float tallShinL   = Math.Clamp(-tallThighL + 0.20f * MathF.Max(0f, cosS), 0.14f, 0.68f);
+                float tallThighR  = +0.14f + 0.20f * MathF.Max(0f, sinS) - 0.30f * MathF.Max(0f, -sinS);
+                float tallShinR   = Math.Clamp(0.18f + 0.40f * MathF.Max(0f, -cosS), 0.14f, 0.68f);
 
-                // Left fist braced low-forward in combat readiness; right gauntlet lowered into menacing clenched villain stance!
-                p.ArmLPitch   = -0.40f + 0.26f * sinS;
-                p.ArmLYaw     = +0.16f;
-                p.ArmLRoll    = +0.24f;
-                p.ElbowLPitch = -0.86f - 0.14f * MathF.Max(0f, -sinS);
-                p.ElbowLYaw   = -0.22f;
+                p.ThighLPitch = LerpF(stalkThighL, tallThighL, uncoil);
+                p.ThighLRoll  = LerpF(+0.16f, +0.11f, uncoil);
+                p.ShinLPitch  = LerpF(stalkShinL, tallShinL, uncoil);
 
-                float speechWave = MathF.Sin(elapsed * 3.8f);
-                p.ArmRPitch   = -0.46f - 0.10f * cosS + 0.06f * speechWave;
-                p.ArmRYaw     = -0.22f;
-                p.ArmRRoll    = -0.24f - 0.04f * speechWave;
-                p.ElbowRPitch = -0.78f + 0.10f * speechWave;
-                p.ElbowRYaw   = +0.34f;
+                p.ThighRPitch = LerpF(stalkThighR, tallThighR, uncoil);
+                p.ThighRRoll  = LerpF(-0.16f, -0.11f, uncoil);
+                p.ShinRPitch  = LerpF(stalkShinR, tallShinR, uncoil);
+
+                // Left fist braced low-outward as heroic counterweight (zero obstruction of chest Delta Reactor!)
+                p.ArmLPitch   = LerpF(-0.46f, -0.26f, uncoil) + 0.20f * sinS;
+                p.ArmLYaw     = +0.18f;
+                p.ArmLRoll    = LerpF(+0.28f, +0.26f, uncoil);
+                p.ElbowLPitch = LerpF(-0.82f, -0.78f, uncoil) - 0.10f * MathF.Max(0f, -sinS);
+                p.ElbowLYaw   = -0.20f;
+
+                // Right forearm TOKEN-GUN 98 angled 3/4 across/forward so twin brass HF-90 cassette reels & 3 coils catch camera cleanly!
+                float speechWave = MathF.Sin(elapsed * 4.0f);
+                p.ArmRPitch   = LerpF(-0.74f, -0.82f, uncoil) + 0.035f * speechWave;
+                p.ArmRYaw     = LerpF(+0.26f, +0.38f, uncoil);
+                p.ArmRRoll    = LerpF(-0.34f, -0.44f, uncoil) - 0.02f * speechWave;
+                p.ElbowRPitch = LerpF(-0.78f, -0.60f, uncoil) + 0.03f * speechWave;
+                p.ElbowRYaw   = LerpF(+0.22f, +0.30f, uncoil);
 
                 var (hy, hp)  = ComputeBossHeadTrack(b, playerEye, p.TorsoYaw, p.TorsoPitch);
                 p.HeadYaw     = hy;
-                p.HeadPitch   = hp;
-                p.HeadRoll    = -0.03f * sinS;
+                // Keep crimson visor staring straight out under the doorway during crouch, then tracking player smoothly on uncoil!
+                p.HeadPitch   = LerpF(Math.Clamp(-p.TorsoPitch + 0.12f, -0.62f, 0.10f), hp, uncoil);
+                p.HeadRoll    = 0.045f * (1f - uncoil) - 0.022f * sinS;
                 p.PelvisY     = ComputeBossGroundedPelvisY(p, allowKneeRest: false);
                 break;
             }
@@ -560,6 +579,26 @@ internal static unsafe partial class VisualEngine3D
             }
         }
         CapturedAssets?.Add("escaped_ai_boss");
+
+        // Subtle translucent deep-crimson/amber plasma glow nested strictly inside TOKEN-GUN 98 muzzle prongs (zero pink blob!)
+        if (!b.IsDefeated && b.State == ElevatorBossState.IntroSpeech)
+        {
+            float charge = 0.45f + 0.55f * SmoothStep((SkyscraperFloor1World.IntroSeconds - b.StateTimer - 0.35f) / 0.85f);
+            float pulse = 0.90f + 0.10f * MathF.Sin(clock * 15f);
+            Vector3 muzzleWorld = Vector3.Transform(new Vector3(-0.114f, -0.440f, +0.002f), forearmR);
+            Raylib.DrawSphere(muzzleWorld, 0.036f * pulse, new Color(196, 16, 28, (int)(54 * charge)));
+            Raylib.DrawSphere(muzzleWorld, 0.021f * pulse, new Color(228, 24, 38, (int)(116 * charge)));
+            Raylib.DrawSphere(muzzleWorld, 0.010f * pulse, new Color(255, 198, 122, (int)(124 * charge)));
+            for (int k = 0; k < 3; k++)
+            {
+                float a = clock * 8.0f + k * MathF.Tau / 3f;
+                float r = 0.042f + 0.014f * charge;
+                Vector3 spark = muzzleWorld + new Vector3(MathF.Cos(a) * r, MathF.Sin(a * 1.4f) * r * 0.55f, MathF.Sin(a) * r);
+                Raylib.DrawSphere(spark, 0.0065f * charge, k == 0
+                    ? new Color(255, 206, 124, (int)(120 * charge))
+                    : new Color(214, 22, 34, (int)(110 * charge)));
+            }
+        }
 
         // Visual throw telegraph: sinister dark-obsidian & deep-crimson (#E81424) glowing node_modules cube gripped in right gauntlet!
         if (!b.IsDefeated && b.State == ElevatorBossState.ThrowingNodeModules)

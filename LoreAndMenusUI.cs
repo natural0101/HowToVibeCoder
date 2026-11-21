@@ -88,6 +88,15 @@ public static partial class LoreAndMenusUI
     public static Func<int>? GetPlayerMoney { get; set; }
     public static Func<int, bool>? TrySpendPlayerMoney { get; set; }
     public static Action<WeaponSkinDefinition>? OnSkinEquipped { get; set; }
+    public static Func<bool>? IsBossRevealed { get; set; }
+
+    private static bool BossTwistUnlocked => IsBossRevealed?.Invoke() == true;
+    internal static bool IsChatRedacted(int index) => !BossTwistUnlocked && index is 4 or 5;
+    internal static void SelectArchiveEntryForPreview(int index)
+    {
+        SelectArchiveEntry(index);
+        LoreScrollOffset = _scrollTarget;
+    }
 
     // Палитры 3D ViewModel оружия (применяются сразу после выпадения скина в рулетке [K])
     public static Color BeltPrimaryColor { get; private set; } = new(92, 52, 28, 255);
@@ -284,7 +293,10 @@ public static partial class LoreAndMenusUI
     private static readonly Color Ash = new(175, 184, 172, 255), Mint = new(115, 211, 181, 255), Amber = new(255, 189, 72, 255);
 
     // Вкладка 1: 6 слитых тредов чата опенспейса (Сюжет «ЭНТРОПИК» 1998 / ZERO + разведданные Спринта A)
-    private static readonly LoreChatMessage[] _leakedChats =
+    // Спойлерные треды №5 (@senior_pomidor) и №6 (@zero_archive_98) закрыты грифом до вскрытия Северного лифта.
+    private static LoreChatMessage[] _leakedChats => BossTwistUnlocked ? _leakedChatsUnlocked : _leakedChatsRedacted;
+
+    private static readonly LoreChatMessage[] _leakedChatsUnlocked =
     {
         new()
         {
@@ -365,6 +377,38 @@ public static partial class LoreAndMenusUI
             ReplyAuthor="Петрович", ReplyText="«Там ещё должен стоять мой магнитофон.»", Metrics=[]
         }
     };
+
+    private static readonly LoreChatMessage[] _leakedChatsRedacted = BuildRedactedChats(_leakedChatsUnlocked);
+
+    private static LoreChatMessage[] BuildRedactedChats(LoreChatMessage[] source)
+    {
+        var copy = (LoreChatMessage[])source.Clone();
+        copy[4] = new LoreChatMessage
+        {
+            Monogram = "XX",
+            Handle = "КАРАНТИННЫЙ КОНТУР ЛИФТА",
+            RoleBadge = "ЗАСЕКРЕЧЕНО — ТРЕБУЕТСЯ ВСКРЫТИЕ ШАХТЫ ЛИФТА",
+            Time = "ЗАСЕКРЕЧЕНО",
+            Metrics = [("LOCK", "SEC", Amber)],
+            Text = "«[ДОСТУП ОГРАНИЧЕН] Перехват заблокирован карантинным протоколом Северного лифта. Вскройте шахту лифта, чтобы расшифровать запись.»",
+            ReplyAuthor = "АРХИВ «ЭНТРОПИК» · ГРИФ СЕКРЕТНОСТИ",
+            ReplyText = "«[ЗАСЕКРЕЧЕНО] Требуется вскрытие шахты Северного лифта (Паяльник + Ключ-карта СБ).»",
+            HandleColor = new Color(214, 154, 62, 255)
+        };
+        copy[5] = new LoreChatMessage
+        {
+            Monogram = "XX",
+            Handle = "КАРАНТИННЫЙ КОНТУР ЛИФТА",
+            RoleBadge = "ЗАСЕКРЕЧЕНО — ТРЕБУЕТСЯ ВСКРЫТИЕ ШАХТЫ ЛИФТА",
+            Time = "ЗАСЕКРЕЧЕНО",
+            Metrics = [("LOCK", "06", Amber)],
+            Text = "«[ДОСТУП ОГРАНИЧЕН] Архивная запись опечатана карантинным протоколом до снятия блокировки Северного лифта.»",
+            ReplyAuthor = "АРХИВ «ЭНТРОПИК» · ГРИФ СЕКРЕТНОСТИ",
+            ReplyText = "«[ЗАСЕКРЕЧЕНО] Требуется вскрытие шахты Северного лифта (Паяльник + Ключ-карта СБ).»",
+            HandleColor = new Color(214, 154, 62, 255)
+        };
+        return copy;
+    }
 
     static LoreAndMenusUI()
     {
@@ -794,7 +838,10 @@ public static partial class LoreAndMenusUI
             )
         };
 
-    private static readonly (string zoomer, string nineties, string comment)[] DictionaryEntries =
+    private static (string zoomer, string nineties, string comment)[] DictionaryEntries =>
+        BossTwistUnlocked ? _dictionaryEntriesUnlocked : _dictionaryEntriesRedacted;
+
+    private static readonly (string zoomer, string nineties, string comment)[] _dictionaryEntriesUnlocked =
         {
             ("Legacy Stakeholder", "Хозяин завода «ЭНТРОПИК» (1998)", "Пришёл за оригиналами договоров и кассетами, на которых обучили ZERO"),
             ("Техдолг (Шкала TD)", "Косяки цеха в общаке", "Растёт от джунов в Опенспейсе; гасится только Сеньором-Архитектором"),
@@ -804,6 +851,15 @@ public static partial class LoreAndMenusUI
             ("Электро-лужа 220В", "Опрокинутый кулер + паяльник", "Глушит дугой всю пачку кодеров в радиусе трёх метров"),
             ("Нулевой Промпт (ZERO)", "Оцифрованные понятия 90-х", "Секретное ядро Башни, заменившее живого CEO алгоритмом коммерса")
         };
+
+    private static readonly (string zoomer, string nineties, string comment)[] _dictionaryEntriesRedacted = BuildRedactedDictionary(_dictionaryEntriesUnlocked);
+
+    private static (string zoomer, string nineties, string comment)[] BuildRedactedDictionary((string zoomer, string nineties, string comment)[] source)
+    {
+        var copy = ((string zoomer, string nineties, string comment)[])source.Clone();
+        copy[6] = ("ЗАСЕКРЕЧЕННЫЙ ТЕРМИН", "ЗАСЕКРЕЧЕНО", "Требуется вскрытие шахты Северного лифта");
+        return copy;
+    }
 
     private static readonly string[] PressRelease =
     [

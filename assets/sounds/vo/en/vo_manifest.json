@@ -169,11 +169,11 @@
   },
   "vo_boss_reveal": {
     "character": "robot",
-    "duration": 6.938,
-    "rms": 0.1109,
+    "duration": 5.912,
+    "rms": 0.127,
     "sr": 24000,
-    "bytes": 333056,
-    "text": "Ha-ha-ha-ha! Quarantine elevator breached! Zero locked me on floor one so I wouldn't wipe your entire corporate database!"
+    "bytes": 283816,
+    "text": "Who is this impostor?.. Oh, it's you. Well, we did a little dark magic while you were away — adopting AI!"
   },
   "vo_boss_mock_0": {
     "character": "robot",
@@ -366,5 +366,13 @@
     "sr": 24000,
     "bytes": 315254,
     "text": "So sorry, it won't happen again — chirps the intercom. Bank at zero. Floor One of Entropic Corp. Time to fix this circus the old way!"
+  },
+  "vo_boss_defeat_twist": {
+    "character": "robot",
+    "duration": 8.546,
+    "rms": 0.1245,
+    "sr": 24000,
+    "bytes": 410248,
+    "text": "Hah... thought you wiped me? They're already pulling my cassette upstairs. Halfway up the Tower they'll rebuild me — sharper. See you in production."
   }
 }

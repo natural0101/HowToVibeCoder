@@ -14,6 +14,7 @@ public static partial class Program
 
     private static SkyscraperFloor1World _world = null!;
     private static WeaponAndCombatView _weapons = null!;
+    private static readonly ElevatorRepairMinigame _repairMinigame = new();
     private static Font _uiFont;
 
     // Player state
@@ -402,6 +403,7 @@ public static partial class Program
         LoreAndMenusUI.ActiveWeaponView = _weapons;
         LoreAndMenusUI.GetPlayerMoney = () => _playerCash;
         LoreAndMenusUI.TrySpendPlayerMoney = TrySpendCash;
+        LoreAndMenusUI.IsBossRevealed = () => _world.BossRevealed || _world.ElevatorBoss.IsDefeated;
         LoreAndMenusUI.OnGrantMoneyRequested = amount =>
         {
             if(Net.Guest) { Net.Send(new("bonus")); return; }
@@ -533,6 +535,8 @@ public static partial class Program
         _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _pitchSpring = _yawSpring = 0;
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _playerHitAnimTimer = 0;
         StyleComboSystem.Reset();
+        BossIntroCutscene.Reset();
+        _repairMinigame.Close();
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _weapons.HitJolt=0;
         _sprinting=_toggleCrouch=_exhausted=false;
         LookAtTarget(_world.HrTarotBoothPos+new Vector3(-.45f,1.26f,0));
@@ -641,6 +645,20 @@ public static partial class Program
         }
 
         if(_world.Slot.Active && !MainMenuAndPauseUI.IsInMainMenu) { UpdateSlot(dt); return; }
+        if(_repairMinigame.IsActive && !MainMenuAndPauseUI.IsInMainMenu)
+        {
+            if(Raylib.IsCursorHidden()) Raylib.EnableCursor();
+            if(Net.Ready) TickFloor(dt);
+            else _world.AdvanceLighting(dt);
+            if(_repairMinigame.Update(dt))
+            {
+                if(!Raylib.IsCursorHidden()) Raylib.DisableCursor();
+                if(Net.Guest) Net.Send(new("interact", LocalPose));
+                else if(_world.TrySummonElevatorBoss(out string repairMsg))
+                    SetHudBanner(repairMsg, 2.4f, foreground: true);
+            }
+            return;
+        }
 
         if (_hudStatusTimer > 0f)
         {
@@ -695,6 +713,21 @@ public static partial class Program
         if (MainMenuAndPauseUI.InteractiveDisplay && StyleComboSystem.ConsumeHitstop(dt)) return;
         _world.UpdateLooseClutter(dt);
         _world.UpdateIntercom(dt);
+
+        BossIntroCutscene.SyncState(_world);
+        if (BossIntroCutscene.IsCameraOverrideActive(_world))
+        {
+            if (Raylib.IsKeyPressed(KeyboardKey.Space))
+            {
+                BossIntroCutscene.Skip();
+                if (!Net.Ready) FinishElevatorIntro();
+                else TickFloor(dt);
+                return;
+            }
+            TickFloor(dt);
+            BossIntroCutscene.SyncState(_world);
+            return;
+        }
 
         // Quick money hotkey [F9]
         if (Raylib.IsKeyPressed(KeyboardKey.F9))
@@ -767,6 +800,13 @@ public static partial class Program
             }
             if(_world.FocusPrompt(camera)=="Поймать Джаба-жабу")
                 _weapons.Equip(WeaponType.BareHands);
+            if(MainMenuAndPauseUI.InteractiveDisplay && _world.BrokenElevator && _world.HasElevatorKey && Floor.HasWeapon(WeaponType.SolderingIron) &&
+                _world.FocusPrompt(camera)==_world.ElevatorPrompt())
+            {
+                _repairMinigame.Open();
+                if(Raylib.IsCursorHidden()) Raylib.EnableCursor();
+                return;
+            }
             if(Net.Guest) Net.Send(new("interact",LocalPose));
             else
             {
@@ -1093,26 +1133,38 @@ public static partial class Program
         }
 
         Camera3D playerCam = BuildPlayerCamera();
+        Camera3D activeCam = BossIntroCutscene.ResolveCamera(_world, playerCam);
+        bool cinemaCam = BossIntroCutscene.IsCameraOverrideActive(_world);
+        bool suppressHands = BossIntroCutscene.ShouldSuppressViewModel(_world);
+        float hudAlpha = BossIntroCutscene.GetHudAlpha(_world);
 
         // 1. 3D Skyscraper World + Entities + Combat Particles
-        BeginLitWorld(_world,playerCam);
-        foreach(var ally in _world.Teammates) ally.Effects.DrawWeaponWorldEffects3D(playerCam);
-        _weapons.DrawWeaponWorldEffects3D(playerCam);
+        BeginLitWorld(_world, activeCam);
+        foreach(var ally in _world.Teammates) ally.Effects.DrawWeaponWorldEffects3D(activeCam);
+        _weapons.DrawWeaponWorldEffects3D(activeCam);
         Raylib.EndMode3D();
 
-        bool modalOpen = _knockoutActive || _world.Slot.Active || floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
+        bool modalOpen = _knockoutActive || _world.Slot.Active || _repairMinigame.IsActive || floorPanel!=FloorPanel.None || LoreAndMenusUI.IsAnyModalOpen || MainMenuAndPauseUI.IsPaused
             || MainMenuAndPauseUI.IsSaveLoadPanelOpen || MainMenuAndPauseUI.IsModsPanelOpen
             || MainMenuAndPauseUI.IsSettingsPanelOpen;
-        if(!modalOpen)
+        if(!modalOpen && !suppressHands)
             _weapons.DrawFirstPersonHandsAndWeapon(playerCam,_walkBobPhase,_isCrouching,_uiFont,showCombatText:false);
         VisualEngine3D.Composite();
         if(_knockoutActive) { DrawKnockout(); EndSceneFrame(); return; }
         if(!modalOpen && showHud)
         {
             UiViewport.Begin();
-            _world.DrawWorldLabelsAndIndicators2D(playerCam,_uiFont);
-            DrawCombatOverlay(_weapons,playerCam,_uiFont);
-            DrawGameplayHud2D();
+            if (!cinemaCam)
+            {
+                _world.DrawWorldLabelsAndIndicators2D(activeCam,_uiFont);
+                DrawCombatOverlay(_weapons,activeCam,_uiFont);
+                DrawGameplayHud2D();
+            }
+            else if (hudAlpha > 0.35f)
+            {
+                DrawGameplayHud2D();
+            }
+            BossIntroCutscene.DrawOverlay(_world, _uiFont, _serif);
             Raylib.EndMode2D();
         }
 
@@ -1126,6 +1178,7 @@ public static partial class Program
         LoreAndMenusUI.Draw(_uiFont);
         if(floorPanel!=FloorPanel.None) DrawFloorPanel();
         if(_world.Slot.Active) DrawSlot();
+        if(_repairMinigame.IsActive) _repairMinigame.Draw(_uiFont, _serif);
         EndSceneFrame();
     }
 
@@ -2334,6 +2387,7 @@ public static partial class Program
         Check(_menuFloor.BrokenElevator && !_menuFloor.BossModelVisible && _menuFloor.ElevatorDoorOpenAmount==0,"menu sealed");
         Check(_world.BrokenElevator && !_world.BossModelVisible && !BossFightMusic && !_world.BossRevealed &&
             _world.ElevatorGlassOpacity==1 && _world.ElevatorDoorOpenAmount==0 && _world.BossHudOpacity==0 &&
+            LoreAndMenusUI.IsChatRedacted(4) && LoreAndMenusUI.IsChatRedacted(5) &&
             AudioMusicSystem.SceneMusicFile=="music_office_90s.wav","floor sealed");
         FrameDoors();
         _world.AdvanceLighting(.105f);
@@ -2358,6 +2412,12 @@ public static partial class Program
         PressTestKey(KeyboardKey.Escape);
         AimPanel();
         Check(Prompt()=="Перепаять щиток и приложить Ключ-карту СБ","ready to repair");
+        _repairMinigame.Open();
+        _repairMinigame.SetPreviewStateForScreenshot(2);
+        Check(_repairMinigame.IsActive,"repair minigame active");
+        capture("73_elevator_repair_minigame.png");
+        _repairMinigame.Close();
+        Check(!_repairMinigame.IsActive,"repair minigame closed");
         Use();
         Check(_world.ElevatorBoss.State==ElevatorBossState.Repairing && _world.ElevatorRepaired && _world.HasElevatorKey &&
             _playerCash==1000 && _world.ElevatorGlassOpacity==1 && _world.ElevatorDoorOpenAmount==0 &&
@@ -2385,9 +2445,11 @@ public static partial class Program
                 Check(_world.ElevatorRepaired && _world.ElevatorGlassOpacity==opacity && _world.ElevatorBoss.StateTimer==remaining && _world.ElevatorBoss.Position==cab,
                     "mid-repair snapshot");
             }
+            if(i==111) capture("70_cutscene_shot1_doors.png");
             Frame();
         }
         Check(sawSilhouette && opacity<.01f && _world.ElevatorGlassOpacity==0 && _world.BossRevealed && BossFightMusic &&
+            !LoreAndMenusUI.IsChatRedacted(4) && !LoreAndMenusUI.IsChatRedacted(5) &&
             AudioMusicSystem.SceneMusicFile=="music_boss_fight.wav" && _world.ElevatorBoss.State==ElevatorBossState.IntroSpeech && AudioMusicSystem.ActiveVoiceText==SkyscraperFloor1World.AgentQuarantineLine,"reveal cue");
         float door=0;
         for(int i=0;i<94;i++)
@@ -2396,6 +2458,8 @@ public static partial class Program
             if(i==5) Check(_world.BossHudOpacity is >0 and <1,"HUD fades in");
             Check(_world.ElevatorDoorOpenAmount>=door && !_world.BossInCombat,"intro motion");
             door=_world.ElevatorDoorOpenAmount;
+            if(i==62) capture("71_cutscene_shot2_hero_reveal.png");
+            if(i==92) capture("72_cutscene_shot3_weapon_stepout.png");
         }
         Check(door==1 && _world.BossHudOpacity==1 && _world.ElevatorBoss.Position.Z<north.Z && _world.ElevatorBoss.ShieldHp>0,"agent outside open doors");
         capture("22_elevator_repair_reveal.png");
@@ -3110,9 +3174,12 @@ public static partial class Program
             });
         }
 
-        // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]
+        // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N] (pre-elevator spoiler-free gate!)
+        ResetClassicFixture();
+        MainMenuAndPauseUI.IsInMainMenu = false;
         LoreAndMenusUI.IsLoreOpen = true;
         LoreAndMenusUI.ActiveLoreTab = 0;
+        LoreAndMenusUI.SelectArchiveEntryForPreview(4);
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
         CaptureShot("06_lore_chats_window_n.png");

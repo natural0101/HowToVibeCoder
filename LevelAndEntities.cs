@@ -1443,7 +1443,8 @@ public sealed partial class SkyscraperFloor1World
         return true;
     }
 
-    internal const string AgentQuarantineLine = "Ха-ха-ха-ха! Карантинный лифт вскрыт! Зеро запер меня на первом этаже, чтобы я не разнёс вашу офисную базу!";
+    internal const string AgentQuarantineLine = "Это ещё что за самозванец?.. А, это ты. Ну, мы тут немного шаманили, пока тебя не было — внедряли ИИ!";
+    internal const string AgentDefeatTwistLine = "Ха... думал, списал меня? Мою кассету уже тянут наверх. В середине Башни меня соберут заново — ещё злее. До встречи на проде.";
     internal static void PlayElevatorCue(ElevatorBossState state)
     {
         if (state == ElevatorBossState.Repairing)
@@ -2458,8 +2459,8 @@ public sealed partial class SkyscraperFloor1World
                     ElevatorBoss.IsDefeated = true;
                     ElevatorBoss.IsActive = false;
                     ElevatorBoss.State = ElevatorBossState.Defeated;
-                    ElevatorBoss.SpeechBubble = "FATAL SEGMENTATION FAULT... ПАДАЮ... ДВЕРИ ЛИФТА ОТКРЫТЫ!";
-                    ElevatorBoss.SpeechTimer = 6.0f;
+                    ElevatorBoss.SpeechBubble = AgentDefeatTwistLine;
+                    ElevatorBoss.SpeechTimer = 7.5f;
                     IsFloor2Unlocked = true;
                     ElevatorDoorOpenAmount = 1.0f;
                     weaponSystem.UnlockedChatGun = true;
@@ -2467,6 +2468,7 @@ public sealed partial class SkyscraperFloor1World
                     Systems.FinalePending=true; Systems.ShutdownTime=.8f;
                     Systems.Discover(VibeCoderCollection.All.Single(s=>s.Id=="ai_agent_v01"),onGrantMoney);
                     AudioMusicSystem.PlayTarotCash();
+                    AudioMusicSystem.Speak("ИИ-Агент v0.1", AgentDefeatTwistLine, SpeakerVoiceType.RoboticAgent, "vo_boss_defeat_twist");
 
                     feedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен [T]. Подпиши акт утилизации.";
                 }
@@ -4335,7 +4337,7 @@ public sealed partial class SkyscraperFloor1World
                     s % 2 == 0 ? new Color(255, 186, 62, 255) : new Color(255, 232, 145, 255), Finish.Lamp);
             }
         }
-        if(BossRevealed && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
+        if(BossInCombat && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
         {
             // Sleek Art-Deco perimeter energy barrier framing System Zero without obscuring his armor silhouette
             float pulse = 0.72f + 0.28f * MathF.Sin(_worldClock * 4.5f);

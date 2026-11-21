@@ -61,6 +61,7 @@ public static partial class Program
                 "+$900. СБ обнуляется. Артель снижает рост риска на 20%. Откроется запись в архиве.";
             Print(detail,236,row.Y+46,17,muted);
         }
+        Print("P.S. Кассетное ядро v0.1 эвакуировано службой отката наверх — объект ушёл на восстановление.",178,496,16,red,Typeface.InterfaceBold);
         if(panelMessage.Length>0) Print(panelMessage,178,560,17,ink);
         Print("После подписи распоряжение вступает в силу окончательно.",178,608,17,muted);
     }
