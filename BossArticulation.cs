@@ -294,17 +294,41 @@ internal static unsafe partial class VisualEngine3D
                     + (0.28f * salvoSweep - 0.10f * salvoKick) * salvoBrace;
                 p.TorsoRoll   = -0.092f * swingSign - 0.12f * shove + 0.06f * salvoSweep * salvoBrace;
 
-                // Left arm: EXPLOSIVE JUMPSCARE LUNGE & BACKHAND SHOVE during u=0.05..0.24 throwing the player 4.2m backward!
-                // Then settles into powerful stride counterweight + wide recoil counter-brace during rocket salvo.
+                // Left arm: TRUE PHYSICAL COLLAR GRAB (u=0.00..0.07) -> LIFT HERO INTO AIR (0.07..0.172) ->
+                // WIND-UP (0.172..0.196) -> VIOLENT SIDEARM HURL (0.196..0.28) across the entire atrium!
+                float grabReach = SmoothStep(introProgress / 0.065f) * (1f - SmoothStep((introProgress - 0.21f) / 0.07f));
+                float liftHold  = SmoothStep((introProgress - 0.068f) / 0.048f) * (1f - SmoothStep((introProgress - 0.172f) / 0.03f));
+                float windup    = SmoothStep((introProgress - 0.170f) / 0.024f) * (1f - SmoothStep((introProgress - 0.196f) / 0.020f));
+                float hurlWhip  = SmoothStep((introProgress - 0.194f) / 0.025f) * (1f - SmoothStep((introProgress - 0.24f) / 0.06f));
+
                 float baseArmLPitch = LerpF(-0.28f, -0.44f, crouchBlend) - 0.48f * swingSign;
-                float armLPitch = LerpF(baseArmLPitch, -1.52f, shove);
-                float armLYaw   = LerpF(+0.16f, +0.62f, shove);
-                float armLRoll  = LerpF(+0.26f, +0.46f, shove);
+                float armLPitch = baseArmLPitch;
+                float armLYaw   = +0.16f;
+                float armLRoll  = +0.26f;
+                float elbowLP   = -0.78f + 0.18f * MathF.Abs(swingSign);
+                float elbowLY   = -0.18f;
+
+                if (grabReach > 0.01f)
+                {
+                    // Shoot massive armored left hand straight into the hero's face & hoist upward!
+                    float targetPitch = -1.66f - 0.42f * liftHold + 0.34f * hurlWhip;
+                    float targetYaw   = -0.10f + 0.48f * windup - 0.85f * hurlWhip;
+                    float targetRoll  = +0.12f + 0.36f * windup + 0.42f * hurlWhip;
+                    float targetElbP  = -0.06f - 0.48f * liftHold + 0.22f * hurlWhip;
+                    armLPitch = LerpF(armLPitch, targetPitch, grabReach);
+                    armLYaw   = LerpF(armLYaw, targetYaw, grabReach);
+                    armLRoll  = LerpF(armLRoll, targetRoll, grabReach);
+                    elbowLP   = LerpF(elbowLP, targetElbP, grabReach);
+                    elbowLY   = LerpF(elbowLY, +0.28f * hurlWhip, grabReach);
+                    p.TorsoYaw += (+0.38f * windup - 0.64f * hurlWhip) * grabReach;
+                    p.TorsoPitch += (+0.16f * grabReach * (1f - liftHold) + 0.14f * hurlWhip);
+                }
+
                 p.ArmLPitch   = LerpF(armLPitch, -0.42f + 0.08f * salvoKick, salvoBrace);
                 p.ArmLYaw     = LerpF(armLYaw, +0.24f - 0.12f * salvoSweep, salvoBrace);
                 p.ArmLRoll    = LerpF(armLRoll, +0.48f, salvoBrace);
-                p.ElbowLPitch = LerpF(-0.78f + 0.18f * MathF.Abs(swingSign), -0.20f, shove);
-                p.ElbowLYaw   = LerpF(-0.18f, +0.34f, shove);
+                p.ElbowLPitch = LerpF(elbowLP, -0.76f, salvoBrace);
+                p.ElbowLYaw   = LerpF(elbowLY, -0.18f, salvoBrace);
 
                 // Right forearm TOKEN-GUN 98: held poised during shove, swings broadside across chest,
                 // then snaps into high-recoil rocket-salvo firing brace over u = 0.62..0.73 launching 4 plasma missiles!

@@ -18,12 +18,15 @@ internal static class BossIntroCutscene
 {
     private const float CalmPhaseEndR = 0.52f;   // Repairing 0.00..0.52: false calm watching Floor 01 dial
     private const float EyeSnapR = 0.88f;        // Repairing 0.88..1.00: twin crimson eyes suddenly snap ON
-    private const float ShoveImpactU = 0.13f;    // Doors whip open -> jumpscare lunge -> brutal shove impact!
-    private const float FloorLandU = 0.28f;      // Player hurtles 4.2m backward and slams onto carpet (Y=0.44m)
-    private const float GlanceShotgunU = 0.37f;  // End of dazed left-glance + dropped shotgun spot
+    private const float GrabConnectU = 0.068f;   // Giant armored left hand shoots into lens & clenches collar!
+    private const float ThrowWindupU = 0.172f;   // End of helpless mid-air lift (Y=2.18m) -> wind-up anticipation
+    private const float ShoveImpactU = 0.196f;   // EXPLOSIVE sidearm hurl across the entire atrium!
+    private const float FloorLandU = 0.276f;     // Crushing slam onto burgundy carpet (Y=0.36m) + carpet skid!
+    private const float SkidEndU = 0.305f;       // End of floor bounce & carpet skid
+    private const float GlanceShotgunU = 0.38f;  // End of dazed left-glance + dropped shotgun spot
     private const float LookUpEndU = 0.46f;      // Head snaps sharply UP at towering titan looming overhead
-    private const float SalvoStartU = 0.62f;     // TOKEN-GUN 98 launches 4 plasma rockets across lobby
-    private const float ExplosionStartU = 0.68f; // Rockets detonate and ignite the atrium
+    private const float SalvoStartU = 0.62f;     // TOKEN-GUN 98 launches 4 sleek 3D finned missiles
+    private const float ExplosionStartU = 0.68f; // Missiles detonate and ignite the atrium
     private const float ExplosionEndU = 0.76f;
     private const float GrabStartU = 0.78f;      // Camera dips toward dropped 3D shotgun on carpet
     private const float GrabClackU = 0.83f;      // Crisp pickup clack right before dropped gun vanishes (0.84)
@@ -144,28 +147,24 @@ internal static class BossIntroCutscene
     }
 
     internal static Vector3 KnockedBackStandPosition(SkyscraperFloor1World world)
-        => world.NorthElevatorPos + new Vector3(0.88f, 1.72f, -5.85f);
+        => world.NorthElevatorPos + new Vector3(0.88f, 1.72f, -6.18f);
 
     /// <summary>
     /// Exact biomechanical foot-locked walkout shared by <see cref="SkyscraperFloor1World"/> (root Z/Y)
     /// and <see cref="VisualEngine3D"/> (stance/swing leg angles) so planted boots NEVER skate!
-    /// 4 discrete heavy 0.875m steps (+1.35 -> -2.15) with dead-still pauses during speech beats.
+    /// Step 0 lunges onto threshold (0.00..0.068) to physically grab the hero by the collar & lift/hurl them!
+    /// Steps 1..3 execute 3 heavy 0.875m Terminator stomps out onto the compass medallion.
     /// </summary>
     internal static IntroWalkSample EvalIntroWalk(float u)
     {
         u = Math.Clamp(u, 0f, 1f);
 
-        // 4 discrete step windows: [startU, endU], alternating Right(0), Left(1), Right(2), Left(3)
-        // Step 0 (0.10..0.22): Threshold burst + left-arm shove (+1.35 -> +0.48)
-        // Step 1 (0.26..0.38): Heavy stomp onto carpet (+0.48 -> -0.40) -> DEAD STILL PAUSE (0.38..0.54)
-        // Step 2 (0.54..0.65): Towering stomp forward (-0.40 -> -1.27)
-        // Step 3 (0.67..0.78): Final plant onto compass medallion (-1.27 -> -2.15) -> DEAD STILL STANCE (0.78..1.00)
         ReadOnlySpan<(float Start, float End, bool LeftSwing)> steps =
         [
-            (0.10f, 0.22f, false),
-            (0.26f, 0.38f, true),
-            (0.54f, 0.65f, false),
-            (0.67f, 0.78f, true)
+            (0.00f, 0.068f, false), // Step 0: Explosive threshold lunge right into hero's face for physical collar grab!
+            (0.28f, 0.39f,  true),  // Step 1: Heavy stomp onto carpet after hurling hero across atrium
+            (0.54f, 0.65f,  false), // Step 2: Towering stomp forward
+            (0.67f, 0.78f,  true)   // Step 3: Final plant onto compass medallion -> DEAD STILL STANCE
         ];
 
         const float startZ = 1.35f;
@@ -185,7 +184,6 @@ internal static class BossIntroCutscene
             {
                 progressSteps += 1f;
                 completed = i + 1;
-                // Crisp decaying heavy boot-impact pulse right after heel slam
                 float after = (u - s.End) / 0.055f;
                 if (after >= 0f && after < 1f)
                     stompPulse = MathF.Max(stompPulse, (1f - after) * (1f - after));
@@ -205,21 +203,23 @@ internal static class BossIntroCutscene
         }
 
         float offsetZ = startZ - stepLen * progressSteps;
-        float stepDown = SmoothStep((progressSteps - 0.25f) / 0.65f);
+        float stepDown = SmoothStep((progressSteps - 0.15f) / 0.65f);
         float offsetY = 0.16f * (1f - stepDown);
 
-        // Brutal left-arm lunge & shove impulse peaking right at ShoveImpactU (0.13)
+        // ShovePulse encodes the violent release whip right at ThrowWindupU..0.27
         float shovePulse = 0f;
-        if (u > 0.05f && u < 0.24f)
+        if (u > ThrowWindupU && u < 0.28f)
         {
-            float sf = (u - 0.05f) / 0.19f;
-            shovePulse = sf < 0.42f
-                ? SmoothStep(sf / 0.42f)
-                : 1f - SmoothStep((sf - 0.42f) / 0.58f);
+            float sf = (u - ThrowWindupU) / (0.28f - ThrowWindupU);
+            shovePulse = sf < 0.30f
+                ? SmoothStep(sf / 0.30f)
+                : 1f - SmoothStep((sf - 0.30f) / 0.70f);
         }
 
-        // Smoothly uncoil from doorway crouch to towering 2.95m height across Step 1..Step 2
-        float uncoil = SmoothStep((u - 0.26f) / 0.22f);
+        // Uncoil partially during the mid-air collar lift so boss towers eye-to-eye, then full 2.95m by Step 1..2!
+        float liftUncoil = SmoothStep((u - 0.07f) / 0.08f) * 0.42f;
+        float walkUncoil = SmoothStep((u - 0.28f) / 0.20f);
+        float uncoil = MathF.Max(liftUncoil, walkUncoil);
 
         return new IntroWalkSample(
             OffsetZ: offsetZ,
@@ -297,15 +297,14 @@ internal static class BossIntroCutscene
             }
             else
             {
-                // BEAT 1B (r = 0.52..1.00): Player steps close (Z = -10.20, 1.70m from doors!) expecting to board to Floor 2.
-                // Glass clears to dark empty-looking cab... until r = 0.88..1.00 when TWO piercing crimson visor eyes snap ON!
+                // BEAT 1B (r = 0.52..1.00): Player steps right up to the threshold (Z = -9.68, 1.18m from doors!)
+                // expecting to board — glass clears until r = 0.88..1.00 when twin crimson visor eyes snap ON!
                 float t = SmoothStep((r - CalmPhaseEndR) / (1f - CalmPhaseEndR));
-                Vector3 pos = Vector3.Lerp(new(0.04f, 1.66f, -10.25f), new(0.04f, 1.64f, -10.20f), t);
-                Vector3 tgt = Vector3.Lerp(new(0.00f, 1.72f, -7.80f), new(0.00f, 1.68f, -7.15f), t);
+                Vector3 pos = Vector3.Lerp(new(0.04f, 1.66f, -10.25f), new(-0.14f, 1.66f, -9.68f), t);
+                Vector3 tgt = Vector3.Lerp(new(0.00f, 1.72f, -7.80f), new(-0.04f, 1.70f, -7.25f), t);
 
-                // Startled micro-flinch only right when the twin crimson visor eyes snap ON at r = 0.88..1.00
                 float eyeSnap = SmoothStep((r - EyeSnapR) / 0.06f);
-                float eyeTremor = eyeSnap * (1f - SmoothStep((r - 0.94f) / 0.06f)) * 0.012f;
+                float eyeTremor = eyeSnap * (1f - SmoothStep((r - 0.94f) / 0.06f)) * 0.015f;
                 pos += new Vector3(
                     MathF.Sin(elapsed * 78f) * eyeTremor,
                     MathF.Cos(elapsed * 92f) * eyeTremor * 0.8f,
@@ -346,88 +345,127 @@ internal static class BossIntroCutscene
         SkyscraperFloor1World world, EscapedAgentBoss b, IntroWalkSample walk, float u)
     {
         Vector3 north = world.NorthElevatorPos;
-        Vector3 standAtDoor  = north + new Vector3(0.04f, 1.64f, -1.70f); // (0.04, 1.64, -10.20) ONLY 1.70m from doors!
-        Vector3 impactOrigin = standAtDoor + new Vector3(-0.02f, -0.05f, -0.14f);
-        Vector3 floorImpact  = north + new Vector3(0.88f, 0.44f, -5.85f); // (0.88, 0.44, -14.35) 4.2m backward slam!
-        Vector3 floorRest    = north + new Vector3(0.88f, 0.48f, -5.85f); // (0.88, 0.48, -14.35) dazed lying on carpet
-        Vector3 bracePos     = north + new Vector3(0.94f, 0.72f, -5.92f); // (0.94, 0.72, -14.42) propping up during salvo
-        Vector3 grabDipPos   = north + new Vector3(0.76f, 0.50f, -5.45f); // (0.76, 0.50, -13.95) reaching down-left for shotgun
-        Vector3 surgeBasePos = north + new Vector3(0.84f, 0.58f, -5.72f); // (0.84, 0.58, -14.22) launch upright to 1.72m
-        Vector3 emptyDeskGlance = new(3.15f, 0.92f, -12.35f);             // Empty atrium desk / vanished Veronika flank
+        Vector3 standAtDoor  = north + new Vector3(-0.14f, 1.66f, -1.18f); // (-0.14, 1.66, -9.68) INCHES from boss's hand!
+        Vector3 liftedInAir  = north + new Vector3(-0.22f, 2.16f, -0.98f); // (-0.22, 2.16, -9.48) HOISTED OFF FLOOR face-to-face!
+        Vector3 windupPull   = north + new Vector3(-0.50f, 2.24f, -0.84f); // Cocked sideways before brutal hurl!
+        Vector3 floorImpact  = north + new Vector3(0.76f,  0.36f, -5.45f); // Hard first slam onto carpet (Y=0.36m!)
+        Vector3 floorRest    = north + new Vector3(0.88f,  0.48f, -6.18f); // (0.88, 0.48, -14.68) 5.3m skid rest on carpet!
+        Vector3 bracePos     = north + new Vector3(0.94f,  0.72f, -6.18f);
+        Vector3 grabDipPos   = north + new Vector3(0.76f,  0.50f, -5.52f);
+        Vector3 surgeBasePos = north + new Vector3(0.84f,  0.58f, -5.98f);
+        Vector3 emptyDeskGlance = new(3.15f, 0.92f, -12.35f);
 
         Vector3 pos;
         Vector3 tgt;
         float rollRad;
         float fov;
 
-        if (u < ShoveImpactU)
+        if (u < GrabConnectU)
         {
-            // BEAT 2A (u = 0.00..0.13): SUDDEN JUMPSCARE LUNGE!
-            // Doors whip open 1.70m in front of camera; FovY snaps 44 -> 62 deg as SYSTEM ZERO bursts into the lens!
-            float f = u / ShoveImpactU;
+            // BEAT 2A (u = 0.00..0.068): JUMPSCARE HAND LUNGE STRAIGHT INTO THE LENS!
+            // Giant armored left forearm shoots right into hero's face & clenches collar!
+            float f = u / GrabConnectU;
             float t = SmoothStep(f);
-            float fovSnap = 1f - MathF.Pow(1f - f, 2.4f);
-            pos = Vector3.Lerp(standAtDoor, impactOrigin, t);
-            float doorBurstShake = (0.35f + 0.65f * f) * 0.022f;
-            pos += new Vector3(MathF.Sin(u * 480f) * doorBurstShake, MathF.Cos(u * 530f) * doorBurstShake * 0.75f, 0f);
-            tgt = b.Position + new Vector3(-0.10f * t, LerpF(1.70f, 1.92f, t), -0.32f * t);
-            rollRad = 0.065f * t;
-            fov = LerpF(44f, 62f, fovSnap);
+            pos = standAtDoor + new Vector3(-0.04f * t, -0.04f * t, +0.08f * t);
+            float grabJolt = (0.3f + 0.7f * f) * 0.026f;
+            pos += new Vector3(MathF.Sin(u * 560f) * grabJolt, MathF.Cos(u * 610f) * grabJolt, 0f);
+            // Stare straight at his lunging left hand & blazing crimson visor!
+            tgt = b.Position + new Vector3(-0.08f, LerpF(1.74f, 1.88f, t), -0.35f);
+            rollRad = -0.08f * t;
+            fov = LerpF(44f, 56f, t);
+        }
+        else if (u < ThrowWindupU)
+        {
+            // BEAT 2B (u = 0.068..0.172): PHYSICALLY LIFTED OFF THE FLOOR IN HIS ARMORED FIST!
+            // Camera rises to Y = 2.16m dangling helplessly face-to-face with his crimson visor inches away!
+            float f = (u - GrabConnectU) / (ThrowWindupU - GrabConnectU);
+            float hoist = SmoothStep(Math.Clamp(f / 0.42f, 0f, 1f));
+            float dangleX = MathF.Sin(f * MathF.PI * 2.5f) * 0.045f * hoist;
+            float dangleY = MathF.Sin(f * MathF.PI * 4.0f) * 0.028f * hoist;
+            pos = Vector3.Lerp(standAtDoor, liftedInAir, hoist) + new Vector3(dangleX, dangleY, 0f);
+
+            // Clench-impact tremor decaying over first 0.025u
+            float clenchShake = MathF.Exp(-f * 9f) * 0.045f;
+            pos += new Vector3(MathF.Sin(u * 640f) * clenchShake, MathF.Cos(u * 710f) * clenchShake, 0f);
+
+            // Locked tight onto his glowing crimson visor & armored chin inches from your face!
+            tgt = b.Position + new Vector3(-0.02f, LerpF(1.88f, 2.26f, hoist), -0.10f);
+            rollRad = LerpF(-0.08f, +0.105f, hoist) + MathF.Sin(f * MathF.PI * 2.2f) * 0.055f;
+            fov = LerpF(56f, 44f, hoist);
+        }
+        else if (u < ShoveImpactU)
+        {
+            // BEAT 2C (u = 0.172..0.196): BRUTAL WIND-UP ANTICIPATION BEFORE THE HURL!
+            float f = SmoothStep((u - ThrowWindupU) / (ShoveImpactU - ThrowWindupU));
+            pos = Vector3.Lerp(liftedInAir, windupPull, f);
+            tgt = b.Position + new Vector3(0.06f * f, 2.24f, -0.05f);
+            rollRad = LerpF(+0.105f, +0.26f, f); // +15 deg cocked sideways
+            fov = LerpF(44f, 52f, f);
         }
         else if (u < FloorLandU)
         {
-            // BEAT 2B (u = 0.13..0.28): BRUTAL SHOVE IMPACT & 4.2M BACKWARD THROW!
-            // Violent tumble roll (-26 deg -> +12 deg -> -9 deg) slamming hard onto the burgundy carpet (Y = 0.44m)!
+            // BEAT 2D (u = 0.196..0.276): EXPLOSIVE 5.3-METER HIGH-VELOCITY BALLISTIC THROW ACROSS ATRIUM!
+            // FovY violently punches 52 -> 78 deg speed-warp, violent -44 deg tumble roll, crushing Y=0.36m floor slam!
             float f = (u - ShoveImpactU) / (FloorLandU - ShoveImpactU);
-            float flight = 1f - MathF.Pow(1f - f, 2.2f);
-            float arcY = MathF.Sin(f * MathF.PI) * 0.46f;
-            pos = Vector3.Lerp(impactOrigin, floorImpact, flight) + new Vector3(0f, arcY, 0f);
+            float flight = 1f - MathF.Pow(1f - f, 1.85f); // Explosive whip launch!
+            float arcY = MathF.Sin(f * MathF.PI) * 0.56f;
+            pos = Vector3.Lerp(windupPull, floorImpact, flight) + new Vector3(0f, arcY, 0f);
 
-            float skyWhip = MathF.Sin(f * MathF.PI) * 1.25f;
-            tgt = b.Position + new Vector3(0.06f, 1.92f + skyWhip, 0f);
+            // Violent sky-whip pitch as hero spins backward through the air!
+            float skyWhip = MathF.Sin(f * MathF.PI) * 1.85f;
+            tgt = b.Position + new Vector3(0.18f * f, 2.10f + skyWhip, 0f);
 
-            if (f < 0.30f)
-                rollRad = LerpF(+0.065f, -0.454f, SmoothStep(f / 0.30f)); // -> -26 deg
-            else if (f < 0.68f)
-                rollRad = LerpF(-0.454f, +0.209f, SmoothStep((f - 0.30f) / 0.38f)); // -> +12 deg
+            if (f < 0.38f)
+                rollRad = LerpF(+0.26f, -0.768f, SmoothStep(f / 0.38f));  // Whip to -44 deg!
+            else if (f < 0.74f)
+                rollRad = LerpF(-0.768f, +0.384f, SmoothStep((f - 0.38f) / 0.36f)); // Snap to +22 deg!
             else
-                rollRad = LerpF(+0.209f, -0.157f, SmoothStep((f - 0.68f) / 0.32f)); // -> -9 deg impact
+                rollRad = LerpF(+0.384f, -0.244f, SmoothStep((f - 0.74f) / 0.26f)); // Slam to -14 deg!
 
-            fov = LerpF(62f, 52f, f);
+            // Dramatic high-speed FOV punch peaking mid-flight!
+            fov = LerpF(52f, 54f, f) + MathF.Sin(f * MathF.PI) * 26f; // Peaks at 79 deg!
 
-            float hitShake = (1f - f) * 0.065f;
-            pos += new Vector3(MathF.Sin(u * 410f) * hitShake, MathF.Cos(u * 460f) * hitShake, 0f);
+            float launchShake = (1f - f) * 0.085f;
+            pos += new Vector3(MathF.Sin(u * 520f) * launchShake, MathF.Cos(u * 580f) * launchShake, 0f);
+        }
+        else if (u < SkidEndU)
+        {
+            // BEAT 2E (u = 0.276..0.305): CRUSHING FLOOR IMPACT BOUNCE + 0.75M CARPET SKID!
+            float f = (u - FloorLandU) / (SkidEndU - FloorLandU);
+            float skid = 1f - MathF.Pow(1f - f, 2.4f);
+            float bounceY = MathF.Abs(MathF.Sin(f * MathF.PI * 1.8f)) * (1f - f) * 0.22f;
+            pos = Vector3.Lerp(floorImpact, floorRest, skid) + new Vector3(0f, bounceY, 0f);
+            float impactQuake = (1f - f) * 0.095f;
+            pos += new Vector3(MathF.Sin(u * 680f) * impactQuake, MathF.Cos(u * 740f) * impactQuake, 0f);
+            tgt = b.Position + new Vector3(0.08f, LerpF(2.15f, 1.88f, skid), 0f);
+            rollRad = LerpF(-0.244f, -0.175f, skid) + MathF.Sin(f * MathF.PI * 3f) * (1f - f) * 0.08f;
+            fov = LerpF(56f, 50f, skid);
         }
         else if (u < LookUpEndU)
         {
-            // BEAT 3 (u = 0.28..0.46): DAZED LOOK-AROUND — VERONIKA VANISHED & DROPPED SHOTGUN -> SNAP UP AT TITAN!
-            float landElapsed = u - FloorLandU;
-            float settleY = LerpF(floorImpact.Y, floorRest.Y, SmoothStep(landElapsed / 0.06f));
-            float bounce = MathF.Abs(MathF.Sin(landElapsed * 56f)) * MathF.Exp(-landElapsed * 30f) * 0.13f;
+            // BEAT 3 (u = 0.305..0.46): DAZED LOOK-AROUND — VERONIKA VANISHED & DROPPED SHOTGUN -> SNAP UP AT TITAN!
+            float landElapsed = u - SkidEndU;
             float dizzyBreath = MathF.Sin(landElapsed * 24f) * 0.016f;
-            pos = new Vector3(floorRest.X, settleY + bounce + dizzyBreath, floorRest.Z);
+            pos = new Vector3(floorRest.X, floorRest.Y + dizzyBreath, floorRest.Z);
 
             Vector3 bossLofty = b.Position + new Vector3(0.04f, 1.98f, 0f);
-            if (u < 0.325f)
+            if (u < 0.345f)
             {
-                // Whip head left-sideways toward empty desk / vanished Veronika flank
-                float k = SmoothStep((u - FloorLandU) / (0.325f - FloorLandU));
+                float k = SmoothStep((u - SkidEndU) / (0.345f - SkidEndU));
                 tgt = Vector3.Lerp(b.Position + new Vector3(0.06f, 1.88f, 0f), emptyDeskGlance, k);
-                rollRad = LerpF(-0.157f, -0.215f, k);
-                fov = LerpF(52f, 50f, k);
+                rollRad = LerpF(-0.175f, -0.225f, k);
+                fov = LerpF(50f, 49f, k);
             }
             else if (u < GlanceShotgunU)
             {
-                // Whip gaze down onto the 3D Sawed-Off Shotgun lying on the burgundy carpet at (0.62, 0.06, -12.95)
-                float k = SmoothStep((u - 0.325f) / (GlanceShotgunU - 0.325f));
+                float k = SmoothStep((u - 0.345f) / (GlanceShotgunU - 0.345f));
                 tgt = Vector3.Lerp(emptyDeskGlance, DroppedShotgunPos, k);
                 pos += new Vector3(-0.05f * k, -0.02f * k, +0.08f * k);
-                rollRad = LerpF(-0.215f, -0.145f, k);
-                fov = LerpF(50f, 44f, k);
+                rollRad = LerpF(-0.225f, -0.145f, k);
+                fov = LerpF(49f, 44f, k);
             }
             else
             {
-                // Snap head sharply UP at the towering 3-meter titan staring down with curious helmet tilt!
                 float k = SmoothStep((u - GlanceShotgunU) / 0.055f);
                 tgt = Vector3.Lerp(DroppedShotgunPos, bossLofty, k);
                 pos += new Vector3(-0.05f * (1f - k), -0.02f * (1f - k), +0.08f * (1f - k));
@@ -522,24 +560,44 @@ internal static class BossIntroCutscene
         {
             float u = IntroProgress(b);
 
-            // 1a. Blinding crimson-white shockwave flash right on the brutal shove impact (u = 0.13..0.24)
-            if (u >= ShoveImpactU && u < ShoveImpactU + 0.11f)
+            // 1a. Collar-choke crimson edge pulse while hoisted helplessly in mid-air (u = 0.068..0.196)
+            if (u >= GrabConnectU && u < ShoveImpactU)
             {
-                float f = (u - ShoveImpactU) / 0.11f;
+                float choke = SmoothStep((u - GrabConnectU) / 0.025f);
+                float pulse = 0.72f + 0.28f * MathF.Sin(u * 140f);
+                int chokeA = Math.Clamp((int)(110 * choke * pulse), 0, 255);
+                Color chokeRed = new(148, 12, 20, chokeA);
+                Raylib.DrawRectangleGradientH(0, barH, 136, sh - barH * 2, chokeRed, Color.Blank);
+                Raylib.DrawRectangleGradientH(sw - 136, barH, 136, sh - barH * 2, Color.Blank, chokeRed);
+            }
+
+            // 1b. Blinding crimson-white shockwave flash right on the brutal hurl release (u = 0.196..0.28)
+            if (u >= ShoveImpactU && u < ShoveImpactU + 0.085f)
+            {
+                float f = (u - ShoveImpactU) / 0.085f;
                 int flashA = Math.Clamp((int)((1f - f) * (1f - f) * 185), 0, 255);
                 Raylib.DrawRectangle(0, barH, sw, sh - barH * 2, new Color(255, 204, 190, flashA));
             }
 
-            // 1b. Brief red concussion edge-vignette while dazed on the burgundy carpet (u = 0.13..0.48)
+            // 1c. Crushing dark-crimson concussion blackout blink right as hero slams onto the carpet (u = 0.274..0.315)
+            if (u >= FloorLandU - 0.004f && u < SkidEndU + 0.015f)
+            {
+                float f = (u - (FloorLandU - 0.004f)) / (SkidEndU + 0.015f - (FloorLandU - 0.004f));
+                float blink = MathF.Sin(Math.Clamp(f, 0f, 1f) * MathF.PI);
+                int blkA = Math.Clamp((int)(192 * MathF.Pow(blink, 0.75f)), 0, 255);
+                Raylib.DrawRectangle(0, barH, sw, sh - barH * 2, new Color(18, 6, 8, blkA));
+            }
+
+            // 1d. Brief red concussion edge-vignette while dazed on the burgundy carpet (u = 0.196..0.48)
             if (u >= ShoveImpactU && u < LookUpEndU + 0.04f)
             {
                 float daze = u < FloorLandU
                     ? SmoothStep((u - ShoveImpactU) / (FloorLandU - ShoveImpactU))
                     : 1f - SmoothStep((u - FloorLandU) / (LookUpEndU + 0.04f - FloorLandU));
-                int dazeA = Math.Clamp((int)(96 * daze), 0, 255);
+                int dazeA = Math.Clamp((int)(104 * daze), 0, 255);
                 Color dazeRed = new(142, 14, 22, dazeA);
-                Raylib.DrawRectangleGradientH(0, barH, 124, sh - barH * 2, dazeRed, Color.Blank);
-                Raylib.DrawRectangleGradientH(sw - 124, barH, 124, sh - barH * 2, Color.Blank, dazeRed);
+                Raylib.DrawRectangleGradientH(0, barH, 132, sh - barH * 2, dazeRed, Color.Blank);
+                Raylib.DrawRectangleGradientH(sw - 132, barH, 132, sh - barH * 2, Color.Blank, dazeRed);
             }
 
             // 1c. Warm blazing orange explosion flash as the 4 rockets detonate and ignite the atrium (u = 0.68..0.77)

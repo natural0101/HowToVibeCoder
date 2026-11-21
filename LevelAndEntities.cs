@@ -4440,40 +4440,38 @@ public sealed partial class SkyscraperFloor1World
             NorthElevatorPos + new Vector3(+5.6f, 0.2f, -7.6f)  // East coffee/arch flank
         ];
 
-        // TOKEN-GUN 98 muzzle flash burst during staggered launch window
-        if (CutsceneRocketTime < 0.36f)
+        // Crisp concentrated muzzle flash burst at TOKEN-GUN 98 aperture during launch
+        if (CutsceneRocketTime < 0.34f)
         {
-            float mf = 1f - CutsceneRocketTime / 0.36f;
-            float pulse = 0.72f + 0.28f * MathF.Sin(CutsceneRocketTime * 78f);
-            VisualEngine3D.Orb(muzzle, 0.24f * mf * pulse,
-                new Color(255, 242, 198, Math.Clamp((int)(230 * mf), 0, 255)), Finish.Lamp);
-            Raylib.DrawSphere(muzzle, 0.44f * mf * pulse,
-                new Color(255, 78, 24, Math.Clamp((int)(128 * mf), 0, 255)));
+            float mf = 1f - CutsceneRocketTime / 0.34f;
+            float pulse = 0.72f + 0.28f * MathF.Sin(CutsceneRocketTime * 84f);
+            VisualEngine3D.Orb(muzzle, 0.18f * mf * pulse,
+                new Color(255, 242, 198, Math.Clamp((int)(235 * mf), 0, 255)), Finish.Lamp);
+            VisualEngine3D.Oval(muzzle, new Vector3(0.28f * mf * pulse),
+                new Color(255, 86, 26, Math.Clamp((int)(120 * mf), 0, 255)), Finish.Cloud);
         }
 
-        static Vector3 EvalSpiralRocket(Vector3 start, Vector3 end, float u, int idx)
+        // Sleek military ballistic arc (tight subtle weave — no goofy cartoon corkscrew!)
+        static Vector3 EvalMissilePos(Vector3 start, Vector3 end, float u, int idx)
         {
             u = Math.Clamp(u, 0f, 1f);
             Vector3 axis = end - start;
             Vector3 fwd = axis.LengthSquared() > 1e-5f ? Vector3.Normalize(axis) : -Vector3.UnitZ;
             Vector3 side = Vector3.Cross(fwd, Vector3.UnitY);
             side = side.LengthSquared() > 1e-5f ? Vector3.Normalize(side) : Vector3.UnitX;
-            Vector3 upOrtho = Vector3.Normalize(Vector3.Cross(side, fwd));
 
             float env = MathF.Sin(u * MathF.PI);
             float handed = idx % 2 == 0 ? 1f : -1f;
-            float angle = u * MathF.Tau * 2.4f * handed + idx * 1.57f;
-            float radius = 0.26f * env;
-            float arcLift = (0.44f + 0.14f * (idx % 2)) * env;
+            float arcLift = (0.58f + 0.18f * (idx % 2)) * env;
+            float slightCurve = 0.22f * handed * env + 0.035f * MathF.Sin(u * MathF.Tau * 1.5f + idx) * env;
 
             return Vector3.Lerp(start, end, u)
                 + Vector3.UnitY * arcLift
-                + side * (MathF.Cos(angle) * radius)
-                + upOrtho * (MathF.Sin(angle) * radius * 0.75f);
+                + side * slightCurve;
         }
 
         const float flightDuration = 0.76f;
-        const float explosionDuration = 0.65f;
+        const float explosionDuration = 0.68f;
 
         for (int i = 0; i < targets.Length; i++)
         {
@@ -4486,37 +4484,67 @@ public sealed partial class SkyscraperFloor1World
 
             if (ti < 1.0f)
             {
-                Vector3 pos = EvalSpiralRocket(muzzle, target, ti, i);
-                Vector3 bodyTail = EvalSpiralRocket(muzzle, target, MathF.Max(0f, ti - 0.065f), i);
-                Vector3 streakTail = EvalSpiralRocket(muzzle, target, MathF.Max(0f, ti - 0.22f), i);
+                Vector3 pos = EvalMissilePos(muzzle, target, ti, i);
+                Vector3 prevPos = EvalMissilePos(muzzle, target, MathF.Max(0f, ti - 0.03f), i);
+                Vector3 nextPos = EvalMissilePos(muzzle, target, MathF.Min(1f, ti + 0.03f), i);
+                Vector3 tangent = nextPos - prevPos;
+                Vector3 dir = tangent.LengthSquared() > 1e-6f ? Vector3.Normalize(tangent) : Vector3.Normalize(target - muzzle);
 
-                // Fiery plasma streak line + incandescent contrail cylinder
-                Raylib.DrawLine3D(streakTail, pos, new Color(255, 224, 132, 235));
-                Raylib.DrawCylinderEx(streakTail, pos, 0.020f, 0.048f, 6, new Color(255, 76, 22, 165));
+                // Local orthonormal missile frame (dir = forward, right, up)
+                Vector3 right = Vector3.Cross(dir, Vector3.UnitY);
+                right = right.LengthSquared() > 1e-5f ? Vector3.Normalize(right) : Vector3.UnitX;
+                Vector3 up = Vector3.Normalize(Vector3.Cross(right, dir));
 
-                // Trailing glowing ember spheres + dark smoke trail along the spiral path
-                for (int k = 1; k <= 6; k++)
+                // 1. Continuous turbulent smoke contrail ribbon behind nozzle (closely overlapping soft cloud puffs, zero yellow beads!)
+                const int smokeSteps = 14;
+                for (int k = 1; k <= smokeSteps; k++)
                 {
-                    float tu = ti - k * 0.042f;
+                    float tu = ti - k * 0.022f;
                     if (tu < 0f) break;
-                    Vector3 ep = EvalSpiralRocket(muzzle, target, tu, i);
-                    float falloff = 1f - k / 7f;
-                    if (k <= 3)
-                    {
-                        Raylib.DrawSphere(ep, 0.055f + 0.032f * falloff,
-                            new Color(255, Math.Clamp(95 + (int)(110 * falloff), 0, 255), 28, Math.Clamp((int)(195 * falloff), 0, 255)));
-                    }
-                    else
-                    {
-                        VisualEngine3D.Oval(ep + Vector3.UnitY * (0.04f * k), new Vector3(0.09f + 0.03f * k),
-                            new Color(52, 42, 40, Math.Clamp((int)(135 * falloff), 0, 255)), Finish.Cloud);
-                    }
+                    Vector3 sp = EvalMissilePos(muzzle, target, tu, i);
+                    float age = k / (float)smokeSteps;
+                    float rSmoke = 0.048f + age * 0.145f;
+                    int sAlpha = Math.Clamp((int)(145 * (1f - age * 0.85f)), 0, 255);
+                    Vector3 drift = new(MathF.Sin(k * 1.7f + i) * 0.02f * age, 0.055f * age, MathF.Cos(k * 1.3f + i) * 0.02f * age);
+                    VisualEngine3D.Oval(sp - dir * 0.28f + drift, new Vector3(rSmoke * 1.15f, rSmoke * 0.92f, rSmoke),
+                        new Color(74, 68, 66, sAlpha), Finish.Cloud);
                 }
 
-                // Glowing bright crimson-orange warhead + thruster core
-                VisualEngine3D.Rod(bodyTail, pos, 0.058f, 0.022f, 8, new Color(255, 68, 22, 255), Finish.Lamp);
-                VisualEngine3D.Orb(pos, 0.072f, new Color(255, 238, 174, 255), Finish.Lamp);
-                Raylib.DrawSphere(pos, 0.145f, new Color(255, 86, 24, 148));
+                // 2. Real 3D Sleek Machined Missile Geometry:
+                //    Crimson conical warhead -> antique-brass collar -> dark-gunmetal fuselage -> exhaust nozzle -> 4 swept tail fins!
+                Vector3 noseTip   = pos + dir * 0.24f;
+                Vector3 noseBase  = pos + dir * 0.06f;
+                Vector3 brassRear = pos + dir * 0.01f;
+                Vector3 bodyRear  = pos - dir * 0.34f;
+                Vector3 nozzleEnd = pos - dir * 0.40f;
+
+                // Dark-gunmetal cylindrical rocket body
+                VisualEngine3D.Rod(bodyRear, brassRear, 0.056f, 0.056f, 10, new Color(34, 38, 46, 255), Finish.Armor);
+                // Brushed antique-brass warhead collar (matching TOKEN-GUN 98)
+                VisualEngine3D.Rod(brassRear, noseBase, 0.060f, 0.058f, 10, new Color(206, 168, 92, 255), Finish.Bronze);
+                // Sharp crimson tapered warhead nosecone
+                VisualEngine3D.Rod(noseBase, noseTip, 0.056f, 0.008f, 10, new Color(198, 28, 30, 255), Finish.Armor);
+                // Tapered metallic exhaust bell
+                VisualEngine3D.Rod(nozzleEnd, bodyRear, 0.042f, 0.054f, 8, new Color(56, 52, 50, 255), Finish.Armor);
+
+                // 4 Swept Cruciform Stabilizer Tail Fins (gunmetal fins + crimson trailing edge)
+                for (int fin = 0; fin < 4; fin++)
+                {
+                    float fAng = fin * MathF.PI * 0.5f + MathF.PI * 0.25f;
+                    Vector3 radial = right * MathF.Cos(fAng) + up * MathF.Sin(fAng);
+                    Vector3 fFront = bodyRear + dir * 0.14f + radial * 0.050f;
+                    Vector3 fRear  = bodyRear + radial * 0.046f;
+                    Vector3 fTip   = bodyRear - dir * 0.04f + radial * 0.155f;
+                    Raylib.DrawTriangle3D(fFront, fRear, fTip, new Color(46, 50, 58, 255));
+                    Raylib.DrawTriangle3D(fFront, fTip, fRear, new Color(168, 34, 34, 255));
+                }
+
+                // 3. Incandescent Rocket Motor Exhaust Jet Cone (white-hot core inside orange-crimson plume)
+                float jetFlicker = 0.82f + 0.18f * MathF.Sin(_worldClock * 95f + i * 2.1f);
+                Vector3 jetOuter = nozzleEnd - dir * (0.46f * jetFlicker);
+                Vector3 jetCore  = nozzleEnd - dir * (0.24f * jetFlicker);
+                Raylib.DrawCylinderEx(nozzleEnd, jetOuter, 0.048f, 0.006f, 8, new Color(255, 112, 24, 195));
+                Raylib.DrawCylinderEx(nozzleEnd, jetCore,  0.030f, 0.004f, 8, new Color(255, 246, 206, 245));
             }
             else
             {
@@ -4524,61 +4552,62 @@ public sealed partial class SkyscraperFloor1World
                 if (expElapsed > explosionDuration) continue;
 
                 float e = expElapsed / explosionDuration;
-                float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.15f), 3f);
-                float fade = 1f - Smooth((e - 0.25f) / 0.75f);
+                float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.25f), 3f);
+                float fade = 1f - Smooth((e - 0.24f) / 0.76f);
 
-                // Expanding crimson shockwave ring & fiery carpet scorch pulse
-                float ringR = 0.45f + e * 3.15f;
-                int ringAlpha = Math.Clamp((int)(215 * (1f - e)), 0, 255);
-                Raylib.DrawCircle3D(new Vector3(target.X, 0.08f, target.Z), ringR, Vector3.UnitX, 90f, new Color(255, 68, 26, ringAlpha));
-                Raylib.DrawCircle3D(new Vector3(target.X, 0.14f, target.Z), ringR * 0.82f, Vector3.UnitX, 90f, new Color(255, 172, 68, Math.Clamp((int)(180 * (1f - e)), 0, 255)));
-                Raylib.DrawCylinder(new Vector3(target.X, 0.02f, target.Z), ringR * 0.72f, ringR * 0.80f, 0.012f, 20,
-                    new Color(255, 92, 24, Math.Clamp((int)(88 * (1f - e)), 0, 255)));
+                // Expanding shockwave ring & fiery carpet scorch pulse
+                float ringR = 0.45f + e * 3.35f;
+                int ringAlpha = Math.Clamp((int)(210 * (1f - e)), 0, 255);
+                Raylib.DrawCircle3D(new Vector3(target.X, 0.08f, target.Z), ringR, Vector3.UnitX, 90f, new Color(255, 76, 26, ringAlpha));
+                Raylib.DrawCylinder(new Vector3(target.X, 0.02f, target.Z), ringR * 0.74f, ringR * 0.82f, 0.012f, 20,
+                    new Color(255, 102, 26, Math.Clamp((int)(96 * (1f - e)), 0, 255)));
 
-                // Billowing dark-charcoal smoke shell curling upward
-                for (int sm = 0; sm < 4; sm++)
+                // Dense billowing dark-charcoal explosion smoke column
+                for (int sm = 0; sm < 5; sm++)
                 {
-                    float ang = i * 1.4f + sm * MathF.Tau / 4f + e * 1.1f;
-                    float spread = (0.42f + grow * 0.92f) * (0.75f + 0.25f * (sm % 2));
+                    float ang = i * 1.4f + sm * MathF.Tau / 5f + e * 1.2f;
+                    float spread = (0.38f + grow * 1.05f) * (0.72f + 0.28f * (sm % 2));
                     Vector3 smokePos = target + new Vector3(
                         MathF.Cos(ang) * spread,
-                        0.55f + e * (1.35f + 0.35f * sm),
+                        0.55f + e * (1.55f + 0.35f * sm),
                         MathF.Sin(ang) * spread);
-                    float smokeR = 0.48f + grow * 0.78f;
+                    float smokeR = 0.50f + grow * 0.86f;
                     VisualEngine3D.Oval(smokePos, new Vector3(smokeR * 1.12f, smokeR * 0.92f, smokeR),
-                        new Color(38, 32, 31, Math.Clamp((int)(185 * (1f - e * 0.65f)), 0, 255)), Finish.Cloud);
+                        new Color(38, 32, 31, Math.Clamp((int)(192 * (1f - e * 0.62f)), 0, 255)), Finish.Cloud);
                 }
 
-                // Blazing orange mid fireball + 3 volumetric flame lobes
-                Vector3 midCenter = target + Vector3.UnitY * (0.42f + e * 0.72f);
-                float midR = 0.56f + grow * 1.08f;
-                Raylib.DrawSphere(midCenter, midR, new Color(255, 96, 20, Math.Clamp((int)(195 * fade), 0, 255)));
-                for (int lb = 0; lb < 3; lb++)
+                // Multi-layered volumetric fireball (orange-red cloud lobes + blazing white-gold core)
+                Vector3 midCenter = target + Vector3.UnitY * (0.45f + e * 0.78f);
+                float midR = 0.58f + grow * 1.15f;
+                VisualEngine3D.Oval(midCenter, new Vector3(midR * 1.08f, midR * 0.95f, midR * 1.08f),
+                    new Color(255, 92, 18, Math.Clamp((int)(198 * fade), 0, 255)), Finish.Cloud);
+                for (int lb = 0; lb < 4; lb++)
                 {
-                    float la = lb * MathF.Tau / 3f + i * 0.9f;
-                    Vector3 lobePos = midCenter + new Vector3(MathF.Cos(la) * midR * 0.48f, (lb - 1) * 0.22f, MathF.Sin(la) * midR * 0.48f);
-                    VisualEngine3D.Orb(lobePos, midR * 0.62f,
-                        new Color(255, 138, 28, Math.Clamp((int)(205 * fade), 0, 255)), Finish.Lamp);
+                    float la = lb * MathF.Tau / 4f + i * 0.9f;
+                    Vector3 lobePos = midCenter + new Vector3(MathF.Cos(la) * midR * 0.48f, (lb % 2 == 0 ? 0.26f : -0.14f), MathF.Sin(la) * midR * 0.48f);
+                    VisualEngine3D.Oval(lobePos, new Vector3(midR * 0.62f),
+                        new Color(255, 142, 28, Math.Clamp((int)(190 * fade), 0, 255)), Finish.Cloud);
                 }
 
-                // Blinding warm-white core flash
-                float coreFade = Math.Clamp(1f - e * 2.05f, 0f, 1f);
+                float coreFade = Math.Clamp(1f - e * 2.0f, 0f, 1f);
                 if (coreFade > 0.02f)
                 {
-                    VisualEngine3D.Orb(target + Vector3.UnitY * (0.38f + e * 0.35f),
-                        (0.36f + grow * 0.62f) * (0.55f + 0.45f * coreFade),
-                        new Color(255, 250, 224, Math.Clamp((int)(245 * coreFade), 0, 255)), Finish.Lamp);
+                    VisualEngine3D.Orb(target + Vector3.UnitY * (0.40f + e * 0.36f),
+                        (0.38f + grow * 0.66f) * (0.55f + 0.45f * coreFade),
+                        new Color(255, 250, 220, Math.Clamp((int)(248 * coreFade), 0, 255)), Finish.Lamp);
                 }
 
-                // Radial golden blast sparks
-                for (int sp = 0; sp < 8; sp++)
+                // Flying charred metallic debris shards + hot sparks arcing outward
+                for (int sp = 0; sp < 10; sp++)
                 {
-                    float sa = sp * MathF.Tau / 8f + i * 0.7f;
-                    float dist = 0.45f + e * (2.4f + 0.5f * (sp % 3));
-                    float sy = MathF.Max(0.05f, 0.35f + e * (1.9f + 0.4f * (sp % 2)) - 2.3f * e * e);
+                    float sa = sp * MathF.Tau / 10f + i * 0.7f;
+                    float dist = 0.45f + e * (2.8f + 0.55f * (sp % 3));
+                    float sy = MathF.Max(0.05f, 0.38f + e * (2.2f + 0.45f * (sp % 2)) - 2.6f * e * e);
                     Vector3 spPos = target + new Vector3(MathF.Cos(sa) * dist, sy, MathF.Sin(sa) * dist);
-                    Vector3 spTail = target + new Vector3(MathF.Cos(sa) * MathF.Max(0f, dist - 0.32f), MathF.Max(0.05f, sy - 0.14f), MathF.Sin(sa) * MathF.Max(0f, dist - 0.32f));
-                    Raylib.DrawLine3D(spTail, spPos, new Color(255, 218, 112, Math.Clamp((int)(230 * (1f - e)), 0, 255)));
+                    Vector3 spTail = target + new Vector3(MathF.Cos(sa) * MathF.Max(0f, dist - 0.26f), MathF.Max(0.05f, sy - 0.12f), MathF.Sin(sa) * MathF.Max(0f, dist - 0.26f));
+                    Raylib.DrawLine3D(spTail, spPos, sp % 3 == 0
+                        ? new Color(48, 42, 40, Math.Clamp((int)(220 * (1f - e)), 0, 255))
+                        : new Color(255, 212, 98, Math.Clamp((int)(235 * (1f - e)), 0, 255)));
                 }
             }
         }
