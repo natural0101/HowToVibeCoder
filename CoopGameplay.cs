@@ -208,6 +208,15 @@ public static partial class Program
             if(Net.Host && _world.IsFloor2Unlocked) _weapons.UnlockedChatGun=true;
             PlayCurrentWeaponAudio(shooter.Weapon);
         }
+        else if(message is {Kind:"flipoff", Pose:{} gesturer})
+        {
+            var partner=Avatar(actorSlot);
+            if(Net.Host) Net.Send(message with {Slot=actorSlot}, 3-actorSlot);
+            partner.Move(gesturer);
+            partner.FlipOffTimer = 1.6f;
+            AudioMusicSystem.PlayHandGrab();
+            SetHudBanner(Loc.T("Напарник показал тебе фак!", "Teammate flipped you off!"), 2.4f, foreground:true);
+        }
         else if(Net.Host && message is {Kind:"interact", Pose:{} actor})
         {
             string? joint=CoopEscort(actor.Camera,true,apply:true);

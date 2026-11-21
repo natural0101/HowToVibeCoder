@@ -293,14 +293,23 @@ public class WeaponAndCombatView
     private float _animClock = 0f;
     private const float _inspectDuration = 2.4f;
     private float _inspectTimer;
+    private const float _flipOffDuration = 1.45f;
+    internal float FlipOffTimer { get; private set; }
     private float _walkWeight => _walk.Value;
 
     internal bool Inspecting => _inspectTimer > 0;
+    internal bool FlippingOff => FlipOffTimer > 0;
     private float InspectPhase => Inspecting ? 1 - _inspectTimer / _inspectDuration : 0;
 
     public void TriggerInspect()
     {
-        if (!Inspecting && !Reloading) _inspectTimer = _inspectDuration;
+        if (!Inspecting && !Reloading && !FlippingOff) _inspectTimer = _inspectDuration;
+    }
+
+    public void TriggerFlipOff(float duration = _flipOffDuration)
+    {
+        _inspectTimer = 0;
+        FlipOffTimer = MathF.Max(FlipOffTimer, duration);
     }
 
     public void UpdateLookLag(Vector2 angularDelta, float dt)
@@ -722,6 +731,7 @@ public class WeaponAndCombatView
         _flash=Math.Max(0,_flash-dt);
         TickReload(dt,camera);
         _inspectTimer = MathF.Max(0,_inspectTimer-dt);
+        FlipOffTimer = MathF.Max(0, FlipOffTimer - dt);
         _walk.Advance(isMoving ? 1 : 0,dt,18,.86f);
         float stride=_walkWeight*(1-.62f*crouchWeight);
         float width=.017f+.025f*sprintWeight;
@@ -1117,7 +1127,22 @@ public class WeaponAndCombatView
         Rlgl.Rotatef(ViewRoll*180/MathF.PI,0,0,1);
         Rlgl.DisableBackfaceCulling();
 
-        switch (CurrentWeapon)
+        if (FlippingOff && VisualEngine3D.HasAsset("fps_hands_flipoff"))
+        {
+            // Snappy spring-in, cheeky slight rock/wiggle, smooth drop-out!
+            float p = 1f - FlipOffTimer / _flipOffDuration;
+            float lift = p < 0.14f ? Ease(p / 0.14f) : p > 0.80f ? Ease((1f - p) / 0.20f) : 1f;
+            float wiggle = p is >= 0.14f and <= 0.80f ? MathF.Sin((p - 0.14f) * MathF.PI * 5f) * 0.065f : 0f;
+            float jab = p is >= 0.14f and <= 0.45f ? MathF.Sin((p - 0.14f) / 0.31f * MathF.PI) * 0.045f : 0f;
+            Vector3 pivot = baseOffset + new Vector3(0.08f, -0.14f, 0.54f);
+            Vector3 slide = baseOffset + new Vector3(0.02f * (1f - lift), -0.34f * (1f - lift) + jab * 0.3f, jab);
+            var pose = Matrix4x4.CreateTranslation(-pivot)
+                     * Matrix4x4.CreateRotationZ(wiggle)
+                     * Matrix4x4.CreateRotationX(-0.22f * (1f - lift))
+                     * Matrix4x4.CreateTranslation(pivot);
+            VisualEngine3D.ArmAssembly(true, slide, "fps_hands_flipoff", pose);
+        }
+        else switch (CurrentWeapon)
         {
             case WeaponType.BareHands:
             case WeaponType.CaptureNet:

@@ -734,19 +734,9 @@ public static class MainMenuAndPauseUI
             return;
         }
 
-        int winW = 580;
-        int winH = 560;
-        int wx = (sw - winW) / 2;
-        int wy = (sh - winH) / 2;
-        int btnStartX = wx + 44;
-        int btnStartY = wy + 116;
-        int btnW = winW - 88;
-        int btnH = 48;
-        int btnGap = 10;
-
         for (int i = 0; i < PauseButtonLabels.Length; i++)
         {
-            Rectangle btnRect = new(btnStartX, btnStartY + i * (btnH + btnGap), btnW, btnH);
+            Rectangle btnRect = PauseRowRect(i, sw, sh);
             bool hovered = Raylib.CheckCollisionPointRec(mp, btnRect);
             if (hovered && (mouseClicked || Raylib.GetMouseDelta().LengthSquared() > 0))
             {
@@ -761,9 +751,11 @@ public static class MainMenuAndPauseUI
                     return;
                 }
             }
-
         }
     }
+
+    private static Rectangle PauseRowRect(int index, int screenW, int screenH) =>
+        new(screenW / 2 - 220, screenH / 2 - 134 + index * 52, 440, 44);
 
     private static void ExecutePauseAction(int index)
     {
@@ -1213,12 +1205,43 @@ public static class MainMenuAndPauseUI
     public static void DrawPauseOverlay(Font font,int screenW,int screenH)
     {
         if (IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen) return;
-        DrawSlateWindow("Пауза",580,560);
+        Raylib.DrawRectangle(0, 0, screenW, screenH, new Color(12, 9, 7, 196));
+        // Real tactile mahogany stitched leather clipboard with steel spring clip & cream lined notepad!
+        float clipH = Math.Min(screenH - 36, 680);
+        float clipW = clipH * (720f / 990f);
+        Rectangle board = new((screenW - clipW) * 0.5f, (screenH - clipH) * 0.5f - 4, clipW, clipH);
+        LoreAndMenusUI.DrawPauseClipboard(board);
+
+        // Handwritten/stamped header directly on the lined notepad paper beneath the brass clip!
+        float paperX = board.X + board.Width * 0.21f;
+        float paperW = board.Width * 0.58f;
+        DossierPrint.Text("Пауза", paperX, board.Y + board.Height * 0.222f, 34, LoreAndMenusUI.ThemeSepiaInk, Typeface.SerifBold);
+        Raylib.DrawLine((int)paperX, (int)(board.Y + board.Height * 0.280f), (int)(paperX + paperW), (int)(board.Y + board.Height * 0.280f), LoreAndMenusUI.ThemeSepiaInk);
+
         if(Coop.Host || Coop.Guest)
-            Center(font,(Coop.Host ? Loc.Tr("Адрес для друга: ")+Coop.HostAddress : Loc.Tr(Coop.Status))+"   "+Program.PausePlayerCount,
-                new(screenW/2-265,screenH/2-216,530,34),17,Edge);
+            DossierPrint.Text((Coop.Host ? Loc.Tr("Адрес для друга: ")+Coop.HostAddress : Loc.Tr(Coop.Status))+"   "+Program.PausePlayerCount,
+                paperX, board.Y + board.Height * 0.288f, 13, LoreAndMenusUI.ThemeSepiaMuted);
+
+        // Write the 6 pause entries directly onto the cream notepad lines (ZERO dark rectangle boxes!)
         for(int i=0;i<PauseButtonLabels.Length;i++)
-            DrawMenuItem(PauseButtonLabels[i],new(screenW/2-246,screenH/2-164+i*58,492,48),i==_selectedPauseIndex);
+        {
+            Rectangle hit = PauseRowRect(i, screenW, screenH);
+            bool active = i == _selectedPauseIndex;
+            float y = hit.Y + 10;
+            if (active)
+            {
+                // Crisp hand-drawn crimson ink checkmark on the left margin of the notepad
+                Raylib.DrawLineEx(new(paperX - 20, y + 11), new(paperX - 14, y + 18), 2.8f, LoreAndMenusUI.ThemeStampRed);
+                Raylib.DrawLineEx(new(paperX - 14, y + 18), new(paperX - 4, y + 5), 2.8f, LoreAndMenusUI.ThemeStampRed);
+                DossierPrint.Text(PauseButtonLabels[i], paperX + 4, y, 21, LoreAndMenusUI.ThemeStampRed, Typeface.InterfaceBold);
+                float tw = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 21), PauseButtonLabels[i], 21).X;
+                Raylib.DrawLineEx(new(paperX + 2, y + 27), new(paperX + 8 + tw, y + 26), 2.2f, LoreAndMenusUI.ThemeStampRed);
+            }
+            else
+            {
+                DossierPrint.Text(PauseButtonLabels[i], paperX, y, 20, LoreAndMenusUI.ThemeSepiaInk, Typeface.Interface);
+            }
+        }
     }
 
     private static void DrawSaveLoadSubPanel(Font font,int screenW,int screenH)

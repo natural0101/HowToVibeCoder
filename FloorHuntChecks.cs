@@ -210,6 +210,16 @@ public static partial class Program
             _playerPos = new(0f, 1.40f, 9.05f);
             LookAtTarget(new(0f, 1.15f, 7.15f));
             capture("64_part2_hero_trio2_closeup.png");
+
+            // [V] Middle-finger emote live showcase in front of Vibe-Pirate & Punk Cyborg!
+            _world.ActiveCoders.Clear();
+            var fPirate = new VibeCoderEntity { Id=940, SpeciesId="tab", Name="Вайб-Пират «Крюк-Tab»", Rarity=VibeCoderRarity.Common, Position=new(0.0f, 0f, 7.15f), FacingYaw=0f, State=CoderAIState.WalkingToBait, IsCombatCoder=true, Aggro=false, Hp=50, MaxHp=50 };
+            _world.ActiveCoders.Add(fPirate);
+            _playerPos = new(0f, 1.46f, 9.10f);
+            LookAtTarget(new(0f, 1.28f, 7.15f));
+            TriggerFlipOffEmote();
+            _weapons.UpdateWeapons(0.28f, BuildPlayerCamera());
+            capture("65_flipoff_emote_v.png");
         }
         ResetNewGameFloor(greet:false);
     }

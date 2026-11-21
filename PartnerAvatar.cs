@@ -16,8 +16,10 @@ internal sealed class PartnerAvatar(int slot=0)
     internal int Slot {get;}=slot;
     internal int Hp=100;
     internal bool Carrying,Downed;
+    internal float FlipOffTimer;
     internal Color Blazer => Slot switch { 1=>new(35,75,142,255), 2=>new(31,110,74,255), _=>new(181,34,46,255) };
-    internal string Label => Loc.Tr(Slot==0 ? "Хозяин" : $"Гость {Slot}")+(Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
+    internal string Label => Loc.Tr(Slot==0 ? "Хозяин" : $"Гость {Slot}")
+        +(FlipOffTimer>0 ? Loc.Tr(" [ФАК!]") : Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
     public PlayerPose Pose = new(new(2,1.72f,10),MathF.PI,0,WeaponType.MicroUzi);
     public Vector3 Feet => new(Pose.Eye.X,0,Pose.Eye.Z);
     public readonly WeaponAndCombatView Effects = new();
@@ -41,6 +43,7 @@ internal sealed class PartnerAvatar(int slot=0)
     public void Tick(float dt)
     {
         flash=Math.Max(0,flash-dt);
+        FlipOffTimer=Math.Max(0,FlipOffTimer-dt);
         Effects.UpdateWeapons(dt,Pose.Camera);
     }
 
@@ -82,6 +85,15 @@ internal sealed class PartnerAvatar(int slot=0)
             stretch:new Vector3(1,height,1), hideProp:true,tint:Blazer);
         float kick=flash>0 ? .045f : 0;
         float lash=MathF.Sin(Pose.Swing*MathF.PI)*.6f;
+        // Raised 3D middle-finger salute when teammate triggers [V]!
+        if (FlipOffTimer > 0)
+        {
+            Color skin = new(218, 174, 148, 255);
+            Vector3 fist = P(-.18f, 1.46f, .34f) + Vector3.UnitY * step;
+            Tube(P(-.22f, 1.26f, .16f) + Vector3.UnitY * step, fist, .042f, .036f, Blazer);
+            VisualEngine3D.Oval(fist, new(.045f, .045f, .045f), skin, Finish.Anatomy);
+            Tube(fist + Vector3.UnitY * .02f, fist + Vector3.UnitY * .135f, .012f, .010f, skin);
+        }
         if (smg)
         {
             VisualEngine3D.Asset("weapon_uzi_90s",P(-.094f,1.324f,.258f-kick)+Vector3.UnitY*step,

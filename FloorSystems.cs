@@ -679,7 +679,18 @@ public static partial class Program
     private static Rectangle ArsenalTab(int i) => i==0 ? new(458,32,176,52) : new(642,32,186,52);
     private static Rectangle FloorRowRect(int i)
     {
-        if(floorPanel!=FloorPanel.Upgrades) return new(102,204+55*i,1076,51);
+        if(floorPanel!=FloorPanel.Upgrades)
+        {
+            // 5 organic pinned paper contract notes arranged on the office corkboard (3 top + 2 bottom)
+            return i switch
+            {
+                0 => new(88, 154, 344, 224),
+                1 => new(466, 146, 344, 224),
+                2 => new(844, 158, 344, 224),
+                3 => new(218, 404, 344, 224),
+                _ => new(622, 410, 344, 224),
+            };
+        }
         int y=sidegrades ? 150 : 152, height=sidegrades ? 70 : 144;
         return new(788+202*(i%2),y+(i/2)*(height+(sidegrades ? 8 : 12)),190,height);
     }
@@ -737,6 +748,8 @@ public static partial class Program
         int stride=shop ? 2 : 1;
         if(Key(KeyboardKey.Down) || Key(KeyboardKey.S)) floorRow=(floorRow+stride)%(rows*stride);
         if(Key(KeyboardKey.Up) || Key(KeyboardKey.W)) floorRow=(floorRow+rows*stride-stride)%(rows*stride);
+        if(!shop && (Key(KeyboardKey.Right) || Key(KeyboardKey.D))) floorRow=(floorRow+1)%count;
+        if(!shop && (Key(KeyboardKey.Left) || Key(KeyboardKey.A))) floorRow=(floorRow+count-1)%count;
         if(shop && (Key(KeyboardKey.Left) || Key(KeyboardKey.A))) floorRow-=column;
         if(shop && (Key(KeyboardKey.Right) || Key(KeyboardKey.D))) floorRow=Math.Min(count-1,floorRow+1-column);
         if(previousRow!=floorRow) panelMessage="";
@@ -906,38 +919,101 @@ public static partial class Program
         if(floorPanel==FloorPanel.Upgrades) { DrawBriefcase(); return; }
         Raylib.DrawRectangle(0,0,Raylib.GetScreenWidth(),Raylib.GetScreenHeight(),new Color(18,11,8,255));
         Raylib.BeginMode2D(new Camera2D { Zoom=PanelScale, Offset=PanelOffset });
-        LoreAndMenusUI.DrawDeskBackdrop(1280, 720);
-        if (floorPanel==FloorPanel.BossFinale) DrawDecision();
-        else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) DrawPayroll();
+        if (floorPanel==FloorPanel.BossFinale) { LoreAndMenusUI.DrawDeskBackdrop(1280, 720); DrawDecision(); }
+        else if (floorPanel == FloorPanel.Debrief && Floor.Report != null) { LoreAndMenusUI.DrawDeskBackdrop(1280, 720); DrawPayroll(); }
         else
         {
-            Rectangle board = new(76, 52, 1128, 615);
-            LoreAndMenusUI.DrawBrassWalnutFrame(board);
-            TypeAt("Доска контрактов", 108, 70, 40, LoreAndMenusUI.ThemeBrassBright, true);
-            TypeAt("ЭНТРОПИК    ЭТАЖ 01", 954, 88, 15, LoreAndMenusUI.ThemeBrassDim);
-            Raylib.DrawLine(108, 128, 1170, 128, LoreAndMenusUI.ThemeBrassDim);
-            TypeAt(Floor.JobId>=0 ? FloorSystems.Jobs[Floor.JobId].Title+"    /    "+Loc.Tr(Floor.Progress) : "Срок отсчитывается с момента подписи", 108, 146, 20, new Color(224,206,174,240));
-            for(int i=0;i<FloorSystems.Jobs.Length;i++)
+            // REAL WOODEN-FRAMED OFFICE CORKBOARD WITH 5 TILTED PINNED PAPER CONTRACT NOTES (ZERO straight table rows!)
+            LoreAndMenusUI.DrawCorkboard(1280, 720);
+            // Engrave title squarely centered between the rivets on the brushed-brass plaque in top-left of corkboard!
+            DossierPrint.Text("Доска контрактов", 122, 97, 21, LoreAndMenusUI.ThemeSepiaInk, Typeface.SerifBold);
+            string subLine = Floor.JobId >= 0 ? FloorSystems.Jobs[Floor.JobId].Title + "  ·  " + Loc.Tr(Floor.Progress) : "Срок отсчитывается с момента подписи";
+            GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold, 17), subLine, new(374, 98), 17, new Color(246, 234, 206, 245));
+
+            float[] noteAngles = [-2.4f, 1.7f, -1.5f, 2.1f, -1.9f];
+            for (int i = 0; i < FloorSystems.Jobs.Length; i++)
             {
-                var job=FloorSystems.Jobs[i];
-                Rectangle raw=FloorRowRect(i);
-                bool selected=i==floorRow;
-                Rectangle card = new(raw.X + (selected ? 8 : 0), raw.Y + 4, raw.Width - 10, raw.Height - 8);
-                Color bg = selected ? LoreAndMenusUI.ThemeKraftCard : new Color(36, 27, 21, 240);
-                Color edge = selected ? LoreAndMenusUI.ThemeBrassBright : new Color(86, 66, 46, 200);
-                Color titleCol = selected ? LoreAndMenusUI.ThemeSepiaInk : DossierPrint.Ivory;
-                Color descCol = selected ? LoreAndMenusUI.ThemeSepiaMuted : new Color(196, 180, 156, 230);
-                Color payCol = selected ? LoreAndMenusUI.ThemeStampRed : LoreAndMenusUI.ThemeBrassBright;
-                Raylib.DrawRectangleRec(new(card.X + 3, card.Y + 4, card.Width, card.Height), new Color(5, 3, 2, selected ? 160 : 95));
-                Raylib.DrawRectangleRec(card, bg);
-                Raylib.DrawRectangleLinesEx(card, selected ? 1.8f : 1f, edge);
-                TypeAt(job.Title, card.X + 16, card.Y + 12, 20, titleCol, true);
-                TypeAt(job.Objective, card.X + 334, card.Y + 15, 16, descCol);
-                TypeAt($"{job.Seconds} с    ${job.Base}", card.X + card.Width - 150, card.Y + 13, 18, payCol, true);
+                var job = FloorSystems.Jobs[i];
+                Rectangle card = FloorRowRect(i);
+                bool selected = i == floorRow;
+                bool activeJob = i == Floor.JobId;
+                float ang = noteAngles[i % noteAngles.Length];
+
+                // Draw real torn-edge fibrous pinned paper note with 3D red pushpin!
+                LoreAndMenusUI.DrawContractNote(card, ang, selected);
+
+                // Rotate text strictly with the tilted paper note around its center so ink lives ON the paper!
+                float scale = selected ? 1.035f : 1.0f;
+                Rlgl.PushMatrix();
+                Rlgl.Translatef(card.X + card.Width * 0.5f, card.Y + card.Height * 0.5f, 0);
+                Rlgl.Rotatef(ang, 0, 0, 1);
+                Rlgl.Scalef(scale, scale, 1);
+                float lx = -card.Width * 0.5f + 28, ty = -card.Height * 0.5f + 38;
+                float maxW = card.Width - 56;
+                Color ink = LoreAndMenusUI.ThemeSepiaInk;
+                Color muted = LoreAndMenusUI.ThemeSepiaMuted;
+                Color red = LoreAndMenusUI.ThemeStampRed;
+
+                // Top contract number & red active/selected stamp
+                DossierPrint.Text($"ЗАКАЗ №0{i + 1}", lx, ty, 12, muted, Typeface.InterfaceBold);
+                if (selected || activeJob)
+                {
+                    string tag = activeJob ? "В РАБОТЕ" : "ВЫБРАНО";
+                    float tw = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 11), tag, 11).X + 14;
+                    Rlgl.PushMatrix();
+                    Rlgl.Translatef(lx + maxW - tw * 0.5f, ty + 6, 0);
+                    Rlgl.Rotatef(-5.5f, 0, 0, 1);
+                    Raylib.DrawRectangleLinesEx(new(-tw * 0.5f, -10, tw, 20), 1.8f, red);
+                    DossierPrint.Text(tag, -tw * 0.5f + 7, -6, 11, red, Typeface.InterfaceBold);
+                    Rlgl.PopMatrix();
+                }
+
+                // Contract title + wrapped objective description
+                Font tf = GameFonts.Get(Typeface.SerifBold, 20);
+                string title = Loc.Tr(job.Title);
+                DossierPrint.Text(title, lx, ty + 20, 20, selected ? red : ink, Typeface.SerifBold);
+                Raylib.DrawLine((int)lx, (int)(ty + 48), (int)(lx + maxW), (int)(ty + 48), LoreAndMenusUI.ThemeSepiaRule);
+
+                // Word-wrap objective cleanly inside the pinned note width
+                Font bf = GameFonts.Get(Typeface.Interface, 15);
+                string[] words = Loc.Tr(job.Objective).Split(' ');
+                string cur = "";
+                float py = ty + 56;
+                foreach (var w in words)
+                {
+                    string next = cur.Length == 0 ? w : cur + " " + w;
+                    if (cur.Length > 0 && GameFonts.Measure(bf, next, 15).X > maxW)
+                    {
+                        DossierPrint.Text(cur, lx, py, 15, ink);
+                        py += 20;
+                        cur = w;
+                    }
+                    else cur = next;
+                }
+                if (cur.Length > 0) DossierPrint.Text(cur, lx, py, 15, ink);
+
+                // Bottom bounty payout & deadline stamped cleanly on the paper bottom!
+                float footY = card.Height * 0.5f - 46;
+                Raylib.DrawLine((int)lx, (int)(footY - 8), (int)(lx + maxW), (int)(footY - 8), LoreAndMenusUI.ThemeSepiaRule);
+                DossierPrint.Text($"${job.Base}", lx, footY, 26, red, Typeface.SerifBold);
+                string dur = $"{job.Seconds} с";
+                float dw = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 17), dur, 17).X;
+                DossierPrint.Text(dur, lx + maxW - dw, footY + 6, 17, ink, Typeface.InterfaceBold);
+                Rlgl.PopMatrix();
             }
-            string hint=Floor.JobId>=0 ? "[R]  Откатить релиз: -18 ПРОД, -22 с" : "Расчёт по текущему риску и рангу авторитета";
-            TypeAt(panelMessage.Length>0 ? panelMessage : hint, 108, 554, 17, new Color(194,174,142,220));
-            TypeAt("[W/S]  Выбор       [Enter]  Подписать контракт       [Esc]  На этаж", 108, 608, 18, LoreAndMenusUI.ThemeBrassBright);
+
+            // Write compact controls right onto the curled yellow sticky note in the bottom-right corner of the corkboard!
+            DossierPrint.Text("[W/A/S/D]", 1094, 548, 13, LoreAndMenusUI.ThemeSepiaInk, Typeface.InterfaceBold);
+            DossierPrint.Text("Выбор", 1094, 565, 13, LoreAndMenusUI.ThemeSepiaMuted);
+            DossierPrint.Text("[Enter]", 1094, 588, 13, LoreAndMenusUI.ThemeStampRed, Typeface.InterfaceBold);
+            DossierPrint.Text("Подписать", 1094, 605, 13, LoreAndMenusUI.ThemeSepiaInk);
+            DossierPrint.Text("[Esc] Выход", 1094, 632, 12, LoreAndMenusUI.ThemeSepiaMuted, Typeface.InterfaceBold);
+
+            if (panelMessage.Length > 0 || Floor.JobId >= 0)
+            {
+                string hint = panelMessage.Length > 0 ? panelMessage : "[R]  Откатить релиз: -18 ПРОД, -22 с";
+                GameFonts.Draw(GameFonts.Get(Typeface.InterfaceBold, 16), hint, new(94, 650), 16, new Color(246, 234, 206, 240));
+            }
         }
         Raylib.EndMode2D();
     }

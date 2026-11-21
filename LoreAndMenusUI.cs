@@ -471,6 +471,7 @@ public static partial class LoreAndMenusUI
     private static Rectangle MixerTrack(int row) => MixerRect(305,103+row*43,250,22);
     private static Rectangle MixerSwitch(int row) => MixerRect(619,99+row*43,80,30);
     private static Rectangle MixerTest(int row) => MixerRect(709,99+row*43,83,30);
+    private static Rectangle MixerControlTrack(int index) => MixerRect(305,436+(index-4)*42,390,24);
     private static Rectangle MixerClose => MixerRect(662,18,130,32);
     private static float MixerValue(int row) => row==0 ? MasterVolume : row == MusicRow ? MusicVolume : AudioMusicSystem.EffectLevels[row-1];
     private static void SetMixer(int row,float value)
@@ -504,7 +505,7 @@ public static partial class LoreAndMenusUI
         }
         for(int index=4;index<=5;index++)
         {
-            Rectangle track=MixerRect(305,449+(index-4)*48,390,24);
+            Rectangle track=MixerControlTrack(index);
             if(Pressed(track)) _draggingSliderIndex=10+index;
             if(_draggingSliderIndex==10+index) ApplySliderNormalizedValue(index,(mouse.X-track.X)/track.Width);
         }
@@ -542,9 +543,9 @@ public static partial class LoreAndMenusUI
             Press(MixerSwitch(row));Require(Math.Abs(MixerValue(row)-.37f)<.001f,"unmute "+row);
             if(row>0) Press(MixerTest(row));
         }
-        Press(MixerRect(305,449,390,24),.80f);
+        Press(MixerControlTrack(4),.80f);
         Require(Math.Abs(MouseSensitivity-.41f)<.001f,"mouse sensitivity");
-        Press(MixerRect(305,497,390,24),.80f);
+        Press(MixerControlTrack(5),.80f);
         Require(CameraFov==92,"FOV");
         Press(MixerClose);Require(!IsSettingsOpen,"close");
         for(int row=0;row<=MusicRow;row++) SetMixer(row,levels[row]);
@@ -874,42 +875,49 @@ public static partial class LoreAndMenusUI
 
     public static void DrawSettingsWindow(Font font)
     {
-        Dim(.78f);
+        Dim(.76f);
         Rectangle panel = MixerRect(0, 0, 820, 584);
-        DrawBrassWalnutFrame(panel);
-        Type("Звуковая рубка", panel.X + 30, panel.Y + 18, 34, ThemeBrassBright, Typeface.SerifBold);
-        Type("Микшер каналов", panel.X + 31, panel.Y + 62, 15, new Color(204, 184, 152, 230));
-        Fill(panel.X + 28, panel.Y + 88, 764, 1, ThemeBrassDim);
+        // Real tactile 1990s brushed-gunmetal & walnut studio broadcast mixing console with glowing amber VU meter!
+        Rectangle console = new(panel.X - 42, panel.Y - 38, panel.Width + 84, panel.Height + 70);
+        DrawMixerConsole(console);
+
+        // Engraved title centered directly inside the top-left dark bronze hardware nameplate!
+        Type("Звуковая рубка", panel.X + 78, panel.Y + 44, 23, ThemeBrassBright, Typeface.SerifBold);
         ReaderButton(font, "Закрыть [F8]", MixerClose, false);
         void Slider(Rectangle r, float value)
         {
-            Fill(r.X, r.Y + 9, r.Width, 5, new Color(56, 43, 33, 255));
-            Fill(r.X, r.Y + 9, r.Width * value, 5, ThemeStampRed);
-            Rectangle knob = new(r.X + r.Width * value - 5, r.Y + 1, 10, 20);
-            Raylib.DrawRectangleRec(knob, ThemeBrassBright);
-            Raylib.DrawRectangleLinesEx(knob, 1f, new Color(62, 42, 22, 255));
+            // Recessed milled metal fader channel slot
+            Raylib.DrawRectangleRec(new(r.X, r.Y + 7, r.Width, 8), new Color(16, 15, 14, 245));
+            Raylib.DrawRectangleLinesEx(new(r.X, r.Y + 7, r.Width, 8), 1f, new Color(84, 78, 70, 180));
+            Fill(r.X + 1, r.Y + 9, Math.Max(0, r.Width * value - 2), 4, new Color(214, 154, 62, 240));
+            // Beveled brushed-brass studio fader cap with center index notch!
+            float kx = r.X + r.Width * value - 7;
+            Rectangle knob = new(kx, r.Y - 1, 14, 24);
+            Raylib.DrawRectangleRec(new(knob.X + 2, knob.Y + 3, knob.Width, knob.Height), new Color(6, 5, 4, 160));
+            Raylib.DrawRectangleRec(knob, new Color(206, 174, 114, 255));
+            Raylib.DrawRectangleLinesEx(knob, 1.2f, new Color(68, 50, 26, 255));
+            Fill(kx + 6, r.Y + 2, 2, 18, new Color(36, 24, 14, 255));
         }
         for(int row=0;row<=MusicRow;row++)
         {
             Rectangle r=MixerRect(18,95+row*43,784,38);
-            Fill(r.X + 12, r.Y + r.Height + 2, r.Width - 24, 1, new Color(76, 58, 42, 175));
             string name=row==0?"Общая громкость":row==MusicRow?"Музыка и босс":MixerNames[row-1];
-            DrawTextCrisp(font,name,(int)r.X+14,(int)r.Y+8,18,row == SelectedSliderIndex ? ThemeBrassBright : DossierPrint.Ivory);
+            DrawTextCrisp(font,name,(int)r.X+34,(int)r.Y+8,17,row == SelectedSliderIndex ? ThemeBrassBright : DossierPrint.Ivory);
             float value=MixerValue(row);
             Slider(MixerTrack(row),value);
             MainMenuAndPauseUI.Center(font,$"{value*100:0}%",MixerRect(561,99+row*43,51,30),15,ThemeBrassBright);
             ReaderButton(font,value==0?"Без звука":"Звук вкл",MixerSwitch(row),value==0);
             if(row>0) ReaderButton(font,"Тест",MixerTest(row),false);
         }
-        DrawTextCrisp(font,"УПРАВЛЕНИЕ",(int)MixerRect(28,410,0,0).X,(int)MixerRect(28,410,0,0).Y,15,ThemeBrassDim);
+        DrawTextCrisp(font,"УПРАВЛЕНИЕ",(int)MixerRect(52,406,0,0).X,(int)MixerRect(52,406,0,0).Y,14,ThemeBrassBright);
         for(int index=4;index<=5;index++)
         {
-            int y=449+(index-4)*48;
-            DrawTextCrisp(font,index==4?"Чувствительность мыши":"Угол обзора (FOV)",(int)MixerRect(30,y,0,0).X,(int)MixerRect(30,y,0,0).Y,18,DossierPrint.Ivory);
-            Slider(MixerRect(305,y,390,24),GetSliderNormalizedValue(index));
-            MainMenuAndPauseUI.Center(font,index==4?MouseSensitivity.ToString("0.00"):CameraFov.ToString("0") + "°",MixerRect(705,y,87,24),18,ThemeBrassBright);
+            int y=436+(index-4)*42;
+            DrawTextCrisp(font,index==4?"Чувствительность мыши":"Угол обзора (FOV)",(int)MixerRect(52,y+2,0,0).X,(int)MixerRect(52,y+2,0,0).Y,17,DossierPrint.Ivory);
+            Slider(MixerControlTrack(index),GetSliderNormalizedValue(index));
+            MainMenuAndPauseUI.Center(font,index==4?MouseSensitivity.ToString("0.00"):CameraFov.ToString("0") + "°",MixerRect(705,y,87,24),17,ThemeBrassBright);
         }
-        MainMenuAndPauseUI.Center(font,_settingsStatusTimer>0?_settingsStatusBanner:"Перетаскивай ползунки. Стрелки меняют громкость. F8 закрывает окно.",MixerRect(24,550,772,22),14,new Color(196,176,144,220));
+        MainMenuAndPauseUI.Center(font,_settingsStatusTimer>0?_settingsStatusBanner:"Перетаскивай ползунки. Стрелки меняют громкость. F8 закрывает окно.",MixerRect(24,548,772,22),13,new Color(206,188,156,220));
     }
 
     public static void DrawCaseWindow(Font font)

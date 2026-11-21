@@ -21,7 +21,7 @@ public static partial class LoreAndMenusUI
     private static readonly Rectangle Selector = new(44, 232, 286, VisibleRows * RowHeight);
     private static readonly Rectangle Exhibit = new(328, 134, 386, 514);
     private static RenderTexture2D _exhibitTexture;
-    private static Texture2D _deskBackdrop, _folderSheet;
+    private static Texture2D _deskBackdrop, _folderSheet, _corkboard, _contractNote, _pauseClipboard, _mixerConsole;
     private static bool _archiveArtTried;
     private static float _exhibitTime;
 
@@ -58,18 +58,62 @@ public static partial class LoreAndMenusUI
     {
         if (_archiveArtTried) return;
         _archiveArtTried = true;
-        string bgPath = ResolveUiAsset("archive_desk_bg.png");
-        if (File.Exists(bgPath))
+        static Texture2D LoadUi(string name)
         {
-            _deskBackdrop = Raylib.LoadTexture(bgPath);
-            Raylib.SetTextureFilter(_deskBackdrop, TextureFilter.Bilinear);
+            string p = ResolveUiAsset(name);
+            if (!File.Exists(p)) return default;
+            var t = Raylib.LoadTexture(p);
+            Raylib.SetTextureFilter(t, TextureFilter.Bilinear);
+            return t;
         }
-        string sheetPath = ResolveUiAsset("archive_folder_sheet.png");
-        if (File.Exists(sheetPath))
+        _deskBackdrop    = LoadUi("archive_desk_bg.png");
+        _folderSheet     = LoadUi("archive_folder_sheet.png");
+        _corkboard       = LoadUi("contracts_corkboard.png");
+        _contractNote    = LoadUi("contract_note_card.png");
+        _pauseClipboard  = LoadUi("pause_clipboard.png");
+        _mixerConsole    = LoadUi("mixer_console.png");
+    }
+
+    internal static void DrawCorkboard(float w = ArchiveWidth, float h = ArchiveHeight)
+    {
+        EnsureArchiveArt();
+        if (_corkboard.Id != 0)
+            Raylib.DrawTexturePro(_corkboard, new(0, 0, _corkboard.Width, _corkboard.Height), new(0, 0, w, h), Vector2.Zero, 0f, Color.White);
+        else
+            Raylib.DrawRectangle(0, 0, (int)w, (int)h, WalnutDark);
+    }
+
+    internal static void DrawContractNote(Rectangle bounds, float angleDeg, bool selected)
+    {
+        EnsureArchiveArt();
+        if (_contractNote.Id == 0)
         {
-            _folderSheet = Raylib.LoadTexture(sheetPath);
-            Raylib.SetTextureFilter(_folderSheet, TextureFilter.Bilinear);
+            Raylib.DrawRectangleRec(bounds, KraftCard);
+            return;
         }
+        float scale = selected ? 1.035f : 1.0f;
+        float w = bounds.Width * scale, h = bounds.Height * scale;
+        Rectangle dst = new(bounds.X + bounds.Width * 0.5f, bounds.Y + bounds.Height * 0.5f, w, h);
+        Color tint = selected ? Color.White : new Color(224, 214, 198, 255);
+        Raylib.DrawTexturePro(_contractNote, new(0, 0, _contractNote.Width, _contractNote.Height), dst, new(w * 0.5f, h * 0.5f), angleDeg, tint);
+    }
+
+    internal static void DrawPauseClipboard(Rectangle bounds)
+    {
+        EnsureArchiveArt();
+        if (_pauseClipboard.Id != 0)
+            Raylib.DrawTexturePro(_pauseClipboard, new(0, 0, _pauseClipboard.Width, _pauseClipboard.Height), bounds, Vector2.Zero, 0f, Color.White);
+        else
+            DrawBrassWalnutFrame(bounds);
+    }
+
+    internal static void DrawMixerConsole(Rectangle bounds)
+    {
+        EnsureArchiveArt();
+        if (_mixerConsole.Id != 0)
+            Raylib.DrawTexturePro(_mixerConsole, new(0, 0, _mixerConsole.Width, _mixerConsole.Height), bounds, Vector2.Zero, 0f, Color.White);
+        else
+            DrawBrassWalnutFrame(bounds);
     }
 
     internal static void DrawDeskBackdrop(float w = ArchiveWidth, float h = ArchiveHeight)
@@ -538,9 +582,12 @@ public static partial class LoreAndMenusUI
         if (_exhibitTexture.Id != 0) Raylib.UnloadRenderTexture(_exhibitTexture);
         if (_deskBackdrop.Id != 0) Raylib.UnloadTexture(_deskBackdrop);
         if (_folderSheet.Id != 0) Raylib.UnloadTexture(_folderSheet);
+        if (_corkboard.Id != 0) Raylib.UnloadTexture(_corkboard);
+        if (_contractNote.Id != 0) Raylib.UnloadTexture(_contractNote);
+        if (_pauseClipboard.Id != 0) Raylib.UnloadTexture(_pauseClipboard);
+        if (_mixerConsole.Id != 0) Raylib.UnloadTexture(_mixerConsole);
         _exhibitTexture = default;
-        _deskBackdrop = default;
-        _folderSheet = default;
+        _deskBackdrop = _folderSheet = _corkboard = _contractNote = _pauseClipboard = _mixerConsole = default;
         _archiveArtTried = false;
         VisualEngine3D.UnloadArchiveShader();
     }

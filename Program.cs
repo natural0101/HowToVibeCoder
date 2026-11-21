@@ -738,6 +738,10 @@ public static partial class Program
         MovePlayer(dt,moveDir,forwardXZ,Raylib.IsKeyPressed(KeyboardKey.Space),
             Raylib.IsKeyDown(KeyboardKey.LeftShift),Raylib.IsKeyPressed(KeyboardKey.LeftAlt) || !pocket && Raylib.IsKeyPressed(KeyboardKey.Q));
 
+        // [V] Cheeky Middle-Finger Emote — works on any Vibe Coder, HR Veronika, Boss, or Co-op Teammate!
+        if (Raylib.IsKeyPressed(KeyboardKey.V))
+            TriggerFlipOffEmote();
+
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
         {
@@ -770,6 +774,81 @@ public static partial class Program
             Raylib.IsKeyPressed(KeyboardKey.R),isMoving);
         TickFloor(dt);
 
+    }
+
+    private static int _flipOffLineIdx;
+    private static void TriggerFlipOffEmote()
+    {
+        _weapons.TriggerFlipOff();
+        AudioMusicSystem.PlayHandGrab();
+        if (Net.Ready) Net.Send(new("flipoff", LocalPose));
+
+        var cam = BuildPlayerCamera();
+        Vector3 fwd = Vector3.Normalize(cam.Target - cam.Position);
+
+        // 1) Co-op teammate or bot partner in front?
+        foreach (var ally in _world.Teammates)
+        {
+            Vector3 toAlly = (ally.Pose.Eye - Vector3.UnitY * .25f) - cam.Position;
+            float d = toAlly.Length();
+            if (d > 0.1f && d < 8.5f && Vector3.Dot(fwd, toAlly / d) > 0.72f)
+            {
+                ally.FlipOffTimer = 1.4f; // Teammate flips right back in solidarity!
+                SetHudBanner(Loc.T("Показал фак напарнику! Он показал в ответ.", "Flipped off your teammate! They flipped right back."), 2.4f, foreground: true);
+                return;
+            }
+        }
+
+        // 2) HR Veronika at her Tarot booth?
+        Vector3 toHr = (_world.HrTarotBoothPos + Vector3.UnitY * 1.45f) - cam.Position;
+        float dHr = toHr.Length();
+        if (dHr > 0.1f && dHr < 6.5f && Vector3.Dot(fwd, toHr / dHr) > 0.76f)
+        {
+            SetHudBanner(Loc.T("Вероника: Жест зафиксирован в табеле. Минус премия.", "Veronika: Gesture logged in HR file. Bonus deducted."), 2.8f, foreground: true);
+            return;
+        }
+
+        // 3) Boss at the elevator?
+        if (_world.ElevatorBoss.IsActive)
+        {
+            Vector3 toBoss = (_world.ElevatorBoss.Position + Vector3.UnitY * 1.35f) - cam.Position;
+            float dBoss = toBoss.Length();
+            if (dBoss > 0.1f && dBoss < 10.5f && Vector3.Dot(fwd, toBoss / dBoss) > 0.75f)
+            {
+                SetHudBanner(Loc.T("АГЕНТ v0.1: Жест распознан. Вероятность увольнения: 99,9%.", "AGENT v0.1: Gesture recognized. Termination probability: 99.9%."), 2.6f, foreground: true);
+                return;
+            }
+        }
+
+        // 4) Any Vibe Coder in front? Trigger hilarious outraged speech bubble & flinch!
+        VibeCoderEntity? bestCoder = null;
+        float bestScore = 0.76f;
+        foreach (var c in _world.ActiveCoders)
+        {
+            if (c.State == CoderAIState.Subdued) continue;
+            Vector3 toC = (c.Position + Vector3.UnitY * 1.35f) - cam.Position;
+            float dC = toC.Length();
+            if (dC < 0.1f || dC > 8.0f) continue;
+            float dot = Vector3.Dot(fwd, toC / dC);
+            if (dot > bestScore) { bestScore = dot; bestCoder = c; }
+        }
+        if (bestCoder != null)
+        {
+            string[] comebacks =
+            [
+                "ЭЙ! ЭТО ТОКСИЧНЫЙ КУЛЬТУРНЫЙ ФИТ!",
+                "Я ПИШУ В HR-СЛАК ПРЯМО СЕЙЧАС!",
+                "КЕНСЕЛЮ ТЕБЯ В ЛИНКЕДИНЕ!",
+                "МИНУС ВАЙБ! НЕЭКОЛОГИЧНО!"
+            ];
+            bestCoder.SpeechBubble = comebacks[_flipOffLineIdx++ % comebacks.Length];
+            bestCoder.SpeechTimer = 3.2f;
+            bestCoder.FacingYaw = MathF.Atan2(cam.Position.X - bestCoder.Position.X, cam.Position.Z - bestCoder.Position.Z);
+            SetHudBanner(Loc.T($"Показал фак: {bestCoder.Name}", $"Flipped off: {bestCoder.Name}"), 2.2f, foreground: true);
+            return;
+        }
+
+        SetHudBanner(Loc.T("Показал фак корпоративной культуре.", "Flipped off corporate culture."), 1.8f, foreground: true);
     }
 
     private static void MovePlayer(float dt, Vector3 move, Vector3 facing, bool jump, bool sprint, bool dash)
