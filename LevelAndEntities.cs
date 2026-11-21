@@ -2793,14 +2793,19 @@ public sealed partial class SkyscraperFloor1World
         BuildInteriorRooms(mesh);
         BuildEntryRooms(mesh);
         mesh.Add(new(-5.05f,.015f,6.9f),new(4.35f,.025f,4.1f),new(139,101,78,255),Finish.Carpet);
-        Color brass=new(189,145,76,255);
+        Color brass=new(189,145,76,255), darkBrass=new(112,84,44,255);
         float start=SouthElevatorDoorPos.Z+.15f, end=ArsenalShopPos.Z-.75f;
         float center=(start+end)*.5f;
-        mesh.Add(new(0,.013f,center),new(4.8f,.024f,end-start),new(98,52,114,255),Finish.Carpet);
+        // Royal-burgundy woven Art-Deco executive lobby runner (replaces flat bright purple!)
+        mesh.Add(new(0,.013f,center),new(4.8f,.024f,end-start),new(108,24,38,255),Finish.Carpet);
+        // Sculpted beveled brushed-brass edging rails & transverse runner threshold bars!
+        foreach (float barZ in new[] { start + .06f, start + 3.45f, start + 7.20f, start + 10.60f, end - .06f })
+            mesh.Add(new(0,.027f,barZ),new(4.84f,.009f,.042f),brass,Finish.Bronze);
         foreach (int side in new[] { -1,1 })
         {
-            foreach (float edge in new[] { 2.20f,2.32f })
-                mesh.Add(new(side*edge,.029f,center),new(.028f,.008f,end-start),brass);
+            mesh.Add(new(side*2.42f,.018f,center),new(.095f,.030f,end-start+.06f),darkBrass,Finish.Bronze);
+            foreach (float edge in new[] { 2.24f,2.38f })
+                mesh.Add(new(side*edge,.029f,center),new(.026f,.009f,end-start),brass,Finish.Bronze);
             Color route=side<0 ? new(255,195,83,255) : new(72,225,202,255);
             mesh.Add(new(side*6.35f,.018f,3.3f),new(9.5f,.024f,.065f),route,Finish.Lamp);
             mesh.Add(new(side*11.1f,.018f,-10),new(.065f,.024f,26.65f),route,Finish.Lamp);
@@ -3540,8 +3545,8 @@ public sealed partial class SkyscraperFloor1World
     private void BuildLift(VisualEngine3D.ArchitectureBuilder mesh)
     {
         Vector3 center=CentralElevatorCorePos;
-        Color marble=new(46,44,48,255), darkStone=new(28,26,28,255), walnut=new(74,50,34,255);
-        Color bronze=new(152,110,64,255), brass=new(208,166,100,255), warmLamp=new(255,220,164,255);
+        Color marble=new(34,33,38,255), darkStone=new(24,23,26,255);
+        Color bronze=new(152,110,64,255);
         void Part(float x,float y,float z,float w,float h,float d,Color color,Finish finish=Finish.Paint) =>
             mesh.Add(center+new Vector3(x,y,z),new(w,h,d),color,finish);
         foreach(var wall in LiftWalls()) mesh.Add(wall.Center,wall.Size,marble,Finish.BlackMarble);
@@ -3549,46 +3554,18 @@ public sealed partial class SkyscraperFloor1World
         {
             void Front(float x,float y,float depth,float w,float h,float d,Color c,Finish f=Finish.Paint) =>
                 Part(x,y,side*(4.5f+depth),w,h,d,c,f);
-            // Architectural dark-marble lobby facade with clean brushed-bronze horizontal molding
+            // Solid structural marble backing behind the sculpted 3D GLB lobby facade (zero gaps!)
             Front(0,3.88f,.02f,8.96f,2.70f,.68f,marble,Finish.BlackMarble);
-            Front(0,2.60f,.34f,3.04f,.12f,.16f,bronze,Finish.Bronze);
-            Front(0,2.70f,.37f,3.16f,.045f,.18f,brass,Finish.Bronze);
-            Front(0,3.62f,.32f,8.98f,.08f,.14f,bronze,Finish.Bronze);
-            // Compact bronze bezel housing the refined lobby floor transom sign (3.15m x 0.62m at y=3.14m)
-            Front(0,3.14f,.365f,3.26f,.70f,.09f,bronze,Finish.Bronze);
-            // Clean dark-bronze threshold sill plate & subtle brushed track (ZERO yellow hazard stripes!)
-            Front(0,.035f,.18f,2.68f,.07f,.64f,darkStone);
-            Front(0,.074f,.16f,2.42f,.012f,.08f,bronze,Finish.Bronze);
             foreach(int end in new[]{-1,1})
-            {
-                // Solid dark-marble flanking lobby walls (outer face cleanly at depth +0.36 for call panel)
                 Front(end*2.86f,1.26f,.02f,3.28f,2.54f,.68f,marble,Finish.BlackMarble);
-                Front(end*2.86f,.11f,.05f,3.30f,.22f,.72f,darkStone);
-                // Stepped architectural brushed-bronze door jambs flanking the 2.36m opening
-                Front(end*1.26f,1.31f,.32f,.16f,2.62f,.22f,bronze,Finish.Bronze);
-                Front(end*1.39f,1.31f,.35f,.06f,2.62f,.14f,brass,Finish.Bronze);
-                // Warm walnut & bronze lobby pilasters + subtle warm-amber architectural wall sconces (ZERO cyan neon!)
-                Front(end*2.72f,1.80f,.36f,.36f,3.44f,.10f,walnut,Finish.Leather);
-                Front(end*2.72f,2.38f,.42f,.12f,.28f,.08f,bronze,Finish.Bronze);
-                Front(end*2.72f,2.38f,.465f,.06f,.20f,.025f,warmLamp,Finish.Lamp);
-                // Subtle bronze corner trim on structural marble core
-                Front(end*4.44f,CeilingHeight/2,.34f,.10f,CeilingHeight,.10f,bronze,Finish.Bronze);
-                // Cabin interior side handrail at ergonomic waist height (0.95m)
-                Part(end*4.12f,.95f,side*2.30f,.06f,.06f,3.68f,brass,Finish.Bronze);
-                foreach(float z in new[]{.75f,3.9f})
-                    Part(end*4.20f,.95f,side*z,.18f,.06f,.06f,bronze);
-            }
+            // Architectural side shaft brass reveals
             for(int seam=-2;seam<=2;seam++)
-                Part(side*4.50f,CeilingHeight/2,seam*2.13f,.035f,CeilingHeight,.046f,bronze,Finish.Bronze);
-            Part(side*4.50f,.14f,0,.06f,.28f,9,bronze,Finish.Bronze);
-            // Luxury executive cabin interior: warm walnut back wall panel, brass handrail & recessed 2.68m ceiling cove!
-            Part(0,.95f,side*.3f,7.93f,.06f,.06f,brass,Finish.Bronze);
-            Part(0,2.74f,side*2.36f,4.80f,.08f,2.60f,bronze,Finish.Bronze);
-            Part(0,2.69f,side*2.36f,4.52f,.045f,2.32f,warmLamp,Finish.Lamp);
-            Part(0,1.52f,side*.175f,2.60f,1.76f,.035f,brass,Finish.Bronze);
-            Part(0,1.52f,side*.20f,2.50f,1.66f,.03f,walnut,Finish.Leather);
+                Part(side*4.50f,CeilingHeight/2,seam*2.13f,.045f,CeilingHeight,.052f,bronze,Finish.Bronze);
+            Part(side*4.50f,.16f,0,.07f,.32f,9,bronze,Finish.Bronze);
+            Part(side*4.50f,3.74f,0,.08f,.14f,9,bronze,Finish.Bronze);
+            Part(side*4.50f,CeilingHeight-.14f,0,.09f,.22f,9,bronze,Finish.Bronze);
         }
-        Part(0,.044f,0,8.62f,.088f,9,new(62,60,64,255),Finish.BlackMarble);
+        Part(0,.044f,0,8.62f,.088f,9,new(52,50,55,255),Finish.BlackMarble);
         Part(0,2.82f,0,8.62f,.16f,9,darkStone);
     }
 
@@ -3597,32 +3574,30 @@ public sealed partial class SkyscraperFloor1World
 
     private void DrawElevatorDoors(bool glass)
     {
-        Color bronzeDoor=new(78,70,64,255), brass=new(196,154,94,255), darkTrim=new(38,35,34,255);
         Color pane=Raylib.ColorLerp(new(112,86,62,135),new(28,30,34,244),ElevatorGlassOpacity);
+        if (!glass && VisualEngine3D.HasAsset("elevator_cabin_interior"))
+            VisualEngine3D.Asset("elevator_cabin_interior", CentralElevatorCorePos, 0f, 1f);
         foreach(int side in new[]{-1,1})
         {
             Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
             Vector3 button=side<0 ? ElevatorButtonPos : SouthElevatorButtonPos;
             Vector3 panel=new(button.X,1.38f,face.Z+side*.374f);
+            float faceYaw = side < 0 ? 180f : 0f;
+            if (!glass)
+            {
+                if (VisualEngine3D.HasAsset("elevator_lobby_facade"))
+                    VisualEngine3D.Asset("elevator_lobby_facade", face, faceYaw, 1f);
+                if (VisualEngine3D.HasAsset("elevator_floor_medallion"))
+                    VisualEngine3D.Asset("elevator_floor_medallion", face + new Vector3(0f, 0.015f, side * 1.92f), faceYaw, 1f);
+            }
             if (glass && !BrokenElevator) DrawShaftSmoke(face,side,inside:true);
             foreach(int leaf in new[]{-1,1})
             {
                 Vector3 p=LiftLeafCenter(side,leaf);
                 if(glass)
-                    VisualEngine3D.Box(p,1.16f,2.44f,.034f,pane,Finish.LiftGlass);
-                else
-                {
-                    // Sleek executive brushed-bronze & smoked-glass sliding door frame (ZERO neon strips or Tron chevrons!)
-                    foreach(int edge in new[]{-1,1})
-                    {
-                        VisualEngine3D.Box(p+Vector3.UnitX*(edge*.58f),.048f,2.50f,.075f,bronzeDoor,Finish.Bronze);
-                        VisualEngine3D.Box(p+Vector3.UnitY*(edge*1.23f),1.20f,.06f,.075f,bronzeDoor,Finish.Bronze);
-                    }
-                    // Brushed-bronze lower kickplate + subtle vertical Art-Deco brass inlay line
-                    VisualEngine3D.Box(p-Vector3.UnitY*1.04f,1.16f,.36f,.072f,darkTrim,Finish.Bronze);
-                    VisualEngine3D.Box(p+new Vector3(-leaf*.55f,0,side*.044f),.022f,2.44f,.016f,brass,Finish.Bronze);
-                    VisualEngine3D.Box(p+new Vector3(leaf*.14f,0,side*.042f),.016f,2.10f,.012f,brass,Finish.Bronze);
-                }
+                    VisualEngine3D.Box(p,1.02f,2.04f,.032f,pane,Finish.LiftGlass);
+                else if (VisualEngine3D.HasAsset("elevator_door_leaf"))
+                    VisualEngine3D.Asset("elevator_door_leaf", p, faceYaw, 1f);
             }
             if(glass)
             {
@@ -4006,7 +3981,7 @@ public sealed partial class SkyscraperFloor1World
         return focus;
     }
 
-    internal static readonly Vector3 LiftSignSize=new(3.15f,0.62f,.06f);
+    internal static readonly Vector3 LiftSignSize=new(2.74f,0.58f,.06f);
     internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,3.14f,side*.43f);
 
     internal (Vector3 Position,float Height,string Label)? OnboardingWaypoint(Vector3 eye)

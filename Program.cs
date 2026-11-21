@@ -794,7 +794,6 @@ public static partial class Program
             if (d > 0.1f && d < 8.5f && Vector3.Dot(fwd, toAlly / d) > 0.72f)
             {
                 ally.FlipOffTimer = 1.4f; // Teammate flips right back in solidarity!
-                SetHudBanner(Loc.T("Показал фак напарнику! Он показал в ответ.", "Flipped off your teammate! They flipped right back."), 2.4f, foreground: true);
                 return;
             }
         }
@@ -804,7 +803,7 @@ public static partial class Program
         float dHr = toHr.Length();
         if (dHr > 0.1f && dHr < 6.5f && Vector3.Dot(fwd, toHr / dHr) > 0.76f)
         {
-            SetHudBanner(Loc.T("Вероника: Жест зафиксирован в табеле. Минус премия.", "Veronika: Gesture logged in HR file. Bonus deducted."), 2.8f, foreground: true);
+            AudioMusicSystem.Speak("HR ВЕРОНИКА", "Жест зафиксирован в табеле. Минус премия.", SpeakerVoiceType.VeronikaTarot);
             return;
         }
 
@@ -815,12 +814,12 @@ public static partial class Program
             float dBoss = toBoss.Length();
             if (dBoss > 0.1f && dBoss < 10.5f && Vector3.Dot(fwd, toBoss / dBoss) > 0.75f)
             {
-                SetHudBanner(Loc.T("АГЕНТ v0.1: Жест распознан. Вероятность увольнения: 99,9%.", "AGENT v0.1: Gesture recognized. Termination probability: 99.9%."), 2.6f, foreground: true);
+                AudioMusicSystem.Speak("АГЕНТ v0.1", "Жест распознан. Вероятность увольнения: 99,9%.", SpeakerVoiceType.RoboticAgent);
                 return;
             }
         }
 
-        // 4) Any Vibe Coder in front? Trigger hilarious outraged speech bubble & flinch!
+        // 4) Any Vibe Coder in front? Trigger outraged speech bubble & turn to face player!
         VibeCoderEntity? bestCoder = null;
         float bestScore = 0.76f;
         foreach (var c in _world.ActiveCoders)
@@ -844,11 +843,7 @@ public static partial class Program
             bestCoder.SpeechBubble = comebacks[_flipOffLineIdx++ % comebacks.Length];
             bestCoder.SpeechTimer = 3.2f;
             bestCoder.FacingYaw = MathF.Atan2(cam.Position.X - bestCoder.Position.X, cam.Position.Z - bestCoder.Position.Z);
-            SetHudBanner(Loc.T($"Показал фак: {bestCoder.Name}", $"Flipped off: {bestCoder.Name}"), 2.2f, foreground: true);
-            return;
         }
-
-        SetHudBanner(Loc.T("Показал фак корпоративной культуре.", "Flipped off corporate culture."), 1.8f, foreground: true);
     }
 
     private static void MovePlayer(float dt, Vector3 move, Vector3 facing, bool jump, bool sprint, bool dash)

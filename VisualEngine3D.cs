@@ -420,7 +420,49 @@ internal static unsafe partial class VisualEngine3D
                 return;
             }
             if(finish==17) base=pow(base,vec3(.78));
-            if(finish==18) base*=.93+.07*cos(pos.z*133.)*cos(pos.x*107.);
+            // Executive Moscow-City Bookmatched Honed Marble & Charcoal Granite Floor Slabs with brass corner cabochons!
+            float floorBrass = 0.;
+            if(finish==1) {
+                vec2 slabUV = pos.xz * .72;
+                vec2 slabId = floor(slabUV);
+                vec2 tile = fract(slabUV) - .5;
+                float checker = mod(slabId.x + slabId.y, 2.);
+                vec2 veinP = (checker > .5 ? pos.xz : pos.zx) * .95 + slabId * 3.17;
+                float turb = fbm(veinP * 1.45 + vec2(fbm(veinP * 2.1), fbm(veinP * 1.8 + 4.3)) * 1.15);
+                float fineVein = 1. - smoothstep(.018, .085, abs(sin((veinP.x * 2.2 + veinP.y * 1.6) + turb * 5.2)));
+                float goldVein = 1. - smoothstep(.008, .034, abs(sin((veinP.x * 1.3 - veinP.y * 2.7) + turb * 6.8)));
+                float slabTone = .88 + .18 * hash(slabId) + (checker > .5 ? .07 : -.05);
+                vec3 stoneCol = mix(vec3(.145,.152,.175), vec3(.215,.208,.212), checker * .42 + turb * .45) * slabTone;
+                stoneCol += vec3(.12,.115,.11) * fineVein * .35 + vec3(.28,.21,.10) * goldVein * .22;
+                // Crisp dark recessed bevel grout joints
+                vec2 edgeDist = .5 - abs(tile);
+                float grout = 1. - smoothstep(.006, .019, min(edgeDist.x, edgeDist.y));
+                stoneCol = mix(stoneCol, vec3(.055,.058,.066), grout * .82);
+                // Warm inlaid brushed-brass corner diamond cabochons at slab intersections!
+                vec2 cornerD = abs(fract(slabUV + .5) - .5);
+                float cabochon = 1. - smoothstep(.038, .048, cornerD.x + cornerD.y);
+                floorBrass = cabochon * (1. - smoothstep(.04, .18, length(fwidth(slabUV))));
+                base = mix(stoneCol, vec3(.76,.58,.30), floorBrass);
+            }
+            // Royal-Burgundy Woven Art-Deco Jacquard Hotel-Lobby Runner with gold key-border & velvet trellis!
+            if(finish==18) {
+                float weave = .90 + .07 * cos(pos.z * 145.) * cos(pos.x * 118.) + .05 * (fbm(pos.xz * 26.) - .5);
+                vec3 wool = base * weave;
+                // Woven Art-Deco antique-gold border & diamond medallion lattice on the central lobby runner
+                if(abs(pos.x) < 2.38 && pos.z > .55 && pos.z < 14.1) {
+                    float ax = abs(pos.x);
+                    float borderBand = (smoothstep(1.88,1.90,ax) * (1.-smoothstep(1.94,1.96,ax)))
+                                     + (smoothstep(2.08,2.10,ax) * (1.-smoothstep(2.14,2.16,ax)));
+                    float keyStep = step(.5, fract(pos.z * 2.2));
+                    float keyMotif = smoothstep(1.96,1.98,ax) * (1.-smoothstep(2.06,2.08,ax))
+                                   * (keyStep * step(.22, fract(pos.z * 2.2)) + (1.-keyStep) * step(.48, abs(ax - 2.02) * 16.));
+                    vec2 dia = abs(fract(vec2(pos.x * .95, pos.z * .95)) - .5);
+                    float trellis = (1. - smoothstep(.018, .042, abs(dia.x + dia.y - .46))) * (1. - smoothstep(1.74, 1.84, ax));
+                    float goldMask = clamp(borderBand * .92 + keyMotif * .72 + trellis * .28, 0., 1.);
+                    wool = mix(wool, vec3(.66,.49,.23) * (.88 + .12 * weave), goldMask);
+                }
+                base = wool;
+            }
             if(finish==1 || leather || finish==18 || finish==11 || finish==2) {
                 vec3 t=abs(n.y)>.7 ? vec3(1,0,0) : normalize(cross(vec3(0,1,0),n));
                 vec3 b=cross(n,t);
@@ -431,8 +473,8 @@ internal static unsafe partial class VisualEngine3D
                 if(finish==1) {
                     vec2 tile=fract(p*.72)-.5;
                     float tileDetail=1.-smoothstep(.009,.053,length(fwidth(p)));
-                    slope=sign(tile)*smoothstep(vec2(.474),vec2(.493),abs(tile))*.041*tileDetail;
-                    slope+=.0029*cos(p*vec2(4.,8.)+sin(p.y*3.))*tileDetail;
+                    slope=sign(tile)*smoothstep(vec2(.468),vec2(.494),abs(tile))*.058*tileDetail;
+                    slope+=.0042*cos(p*vec2(4.,8.)+sin(p.y*3.))*tileDetail;
                 }
                 n=normalize(n+t*slope.x+b*slope.y);
             }
@@ -465,10 +507,10 @@ internal static unsafe partial class VisualEngine3D
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
             float nh=max(0.,dot(n,normalize(v+key))),nv=max(.01,dot(n,v));
-            float rough=finish==1 ? .32 : finish==2 || finish==23 ? .32 : .53;
+            float rough=finish==1 ? mix(.30,.18,floorBrass) : finish==2 || finish==23 ? .32 : .53;
             float a2=pow(rough,4.), denom=nh*nh*(a2-1.)+1.;
             float D=a2/(3.14159*denom*denom+.0001);
-            vec3 F0=finish==23 ? base*.72 : vec3(.04);
+            vec3 F0=finish==23 ? base*.72 : mix(vec3(.04),base*.78,floorBrass);
             vec3 F=F0+(1.-F0)*pow(1.-max(0.,dot(v,normalize(v+key))),5.);
             lit+=vec3(1.48,1.02,.64)*F*min(3.,D)*max(0.,dot(n,key))*shadow/(.45+nv);
             if(weapon) {
@@ -479,9 +521,10 @@ internal static unsafe partial class VisualEngine3D
             }
             if(finish==22) {
                 vec2 p=vec2(abs(n.x)>.7 ? pos.z : pos.x,pos.y);
-                float vein=p.y*2.9+p.x*1.8+.36*sin(p.x*3.+p.y)+.07*sin(p.y*12.);
-                float filament=1.-smoothstep(.015,.047+fwidth(vein),abs(sin(vein)));
-                lit+=vec3(.13,.13,.12)*filament*(.6+.4*cos(p.x*2.));
+                float turb=fbm(p*1.1+vec2(fbm(p*2.3),fbm(p*1.7+3.1))*.85);
+                float vein1=1.-smoothstep(.012,.052+fwidth(p.y)*1.5,abs(sin(p.y*1.9+p.x*1.2+turb*5.4)));
+                float vein2=1.-smoothstep(.008,.032+fwidth(p.x)*1.5,abs(sin(p.y*3.1-p.x*1.7+turb*4.8)));
+                lit+=vec3(.14,.13,.11)*vein1*.42+vec3(.24,.18,.09)*vein2*.28;
             }
             if(finish==23) {
                 vec3 r=reflect(-v,n);

@@ -1129,16 +1129,16 @@ public class WeaponAndCombatView
 
         if (FlippingOff && VisualEngine3D.HasAsset("fps_hands_flipoff"))
         {
-            // Snappy spring-in, cheeky slight rock/wiggle, smooth drop-out!
+            // Punchy snap-up, bold double-thrust jab toward target, smooth drop-out!
             float p = 1f - FlipOffTimer / _flipOffDuration;
-            float lift = p < 0.14f ? Ease(p / 0.14f) : p > 0.80f ? Ease((1f - p) / 0.20f) : 1f;
-            float wiggle = p is >= 0.14f and <= 0.80f ? MathF.Sin((p - 0.14f) * MathF.PI * 5f) * 0.065f : 0f;
-            float jab = p is >= 0.14f and <= 0.45f ? MathF.Sin((p - 0.14f) / 0.31f * MathF.PI) * 0.045f : 0f;
-            Vector3 pivot = baseOffset + new Vector3(0.08f, -0.14f, 0.54f);
-            Vector3 slide = baseOffset + new Vector3(0.02f * (1f - lift), -0.34f * (1f - lift) + jab * 0.3f, jab);
+            float lift = p < 0.12f ? Ease(p / 0.12f) : p > 0.82f ? Ease((1f - p) / 0.18f) : 1f;
+            float thrust = p is >= 0.12f and <= 0.64f ? MathF.Pow(MathF.Max(0f, MathF.Sin((p - 0.12f) / 0.52f * MathF.PI * 2f)), 1.5f) : 0f;
+            float wiggle = p is >= 0.12f and <= 0.82f ? MathF.Sin((p - 0.12f) * MathF.PI * 4.5f) * 0.048f : 0f;
+            Vector3 pivot = baseOffset + new Vector3(0.09f, -0.15f, 0.54f);
+            Vector3 slide = baseOffset + new Vector3(0.02f * (1f - lift), -0.34f * (1f - lift) + thrust * 0.028f, thrust * 0.055f);
             var pose = Matrix4x4.CreateTranslation(-pivot)
                      * Matrix4x4.CreateRotationZ(wiggle)
-                     * Matrix4x4.CreateRotationX(-0.22f * (1f - lift))
+                     * Matrix4x4.CreateRotationX(-0.24f * (1f - lift) + thrust * 0.08f)
                      * Matrix4x4.CreateTranslation(pivot);
             VisualEngine3D.ArmAssembly(true, slide, "fps_hands_flipoff", pose);
         }
