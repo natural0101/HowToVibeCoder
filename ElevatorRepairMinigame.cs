@@ -1,23 +1,89 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
 using Raylib_cs;
 
 namespace HowToVibeCoder;
 
 /// <summary>
-/// Tactile 1990s Soviet/Art-Deco open steel elevator junction box soldering mini-game.
-/// Rendered as a physical electrical cabinet in 1280x720 virtual UI space via <see cref="UiViewport"/>.
+/// Tactile 1998 Soviet elevator junction-box soldering mini-game layered directly over
+/// bespoke hand-painted hardware textures (<c>elevator_box_bg.png</c> + <c>soldering_iron_sprite.png</c>)
+/// in 1280x720 virtual UI space via <see cref="UiViewport"/>.
 /// </summary>
 public sealed class ElevatorRepairMinigame
 {
     private const float VirtualW = 1280f;
     private const float VirtualH = 720f;
     private const int PadCount = 3;
-    private const float OverloadDuration = 0.55f;
+    private const float OverloadDuration = 0.58f;
     private const float MissRecoveryDuration = 0.22f;
     private const float OpenInputGraceDuration = 0.18f;
+    private const float TapeRipDuration = 0.52f;
+
+    // Exact hand-painted soldering_iron_sprite.png (510x512) copper chisel tip normalized pivot
+    private const float IronTipPivotNormX = 0.9408f;
+    private const float IronTipPivotNormY = 0.9807f;
+    private const float IronDrawW = 224f;
+    private const float IronDrawH = 225f;
+    private const float IronBaseTiltDeg = -24f;
+
+    // Measured pixel coordinates on elevator_box_bg.png (1280x720)
+    private static readonly Rectangle NameplateRect = new(285f, 104f, 313f, 66f);
+    private static readonly Rectangle StatusBezelRect = new(262f, 197f, 358f, 26f);
+    private static readonly Vector2 PilotLampCenter = new(737f, 160f);
+    private const float PilotLampRadius = 29f;
+    private static readonly Rectangle PilotLabelRect = new(687f, 89f, 100f, 18f);
+
+    private static readonly Vector2 VoltmeterPivot = new(982f, 199f);
+    private const float VoltmeterArcRadius = 55f;
+    private const float VoltmeterStartDeg = -148f;
+    private const float VoltmeterEndDeg = -32f;
+    private static readonly Rectangle VoltmeterReadoutRect = new(912f, 213f, 140f, 19f);
+
+    private static readonly Rectangle BrassGrooveRect = new(278f, 562f, 824f, 46f);
+    private static readonly Rectangle TrackSlotRect = new(286f, 567f, 808f, 36f);
+    private static readonly Rectangle BottomLegendRect = new(210f, 668f, 860f, 20f);
+
+    // Exact centers of the 3 painted recessed copper solder pads on the green Soviet PCB
+    private static readonly Vector2[] PadPositions =
+    [
+        new(472.5f, 381f),
+        new(711f, 381f),
+        new(951.5f, 383.5f)
+    ];
+
+    private static readonly (string Ru, string En)[] PadLabels =
+    [
+        ("ПРИВОД ШАХТЫ", "SHAFT DRIVE"),
+        ("РЕЛЕ ДВЕРЕЙ", "DOOR RELAY"),
+        ("КОНТУР 0.1", "CIRCUIT 0.1")
+    ];
+
+    private static readonly string[] PadCodes = ["01", "02", "03"];
+
+    // Sweet-spot parameters per pad: (center 0..1, width 28% / 26% / 22%, sweep speed units/sec)
+    private static readonly (float Center, float Width, float Speed)[] PadTiming =
+    [
+        (0.50f, 0.28f, 1.12f),
+        (0.57f, 0.26f, 1.36f),
+        (0.46f, 0.22f, 1.62f)
+    ];
+
+    // Rest center of the weathered "НЕ ТРОГАТЬ" hazard tape across the upper-right rim of Pad 2
+    private static readonly Vector2 TapeRestCenter = new(1008f, 375f);
+
+    // Warm 1998 Soviet hardware ink & glow palette
+    private static readonly Color EngravedBronzeInk = new(36, 23, 12, 242);
+    private static readonly Color EngravedHighlight = new(238, 214, 156, 118);
+    private static readonly Color SilkscreenIvory = new(234, 228, 206, 235);
+    private static readonly Color BrassBright = new(228, 188, 112, 255);
+    private static readonly Color BrassDark = new(82, 58, 28, 255);
+    private static readonly Color CopperLit = new(246, 178, 66, 255);
+    private static readonly Color DangerRed = new(204, 38, 36, 255);
+    private static readonly Color HazardYellow = new(214, 166, 42, 255);
+    private static readonly Color HazardCharcoal = new(26, 24, 20, 255);
 
     private enum Phase
     {
@@ -48,50 +114,9 @@ public sealed class ElevatorRepairMinigame
         public bool Dark;
     }
 
-    // Pad geometry in 1280x720 virtual space
-    private static readonly Vector2[] PadPositions =
-    [
-        new(368f, 374f),
-        new(640f, 374f),
-        new(912f, 374f)
-    ];
-
-    private static readonly (string Ru, string En)[] PadLabels =
-    [
-        ("ПРИВОД ШАХТЫ", "SHAFT DRIVE"),
-        ("РЕЛЕ ДВЕРЕЙ", "DOOR RELAY"),
-        ("КОНТУР 0.1", "CIRCUIT 0.1")
-    ];
-
-    private static readonly string[] PadCodes = ["01", "02", "03"];
-
-    // Sweet-spot parameters per pad: (center 0..1, width 0..1, sweep speed units/sec)
-    private static readonly (float Center, float Width, float Speed)[] PadTiming =
-    [
-        (0.50f, 0.28f, 1.12f),
-        (0.57f, 0.28f, 1.36f),
-        (0.46f, 0.22f, 1.62f)
-    ];
-
-    // Physical material palette (1990s Soviet steel, aged brass, vintage emerald-olive PCB, warm ivory)
-    private static readonly Color SteelDark = new(24, 28, 31, 255);
-    private static readonly Color SteelMid = new(44, 50, 54, 255);
-    private static readonly Color SteelLight = new(74, 82, 87, 255);
-    private static readonly Color SteelHighlight = new(118, 127, 132, 165);
-    private static readonly Color CavityDark = new(13, 16, 17, 255);
-    private static readonly Color BrassBright = new(218, 179, 108, 255);
-    private static readonly Color BrassMid = new(168, 132, 72, 255);
-    private static readonly Color BrassDark = new(86, 63, 32, 255);
-    private static readonly Color EngravedInk = new(34, 23, 13, 255);
-    private static readonly Color PcbTop = new(27, 62, 46, 255);
-    private static readonly Color PcbBottom = new(17, 42, 31, 255);
-    private static readonly Color CopperDim = new(126, 92, 50, 255);
-    private static readonly Color CopperLit = new(238, 172, 68, 255);
-    private static readonly Color Silkscreen = new(226, 220, 202, 235);
-    private static readonly Color IvoryFace = new(239, 229, 204, 255);
-    private static readonly Color HazardYellow = new(218, 168, 36, 255);
-    private static readonly Color HazardBlack = new(26, 24, 22, 255);
-    private static readonly Color DangerRed = new(198, 38, 42, 255);
+    private Texture2D _bgTex;
+    private Texture2D _ironTex;
+    private bool _texturesAttempted;
 
     private readonly bool[] _padSoldered = new bool[PadCount];
     private readonly float[] _padHeat = new float[PadCount];
@@ -110,6 +135,11 @@ public sealed class ElevatorRepairMinigame
     private float _overloadTimer;
     private float _overloadSparkCooldown;
     private float _ambientSmokeTimer;
+
+    private bool _tapeRipped;
+    private bool _tapeAnimActive;
+    private float _tapeRipAnim;
+    private bool _previewShowcaseMode;
 
     private float _gaugePos = 0.16f;
     private float _gaugeDir = 1f;
@@ -140,6 +170,12 @@ public sealed class ElevatorRepairMinigame
         _overloadTimer = 0f;
         _overloadSparkCooldown = 0f;
         _ambientSmokeTimer = 0f;
+
+        _tapeRipped = false;
+        _tapeAnimActive = false;
+        _tapeRipAnim = 0f;
+        _previewShowcaseMode = false;
+
         _gaugePos = 0.14f;
         _gaugeDir = 1f;
         _ironHoverPos = PadPositions[0];
@@ -154,7 +190,7 @@ public sealed class ElevatorRepairMinigame
         Array.Clear(_padSoldered);
         Array.Clear(_padHeat);
         Array.Clear(_traceGlow);
-        _traceGlow[0] = 0.65f; // Live power present on incoming busbar
+        _traceGlow[0] = 0.85f; // Live incoming feed on busbar
         _sparks.Clear();
         _smoke.Clear();
 
@@ -166,6 +202,7 @@ public sealed class ElevatorRepairMinigame
         if (!IsActive) return;
         IsActive = false;
         _phase = Phase.Idle;
+        _previewShowcaseMode = false;
         _sparks.Clear();
         _smoke.Clear();
         _shakeAmount = 0f;
@@ -189,6 +226,12 @@ public sealed class ElevatorRepairMinigame
         _statusRu = "";
         _statusEn = "";
         _statusTimer = 0f;
+
+        // Keep Pad 3 visibly sealed with curling "НЕ ТРОГАТЬ" tape while showcasing golden target track + puck
+        _tapeRipped = count >= PadCount;
+        _tapeAnimActive = false;
+        _tapeRipAnim = 0f;
+        _previewShowcaseMode = count == 2;
 
         Array.Clear(_padSoldered);
         Array.Clear(_padHeat);
@@ -221,9 +264,9 @@ public sealed class ElevatorRepairMinigame
             _phase = Phase.Soldering;
             _overloadTimer = 0f;
             _ironHoverPos = PadPositions[count];
-            _ironPressAnim = 0.36f;
+            _ironPressAnim = 0.32f;
             var timing = PadTiming[count];
-            _gaugePos = timing.Center + timing.Width * 0.08f;
+            _gaugePos = timing.Center + timing.Width * 0.04f;
             _gaugeDir = 1f;
             SeedPreviewParticles(PadPositions[count], 18, 9);
         }
@@ -244,10 +287,20 @@ public sealed class ElevatorRepairMinigame
         if (_ironPressAnim > 0f) _ironPressAnim = MathF.Max(0f, _ironPressAnim - dt * 3.8f);
         if (_shakeAmount > 0f) _shakeAmount = MathF.Max(0f, _shakeAmount - dt * 22f);
 
-        // Smoothly heat/cool solder pads and light copper traces
+        if (_tapeAnimActive)
+        {
+            _tapeRipAnim += dt / TapeRipDuration;
+            if (_tapeRipAnim >= 1f)
+            {
+                _tapeRipAnim = 1f;
+                _tapeAnimActive = false;
+            }
+        }
+
+        // Cool freshly soldered beads & energize painted copper traces
         for (int i = 0; i < PadCount; i++)
         {
-            if (_padHeat[i] > 0f) _padHeat[i] = MathF.Max(0f, _padHeat[i] - dt * 0.75f);
+            if (_padHeat[i] > 0f) _padHeat[i] = MathF.Max(0f, _padHeat[i] - dt * 0.72f);
         }
         for (int i = 0; i < _traceGlow.Length; i++)
         {
@@ -258,23 +311,28 @@ public sealed class ElevatorRepairMinigame
         // Smoothly glide soldering iron toward active pad
         int activePadIdx = Math.Clamp(_solderedCount, 0, PadCount - 1);
         Vector2 targetIronPos = PadPositions[activePadIdx];
+        if (IsWaitingForTapeRip())
+        {
+            // Hold iron slightly poised back while waiting for player to peel off "НЕ ТРОГАТЬ" tape
+            targetIronPos += new Vector2(-18f, -14f);
+        }
         _ironHoverPos = Vector2.Lerp(_ironHoverPos, targetIronPos, MathF.Min(1f, dt * 11f));
 
-        // Spring-damped voltmeter needle physics + subtle 50Hz AC micro-tremor
+        // Spring-damped analog voltmeter needle physics
         float targetVolts = TargetVoltageForCount(_solderedCount);
-        float stiffness = _phase == Phase.Overload ? 165f : 88f;
-        float damping = _phase == Phase.Overload ? 8.5f : 10.5f;
+        float stiffness = _phase == Phase.Overload ? 168f : 90f;
+        float damping = _phase == Phase.Overload ? 8.2f : 10.5f;
         _needleVel += (targetVolts - _needleVolts) * stiffness * dt;
         _needleVel *= MathF.Exp(-damping * dt);
         _needleVolts = Math.Clamp(_needleVolts + _needleVel * dt, 0f, 392f);
 
-        // Ambient rosin smoke rising continuously from hot soldering iron tip
+        // Gentle curling rosin smoke rising from heated copper chisel tip
         _ambientSmokeTimer -= dt;
         if (_ambientSmokeTimer <= 0f)
         {
-            _ambientSmokeTimer = 0.085f;
+            _ambientSmokeTimer = 0.09f;
             Vector2 tip = GetIronTipPosition();
-            SpawnSmoke(tip + new Vector2(2f, -3f), 1, dark: false);
+            SpawnSmoke(tip + new Vector2(-3f, -4f), 1, dark: false);
         }
 
         UpdateParticles(dt);
@@ -282,13 +340,13 @@ public sealed class ElevatorRepairMinigame
         if (_phase == Phase.Overload)
         {
             _overloadTimer += dt;
-            _shakeAmount = MathF.Max(_shakeAmount, 3.8f + 3.2f * MathF.Sin(_overloadTimer * 44f));
+            _shakeAmount = MathF.Max(_shakeAmount, 4.2f + 3.4f * MathF.Sin(_overloadTimer * 46f));
             _overloadSparkCooldown -= dt;
             if (_overloadSparkCooldown <= 0f)
             {
-                _overloadSparkCooldown = 0.075f;
-                SpawnSparks(PadPositions[2], 7, isMiss: false);
-                SpawnSmoke(PadPositions[2] + new Vector2(0f, -8f), 2, dark: false);
+                _overloadSparkCooldown = 0.07f;
+                SpawnSparks(PadPositions[2], 8, isMiss: false);
+                SpawnSmoke(PadPositions[2] + new Vector2(-4f, -8f), 2, dark: false);
             }
 
             if (_overloadTimer >= OverloadDuration)
@@ -309,9 +367,11 @@ public sealed class ElevatorRepairMinigame
             return false;
         }
 
-        // Oscillate glowing copper heat-bar across brass rail
+        bool waitingTape = IsWaitingForTapeRip();
+
+        // Sweep indicator cursor across bottom machined-brass groove only when ready to solder
         var timing = PadTiming[activePadIdx];
-        if (_missRecoveryTimer <= 0f)
+        if (!waitingTape && _missRecoveryTimer <= 0f)
         {
             _gaugePos += _gaugeDir * timing.Speed * dt;
             if (_gaugePos >= 1f)
@@ -326,7 +386,7 @@ public sealed class ElevatorRepairMinigame
             }
         }
 
-        // Trigger solder attempt on LMB / Space / E
+        // Trigger action on LMB / Space / E
         bool triggerPressed = _openGraceTimer <= 0f && _missRecoveryTimer <= 0f &&
             (Raylib.IsMouseButtonPressed(MouseButton.Left) ||
              Raylib.IsKeyPressed(KeyboardKey.Space) ||
@@ -334,6 +394,14 @@ public sealed class ElevatorRepairMinigame
 
         if (triggerPressed)
         {
+            _previewShowcaseMode = false;
+
+            if (waitingTape)
+            {
+                HandleTapeRip();
+                return false;
+            }
+
             float sweetStart = timing.Center - timing.Width * 0.5f;
             float sweetEnd = timing.Center + timing.Width * 0.5f;
             bool hit = _gaugePos >= sweetStart && _gaugePos <= sweetEnd;
@@ -355,8 +423,10 @@ public sealed class ElevatorRepairMinigame
     {
         if (!IsActive) return;
 
-        // Full-screen moody scrim behind the open steel cabinet
-        Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), new Color(8, 10, 12, 198));
+        EnsureTexturesLoaded();
+
+        // Deep moody scrim behind the 1280x720 hardware viewport (covers ultrawide sidebars cleanly)
+        Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), new Color(10, 8, 7, 218));
 
         UiViewport.Begin();
         try
@@ -364,19 +434,20 @@ public sealed class ElevatorRepairMinigame
             float ox = (UiViewport.Width - VirtualW) * 0.5f;
             float oy = (UiViewport.Height - VirtualH) * 0.5f;
 
-            // Subtle physical impact / overload vibration
+            // Physical impact / 380V overload cabinet vibration
             float shakeX = _shakeAmount > 0.05f ? MathF.Sin(_elapsed * 78f) * _shakeAmount : 0f;
             float shakeY = _shakeAmount > 0.05f ? MathF.Cos(_elapsed * 63f) * _shakeAmount * 0.7f : 0f;
             Vector2 origin = new(ox + shakeX, oy + shakeY);
 
-            DrawCabinetHousing(origin);
+            DrawCabinetBackground(origin);
             DrawNameplateAndStatus(origin, uiFont, titleFont);
-            DrawPilotLamp(origin, uiFont);
-            DrawAnalogVoltmeter(origin, uiFont);
-            DrawFiberglassPcb(origin, uiFont);
+            DrawPilotLampOverlay(origin, uiFont);
+            DrawAnalogVoltmeterOverlay(origin, uiFont);
+            DrawPcbEnergizedTraces(origin);
+            DrawSolderPadsAndSilkscreen(origin, uiFont);
             DrawSmokeWisps(origin);
-            DrawHazardTape(origin + PadPositions[2], uiFont);
-            DrawCalibrationRail(origin);
+            DrawHazardTape(origin);
+            DrawCalibrationTrack(origin, uiFont);
             DrawBottomLegend(origin, uiFont);
             DrawSolderingIron(origin);
             DrawSparks(origin);
@@ -385,6 +456,36 @@ public sealed class ElevatorRepairMinigame
         {
             Raylib.EndMode2D();
         }
+    }
+
+    private bool IsWaitingForTapeRip() => _phase == Phase.Soldering && _solderedCount == 2 && !_tapeRipped && !_previewShowcaseMode;
+
+    private void HandleTapeRip()
+    {
+        _tapeRipped = true;
+        _tapeAnimActive = true;
+        _tapeRipAnim = 0f;
+        _openGraceTimer = 0.20f;
+        _shakeAmount = 4.4f;
+        _hitFlashTimer = 0.24f;
+
+        _statusRu = "ЛЕНТА СОРВАНА · ПАЯЙ КОНТУР 0.1!";
+        _statusEn = "TAPE RIPPED · SOLDER CIRCUIT 0.1!";
+        _statusTimer = 1.25f;
+
+        // Arm the final 380V calibration sweep with fair lead-in from the right
+        var finalTiming = PadTiming[2];
+        _gaugePos = Math.Clamp(finalTiming.Center + 0.40f, 0.72f, 0.90f);
+        _gaugeDir = -1f;
+
+        SpawnSmoke(PadPositions[2] + new Vector2(8f, -6f), 5, dark: true);
+        SpawnSparks(PadPositions[2] + new Vector2(10f, -6f), 8, isMiss: false);
+
+        SafePlayAudio(() =>
+        {
+            AudioMusicSystem.PlayActionClack(1.35f);
+            AudioMusicSystem.PlayHandGrab();
+        });
     }
 
     private void HandleSolderHit(int padIndex)
@@ -397,8 +498,8 @@ public sealed class ElevatorRepairMinigame
         _needleVel += 320f;
 
         Vector2 padPos = PadPositions[padIndex];
-        SpawnSparks(padPos, 24, isMiss: false);
-        SpawnSmoke(padPos + new Vector2(0f, -6f), 9, dark: false);
+        SpawnSparks(padPos, 26, isMiss: false);
+        SpawnSmoke(padPos + new Vector2(-3f, -6f), 9, dark: false);
 
         SafePlayAudio(() =>
         {
@@ -411,15 +512,21 @@ public sealed class ElevatorRepairMinigame
             _phase = Phase.Overload;
             _overloadTimer = 0f;
             _overloadSparkCooldown = 0.06f;
-            _shakeAmount = 7.5f;
-            _needleVel += 520f;
-            SpawnSparks(PadPositions[2], 34, isMiss: false);
-            SpawnSmoke(PadPositions[2] + new Vector2(0f, -8f), 10, dark: false);
+            _shakeAmount = 8.2f;
+            _needleVel += 540f;
+            SpawnSparks(PadPositions[2], 36, isMiss: false);
+            SpawnSmoke(PadPositions[2] + new Vector2(-4f, -8f), 11, dark: false);
             SafePlayAudio(() =>
             {
                 AudioMusicSystem.PlayComicZap();
                 AudioMusicSystem.PlayAnxietyAlarm();
             });
+        }
+        else if (_solderedCount == 2 && !_tapeRipped)
+        {
+            _statusRu = "СОРВИ ЛЕНТУ С КОНТУРА 0.1!";
+            _statusEn = "RIP TAPE OFF CIRCUIT 0.1!";
+            _statusTimer = 1.35f;
         }
         else
         {
@@ -427,18 +534,9 @@ public sealed class ElevatorRepairMinigame
             _statusEn = $"JOINT {_solderedCount} / {PadCount} SOLDERED · POWER UP";
             _statusTimer = 1.15f;
 
-            // Place cursor with fair lead-in toward the next pad's sweet spot
             var nextTiming = PadTiming[_solderedCount];
-            if (_solderedCount == 1)
-            {
-                _gaugePos = Math.Clamp(nextTiming.Center - 0.42f, 0.08f, 0.28f);
-                _gaugeDir = 1f;
-            }
-            else
-            {
-                _gaugePos = Math.Clamp(nextTiming.Center + 0.42f, 0.72f, 0.92f);
-                _gaugeDir = -1f;
-            }
+            _gaugePos = Math.Clamp(nextTiming.Center - 0.42f, 0.08f, 0.28f);
+            _gaugeDir = 1f;
         }
     }
 
@@ -453,8 +551,8 @@ public sealed class ElevatorRepairMinigame
         _statusTimer = 0.95f;
 
         Vector2 padPos = PadPositions[padIndex];
-        SpawnSparks(padPos, 13, isMiss: true);
-        SpawnSmoke(padPos + new Vector2(0f, -4f), 5, dark: true);
+        SpawnSparks(padPos, 14, isMiss: true);
+        SpawnSmoke(padPos + new Vector2(-2f, -4f), 6, dark: true);
 
         SafePlayAudio(() =>
         {
@@ -473,22 +571,697 @@ public sealed class ElevatorRepairMinigame
 
     private Vector2 GetIronTipPosition()
     {
-        float idleBob = MathF.Sin(_elapsed * 3.1f) * 2.2f;
-        float plunge = MathF.Sin(_ironPressAnim * MathF.PI) * 19f;
-        return new Vector2(_ironHoverPos.X - 3f + plunge * 0.25f, _ironHoverPos.Y - 20f + idleBob + plunge);
+        float idleBob = MathF.Sin(_elapsed * 3.1f) * 2.0f;
+        float plunge = MathF.Sin(_ironPressAnim * MathF.PI) * 15f;
+        float hoverLift = IsWaitingForTapeRip() ? -22f : -15f;
+        return new Vector2(_ironHoverPos.X - 2f + plunge * 0.16f, _ironHoverPos.Y + hoverLift + idleBob + plunge);
     }
 
+    // =========================================================================
+    // TEXTURE LOADING (LAZY, HEADLESS-SAFE, BILINEAR FILTERING)
+    // =========================================================================
+    private void EnsureTexturesLoaded()
+    {
+        if (_texturesAttempted) return;
+        if (!Raylib.IsWindowReady()) return;
+        _texturesAttempted = true;
+
+        _bgTex = TryLoadUiTexture("elevator_box_bg.png");
+        _ironTex = TryLoadUiTexture("soldering_iron_sprite.png");
+    }
+
+    private static Texture2D TryLoadUiTexture(string fileName)
+    {
+        try
+        {
+            string? path = ResolveUiAssetPath(fileName);
+            if (path is null) return default;
+            Texture2D tex = Raylib.LoadTexture(path);
+            if (tex.Id != 0)
+            {
+                Raylib.SetTextureFilter(tex, TextureFilter.Bilinear);
+            }
+            return tex;
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    private static string? ResolveUiAssetPath(string fileName)
+    {
+        string[] candidates =
+        [
+            Path.Combine(AppContext.BaseDirectory, "assets", "ui", fileName),
+            Path.Combine(Directory.GetCurrentDirectory(), "assets", "ui", fileName),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "assets", "ui", fileName))
+        ];
+
+        foreach (string path in candidates)
+        {
+            if (File.Exists(path)) return path;
+        }
+        return null;
+    }
+
+    // =========================================================================
+    // 1. HAND-PAINTED SOVIET ELEVATOR JUNCTION BOX BACKDROP
+    // =========================================================================
+    private void DrawCabinetBackground(Vector2 o)
+    {
+        Rectangle dest = new(o.X, o.Y, VirtualW, VirtualH);
+        if (_bgTex.Id != 0)
+        {
+            Rectangle src = new(0f, 0f, _bgTex.Width, _bgTex.Height);
+            Raylib.DrawTexturePro(_bgTex, src, dest, Vector2.Zero, 0f, Color.White);
+        }
+        else
+        {
+            // Minimal safe headless/missing-asset backdrop so Draw never crashes
+            Raylib.DrawRectangleRec(dest, new Color(24, 30, 34, 255));
+        }
+
+        // Subtle warm crimson atmospheric bounce across cabinet during 380V overload
+        if (_phase == Phase.Overload)
+        {
+            float pulse = 0.5f + 0.5f * MathF.Sin(_overloadTimer * 48f);
+            Raylib.DrawRectangleRec(dest, new Color(210, 36, 24, (int)(26 * pulse)));
+        }
+    }
+
+    // =========================================================================
+    // 2. ENGRAVED BRASS NAMEPLATE & DARK BAKELITE STATUS BEZEL
+    // =========================================================================
+    private void DrawNameplateAndStatus(Vector2 o, Font uiFont, Font titleFont)
+    {
+        Rectangle plate = OffsetRect(NameplateRect, o);
+        string titleText = Loc.T("ЩИТ ЛИФТА №1 · 1998", "ELEVATOR BOX #1 · 1998");
+        DrawEngravedFittedText(titleFont, titleText, plate, 22, 16, EngravedBronzeInk, EngravedHighlight);
+
+        Rectangle statusSlot = OffsetRect(StatusBezelRect, o);
+
+        // Subtle recessed inner glow inside the painted dark Bakelite window on state feedback
+        if (_phase == Phase.Overload)
+        {
+            float pulse = 0.55f + 0.45f * MathF.Sin(_overloadTimer * 44f);
+            Raylib.DrawRectangleRec(statusSlot, new Color(185, 32, 24, (int)(70 * pulse)));
+        }
+        else if (_missFlashTimer > 0f)
+        {
+            int alpha = (int)(72 * (_missFlashTimer / 0.32f));
+            Raylib.DrawRectangleRec(statusSlot, new Color(172, 54, 32, alpha));
+        }
+        else if (_hitFlashTimer > 0f)
+        {
+            int alpha = (int)(54 * (_hitFlashTimer / 0.34f));
+            Raylib.DrawRectangleRec(statusSlot, new Color(218, 152, 46, alpha));
+        }
+
+        string statusLine;
+        Color statusInk;
+        if (_phase == Phase.Overload)
+        {
+            statusLine = Loc.T("ПЕРЕГРУЗКА 380В · КОНТУР 0.1!", "380V OVERLOAD · CIRCUIT 0.1!");
+            statusInk = new Color(255, 118, 98, 255);
+        }
+        else if (_statusTimer > 0f && !string.IsNullOrEmpty(_statusRu))
+        {
+            statusLine = Loc.T(_statusRu, _statusEn);
+            statusInk = _missFlashTimer > 0f ? new Color(248, 154, 112, 255) : new Color(255, 214, 116, 255);
+        }
+        else if (IsWaitingForTapeRip())
+        {
+            float warnPulse = 0.72f + 0.28f * MathF.Sin(_elapsed * 7.5f);
+            statusLine = Loc.T("СОРВИ ЛЕНТУ С КОНТУРА 0.1!", "RIP TAPE OFF CIRCUIT 0.1!");
+            statusInk = new Color(255, (int)(178 + 42 * warnPulse), 84, 255);
+        }
+        else
+        {
+            statusLine = Loc.T($"КОНТАКТЫ: {_solderedCount} / {PadCount} · СПАЯЙ ЦЕПЬ ЗАПУСКА",
+                               $"JOINTS: {_solderedCount} / {PadCount} · SOLDER START CIRCUIT");
+            statusInk = new Color(238, 222, 186, 248);
+        }
+
+        DrawFittedCenteredText(uiFont, statusLine, statusSlot, 14, 11, statusInk, shadowed: true);
+    }
+
+    // =========================================================================
+    // 3. LIVE PILOT INDICATOR LAMP GLOW OVER PAINTED KNURLED BRASS BEZEL
+    // =========================================================================
+    private void DrawPilotLampOverlay(Vector2 o, Font uiFont)
+    {
+        Vector2 center = o + PilotLampCenter;
+        bool overload = _phase == Phase.Overload;
+        float pulse = overload
+            ? 0.55f + 0.45f * MathF.Sin(_overloadTimer * 48f)
+            : 0.78f + 0.22f * MathF.Sin(_elapsed * 3.8f);
+
+        if (overload)
+        {
+            // Intense pulsing crimson emergency alarm halo & glowing lens core
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, 92f,
+                new Color(255, 36, 24, (int)(135 * pulse)), Color.Blank);
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, PilotLampRadius + 6f,
+                new Color(255, 58, 36, (int)(205 * pulse)), new Color(170, 18, 16, 0));
+            Raylib.DrawCircleGradient((int)(center.X - 3f), (int)(center.Y - 4f), 20f,
+                new Color(255, 194, 134, (int)(210 * pulse)), Color.Blank);
+        }
+        else if (_solderedCount == 0)
+        {
+            // Faint warm standby filament glimmer inside unlit amber glass
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, 18f,
+                new Color(224, 138, 42, (int)(36 * pulse)), Color.Blank);
+        }
+        else if (_solderedCount == 1)
+        {
+            // 120V warm honey-amber glow
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, 58f,
+                new Color(246, 168, 46, (int)(66 * pulse)), Color.Blank);
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, PilotLampRadius,
+                new Color(255, 188, 68, (int)(138 * pulse)), Color.Blank);
+            Raylib.DrawCircleGradient((int)(center.X - 4f), (int)(center.Y - 5f), 14f,
+                new Color(255, 232, 162, (int)(145 * pulse)), Color.Blank);
+        }
+        else
+        {
+            // 240V full bright molten-amber pilot lamp radiance
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, 74f,
+                new Color(255, 178, 48, (int)(108 * pulse)), Color.Blank);
+            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, PilotLampRadius + 2f,
+                new Color(255, 204, 78, (int)(192 * pulse)), Color.Blank);
+            Raylib.DrawCircleGradient((int)(center.X - 4f), (int)(center.Y - 5f), 17f,
+                new Color(255, 246, 198, (int)(205 * pulse)), Color.Blank);
+        }
+
+        // Crisp stenciled label centered cleanly BELOW the knurled brass ring on dark cabinet steel
+        string lampLabel = overload ? Loc.T("АВАРИЯ!", "OVERLOAD!") : Loc.T("СЕТЬ", "POWER");
+        Color lampInk = overload ? new Color(255, 118, 102, 255) : new Color(204, 196, 178, 224);
+        DrawFittedCenteredText(uiFont, lampLabel, OffsetRect(PilotLabelRect, o), 13, 11, lampInk, shadowed: true);
+    }
+
+    // =========================================================================
+    // 4. ANALOG VOLTMETER DIAL, SPRING NEEDLE & LOWER BAKELITE READOUT
+    // =========================================================================
+    private void DrawAnalogVoltmeterOverlay(Vector2 o, Font uiFont)
+    {
+        Vector2 pivot = o + VoltmeterPivot;
+
+        // Safe scale arc (0..260V) & crimson overload zone (260..380V) drawn straight onto painted ivory face
+        float dangerStartDeg = VoltageToAngleDeg(260f, VoltmeterStartDeg, VoltmeterEndDeg);
+        DrawArcStroke(pivot, VoltmeterArcRadius, 2.0f, VoltmeterStartDeg, dangerStartDeg, 24, EngravedBronzeInk);
+        DrawArcStroke(pivot, VoltmeterArcRadius, 4.4f, dangerStartDeg, VoltmeterEndDeg, 16, DangerRed);
+        DrawArcStroke(pivot, VoltmeterArcRadius - 6.0f, 1.0f, VoltmeterStartDeg, VoltmeterEndDeg, 28, new Color(102, 82, 54, 145));
+
+        // Major & minor graduation ticks every 20V
+        for (int v = 0; v <= 380; v += 20)
+        {
+            float deg = VoltageToAngleDeg(v, VoltmeterStartDeg, VoltmeterEndDeg);
+            float rad = deg * (MathF.PI / 180f);
+            bool major = v == 0 || v == 120 || v == 240 || v == 380 || v % 60 == 0;
+            float rIn = major ? VoltmeterArcRadius - 8.5f : VoltmeterArcRadius - 4.5f;
+            float rOut = VoltmeterArcRadius + 1.5f;
+            Vector2 dir = new(MathF.Cos(rad), MathF.Sin(rad));
+            Color tickCol = v >= 260 ? DangerRed : EngravedBronzeInk;
+            Raylib.DrawLineEx(pivot + dir * rIn, pivot + dir * rOut, major ? 1.7f : 1.0f, tickCol);
+        }
+
+        // Crisp vintage ink scale numerals (0, 120, 240, 380) cleanly inside aged-ivory glass
+        Font numFont = GameFonts.Get(Typeface.InterfaceBold, 11);
+        foreach (int labelV in new[] { 0, 120, 240, 380 })
+        {
+            float deg = VoltageToAngleDeg(labelV, VoltmeterStartDeg, VoltmeterEndDeg);
+            float rad = deg * (MathF.PI / 180f);
+            float rNum = VoltmeterArcRadius + 11.5f;
+            Vector2 pos = pivot + new Vector2(MathF.Cos(rad) * rNum, MathF.Sin(rad) * rNum);
+            string num = labelV.ToString();
+            Vector2 sz = GameFonts.Measure(numFont, num, 11);
+            Color numCol = labelV >= 260 ? DangerRed : EngravedBronzeInk;
+            GameFonts.Draw(numFont, num, new(pos.X - sz.X * 0.5f, pos.Y - sz.Y * 0.5f), 11, numCol, shadowed: false);
+        }
+
+        // Subtle stamped meter unit emblem ("В" / "V") inside lower center of ivory dial
+        string unitMark = Loc.T("В", "V");
+        Font unitFont = GameFonts.Get(Typeface.InterfaceBold, 12);
+        Vector2 uSz = GameFonts.Measure(unitFont, unitMark, 12);
+        GameFonts.Draw(unitFont, unitMark, new(pivot.X - uSz.X * 0.5f, pivot.Y - 34f - uSz.Y * 0.5f), 12,
+            new Color(74, 54, 34, 175), shadowed: false);
+
+        // Vibrating spring-damped crimson pointer needle
+        float tremor = _phase == Phase.Overload
+            ? MathF.Sin(_elapsed * 74f) * 3.4f + MathF.Cos(_elapsed * 118f) * 1.9f
+            : (_solderedCount > 0 ? MathF.Sin(_elapsed * 34f) * 0.9f : MathF.Sin(_elapsed * 12f) * 0.22f);
+        float needleDeg = VoltageToAngleDeg(_needleVolts, VoltmeterStartDeg, VoltmeterEndDeg) + tremor;
+        float needleRad = needleDeg * (MathF.PI / 180f);
+        Vector2 needleDir = new(MathF.Cos(needleRad), MathF.Sin(needleRad));
+        Vector2 needlePerp = new(-needleDir.Y, needleDir.X);
+        Vector2 needleTip = pivot + needleDir * (VoltmeterArcRadius - 2.5f);
+
+        // Soft cast shadow on aged-ivory dial face
+        Raylib.DrawLineEx(pivot + new Vector2(1.8f, 2.0f), needleTip + new Vector2(1.8f, 2.0f), 2.2f, new Color(48, 36, 22, 68));
+
+        // Tapered crimson meter needle
+        Color needleCol = _needleVolts >= 255f ? DangerRed : new Color(162, 38, 28, 255);
+        DrawTriCCW(pivot - needlePerp * 2.1f, pivot + needlePerp * 2.1f, needleTip, needleCol);
+        Raylib.DrawLineEx(pivot, needleTip, 1.3f, needleCol);
+
+        // Tiny machined brass pivot cap
+        Raylib.DrawCircleV(pivot + new Vector2(1f, 1.2f), 7.4f, new Color(36, 24, 14, 110));
+        Raylib.DrawCircleV(pivot, 7.2f, BrassDark);
+        Raylib.DrawCircleV(pivot, 5.4f, BrassBright);
+        Raylib.DrawCircleV(pivot, 2.3f, EngravedBronzeInk);
+
+        // Clean stamped voltage readout tucked cleanly inside the dark Bakelite bar BELOW the ivory glass
+        int shownVolts = (int)MathF.Round(Math.Clamp(_needleVolts, 0f, 380f));
+        string unitStamp = Loc.T($"{shownVolts} В", $"{shownVolts} V");
+        Color stampCol = shownVolts >= 260 ? new Color(255, 114, 96, 255) : new Color(238, 224, 190, 245);
+        DrawFittedCenteredText(uiFont, unitStamp, OffsetRect(VoltmeterReadoutRect, o), 14, 11, stampCol, shadowed: true);
+    }
+
+    // =========================================================================
+    // 5. LIVE ENERGIZED COPPER TRACE OVERLAYS ALONG PAINTED PCB PATHS
+    // =========================================================================
+    private void DrawPcbEnergizedTraces(Vector2 o)
+    {
+        // Segment 0: Bakelite terminal block right edge -> Pad 0 left copper rim (always live)
+        DrawEnergizedTraceSegment(
+            [o + new Vector2(347f, 381f), o + new Vector2(452f, 381f)],
+            _traceGlow[0], overloadSurge: false, phaseOffset: 0f);
+        // Subtle feed glow on top/bottom incoming terminal traces
+        DrawEnergizedTraceSegment(
+            [o + new Vector2(347f, 368f), o + new Vector2(376f, 368f)],
+            _traceGlow[0] * 0.55f, overloadSurge: false, phaseOffset: 0.4f, coreWidth: 2.2f);
+        DrawEnergizedTraceSegment(
+            [o + new Vector2(347f, 396f), o + new Vector2(376f, 396f)],
+            _traceGlow[0] * 0.55f, overloadSurge: false, phaseOffset: 0.8f, coreWidth: 2.2f);
+
+        // Segment 1: Pad 0 right rim -> Pad 1 left rim (energizes when Pad 0 soldered)
+        DrawEnergizedTraceSegment(
+            [o + new Vector2(493f, 381f), o + new Vector2(691f, 381f)],
+            _traceGlow[1], overloadSurge: false, phaseOffset: 1.2f);
+
+        // Segment 2: Pad 1 right rim -> Pad 2 left rim (energizes when Pad 1 soldered)
+        DrawEnergizedTraceSegment(
+            [o + new Vector2(731f, 381f), o + new Vector2(932f, 383.5f)],
+            _traceGlow[2], overloadSurge: false, phaseOffset: 2.4f);
+
+        // Segment 3: Pad 2 upper-right painted diagonal exit trace (surges 380V on overload)
+        DrawEnergizedTraceSegment(
+            [o + new Vector2(964f, 369f), o + new Vector2(1011f, 319f), o + new Vector2(1058f, 319f)],
+            _traceGlow[3], overloadSurge: _phase == Phase.Overload, phaseOffset: 3.6f);
+    }
+
+    private void DrawEnergizedTraceSegment(Vector2[] pts, float glow, bool overloadSurge, float phaseOffset, float coreWidth = 3.4f)
+    {
+        if (glow <= 0.06f || pts.Length < 2) return;
+
+        float pulse = 0.74f + 0.26f * MathF.Sin(_elapsed * (overloadSurge ? 44f : 5.4f) + phaseOffset);
+        Color baseCol = overloadSurge
+            ? Raylib.ColorLerp(CopperLit, new Color(255, 76, 52, 255), 0.55f + 0.45f * MathF.Sin(_overloadTimer * 48f))
+            : CopperLit;
+
+        Color outerHalo = new(baseCol.R, baseCol.G, baseCol.B, (int)(56 * glow * pulse));
+        Color midGlow = new(baseCol.R, baseCol.G, baseCol.B, (int)(168 * glow * pulse));
+        Color hotCore = new(255, 238, 174, (int)(175 * glow * pulse));
+
+        for (int i = 0; i < pts.Length - 1; i++)
+        {
+            Raylib.DrawLineEx(pts[i], pts[i + 1], coreWidth + 7.5f, outerHalo);
+            Raylib.DrawLineEx(pts[i], pts[i + 1], coreWidth + 1.8f, midGlow);
+            Raylib.DrawLineEx(pts[i], pts[i + 1], MathF.Max(1.4f, coreWidth * 0.55f), hotCore);
+        }
+
+        // Subtle traveling current shimmer dot along energized trace
+        if (glow > 0.65f)
+        {
+            float travel = (_elapsed * (overloadSurge ? 2.6f : 0.9f) + phaseOffset * 0.23f) % 1f;
+            Vector2 p = Vector2.Lerp(pts[0], pts[^1], travel);
+            Raylib.DrawCircleGradient((int)p.X, (int)p.Y, 9f, new Color(255, 232, 148, (int)(135 * glow)), Color.Blank);
+        }
+    }
+
+    // =========================================================================
+    // 6. SOLDER PADS (SILKSCREEN STENCILS, TARGET HALOS & GLOSSY TIN BEADS)
+    // =========================================================================
+    private void DrawSolderPadsAndSilkscreen(Vector2 o, Font uiFont)
+    {
+        int activePad = _phase == Phase.Soldering ? Math.Clamp(_solderedCount, 0, PadCount - 1) : -1;
+
+        for (int i = 0; i < PadCount; i++)
+        {
+            Vector2 pos = o + PadPositions[i];
+            bool soldered = _padSoldered[i];
+            bool active = i == activePad;
+            float heat = _padHeat[i];
+
+            // Crisp vintage white PCB silkscreen code cleanly ABOVE the pad (clear of top painted components & tape)
+            Color codeCol = soldered || active ? BrassBright : new Color(214, 212, 190, 210);
+            DrawFittedCenteredText(uiFont, PadCodes[i], new Rectangle(pos.X - 36f, o.Y + 323f, 72f, 20f), 14, 12, codeCol, shadowed: true);
+
+            if (!soldered)
+            {
+                if (active)
+                {
+                    bool needsTapeRip = i == 2 && IsWaitingForTapeRip();
+                    float pulse = 0.52f + 0.48f * MathF.Sin(_elapsed * (needsTapeRip ? 8.2f : 6.2f));
+                    Color ringCol = needsTapeRip
+                        ? new Color(246, 112, 54, (int)(120 + 115 * pulse))
+                        : new Color(246, 188, 72, (int)(110 + 120 * pulse));
+
+                    Raylib.DrawCircleGradient((int)pos.X, (int)pos.Y, 34f,
+                        new Color(ringCol.R, ringCol.G, ringCol.B, (int)(44 * pulse)), Color.Blank);
+                    DrawArcStroke(pos, 25f, 2.2f, 0f, 360f, 36, ringCol);
+                }
+            }
+            else
+            {
+                // Cooling molten amber radiance right after soldering
+                if (heat > 0.04f)
+                {
+                    Raylib.DrawCircleGradient((int)pos.X, (int)pos.Y, 42f,
+                        new Color(255, 168, 56, (int)(140 * heat)), Color.Blank);
+                }
+
+                // Translucent amber rosin flux ring around outer copper rim
+                Raylib.DrawCircleV(pos, 21.5f, new Color(118, 72, 22, 138));
+                // Radial contact shadow under domed solder bead
+                Raylib.DrawCircleV(pos + new Vector2(1.5f, 2.2f), 19.0f, new Color(16, 20, 22, 168));
+                // Glossy domed liquid-silver tin solder bead (r = 18f)
+                Raylib.DrawCircleV(pos, 18.2f, new Color(122, 132, 140, 255));
+                Raylib.DrawCircleGradient((int)(pos.X - 3.5f), (int)(pos.Y - 3.5f), 17.2f,
+                    new Color(236, 242, 248, 255), new Color(118, 128, 136, 255));
+                // Subtle warm brass environmental rim bounce at bottom-right of bead
+                DrawArcStroke(pos, 14.5f, 1.8f, 20f, 82f, 10, new Color(214, 182, 128, 110));
+                // Crisp wet metallic specular glints on crown
+                Raylib.DrawCircleV(pos + new Vector2(-5.5f, -5.5f), 4.6f, new Color(250, 253, 255, 228));
+                Raylib.DrawCircleV(pos + new Vector2(-7.8f, -7.8f), 2.0f, Color.White);
+
+                // Warm amber glow inside cooling molten solder center
+                if (heat > 0.05f)
+                {
+                    Raylib.DrawCircleGradient((int)pos.X, (int)pos.Y, 15f,
+                        new Color(255, 174, 68, (int)(162 * heat)), Color.Blank);
+                }
+            }
+
+            // Crisp vintage white PCB silkscreen caption cleanly BELOW the pad (clear of bottom components)
+            string label = Loc.T(PadLabels[i].Ru, PadLabels[i].En);
+            Color labelColor = i == 2 && _phase == Phase.Overload
+                ? new Color(255, 122, 98, 255)
+                : (soldered || active ? BrassBright : SilkscreenIvory);
+            DrawFittedCenteredText(uiFont, label, new Rectangle(pos.X - 102f, o.Y + 414f, 204f, 22f), 15, 12, labelColor, shadowed: true);
+        }
+    }
+
+    // =========================================================================
+    // 7. INTERACTIVE RIPPABLE HAZARD TAPE ("НЕ ТРОГАТЬ") ON PAD 2
+    // =========================================================================
+    private void DrawHazardTape(Vector2 o)
+    {
+        if (_tapeRipped && !_tapeAnimActive) return;
+
+        float ripT = _tapeAnimActive ? Math.Clamp(_tapeRipAnim, 0f, 1f) : 0f;
+        float alphaFactor = _tapeAnimActive ? Math.Clamp(1f - MathF.Pow(ripT, 2.4f), 0f, 1f) : 1f;
+        if (alphaFactor <= 0.02f) return;
+
+        // Subtle impatient corner flutter when Pad 2 is waiting to be peeled (or in preview showcase)
+        bool eager = IsWaitingForTapeRip() || _previewShowcaseMode;
+        float flutter = eager ? 0.55f + 0.45f * MathF.Sin(_elapsed * 5.2f) : 0.15f;
+
+        // Parabolic upward-right fling + spin + lift toward camera when ripped off!
+        Vector2 flingOffset = _tapeAnimActive
+            ? new Vector2(215f * ripT, -165f * ripT + 195f * ripT * ripT)
+            : Vector2.Zero;
+
+        Vector2 tapeCenter = o + TapeRestCenter + flingOffset;
+        float angleDeg = 22f + (eager ? MathF.Sin(_elapsed * 4.2f) * 1.1f : 0f) + ripT * 96f;
+        float scale = 1f + (_tapeAnimActive ? 0.20f * MathF.Sin(ripT * MathF.PI) : 0f);
+
+        const float w = 132f;
+        const float h = 23f;
+        const float halfW = w * 0.5f;
+        const float halfH = h * 0.5f;
+
+        int A(int a) => Math.Clamp((int)(a * alphaFactor), 0, 255);
+
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(tapeCenter.X, tapeCenter.Y, 0f);
+        Rlgl.Rotatef(angleDeg, 0f, 0f, 1f);
+        Rlgl.Scalef(scale, scale, 1f);
+
+        // Cast drop shadow underneath (grows wider as tape curls or lifts away!)
+        float shadowDrop = 3.5f + flutter * 2.5f + ripT * 18f;
+        Raylib.DrawRectangleRec(new(-halfW + 3f, -halfH + shadowDrop, w, h), new Color(8, 10, 9, A(142)));
+
+        // Base worn hazard yellow masking-tape body
+        Rectangle strip = new(-halfW, -halfH, w, h);
+        Raylib.DrawRectangleRec(strip, new Color(HazardYellow.R, HazardYellow.G, HazardYellow.B, A(255)));
+
+        // Serrated torn paper edges on left & right ends
+        DrawSerratedTapeEnd(-halfW, -halfH, h, facingLeft: true, new Color(HazardYellow.R, HazardYellow.G, HazardYellow.B, A(255)));
+        DrawSerratedTapeEnd(halfW, -halfH, h, facingLeft: false, new Color(HazardYellow.R, HazardYellow.G, HazardYellow.B, A(255)));
+
+        // Diagonal matte-charcoal warning stripes
+        Color stripeCol = new(HazardCharcoal.R, HazardCharcoal.G, HazardCharcoal.B, A(245));
+        for (float sx = -halfW - 6f; sx < halfW + 8f; sx += 17f)
+        {
+            float x0 = Math.Clamp(sx, -halfW, halfW);
+            float x1 = Math.Clamp(sx + 8f, -halfW, halfW);
+            float x2 = Math.Clamp(sx + 1f, -halfW, halfW);
+            float x3 = Math.Clamp(sx - 7f, -halfW, halfW);
+            DrawQuadCCW(
+                new(x0, -halfH),
+                new(x1, -halfH),
+                new(x2, halfH),
+                new(x3, halfH),
+                stripeCol);
+        }
+
+        // Solid worn yellow stencil field in center so "НЕ ТРОГАТЬ" reads crisply at any size
+        Rectangle textPanel = new(-46f, -halfH + 2.5f, 92f, h - 5f);
+        Raylib.DrawRectangleRec(textPanel, new Color(HazardYellow.R, HazardYellow.G, HazardYellow.B, A(255)));
+        Raylib.DrawRectangleLinesEx(textPanel, 1f, new Color(HazardCharcoal.R, HazardCharcoal.G, HazardCharcoal.B, A(220)));
+
+        // Subtle weathering grime along top/bottom adhesive edges
+        Raylib.DrawRectangleRec(new(-halfW, -halfH, w, 2.5f), new Color(92, 68, 22, A(70)));
+        Raylib.DrawRectangleRec(new(-halfW, halfH - 2.5f, w, 2.5f), new Color(72, 52, 16, A(82)));
+
+        // Curled peeling dog-ear corner on upper-right end (more lifted when ready to rip!)
+        float curl = 9f + flutter * 4.5f;
+        DrawTriCCW(
+            new(halfW - curl, -halfH),
+            new(halfW, -halfH),
+            new(halfW, -halfH + curl * 0.88f),
+            new Color(246, 226, 146, A(255)));
+        Raylib.DrawLineEx(
+            new(halfW - curl, -halfH),
+            new(halfW, -halfH + curl * 0.88f),
+            1.1f, new Color(92, 74, 34, A(185)));
+
+        // Crisp dark stenciled warning text
+        string warnText = Loc.T("НЕ ТРОГАТЬ", "DO NOT TOUCH");
+        Font wf = GameFonts.Get(Typeface.InterfaceBold, 11);
+        Vector2 wsz = GameFonts.Measure(wf, warnText, 11);
+        GameFonts.Draw(wf, warnText, new(-wsz.X * 0.5f, -wsz.Y * 0.5f), 11,
+            new Color(HazardCharcoal.R, HazardCharcoal.G, HazardCharcoal.B, A(255)), shadowed: false);
+
+        Rlgl.PopMatrix();
+    }
+
+    private static void DrawSerratedTapeEnd(float edgeX, float topY, float height, bool facingLeft, Color color)
+    {
+        const int teeth = 5;
+        float step = height / teeth;
+        float dir = facingLeft ? -1f : 1f;
+        for (int i = 0; i < teeth; i++)
+        {
+            float y0 = topY + i * step;
+            float y1 = y0 + step;
+            float ym = (y0 + y1) * 0.5f;
+            float tipLen = (i % 2 == 0) ? 4.2f : 2.6f;
+            DrawTriCCW(new(edgeX, y0), new(edgeX, y1), new(edgeX + dir * tipLen, ym), color);
+        }
+    }
+
+    // =========================================================================
+    // 8. BOTTOM MACHINED-BRASS CALIBRATION TRACK (INSIDE PAINTED DARK GROOVE)
+    // =========================================================================
+    private void DrawCalibrationTrack(Vector2 o, Font uiFont)
+    {
+        Rectangle groove = OffsetRect(BrassGrooveRect, o);
+        Rectangle slot = OffsetRect(TrackSlotRect, o);
+
+        // Subtle etched brass graduation ticks recessed along the upper & lower inner groove rims
+        for (int i = 0; i <= 32; i++)
+        {
+            float tx = slot.X + slot.Width * (i / 32f);
+            bool major = i % 4 == 0;
+            float th = major ? 6.0f : 3.5f;
+            Color tickCol = major ? new Color(172, 140, 84, 138) : new Color(138, 112, 68, 92);
+            Raylib.DrawLineEx(new(tx, groove.Y + 2f), new(tx, groove.Y + 2f + th), major ? 1.3f : 1f, tickCol);
+            Raylib.DrawLineEx(new(tx, groove.Y + groove.Height - 2f - th), new(tx, groove.Y + groove.Height - 2f), major ? 1.3f : 1f, tickCol);
+        }
+
+        if (_phase == Phase.Overload)
+        {
+            float surge = 0.55f + 0.45f * MathF.Sin(_overloadTimer * 52f);
+            Raylib.DrawRectangleRounded(slot, 0.16f, 4, new Color(224, (int)(54 + 68 * surge), 38, 232));
+            Raylib.DrawRectangle((int)(slot.X + 8f), (int)(slot.Y + slot.Height * 0.5f - 2f),
+                (int)(slot.Width - 16f), 4, new Color(255, 224, 172, (int)(180 + 70 * surge)));
+            return;
+        }
+
+        // While Pad 2 is still sealed by hazard tape in live play: pulsing crimson tape-rip prompt inside groove
+        if (IsWaitingForTapeRip())
+        {
+            float pulse = 0.55f + 0.45f * MathF.Sin(_elapsed * 7.2f);
+            Raylib.DrawRectangleRounded(slot, 0.14f, 4, new Color(156, 32, 24, (int)(92 + 64 * pulse)));
+            Raylib.DrawRectangleRoundedLinesEx(slot, 0.14f, 4, 1.5f, new Color(246, 138, 68, (int)(165 + 80 * pulse)));
+            string ripPrompt = Loc.T("СОРВИ ЛЕНТУ «НЕ ТРОГАТЬ» — [ЛКМ] / [ПРОБЕЛ]",
+                                     "RIP OFF \"DO NOT TOUCH\" TAPE — [LMB] / [SPACE]");
+            DrawFittedCenteredText(uiFont, ripPrompt, slot, 15, 12, new Color(255, 228, 152, 255), shadowed: true);
+            return;
+        }
+
+        int activePad = Math.Clamp(_solderedCount, 0, PadCount - 1);
+        var timing = PadTiming[activePad];
+        float sweetStart = timing.Center - timing.Width * 0.5f;
+        float sweetEnd = timing.Center + timing.Width * 0.5f;
+        bool inSweet = _phase == Phase.Soldering && _gaugePos >= sweetStart && _gaugePos <= sweetEnd && _missRecoveryTimer <= 0f;
+
+        // Glowing molten-gold calibration target window inside dark groove
+        float swX = slot.X + sweetStart * slot.Width;
+        float swW = timing.Width * slot.Width;
+        Rectangle sweetRect = new(swX, slot.Y + 4f, swW, slot.Height - 8f);
+
+        // Soft warm amber spill inside dark track around the golden zone
+        Raylib.DrawRectangleRounded(new(sweetRect.X - 6f, sweetRect.Y - 3f, sweetRect.Width + 12f, sweetRect.Height + 6f),
+            0.22f, 4, new Color(246, 174, 48, inSweet ? 62 : 34));
+
+        Color sweetTop = inSweet ? new Color(228, 178, 76, 205) : new Color(182, 134, 48, 172);
+        Color sweetBot = inSweet ? new Color(156, 94, 24, 212) : new Color(102, 64, 18, 184);
+        Raylib.DrawRectangleGradientV((int)sweetRect.X, (int)sweetRect.Y, (int)sweetRect.Width, (int)sweetRect.Height, sweetTop, sweetBot);
+        Raylib.DrawLineEx(new(sweetRect.X + 2f, sweetRect.Y + 2f), new(sweetRect.X + sweetRect.Width - 2f, sweetRect.Y + 2f),
+            1.2f, new Color(248, 224, 152, inSweet ? 148 : 88));
+        Raylib.DrawRectangleLinesEx(sweetRect, 1.3f, inSweet ? new Color(236, 198, 118, 228) : new Color(168, 132, 68, 196));
+
+        // Crisp machined brass calibration notches framing the golden window
+        DrawTriCCW(new(swX - 4.5f, groove.Y + 1f), new(swX + 4.5f, groove.Y + 1f), new(swX, groove.Y + 8f), BrassBright);
+        DrawTriCCW(new(swX + swW - 4.5f, groove.Y + 1f), new(swX + swW + 4.5f, groove.Y + 1f), new(swX + swW, groove.Y + 8f), BrassBright);
+        DrawTriCCW(new(swX - 4.5f, groove.Y + groove.Height - 1f), new(swX + 4.5f, groove.Y + groove.Height - 1f), new(swX, groove.Y + groove.Height - 8f), BrassBright);
+        DrawTriCCW(new(swX + swW - 4.5f, groove.Y + groove.Height - 1f), new(swX + swW + 4.5f, groove.Y + groove.Height - 1f), new(swX + swW, groove.Y + groove.Height - 8f), BrassBright);
+
+        // Brief muted rust-red flash on miss recovery
+        if (_missFlashTimer > 0f)
+        {
+            int ma = (int)(128 * (_missFlashTimer / 0.32f));
+            Raylib.DrawRectangleRounded(slot, 0.16f, 4, new Color(196, 52, 34, ma));
+        }
+
+        // Tactile machined metallic + incandescent indicator slider cursor sweeping smoothly across groove
+        float barX = slot.X + _gaugePos * slot.Width;
+        float barW = 14f;
+        Rectangle slider = new(barX - barW * 0.5f, groove.Y + 2f, barW, groove.Height - 4f);
+
+        // Warm radiant glow behind slider cursor
+        Raylib.DrawCircleGradient((int)barX, (int)(groove.Y + groove.Height * 0.5f), inSweet ? 36f : 24f,
+            inSweet ? new Color(255, 214, 102, 145) : new Color(238, 128, 48, 92), Color.Blank);
+
+        // Drop shadow inside groove
+        Raylib.DrawRectangleRounded(new(slider.X + 2.5f, slider.Y + 2f, slider.Width, slider.Height), 0.28f, 4, new Color(6, 7, 8, 185));
+
+        Color sliderBody = _missRecoveryTimer > 0f
+            ? new Color(178, 62, 44, 255)
+            : inSweet ? new Color(255, 226, 142, 255) : new Color(234, 134, 54, 255);
+        Raylib.DrawRectangleRounded(slider, 0.28f, 4, sliderBody);
+        Raylib.DrawRectangleRoundedLinesEx(slider, 0.28f, 4, 1.4f, EngravedBronzeInk);
+        // Incandescent vertical hairline core
+        Raylib.DrawRectangle((int)(barX - 2f), (int)(slider.Y + 4f), 4, (int)(slider.Height - 8f), new Color(255, 250, 226, 236));
+    }
+
+    // =========================================================================
+    // 9. BOTTOM STEEL BEZEL CONTROL HINT
+    // =========================================================================
+    private void DrawBottomLegend(Vector2 o, Font uiFont)
+    {
+        Rectangle bar = OffsetRect(BottomLegendRect, o);
+        string legend;
+        Color ink;
+
+        if (_phase == Phase.Overload)
+        {
+            legend = Loc.T("ЗАМЫКАНИЕ ШАХТЫ · КОНТУР 0.1 ПРОБИТ!", "SHAFT SURGE · CIRCUIT 0.1 BREACHED!");
+            ink = new Color(255, 132, 110, 255);
+        }
+        else if (IsWaitingForTapeRip())
+        {
+            legend = Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — СОРВАТЬ ЛЕНТУ     ·     [ESC] — ЗАКРЫТЬ ЩИТ",
+                           "[LMB] / [SPACE] / [E] — RIP OFF TAPE     ·     [ESC] — CLOSE BOX");
+            ink = new Color(246, 206, 134, 238);
+        }
+        else
+        {
+            legend = Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — ПАЯТЬ КОНТАКТ     ·     [ESC] — ЗАКРЫТЬ ЩИТ",
+                           "[LMB] / [SPACE] / [E] — SOLDER JOINT     ·     [ESC] — CLOSE BOX");
+            ink = new Color(214, 204, 182, 232);
+        }
+
+        DrawFittedCenteredText(uiFont, legend, bar, 14, 11, ink, shadowed: true);
+    }
+
+    // =========================================================================
+    // 10. HAND-PAINTED SOVIET ЭПСН-40 SOLDERING IRON SPRITE
+    // =========================================================================
+    private void DrawSolderingIron(Vector2 o)
+    {
+        Vector2 tip = o + GetIronTipPosition();
+        float heatPulse = 0.74f + 0.26f * MathF.Sin(_elapsed * 9.5f);
+        float plungeTilt = MathF.Sin(_ironPressAnim * MathF.PI) * 3.5f;
+        float idleTilt = MathF.Sin(_elapsed * 2.4f) * 1.1f;
+        float rotationDeg = IronBaseTiltDeg + plungeTilt + idleTilt;
+
+        // Glowing molten-amber heat bloom around heated copper chisel tip
+        Raylib.DrawCircleGradient((int)tip.X, (int)tip.Y, 34f,
+            new Color(255, 124, 34, (int)(92 * heatPulse)), Color.Blank);
+        Raylib.DrawCircleGradient((int)tip.X, (int)tip.Y, 15f,
+            new Color(255, 212, 102, (int)(138 * heatPulse)), Color.Blank);
+
+        if (_ironTex.Id != 0)
+        {
+            Rectangle src = new(0f, 0f, _ironTex.Width, _ironTex.Height);
+            Vector2 pivot = new(IronDrawW * IronTipPivotNormX, IronDrawH * IronTipPivotNormY);
+
+            // Soft layered realistic cast shadow offset (+10, +16) underneath the iron
+            Rectangle shadowFar = new(tip.X + 12f, tip.Y + 19f, IronDrawW, IronDrawH);
+            Raylib.DrawTexturePro(_ironTex, src, shadowFar, pivot, rotationDeg, new Color(6, 8, 9, 54));
+            Rectangle shadowNear = new(tip.X + 10f, tip.Y + 16f, IronDrawW, IronDrawH);
+            Raylib.DrawTexturePro(_ironTex, src, shadowNear, pivot, rotationDeg, new Color(6, 8, 9, 112));
+
+            // Full hand-painted birchwood & blued-steel Soviet ЭПСН-40 sprite anchored on exact copper chisel tip
+            Rectangle dest = new(tip.X, tip.Y, IronDrawW, IronDrawH);
+            Raylib.DrawTexturePro(_ironTex, src, dest, pivot, rotationDeg, Color.White);
+        }
+        else
+        {
+            // Minimal safe fallback marker if running headless without GPU textures
+            Raylib.DrawCircleV(tip, 6f, CopperLit);
+        }
+    }
+
+    // =========================================================================
+    // 11. ROSIN SMOKE WISPS (BEHIND HAZARD TAPE) & MOLTEN GOLDEN SPARKS
+    // =========================================================================
     private void SeedPreviewParticles(Vector2 center, int sparkCount, int smokeCount)
     {
         var detRng = new Random(199801);
         for (int i = 0; i < sparkCount; i++)
         {
-            // Fan sparks upward-left & around the lower rim so the right-side "НЕ ТРОГАТЬ" tape stays 100% crisp
+            // Fan crisp golden sparks upward-left & around lower-left rim so right-side "НЕ ТРОГАТЬ" tape stays crystal clear
             float angle = i % 4 == 0
-                ? MathF.PI * 0.62f + (float)detRng.NextDouble() * MathF.PI * 0.42f
-                : -MathF.PI * 1.08f + (float)detRng.NextDouble() * MathF.PI * 0.56f;
-            float dist = 5f + (float)detRng.NextDouble() * 34f;
-            float speed = 85f + (float)detRng.NextDouble() * 150f;
+                ? MathF.PI * 0.64f + (float)detRng.NextDouble() * MathF.PI * 0.40f
+                : -MathF.PI * 1.08f + (float)detRng.NextDouble() * MathF.PI * 0.52f;
+            float dist = 6f + (float)detRng.NextDouble() * 32f;
+            float speed = 85f + (float)detRng.NextDouble() * 145f;
             Vector2 dir = new(MathF.Cos(angle), MathF.Sin(angle));
             _sparks.Add(new SparkParticle
             {
@@ -496,7 +1269,7 @@ public sealed class ElevatorRepairMinigame
                 Vel = dir * speed + new Vector2(-12f, -18f),
                 Life = 0.24f + (float)detRng.NextDouble() * 0.28f,
                 MaxLife = 0.55f,
-                Size = 1.9f + (float)detRng.NextDouble() * 1.7f,
+                Size = 1.8f + (float)detRng.NextDouble() * 1.7f,
                 IsMissSpark = false
             });
         }
@@ -504,15 +1277,14 @@ public sealed class ElevatorRepairMinigame
         for (int i = 0; i < smokeCount; i++)
         {
             float t = (i + 0.5f) / smokeCount;
-            float swirl = MathF.Sin(i * 1.3f) * 9f;
-            // Drift rosin smoke cleanly upward-left away from the hazard warning tape
+            float swirl = MathF.Sin(i * 1.3f) * 8f;
             _smoke.Add(new SmokeWisp
             {
-                Pos = center + new Vector2(-10f + swirl - t * 28f, -12f - t * 62f),
+                Pos = center + new Vector2(-12f + swirl - t * 28f, -12f - t * 58f),
                 Vel = new Vector2(-16f, -32f),
                 Life = (1f - t * 0.65f) * 1.1f,
                 MaxLife = 1.2f,
-                Radius = 6f + t * 12f,
+                Radius = 6f + t * 11f,
                 DriftPhase = i * 0.9f,
                 Dark = false
             });
@@ -523,7 +1295,7 @@ public sealed class ElevatorRepairMinigame
     {
         for (int i = 0; i < count; i++)
         {
-            float angle = -MathF.PI * 1.05f + _rng.NextSingle() * MathF.PI * 1.10f;
+            float angle = -MathF.PI * 1.08f + _rng.NextSingle() * MathF.PI * 1.12f;
             float speed = (isMiss ? 110f : 145f) + _rng.NextSingle() * 210f;
             float life = 0.20f + _rng.NextSingle() * 0.34f;
             _sparks.Add(new SparkParticle
@@ -584,845 +1356,19 @@ public sealed class ElevatorRepairMinigame
             }
             s.Pos.X += (s.Vel.X + MathF.Sin(_elapsed * 3.6f + s.DriftPhase) * 14f) * dt;
             s.Pos.Y += s.Vel.Y * dt;
-            s.Radius += 13f * dt;
+            s.Radius += 12.5f * dt;
             _smoke[i] = s;
         }
     }
 
-    // =========================================================================
-    // 1. OPEN BRUSHED-STEEL ELECTRICAL CABINET HOUSING
-    // =========================================================================
-    private void DrawCabinetHousing(Vector2 o)
-    {
-        Rectangle cab = new(o.X + 150f, o.Y + 64f, 980f, 592f);
-
-        // Deep physical drop shadow on wall behind cabinet
-        Raylib.DrawRectangleRounded(new(cab.X + 12f, cab.Y + 16f, cab.Width, cab.Height), 0.025f, 8, new Color(4, 5, 6, 175));
-        Raylib.DrawRectangleRounded(new(cab.X + 6f, cab.Y + 8f, cab.Width, cab.Height), 0.025f, 8, new Color(6, 7, 9, 145));
-
-        // Swung-open heavy steel cabinet door slab peeking cleanly on the left edge
-        Rectangle openDoor = new(o.X + 104f, o.Y + 72f, 44f, 576f);
-        Raylib.DrawRectangleRec(new(openDoor.X + 4f, openDoor.Y + 8f, openDoor.Width, openDoor.Height), new Color(4, 5, 6, 150));
-        Raylib.DrawRectangleGradientH((int)openDoor.X, (int)openDoor.Y, (int)openDoor.Width, (int)openDoor.Height,
-            new Color(22, 26, 29, 255), new Color(48, 55, 60, 255));
-        Raylib.DrawRectangleLinesEx(openDoor, 1.5f, new Color(76, 84, 90, 210));
-        // Subtle recessed inner door stiffening rib
-        Raylib.DrawRectangle((int)(openDoor.X + 12f), (int)(openDoor.Y + 26f), 16, (int)(openDoor.Height - 52f), new Color(18, 22, 24, 210));
-
-        // Main rolled-steel cabinet body
-        Raylib.DrawRectangleRounded(cab, 0.022f, 8, SteelMid);
-        Raylib.DrawRectangleGradientV((int)cab.X + 4, (int)cab.Y + 4, (int)cab.Width - 8, (int)cab.Height - 8,
-            new Color(52, 58, 63, 255), new Color(28, 32, 36, 255));
-
-        // Fine brushed-steel horizontal grain across cabinet face
-        for (int y = (int)cab.Y + 8; y < (int)(cab.Y + cab.Height - 8); y += 5)
-        {
-            int alpha = (int)((y * 13) % 14 + 4);
-            Raylib.DrawLine((int)cab.X + 8, y, (int)(cab.X + cab.Width - 8), y, new Color(178, 188, 194, alpha));
-        }
-
-        // Top-left metallic bevel highlight & outer rim shadow
-        Raylib.DrawLineEx(new(cab.X + 10f, cab.Y + 3f), new(cab.X + cab.Width - 10f, cab.Y + 3f), 2f, SteelHighlight);
-        Raylib.DrawRectangleRoundedLinesEx(cab, 0.022f, 8, 2.5f, new Color(86, 94, 100, 235));
-
-        // Rubber weatherproof gasket & dark inner frame lip
-        Rectangle innerRim = new(cab.X + 20f, cab.Y + 18f, cab.Width - 40f, cab.Height - 36f);
-        Raylib.DrawRectangleRoundedLinesEx(innerRim, 0.016f, 6, 3.5f, new Color(16, 18, 20, 235));
-        Raylib.DrawRectangleRoundedLinesEx(new(innerRim.X + 3f, innerRim.Y + 3f, innerRim.Width - 6f, innerRim.Height - 6f),
-            0.014f, 6, 1.2f, new Color(90, 98, 103, 120));
-
-        // Two heavy barrel hinges with brass pins on the left cabinet wall
-        foreach (float hy in new[] { 184f, 512f })
-        {
-            Rectangle barrel = new(o.X + 139f, o.Y + hy - 26f, 20f, 52f);
-            Raylib.DrawRectangleRec(new(barrel.X + 2f, barrel.Y + 3f, barrel.Width, barrel.Height), new Color(5, 6, 7, 175));
-            Raylib.DrawRectangleGradientH((int)barrel.X, (int)barrel.Y, (int)barrel.Width, (int)barrel.Height,
-                new Color(34, 38, 42, 255), new Color(84, 92, 97, 255));
-            Raylib.DrawRectangleLinesEx(barrel, 1.2f, new Color(18, 20, 22, 240));
-            // Knuckle split grooves
-            Raylib.DrawLineEx(new(barrel.X, barrel.Y + 17f), new(barrel.X + barrel.Width, barrel.Y + 17f), 1.5f, SteelDark);
-            Raylib.DrawLineEx(new(barrel.X, barrel.Y + 35f), new(barrel.X + barrel.Width, barrel.Y + 35f), 1.5f, SteelDark);
-            // Warm brass hinge pin caps top & bottom
-            Raylib.DrawRectangle((int)(barrel.X + 4f), (int)(barrel.Y - 5f), 12, 5, BrassMid);
-            Raylib.DrawRectangle((int)(barrel.X + 4f), (int)(barrel.Y + barrel.Height), 12, 5, BrassDark);
-        }
-
-        // Right-edge stamped steel latch catch plate
-        Rectangle latch = new(cab.X + cab.Width - 6f, o.Y + 332f, 16f, 56f);
-        Raylib.DrawRectangleRounded(latch, 0.25f, 4, SteelLight);
-        Raylib.DrawRectangleRoundedLinesEx(latch, 0.25f, 4, 1.2f, SteelDark);
-        Raylib.DrawCircleV(new(latch.X + 8f, latch.Y + 28f), 4f, CavityDark);
-
-        // 4 Machined Steel Corner Rivets (clear of all plates & text)
-        DrawSteelRivet(new(o.X + 170f, o.Y + 84f), 6.5f);
-        DrawSteelRivet(new(o.X + 1110f, o.Y + 84f), 6.5f);
-        DrawSteelRivet(new(o.X + 170f, o.Y + 636f), 6.5f);
-        DrawSteelRivet(new(o.X + 1110f, o.Y + 636f), 6.5f);
-    }
-
-    // =========================================================================
-    // 2. WARM ENGRAVED BRASS NAMEPLATE & STATUS STRIP
-    // =========================================================================
-    private void DrawNameplateAndStatus(Vector2 o, Font uiFont, Font titleFont)
-    {
-        // Riveted warm brass cabinet nameplate
-        Rectangle plate = new(o.X + 198f, o.Y + 96f, 444f, 64f);
-        Raylib.DrawRectangleRec(new(plate.X + 3f, plate.Y + 4f, plate.Width, plate.Height), new Color(8, 9, 10, 185));
-        Raylib.DrawRectangleGradientV((int)plate.X, (int)plate.Y, (int)plate.Width, (int)plate.Height,
-            new Color(224, 186, 114, 255), new Color(156, 118, 60, 255));
-        Raylib.DrawRectangleLinesEx(plate, 2f, BrassDark);
-        Raylib.DrawRectangleLinesEx(new(plate.X + 5f, plate.Y + 5f, plate.Width - 10f, plate.Height - 10f), 1.1f, new Color(72, 50, 22, 185));
-
-        DrawBrassScrew(new(plate.X + 17f, plate.Y + plate.Height * 0.5f), 4.6f);
-        DrawBrassScrew(new(plate.X + plate.Width - 17f, plate.Y + plate.Height * 0.5f), 4.6f);
-
-        string titleText = Loc.T("ЩИТ ЛИФТА №1 · 1998", "ELEVATOR BOX #1 · 1998");
-        DrawCenteredText(titleFont, titleText, plate, 24, EngravedInk, shadowed: false);
-
-        // Riveted dark anodized-metal status placard matching the brass nameplate above
-        Rectangle statusPlate = new(o.X + 198f, o.Y + 172f, 444f, 40f);
-        Raylib.DrawRectangleRec(new(statusPlate.X + 2f, statusPlate.Y + 3f, statusPlate.Width, statusPlate.Height), new Color(6, 8, 9, 175));
-        Raylib.DrawRectangleGradientV((int)statusPlate.X, (int)statusPlate.Y, (int)statusPlate.Width, (int)statusPlate.Height,
-            new Color(34, 40, 44, 250), new Color(16, 20, 22, 252));
-        Color statusBorder = _phase == Phase.Overload ? DangerRed
-            : _missFlashTimer > 0f ? new Color(196, 84, 52, 240)
-            : _hitFlashTimer > 0f ? CopperLit
-            : BrassMid;
-        Raylib.DrawRectangleLinesEx(statusPlate, 1.5f, statusBorder);
-        Raylib.DrawRectangleLinesEx(new(statusPlate.X + 4f, statusPlate.Y + 4f, statusPlate.Width - 8f, statusPlate.Height - 8f),
-            1f, new Color(138, 112, 68, 95));
-        Raylib.DrawLineEx(new(statusPlate.X + 5f, statusPlate.Y + 2f), new(statusPlate.X + statusPlate.Width - 5f, statusPlate.Y + 2f),
-            1f, new Color(188, 176, 148, 55));
-
-        DrawBrassScrew(new(statusPlate.X + 17f, statusPlate.Y + statusPlate.Height * 0.5f), 3.6f);
-        DrawBrassScrew(new(statusPlate.X + statusPlate.Width - 17f, statusPlate.Y + statusPlate.Height * 0.5f), 3.6f);
-
-        string statusLine;
-        Color statusInk;
-        if (_phase == Phase.Overload)
-        {
-            statusLine = Loc.T("ПЕРЕГРУЗКА КОНТУРА 0.1 · 380В!", "CIRCUIT 0.1 OVERLOAD · 380V!");
-            statusInk = new Color(255, 118, 102, 255);
-        }
-        else if (_statusTimer > 0f && !string.IsNullOrEmpty(_statusRu))
-        {
-            statusLine = Loc.T(_statusRu, _statusEn);
-            statusInk = _missFlashTimer > 0f ? new Color(242, 146, 112, 255) : BrassBright;
-        }
-        else
-        {
-            statusLine = Loc.T($"КОНТАКТЫ: {_solderedCount} / {PadCount}   ·   СПАЯЙ ЦЕПЬ ЗАПУСКА",
-                               $"JOINTS: {_solderedCount} / {PadCount}   ·   SOLDER START CIRCUIT");
-            statusInk = Silkscreen;
-        }
-        DrawCenteredText(uiFont, statusLine, statusPlate, 15, statusInk, shadowed: true);
-    }
-
-    // =========================================================================
-    // 3. BAKELITE PILOT INDICATOR LAMP
-    // =========================================================================
-    private void DrawPilotLamp(Vector2 o, Font uiFont)
-    {
-        Vector2 center = new(o.X + 754f, o.Y + 148f);
-        bool overload = _phase == Phase.Overload;
-        float pulse = overload
-            ? 0.55f + 0.45f * MathF.Sin(_overloadTimer * 48f)
-            : 0.45f + 0.18f * MathF.Sin(_elapsed * 3.5f);
-
-        // Soft bloom halo behind glass dome
-        if (overload)
-        {
-            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, 56f,
-                new Color(255, 42, 34, (int)(135 * pulse)), Color.Blank);
-        }
-        else if (_solderedCount > 0)
-        {
-            Raylib.DrawCircleGradient((int)center.X, (int)center.Y, 44f,
-                new Color(245, 178, 58, (int)((48 + _solderedCount * 22) * (0.7f + 0.3f * pulse))), Color.Blank);
-        }
-
-        // Steel mounting collar + knurled brass bezel
-        Raylib.DrawCircleV(center + new Vector2(2f, 3f), 30f, new Color(6, 7, 8, 175));
-        Raylib.DrawCircleV(center, 29f, new Color(36, 40, 44, 255));
-        Raylib.DrawCircleV(center, 25f, BrassMid);
-        Raylib.DrawCircleV(center, 22f, BrassDark);
-
-        // Faceted glass dome lens
-        Color lensOuter, lensCore;
-        if (overload)
-        {
-            lensOuter = new Color(178, 20, 24, 255);
-            lensCore = new Color(255, (int)(96 + 90 * pulse), 74, 255);
-        }
-        else if (_solderedCount == 0)
-        {
-            lensOuter = new Color(58, 36, 20, 255);
-            lensCore = new Color(118, 72, 34, 255);
-        }
-        else if (_solderedCount == 1)
-        {
-            lensOuter = new Color(138, 86, 24, 255);
-            lensCore = new Color(235, 168, 62, 255);
-        }
-        else
-        {
-            lensOuter = new Color(172, 102, 22, 255);
-            lensCore = new Color(255, 204, 86, 255);
-        }
-
-        Raylib.DrawCircleV(center, 19f, lensOuter);
-        Raylib.DrawCircleGradient((int)(center.X - 3f), (int)(center.Y - 3f), 17f, lensCore, lensOuter);
-        // Glass specular crescent
-        Raylib.DrawCircleV(center + new Vector2(-6f, -6f), 4.5f, new Color(255, 250, 232, 165));
-        Raylib.DrawCircleV(center + new Vector2(-2f, -9f), 2.2f, new Color(255, 255, 248, 130));
-
-        // Stamped metal plate caption under lamp
-        string lampLabel = overload ? Loc.T("АВАРИЯ!", "OVERLOAD!") : Loc.T("СЕТЬ", "POWER");
-        Color lampInk = overload ? new Color(255, 110, 96, 255) : new Color(188, 180, 164, 220);
-        DrawCenteredText(uiFont, lampLabel, new Rectangle(center.X - 54f, center.Y + 34f, 108f, 22f), 13, lampInk, shadowed: true);
-    }
-
-    // =========================================================================
-    // 4. TOP-RIGHT SOVIET ANALOG PANEL VOLTMETER (0..380В)
-    // =========================================================================
-    private void DrawAnalogVoltmeter(Vector2 o, Font uiFont)
-    {
-        Rectangle housing = new(o.X + 868f, o.Y + 86f, 214f, 144f);
-
-        // Cast shadow & matte black Bakelite flange
-        Raylib.DrawRectangleRounded(new(housing.X + 4f, housing.Y + 5f, housing.Width, housing.Height), 0.08f, 8, new Color(5, 6, 7, 185));
-        Raylib.DrawRectangleRounded(housing, 0.08f, 8, new Color(26, 26, 28, 255));
-        Raylib.DrawRectangleRoundedLinesEx(housing, 0.08f, 8, 2f, new Color(76, 76, 80, 220));
-
-        // 4 miniature corner bezel screws (outside the ivory meter face & readout)
-        DrawBrassScrew(new(housing.X + 10f, housing.Y + 10f), 3.2f);
-        DrawBrassScrew(new(housing.X + housing.Width - 10f, housing.Y + 10f), 3.2f);
-        DrawBrassScrew(new(housing.X + 10f, housing.Y + housing.Height - 10f), 3.2f);
-        DrawBrassScrew(new(housing.X + housing.Width - 10f, housing.Y + housing.Height - 10f), 3.2f);
-
-        // Brass inner frame & warm ivory dial window (upper section; needle sweeps strictly inside)
-        Rectangle face = new(housing.X + 16f, housing.Y + 12f, housing.Width - 32f, 94f);
-        Raylib.DrawRectangleRounded(new(face.X - 2f, face.Y - 2f, face.Width + 4f, face.Height + 4f), 0.06f, 6, BrassMid);
-        Raylib.DrawRectangleRounded(face, 0.05f, 6, IvoryFace);
-        Raylib.DrawRectangleGradientV((int)face.X + 2, (int)face.Y + 2, (int)face.Width - 4, 22,
-            new Color(142, 128, 102, 72), Color.Blank);
-        Raylib.DrawRectangleRoundedLinesEx(face, 0.05f, 6, 1.4f, BrassDark);
-
-        // Scale geometry: sweep -150 deg (0V) -> -30 deg (380V)
-        Vector2 pivot = new(face.X + face.Width * 0.5f, face.Y + face.Height - 9f);
-        const float arcRadius = 58f;
-        const float startDeg = -150f;
-        const float endDeg = -30f;
-
-        // Safe scale arc & crimson danger zone above 260V
-        float dangerStartDeg = VoltageToAngleDeg(260f, startDeg, endDeg);
-        DrawArcStroke(pivot, arcRadius, 2.2f, startDeg, dangerStartDeg, 24, EngravedInk);
-        DrawArcStroke(pivot, arcRadius, 5.0f, dangerStartDeg, endDeg, 16, DangerRed);
-        DrawArcStroke(pivot, arcRadius - 6.5f, 1.0f, startDeg, endDeg, 28, new Color(110, 96, 76, 180));
-
-        // Major & minor graduation ticks
-        for (int v = 0; v <= 380; v += 20)
-        {
-            float deg = VoltageToAngleDeg(v, startDeg, endDeg);
-            float rad = deg * (MathF.PI / 180f);
-            bool major = v == 0 || v == 120 || v == 240 || v == 380 || v % 60 == 0;
-            float rIn = major ? arcRadius - 9.0f : arcRadius - 4.8f;
-            float rOut = arcRadius + 1.5f;
-            Vector2 dir = new(MathF.Cos(rad), MathF.Sin(rad));
-            Color tickCol = v >= 260 ? DangerRed : EngravedInk;
-            Raylib.DrawLineEx(pivot + dir * rIn, pivot + dir * rOut, major ? 1.8f : 1.0f, tickCol);
-        }
-
-        // Crisp scale numerals (0, 120, 240, 380)
-        foreach (int labelV in new[] { 0, 120, 240, 380 })
-        {
-            float deg = VoltageToAngleDeg(labelV, startDeg, endDeg);
-            float rad = deg * (MathF.PI / 180f);
-            float rNum = arcRadius + 13.0f;
-            Vector2 pos = pivot + new Vector2(MathF.Cos(rad) * rNum, MathF.Sin(rad) * rNum);
-            string num = labelV.ToString();
-            Font nf = GameFonts.Get(Typeface.InterfaceBold, 11);
-            Vector2 sz = GameFonts.Measure(nf, num, 11);
-            Color numCol = labelV >= 260 ? DangerRed : EngravedInk;
-            GameFonts.Draw(nf, num, new(pos.X - sz.X * 0.5f, pos.Y - sz.Y * 0.5f), 11, numCol, shadowed: false);
-        }
-
-        // Trembling brass/crimson pointer needle
-        float tremor = _phase == Phase.Overload
-            ? MathF.Sin(_elapsed * 72f) * 3.4f + MathF.Cos(_elapsed * 115f) * 1.8f
-            : (_solderedCount > 0 ? MathF.Sin(_elapsed * 34f) * 0.9f : MathF.Sin(_elapsed * 12f) * 0.25f);
-        float needleDeg = VoltageToAngleDeg(_needleVolts, startDeg, endDeg) + tremor;
-        float needleRad = needleDeg * (MathF.PI / 180f);
-        Vector2 needleDir = new(MathF.Cos(needleRad), MathF.Sin(needleRad));
-        Vector2 needlePerp = new(-needleDir.Y, needleDir.X);
-        Vector2 needleTip = pivot + needleDir * (arcRadius - 3f);
-
-        // Needle cast shadow on ivory face
-        Raylib.DrawLineEx(pivot + new Vector2(2f, 2f), needleTip + new Vector2(2f, 2f), 2.4f, new Color(40, 32, 22, 65));
-        // Tapered brass/crimson needle body
-        Color needleCol = _needleVolts >= 255f ? DangerRed : new Color(152, 42, 32, 255);
-        DrawTriCCW(pivot - needlePerp * 2.2f, pivot + needlePerp * 2.2f, needleTip, needleCol);
-        Raylib.DrawLineEx(pivot, needleTip, 1.4f, needleCol);
-
-        // Brass pivot dome cap
-        Raylib.DrawCircleV(pivot, 9.2f, BrassDark);
-        Raylib.DrawCircleV(pivot, 7.2f, BrassBright);
-        Raylib.DrawCircleV(pivot, 3.0f, EngravedInk);
-
-        // Subtle curved glass sheen on upper-left of dial
-        Raylib.DrawLineEx(new(face.X + 10f, face.Y + 7f), new(face.X + 74f, face.Y + 7f), 2f, new Color(255, 255, 255, 78));
-
-        // Dedicated recessed brass-rimmed readout window cleanly BELOW the pivot (needle can NEVER cross digits!)
-        int shownVolts = (int)MathF.Round(Math.Clamp(_needleVolts, 0f, 380f));
-        Rectangle readout = new(housing.X + 62f, housing.Y + 113f, 90f, 22f);
-        Raylib.DrawRectangleRounded(readout, 0.22f, 4, new Color(16, 18, 20, 255));
-        Raylib.DrawRectangleRoundedLinesEx(readout, 0.22f, 4, 1.2f, shownVolts >= 260 ? DangerRed : BrassMid);
-        string unitStamp = Loc.T($"{shownVolts} В", $"{shownVolts} V");
-        Color stampCol = shownVolts >= 260 ? new Color(255, 108, 92, 255) : IvoryFace;
-        DrawCenteredText(uiFont, unitStamp, readout, 14, stampCol, shadowed: false);
-    }
-
-    // =========================================================================
-    // 5. VINTAGE EMERALD-OLIVE FIBERGLASS PCB, TRACES, 3 PADS & HAZARD TAPE
-    // =========================================================================
-    private void DrawFiberglassPcb(Vector2 o, Font uiFont)
-    {
-        Rectangle cavity = new(o.X + 190f, o.Y + 234f, 900f, 282f);
-        Rectangle pcb = new(o.X + 198f, o.Y + 240f, 884f, 270f);
-
-        // Recessed dark interior cavity behind PCB
-        Raylib.DrawRectangleRounded(cavity, 0.015f, 6, CavityDark);
-        Raylib.DrawRectangleRoundedLinesEx(cavity, 0.015f, 6, 1.5f, new Color(68, 76, 80, 145));
-
-        // Emerald-olive vintage fiberglass board (текстолит)
-        Raylib.DrawRectangleRec(new(pcb.X + 3f, pcb.Y + 4f, pcb.Width, pcb.Height), new Color(4, 7, 6, 185));
-        Raylib.DrawRectangleGradientV((int)pcb.X, (int)pcb.Y, (int)pcb.Width, (int)pcb.Height, PcbTop, PcbBottom);
-
-        // Subtle fiberglass weave cross-hatch texture
-        for (int x = (int)pcb.X + 12; x < (int)(pcb.X + pcb.Width); x += 16)
-            Raylib.DrawLine(x, (int)pcb.Y + 2, x, (int)(pcb.Y + pcb.Height - 2), new Color(180, 210, 180, 7));
-        for (int y = (int)pcb.Y + 12; y < (int)(pcb.Y + pcb.Height); y += 16)
-            Raylib.DrawLine((int)pcb.X + 2, y, (int)(pcb.X + pcb.Width - 2), y, new Color(180, 210, 180, 7));
-
-        // Chamfered PCB edge & inner silkscreen border frame
-        Raylib.DrawRectangleLinesEx(pcb, 2f, new Color(56, 98, 72, 210));
-        Raylib.DrawRectangleLinesEx(new(pcb.X + 8f, pcb.Y + 8f, pcb.Width - 16f, pcb.Height - 16f), 1f, new Color(196, 192, 168, 52));
-
-        // 4 Brass PCB corner mounting standoffs
-        DrawBrassScrew(new(pcb.X + 18f, pcb.Y + 18f), 4.4f);
-        DrawBrassScrew(new(pcb.X + pcb.Width - 18f, pcb.Y + 18f), 4.4f);
-        DrawBrassScrew(new(pcb.X + 18f, pcb.Y + pcb.Height - 18f), 4.4f);
-        DrawBrassScrew(new(pcb.X + pcb.Width - 18f, pcb.Y + pcb.Height - 18f), 4.4f);
-
-        // Silkscreen board code in quiet upper-left margin
-        Font microFont = GameFonts.Get(Typeface.InterfaceBold, 12);
-        GameFonts.Draw(microFont, Loc.T("ПЛАТА УЛ-98М · 380В", "BOARD UL-98M · 380V"),
-            new(pcb.X + 34f, pcb.Y + 13f), 12, new Color(188, 198, 174, 155), shadowed: false);
-
-        // Authentic passive vintage components in upper & lower quiet bands
-        DrawVintagePcbComponents(o, pcb);
-
-        // Left braided cloth power wires entering Bakelite terminal block
-        DrawLeftPowerHarness(o);
-
-        // Etched golden-copper circuit traces connecting terminal -> pads -> voltmeter bus
-        DrawCopperTraces(o);
-
-        // 3 Burnt Circular Solder Pads + Silkscreen Labels
-        int activePad = _phase == Phase.Soldering ? Math.Clamp(_solderedCount, 0, PadCount - 1) : -1;
-        for (int i = 0; i < PadCount; i++)
-        {
-            Vector2 p = o + PadPositions[i];
-            DrawSolderPad(p, i, _padSoldered[i], i == activePad, _padHeat[i], uiFont);
-        }
-    }
-
-    private void DrawVintagePcbComponents(Vector2 o, Rectangle pcb)
-    {
-        // Top margin Soviet electrolytic cans & resistors kept cleanly LEFT of Pad 3 soldering iron silhouette!
-        DrawAxialResistor(new(o.X + 402f, o.Y + 268f), 46f, new Color(182, 44, 38, 255), new Color(214, 166, 48, 255));
-        DrawElectrolyticCap(new(o.X + 474f, o.Y + 270f), 13f);
-        DrawElectrolyticCap(new(o.X + 510f, o.Y + 270f), 11f);
-        DrawAxialResistor(new(o.X + 580f, o.Y + 268f), 46f, new Color(46, 124, 68, 255), new Color(214, 166, 48, 255));
-
-        // Bottom margin small ceramic disc caps & carbon resistors
-        DrawAxialResistor(new(o.X + 494f, o.Y + 484f), 54f, new Color(186, 98, 34, 255), new Color(196, 154, 54, 255));
-        DrawAxialResistor(new(o.X + 768f, o.Y + 484f), 54f, new Color(172, 38, 42, 255), new Color(218, 174, 68, 255));
-        Raylib.DrawCircleV(new(o.X + 296f, o.Y + 482f), 7f, new Color(188, 92, 42, 235));
-        Raylib.DrawCircleLines((int)(o.X + 296f), (int)(o.Y + 482f), 7f, new Color(82, 38, 18, 220));
-        Raylib.DrawCircleV(new(o.X + 318f, o.Y + 482f), 6f, new Color(188, 92, 42, 235));
-        Raylib.DrawCircleLines((int)(o.X + 318f), (int)(o.Y + 482f), 6f, new Color(82, 38, 18, 220));
-
-        // Decorative copper trace vias along quiet board corners
-        foreach (var v in new Vector2[]
-        {
-            new(o.X + 474f, o.Y + 296f), new(o.X + 510f, o.Y + 296f),
-            new(o.X + 580f, o.Y + 294f), new(o.X + 494f, o.Y + 462f),
-            new(o.X + 768f, o.Y + 462f), new(pcb.X + pcb.Width - 46f, o.Y + 474f)
-        })
-        {
-            Raylib.DrawCircleV(v, 4.2f, CopperDim);
-            Raylib.DrawCircleV(v, 1.8f, CavityDark);
-        }
-    }
-
-    private static void DrawElectrolyticCap(Vector2 center, float r)
-    {
-        Raylib.DrawCircleV(center + new Vector2(2f, 3f), r, new Color(6, 12, 9, 155));
-        Raylib.DrawCircleV(center, r, new Color(46, 68, 86, 255));
-        Raylib.DrawCircleV(center, r - 2.4f, new Color(148, 158, 164, 255));
-        Raylib.DrawLineEx(center + new Vector2(-r * 0.45f, 0f), center + new Vector2(r * 0.45f, 0f), 1.2f, new Color(76, 84, 88, 200));
-        Raylib.DrawLineEx(center + new Vector2(0f, -r * 0.45f), center + new Vector2(0f, r * 0.45f), 1.2f, new Color(76, 84, 88, 200));
-    }
-
-    private static void DrawAxialResistor(Vector2 center, float width, Color band1, Color band2)
-    {
-        float half = width * 0.5f;
-        Raylib.DrawLineEx(new(center.X - half - 10f, center.Y), new(center.X + half + 10f, center.Y), 2f, new Color(172, 178, 180, 210));
-        Raylib.DrawCircleV(new(center.X - half - 10f, center.Y), 3.4f, CopperDim);
-        Raylib.DrawCircleV(new(center.X + half + 10f, center.Y), 3.4f, CopperDim);
-        Rectangle body = new(center.X - half, center.Y - 6f, width, 12f);
-        Raylib.DrawRectangleRounded(new(body.X + 1f, body.Y + 2f, body.Width, body.Height), 0.45f, 4, new Color(6, 10, 8, 145));
-        Raylib.DrawRectangleRounded(body, 0.45f, 4, new Color(196, 166, 118, 255));
-        Raylib.DrawRectangle((int)(center.X - half + 8f), (int)body.Y + 1, 4, 10, band1);
-        Raylib.DrawRectangle((int)(center.X - 2f), (int)body.Y + 1, 4, 10, band2);
-        Raylib.DrawRectangle((int)(center.X + half - 12f), (int)body.Y + 1, 4, 10, BrassBright);
-    }
-
-    private void DrawLeftPowerHarness(Vector2 o)
-    {
-        // 3 cloth-insulated power cables entering from left cabinet grommet into Bakelite terminal block
-        Color[] wireColors =
-        [
-            new(146, 54, 42, 255),
-            new(172, 134, 52, 255),
-            new(74, 82, 92, 255)
-        ];
-
-        for (int i = 0; i < 3; i++)
-        {
-            float wy = o.Y + 348f + i * 26f;
-            Vector2 a = new(o.X + 168f, wy + (i - 1) * 8f);
-            Vector2 b = new(o.X + 224f, wy);
-            Raylib.DrawLineEx(a + new Vector2(0f, 3f), b + new Vector2(0f, 3f), 7f, new Color(6, 8, 9, 145));
-            Raylib.DrawLineEx(a, b, 6.2f, wireColors[i]);
-            Raylib.DrawLineEx(a + new Vector2(0f, -1.5f), b + new Vector2(0f, -1.5f), 1.6f, new Color(255, 244, 224, 65));
-        }
-
-        // Rubber wall grommet
-        Raylib.DrawRectangleRounded(new(o.X + 166f, o.Y + 332f, 14f, 84f), 0.35f, 4, new Color(22, 24, 26, 255));
-
-        // 3-screw Bakelite terminal strip on left edge of PCB
-        Rectangle term = new(o.X + 220f, o.Y + 328f, 38f, 92f);
-        Raylib.DrawRectangleRec(new(term.X + 3f, term.Y + 3f, term.Width, term.Height), new Color(6, 10, 8, 165));
-        Raylib.DrawRectangleRounded(term, 0.12f, 4, new Color(34, 28, 24, 255));
-        Raylib.DrawRectangleRoundedLinesEx(term, 0.12f, 4, 1.4f, BrassDark);
-        for (int i = 0; i < 3; i++)
-        {
-            float ty = o.Y + 348f + i * 26f;
-            DrawBrassScrew(new(term.X + 19f, ty), 5.2f);
-        }
-    }
-
-    private void DrawCopperTraces(Vector2 o)
-    {
-        // Segment 0: Terminal block -> Pad 1 (always powered)
-        Color c0 = TraceColor(_traceGlow[0]);
-        DrawTracePolyline([
-            o + new Vector2(258f, 374f),
-            o + new Vector2(338f, 374f)
-        ], 6f, c0, _traceGlow[0]);
-
-        // Auxiliary chamfered bus traces from terminal upper/lower screws
-        DrawTracePolyline([
-            o + new Vector2(258f, 348f),
-            o + new Vector2(292f, 348f),
-            o + new Vector2(314f, 370f),
-            o + new Vector2(338f, 370f)
-        ], 3f, c0, _traceGlow[0] * 0.7f);
-        DrawTracePolyline([
-            o + new Vector2(258f, 400f),
-            o + new Vector2(292f, 400f),
-            o + new Vector2(314f, 378f),
-            o + new Vector2(338f, 378f)
-        ], 3f, c0, _traceGlow[0] * 0.7f);
-
-        // Segment 1: Pad 1 -> Pad 2 (chamfered parallel dual PCB traces)
-        Color c1 = TraceColor(_traceGlow[1]);
-        DrawTracePolyline([
-            o + new Vector2(398f, 374f),
-            o + new Vector2(610f, 374f)
-        ], 6f, c1, _traceGlow[1]);
-        DrawTracePolyline([
-            o + new Vector2(400f, 362f),
-            o + new Vector2(452f, 362f),
-            o + new Vector2(474f, 340f),
-            o + new Vector2(544f, 340f),
-            o + new Vector2(566f, 362f),
-            o + new Vector2(610f, 362f)
-        ], 3.2f, c1, _traceGlow[1] * 0.85f);
-
-        // Segment 2: Pad 2 -> Pad 3
-        Color c2 = TraceColor(_traceGlow[2]);
-        DrawTracePolyline([
-            o + new Vector2(670f, 374f),
-            o + new Vector2(882f, 374f)
-        ], 6f, c2, _traceGlow[2]);
-        DrawTracePolyline([
-            o + new Vector2(670f, 386f),
-            o + new Vector2(722f, 386f),
-            o + new Vector2(744f, 408f),
-            o + new Vector2(814f, 408f),
-            o + new Vector2(836f, 386f),
-            o + new Vector2(882f, 386f)
-        ], 3.2f, c2, _traceGlow[2] * 0.85f);
-
-        // Segment 3: Pad 3 -> Right collector bus heading up into Voltmeter!
-        Color c3 = _phase == Phase.Overload
-            ? Raylib.ColorLerp(CopperLit, new Color(255, 76, 56, 255), 0.5f + 0.5f * MathF.Sin(_overloadTimer * 44f))
-            : TraceColor(_traceGlow[3]);
-        DrawTracePolyline([
-            o + new Vector2(942f, 374f),
-            o + new Vector2(1018f, 374f),
-            o + new Vector2(1038f, 354f),
-            o + new Vector2(1038f, 240f)
-        ], 6f, c3, _traceGlow[3]);
-        DrawTracePolyline([
-            o + new Vector2(942f, 386f),
-            o + new Vector2(1024f, 386f),
-            o + new Vector2(1048f, 362f),
-            o + new Vector2(1048f, 240f)
-        ], 3.2f, c3, _traceGlow[3] * 0.85f);
-    }
-
-    private Color TraceColor(float glow) => Raylib.ColorLerp(CopperDim, CopperLit, Math.Clamp(glow, 0f, 1f));
-
-    private void DrawTracePolyline(Vector2[] pts, float width, Color color, float glow)
-    {
-        if (glow > 0.15f)
-        {
-            float pulse = 0.72f + 0.28f * MathF.Sin(_elapsed * 5.2f);
-            Color halo = new(color.R, color.G, color.B, (int)(52 * glow * pulse));
-            for (int i = 0; i < pts.Length - 1; i++)
-                Raylib.DrawLineEx(pts[i], pts[i + 1], width + 6f, halo);
-        }
-        for (int i = 0; i < pts.Length - 1; i++)
-        {
-            Raylib.DrawLineEx(pts[i], pts[i + 1], width, color);
-            Raylib.DrawCircleV(pts[i + 1], width * 0.48f, color);
-        }
-    }
-
-    private void DrawSolderPad(Vector2 pos, int index, bool soldered, bool active, float heat, Font uiFont)
-    {
-        // Pad code stencil cleanly above pad (generous breathing room above Pad 3 hazard tape)
-        DrawCenteredText(uiFont, PadCodes[index], new Rectangle(pos.X - 36f, pos.Y - 84f, 72f, 20f), 14,
-            soldered || active ? BrassBright : new Color(170, 180, 160, 165), shadowed: false);
-
-        if (!soldered)
-        {
-            // Scorched carbon soot aura around burnt pad
-            Raylib.DrawCircleGradient((int)pos.X, (int)pos.Y, 44f, new Color(12, 10, 9, 175), Color.Blank);
-            Raylib.DrawCircleGradient((int)(pos.X + 4f), (int)(pos.Y - 3f), 36f, new Color(24, 16, 12, 125), Color.Blank);
-
-            // Subtle breathing focus ring on currently active pad
-            if (active)
-            {
-                float pulse = 0.55f + 0.45f * MathF.Sin(_elapsed * 6.5f);
-                DrawArcStroke(pos, 38f, 2.2f, 0f, 360f, 40, new Color(238, 182, 76, (int)(110 + 115 * pulse)));
-            }
-
-            // Oxidized dark copper annular pad & hollow through-hole
-            Raylib.DrawCircleV(pos, 30f, new Color(76, 52, 30, 255));
-            Raylib.DrawCircleV(pos, 26f, new Color(118, 78, 42, 255));
-            Raylib.DrawCircleV(pos, 18f, new Color(46, 32, 22, 255));
-            Raylib.DrawCircleV(pos, 11f, CavityDark);
-            // Exposed tarnished lead pin in center
-            Raylib.DrawCircleV(pos, 4.5f, new Color(154, 144, 122, 255));
-        }
-        else
-        {
-            // Warm glow halo right after soldering (cools cleanly to metallic silver-tin)
-            if (heat > 0.04f)
-            {
-                Raylib.DrawCircleGradient((int)pos.X, (int)pos.Y, 48f,
-                    new Color(255, 164, 54, (int)(135 * heat)), Color.Blank);
-            }
-
-            // Amber rosin flux perimeter ring
-            Raylib.DrawCircleV(pos, 32f, new Color(96, 62, 22, 175));
-            // Outer copper pad rim peeking cleanly around solder dome
-            Raylib.DrawCircleV(pos, 29f, CopperLit);
-            // Molten-to-cooled silver-tin solder dome
-            Raylib.DrawCircleV(pos + new Vector2(1.5f, 2.5f), 25f, new Color(28, 34, 38, 160));
-            Raylib.DrawCircleV(pos, 25f, new Color(138, 148, 154, 255));
-            Raylib.DrawCircleGradient((int)(pos.X - 4f), (int)(pos.Y - 4f), 23f,
-                new Color(224, 232, 238, 255), new Color(128, 138, 145, 255));
-            // Wet metallic specular glints on dome crown
-            Raylib.DrawCircleV(pos + new Vector2(-7f, -7f), 6.2f, new Color(248, 252, 255, 220));
-            Raylib.DrawCircleV(pos + new Vector2(-10f, -10f), 2.6f, Color.White);
-            // Subtle cooling amber tint inside solder center when fresh
-            if (heat > 0.05f)
-            {
-                Raylib.DrawCircleGradient((int)pos.X, (int)pos.Y, 19f,
-                    new Color(255, 172, 68, (int)(155 * heat)), Color.Blank);
-            }
-        }
-
-        // Crisp silkscreen label centered cleanly below pad
-        string label = Loc.T(PadLabels[index].Ru, PadLabels[index].En);
-        Color labelColor = index == 2 && _phase == Phase.Overload
-            ? new Color(255, 118, 98, 255)
-            : (soldered || active ? BrassBright : Silkscreen);
-        Font lf = GameFonts.Get(Typeface.InterfaceBold, 17);
-        Vector2 lsz = GameFonts.Measure(lf, label, 17);
-        GameFonts.Draw(lf, label, new(pos.X - lsz.X * 0.5f, pos.Y + 46f), 17, labelColor, shadowed: true);
-    }
-
-    private void DrawHazardTape(Vector2 pad3Center, Font uiFont)
-    {
-        // Crosses upper-right rim of Pad 3 ("КОНТУР 0.1") — 100% clear of "03" above, iron tip/sparks left, and "КОНТУР 0.1" below!
-        float overloadPeel = _phase == Phase.Overload ? Math.Clamp(_overloadTimer / OverloadDuration, 0f, 1f) : 0f;
-        float shakeDeg = _phase == Phase.Overload ? MathF.Sin(_overloadTimer * 68f) * 3.8f : 0f;
-        float angleDeg = 24f + overloadPeel * 11f + shakeDeg;
-        Vector2 tapeCenter = pad3Center + new Vector2(66f + overloadPeel * 8f, -14f - overloadPeel * 10f);
-
-        const float w = 148f;
-        const float h = 24f;
-
-        Rlgl.PushMatrix();
-        Rlgl.Translatef(tapeCenter.X, tapeCenter.Y, 0f);
-        Rlgl.Rotatef(angleDeg, 0f, 0f, 1f);
-
-        // Cast drop shadow (grows wider on right edge as tape peels!)
-        float peelLift = 3.5f + overloadPeel * 9f;
-        Raylib.DrawRectangleRec(new(-w * 0.5f + 3f, -h * 0.5f + peelLift, w, h), new Color(6, 9, 8, 145));
-
-        // Base worn hazard yellow tape body
-        Rectangle strip = new(-w * 0.5f, -h * 0.5f, w, h);
-        Raylib.DrawRectangleRec(strip, HazardYellow);
-
-        // Diagonal black warning chevrons along left & right ends
-        for (float sx = -w * 0.5f - 8f; sx < w * 0.5f + 8f; sx += 18f)
-        {
-            float x0 = Math.Clamp(sx, -w * 0.5f, w * 0.5f);
-            float x1 = Math.Clamp(sx + 9f, -w * 0.5f, w * 0.5f);
-            float x2 = Math.Clamp(sx + 2f, -w * 0.5f, w * 0.5f);
-            float x3 = Math.Clamp(sx - 7f, -w * 0.5f, w * 0.5f);
-            DrawQuadCCW(
-                new(x0, -h * 0.5f),
-                new(x1, -h * 0.5f),
-                new(x2, h * 0.5f),
-                new(x3, h * 0.5f),
-                HazardBlack);
-        }
-
-        // Solid worn yellow stencil field in middle so "НЕ ТРОГАТЬ" reads crisply at any size
-        Rectangle textPanel = new(-48f, -h * 0.5f + 3f, 96f, h - 6f);
-        Raylib.DrawRectangleRec(textPanel, HazardYellow);
-        Raylib.DrawRectangleLinesEx(textPanel, 1f, HazardBlack);
-
-        // Subtle curled peeling right corner highlight
-        DrawTriCCW(
-            new(w * 0.5f - 12f, -h * 0.5f),
-            new(w * 0.5f, -h * 0.5f),
-            new(w * 0.5f, -h * 0.5f + 11f),
-            new Color(246, 224, 134, 255));
-
-        Raylib.DrawRectangleLinesEx(strip, 1f, new Color(46, 38, 18, 210));
-
-        // Crisp dark stenciled warning text
-        string warnText = Loc.T("НЕ ТРОГАТЬ", "DO NOT TOUCH");
-        Font wf = GameFonts.Get(Typeface.InterfaceBold, 12);
-        Vector2 wsz = GameFonts.Measure(wf, warnText, 12);
-        GameFonts.Draw(wf, warnText, new(-wsz.X * 0.5f, -wsz.Y * 0.5f), 12, HazardBlack, shadowed: false);
-
-        Rlgl.PopMatrix();
-    }
-
-    // =========================================================================
-    // 6. TACTILE BRASS CALIBRATION RAIL (TIMING SWEET-SPOT GAUGE)
-    // =========================================================================
-    private void DrawCalibrationRail(Vector2 o)
-    {
-        Rectangle housing = new(o.X + 228f, o.Y + 530f, 824f, 60f);
-        Rectangle slot = new(o.X + 252f, o.Y + 547f, 776f, 26f);
-
-        // Brushed-brass calibration housing
-        Raylib.DrawRectangleRounded(new(housing.X + 3f, housing.Y + 4f, housing.Width, housing.Height), 0.14f, 6, new Color(6, 7, 8, 175));
-        Raylib.DrawRectangleRounded(housing, 0.14f, 6, BrassMid);
-        Raylib.DrawRectangleGradientV((int)housing.X + 4, (int)housing.Y + 2, (int)housing.Width - 8, (int)housing.Height - 4,
-            new Color(214, 176, 108, 255), new Color(138, 102, 52, 255));
-        Raylib.DrawRectangleRoundedLinesEx(housing, 0.14f, 6, 1.8f, BrassDark);
-
-        DrawBrassScrew(new(housing.X + 12f, housing.Y + housing.Height * 0.5f), 4.2f);
-        DrawBrassScrew(new(housing.X + housing.Width - 12f, housing.Y + housing.Height * 0.5f), 4.2f);
-
-        // Etched brass graduation ticks along top rim
-        for (int i = 0; i <= 32; i++)
-        {
-            float tx = slot.X + slot.Width * (i / 32f);
-            float th = (i % 4 == 0) ? 7f : 4f;
-            Raylib.DrawLineEx(new(tx, housing.Y + 5f), new(tx, housing.Y + 5f + th), i % 4 == 0 ? 1.4f : 1f, EngravedInk);
-        }
-
-        // Milled dark steel track slot
-        Raylib.DrawRectangleRounded(slot, 0.25f, 4, new Color(15, 18, 20, 255));
-        Raylib.DrawRectangleRoundedLinesEx(slot, 0.25f, 4, 1.4f, new Color(64, 50, 28, 235));
-
-        int activePad = Math.Clamp(_solderedCount, 0, PadCount - 1);
-        var timing = PadTiming[activePad];
-        float sweetStart = timing.Center - timing.Width * 0.5f;
-        float sweetEnd = timing.Center + timing.Width * 0.5f;
-        bool inSweet = _phase == Phase.Soldering && _gaugePos >= sweetStart && _gaugePos <= sweetEnd && _missRecoveryTimer <= 0f;
-
-        if (_phase == Phase.Overload)
-        {
-            float surge = 0.6f + 0.4f * MathF.Sin(_overloadTimer * 52f);
-            Raylib.DrawRectangleRounded(new(slot.X + 3f, slot.Y + 3f, slot.Width - 6f, slot.Height - 6f), 0.2f, 4,
-                new Color(224, (int)(62 + 64 * surge), 44, 240));
-            return;
-        }
-
-        // Warm golden sweet-spot window inside rail
-        float swX = slot.X + sweetStart * slot.Width;
-        float swW = timing.Width * slot.Width;
-        Rectangle sweetRect = new(swX, slot.Y + 3f, swW, slot.Height - 6f);
-        Color sweetTop = inSweet ? new Color(255, 224, 122, 245) : new Color(216, 166, 68, 215);
-        Color sweetBot = inSweet ? new Color(226, 152, 48, 245) : new Color(154, 108, 38, 215);
-        Raylib.DrawRectangleGradientV((int)sweetRect.X, (int)sweetRect.Y, (int)sweetRect.Width, (int)sweetRect.Height, sweetTop, sweetBot);
-        Raylib.DrawRectangleLinesEx(sweetRect, 1.3f, inSweet ? new Color(255, 242, 184, 255) : BrassBright);
-
-        // Brass bracket pointers marking exact sweet-spot boundaries
-        DrawTriCCW(new(swX - 4f, slot.Y - 3f), new(swX + 4f, slot.Y - 3f), new(swX, slot.Y + 3f), EngravedInk);
-        DrawTriCCW(new(swX + swW - 4f, slot.Y - 3f), new(swX + swW + 4f, slot.Y - 3f), new(swX + swW, slot.Y + 3f), EngravedInk);
-
-        // Brief muted rust-red flash on miss recovery
-        if (_missFlashTimer > 0f)
-        {
-            int ma = (int)(130 * (_missFlashTimer / 0.32f));
-            Raylib.DrawRectangleRounded(slot, 0.25f, 4, new Color(194, 52, 36, ma));
-        }
-
-        // Oscillating glowing copper heat-bar indicator
-        float barX = slot.X + _gaugePos * slot.Width;
-        float barW = 14f;
-        Rectangle heatBar = new(barX - barW * 0.5f, slot.Y - 6f, barW, slot.Height + 12f);
-
-        // Soft warm heat glow behind moving copper bar
-        Raylib.DrawCircleGradient((int)barX, (int)(slot.Y + slot.Height * 0.5f), inSweet ? 32f : 22f,
-            inSweet ? new Color(255, 206, 92, 130) : new Color(236, 118, 42, 85), Color.Blank);
-
-        Raylib.DrawRectangleRounded(new(heatBar.X + 2f, heatBar.Y + 3f, heatBar.Width, heatBar.Height), 0.3f, 4, new Color(8, 8, 8, 175));
-        Color barBody = _missRecoveryTimer > 0f
-            ? new Color(176, 62, 46, 255)
-            : inSweet ? new Color(255, 224, 138, 255) : new Color(232, 128, 52, 255);
-        Raylib.DrawRectangleRounded(heatBar, 0.3f, 4, barBody);
-        Raylib.DrawRectangleRoundedLinesEx(heatBar, 0.3f, 4, 1.4f, EngravedInk);
-        // Incandescent vertical hairline core
-        Raylib.DrawRectangle((int)(barX - 2f), (int)(heatBar.Y + 4f), 4, (int)(heatBar.Height - 8f), new Color(255, 248, 220, 230));
-    }
-
-    // =========================================================================
-    // 7. BOTTOM STAMPED CONTROL STRIP
-    // =========================================================================
-    private void DrawBottomLegend(Vector2 o, Font uiFont)
-    {
-        Rectangle bar = new(o.X + 210f, o.Y + 604f, 860f, 34f);
-        string legend = _phase == Phase.Overload
-            ? Loc.T("ЗАМЫКАНИЕ ШАХТЫ · КОНТУР 0.1 ПРОБИТ!", "SHAFT SURGE · CIRCUIT 0.1 BREACHED!")
-            : Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — ПАЯТЬ КОНТАКТ     ·     [ESC] — ЗАКРЫТЬ ЩИТ",
-                    "[LMB] / [SPACE] / [E] — SOLDER JOINT     ·     [ESC] — CLOSE BOX");
-        Color ink = _phase == Phase.Overload ? new Color(255, 132, 112, 255) : new Color(206, 198, 180, 230);
-        DrawCenteredText(uiFont, legend, bar, 15, ink, shadowed: true);
-    }
-
-    // =========================================================================
-    // 8. LIVE 2D ILLUSTRATED HEATED SOLDERING IRON (SOVIET EPSN-40 STYLE)
-    // =========================================================================
-    private void DrawSolderingIron(Vector2 o)
-    {
-        Vector2 tip = o + GetIronTipPosition();
-        float heatPulse = 0.72f + 0.28f * MathF.Sin(_elapsed * 9.5f);
-
-        // Glowing cherry-orange heat bloom around tip
-        Raylib.DrawCircleGradient((int)tip.X, (int)tip.Y, 34f,
-            new Color(255, 118, 32, (int)(92 * heatPulse)), Color.Blank);
-        Raylib.DrawCircleGradient((int)tip.X, (int)tip.Y, 16f,
-            new Color(255, 206, 98, (int)(130 * heatPulse)), Color.Blank);
-
-        // Local coordinates: (0,0) = chisel copper tip; +X extends along shaft to wooden handle.
-        // Rotate -146 deg so handle extends cleanly up-left (never blocking Voltmeter, Hazard Tape, or Labels!).
-        Rlgl.PushMatrix();
-        Rlgl.Translatef(tip.X, tip.Y, 0f);
-        Rlgl.Rotatef(-146f, 0f, 0f, 1f);
-
-        // Subtle cast drop shadow beneath the entire soldering iron
-        Raylib.DrawRectangleRounded(new(4f, 7f, 204f, 18f), 0.4f, 4, new Color(5, 8, 7, 105));
-
-        // 1. Heated conical copper chisel tip (0 .. 34)
-        DrawTriCCW(new(0f, 0f), new(34f, -6.5f), new(34f, 6.5f), new Color(216, 78, 30, 255));
-        DrawTriCCW(new(0f, 0f), new(22f, -4.4f), new(22f, 4.4f), new Color(255, 148, 44, 255));
-        DrawTriCCW(new(0f, 0f), new(10f, -2.2f), new(10f, 2.2f), new Color(255, 232, 142, 255));
-
-        // 2. Ventilated steel heating barrel with heat-blued tempering (32 .. 106)
-        Rectangle barrel = new(32f, -6.8f, 74f, 13.6f);
-        Raylib.DrawRectangleGradientV((int)barrel.X, (int)barrel.Y, (int)barrel.Width, (int)barrel.Height,
-            new Color(166, 174, 180, 255), new Color(68, 74, 80, 255));
-        // Heat-blued tint near hot copper end
-        Raylib.DrawRectangle((int)barrel.X, (int)barrel.Y + 1, 20, 12, new Color(96, 72, 118, 95));
-        Raylib.DrawRectangleLinesEx(barrel, 1.1f, new Color(28, 32, 36, 230));
-        // Dark heat ventilation slots along steel barrel
-        for (int s = 0; s < 4; s++)
-        {
-            Raylib.DrawRectangleRounded(new(54f + s * 11f, -3.2f, 6f, 6.4f), 0.4f, 4, new Color(24, 26, 28, 225));
-        }
-
-        // 3. Crimped brass ferrule collar (104 .. 118)
-        Rectangle ferrule = new(104f, -9.5f, 14f, 19f);
-        Raylib.DrawRectangleGradientV((int)ferrule.X, (int)ferrule.Y, (int)ferrule.Width, (int)ferrule.Height,
-            BrassBright, BrassDark);
-        Raylib.DrawRectangleLinesEx(ferrule, 1.1f, EngravedInk);
-
-        // 4. Turned lacquered walnut/birch wooden handle (117 .. 214)
-        Rectangle handle = new(117f, -12.5f, 96f, 25f);
-        Raylib.DrawRectangleRounded(handle, 0.38f, 6, new Color(138, 84, 44, 255));
-        Raylib.DrawRectangleGradientV((int)handle.X + 3, (int)handle.Y + 2, (int)handle.Width - 6, (int)handle.Height - 4,
-            new Color(178, 118, 66, 255), new Color(84, 48, 24, 255));
-        Raylib.DrawRectangleRoundedLinesEx(handle, 0.38f, 6, 1.3f, EngravedInk);
-
-        // Ergonomic turned grip grooves in wooden handle
-        for (int g = 0; g < 3; g++)
-        {
-            float gx = 132f + g * 10f;
-            Raylib.DrawLineEx(new(gx, -11f), new(gx, 11f), 1.8f, new Color(64, 34, 16, 195));
-        }
-
-        // Iconic 1990s coiled blue Soviet electrical tape wrap near rear of handle!
-        Rectangle blueTape = new(176f, -12.8f, 22f, 25.6f);
-        Raylib.DrawRectangleRec(blueTape, new Color(36, 98, 192, 255));
-        Raylib.DrawRectangleGradientV((int)blueTape.X, (int)blueTape.Y, (int)blueTape.Width, (int)blueTape.Height,
-            new Color(74, 142, 232, 210), new Color(22, 62, 134, 230));
-        Raylib.DrawLineEx(new(183f, -12f), new(186f, 12f), 1.1f, new Color(18, 46, 102, 165));
-        Raylib.DrawLineEx(new(191f, -12f), new(194f, 12f), 1.1f, new Color(18, 46, 102, 165));
-
-        // Rubber cord strain-relief boot (212 .. 228)
-        Raylib.DrawRectangleRounded(new(211f, -5.5f, 16f, 11f), 0.35f, 4, new Color(28, 30, 32, 255));
-
-        Rlgl.PopMatrix();
-    }
-
-    // =========================================================================
-    // 9. ROSIN SMOKE WISPS (BEHIND HAZARD TAPE) & MOLTEN GOLDEN SPARKS
-    // =========================================================================
     private void DrawSmokeWisps(Vector2 o)
     {
         foreach (var s in _smoke)
         {
             float t = Math.Clamp(s.Life / s.MaxLife, 0f, 1f);
-            int alpha = (int)(MathF.Sin(t * MathF.PI) * (s.Dark ? 95f : 112f));
+            int alpha = (int)(MathF.Sin(t * MathF.PI) * (s.Dark ? 88f : 102f));
             Color col = s.Dark
-                ? new Color(76, 74, 72, alpha)
+                ? new Color(76, 72, 68, alpha)
                 : new Color(224, 218, 202, alpha);
             Vector2 p = o + s.Pos;
             Raylib.DrawCircleGradient((int)p.X, (int)p.Y, s.Radius, col, Color.Blank);
@@ -1448,8 +1394,10 @@ public sealed class ElevatorRepairMinigame
     }
 
     // =========================================================================
-    // DRAWING PRIMITIVES & HARDWARE HELPERS
+    // HELPERS & GEOMETRY PRIMITIVES
     // =========================================================================
+    private static Rectangle OffsetRect(Rectangle r, Vector2 o) => new(r.X + o.X, r.Y + o.Y, r.Width, r.Height);
+
     private static float VoltageToAngleDeg(float volts, float startDeg, float endDeg)
     {
         float frac = Math.Clamp(volts / 380f, 0f, 1.03f);
@@ -1470,28 +1418,31 @@ public sealed class ElevatorRepairMinigame
         }
     }
 
-    private static void DrawSteelRivet(Vector2 center, float radius)
+    private static void DrawFittedCenteredText(Font font, string text, Rectangle rect, int maxSize, int minSize, Color color, bool shadowed)
     {
-        Raylib.DrawCircleV(center + new Vector2(1.5f, 2f), radius + 1.5f, new Color(8, 10, 11, 165));
-        Raylib.DrawCircleV(center, radius + 1.2f, SteelDark);
-        Raylib.DrawCircleV(center, radius, SteelLight);
-        Raylib.DrawCircleV(center + new Vector2(-radius * 0.3f, -radius * 0.3f), radius * 0.36f, new Color(188, 198, 204, 190));
-    }
-
-    private static void DrawBrassScrew(Vector2 center, float radius)
-    {
-        Raylib.DrawCircleV(center + new Vector2(0.8f, 1.2f), radius + 0.8f, new Color(12, 10, 8, 150));
-        Raylib.DrawCircleV(center, radius, BrassDark);
-        Raylib.DrawCircleV(center, radius - 0.9f, BrassBright);
-        float d = radius * 0.62f;
-        Raylib.DrawLineEx(center + new Vector2(-d, -d * 0.55f), center + new Vector2(d, d * 0.55f), 1.3f, EngravedInk);
-    }
-
-    private static void DrawCenteredText(Font font, string text, Rectangle rect, int size, Color color, bool shadowed)
-    {
+        int size = maxSize;
         Vector2 sz = GameFonts.Measure(font, text, size);
+        while (size > minSize && sz.X > rect.Width - 8f)
+        {
+            size--;
+            sz = GameFonts.Measure(font, text, size);
+        }
         Vector2 pos = new(rect.X + (rect.Width - sz.X) * 0.5f, rect.Y + (rect.Height - sz.Y) * 0.5f);
         GameFonts.Draw(font, text, pos, size, color, shadowed);
+    }
+
+    private static void DrawEngravedFittedText(Font font, string text, Rectangle rect, int maxSize, int minSize, Color ink, Color embossHighlight)
+    {
+        int size = maxSize;
+        Vector2 sz = GameFonts.Measure(font, text, size);
+        while (size > minSize && sz.X > rect.Width - 10f)
+        {
+            size--;
+            sz = GameFonts.Measure(font, text, size);
+        }
+        Vector2 pos = new(rect.X + (rect.Width - sz.X) * 0.5f, rect.Y + (rect.Height - sz.Y) * 0.5f);
+        GameFonts.Draw(font, text, pos + new Vector2(0.8f, 1.0f), size, embossHighlight, shadowed: false);
+        GameFonts.Draw(font, text, pos, size, ink, shadowed: false);
     }
 
     private static void DrawTriCCW(Vector2 a, Vector2 b, Vector2 c, Color color)

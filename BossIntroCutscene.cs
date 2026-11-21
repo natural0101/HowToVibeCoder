@@ -7,17 +7,25 @@ using Raylib_cs;
 namespace HowToVibeCoder;
 
 /// <summary>
-/// Real-time in-engine 3D multi-shot cinema director for the North Elevator boss reveal.
+/// Real-time in-engine 3D 5-shot cinema director for the North Elevator boss reveal.
 /// Purely synchronized to <see cref="SkyscraperFloor1World.ElevatorBoss"/> Repairing (2.3s)
-/// and IntroSpeech (2.4s) timers so gameplay, save/load snapshots, and autotest captures stay frame-locked.
+/// and IntroSpeech (2.4s sim / ~8.9s live) timers so gameplay, save/load snapshots, and autotest captures stay frame-locked.
 /// </summary>
 internal static class BossIntroCutscene
 {
-    private const float Shot1End = 1.10f; // Repairing 0.00..1.10s: sparking brass panel + floor dial
-    private const float Shot3End = 1.70f; // IntroSpeech 0.00..1.70s: heroic low-angle tracking + TOKEN-GUN 98 reveal
-    private const float DialogueSplit = 1.25f; // IntroSpeech beat 1 -> beat 2
+    // Normalized Repairing timeline r = RepairElapsed / RepairSeconds (0..1)
+    private const float Shot1EndR = 0.46f; // Shot 1 (0.00..0.46): tight Dutch-angle sparking panel + Floor 01 dial
+                                           // Shot 2 (0.46..1.00): slow ominous low push-in on defrosting doors
 
-    private const float BarHeight235 = 88f; // 2.35:1 cinema aperture inside 1280x720 virtual UI space
+    // Normalized IntroSpeech timeline u = IntroElapsed / IntroSeconds (0..1)
+    private const float Shot3EndU = 0.44f; // Shot 3 (0.00..0.44): intimate close-up portrait as doors open & helmet tilts
+    private const float Shot4EndU = 0.82f; // Shot 4 (0.44..0.82): low-angle 3/4 weapon-side hero tracking orbit + 2.95m uncoil
+                                           // Shot 5 (0.82..1.00): whip-smooth pull-back into player's 1st-person eyes
+
+    private const float DialogueBeat1EndU = 0.24f;
+    private const float DialogueBeat3EndU = 0.68f;
+
+    private const float BarHeight235 = 88f; // Pure matte-black 2.35:1 cinema aperture inside 1280x720 virtual UI space
 
     private static bool _skipped;
 
@@ -46,9 +54,9 @@ internal static class BossIntroCutscene
         if (!IsActive(world)) return false;
         var b = world.ElevatorBoss;
         if (b.State == ElevatorBossState.Repairing) return true;
-        float elapsed = IntroElapsed(b);
-        if (elapsed <= Shot3End) return true;
-        float pullBack = SmoothStep((elapsed - Shot3End) / (SkyscraperFloor1World.IntroSeconds - Shot3End));
+        float u = IntroProgress(b);
+        if (u <= Shot4EndU) return true;
+        float pullBack = SmoothStep((u - Shot4EndU) / (1f - Shot4EndU));
         return pullBack < 0.82f;
     }
 
@@ -57,9 +65,9 @@ internal static class BossIntroCutscene
         if (!IsActive(world)) return 1f;
         var b = world.ElevatorBoss;
         if (b.State == ElevatorBossState.Repairing) return 0f;
-        float elapsed = IntroElapsed(b);
-        if (elapsed <= Shot3End) return 0f;
-        return SmoothStep((elapsed - Shot3End) / (SkyscraperFloor1World.IntroSeconds - Shot3End));
+        float u = IntroProgress(b);
+        if (u <= Shot4EndU) return 0f;
+        return SmoothStep((u - Shot4EndU) / (1f - Shot4EndU));
     }
 
     internal static float GetLetterboxProgress(SkyscraperFloor1World world)
@@ -69,9 +77,9 @@ internal static class BossIntroCutscene
         if (b.State == ElevatorBossState.Repairing)
             return SmoothStep(RepairElapsed(b) / 0.34f);
 
-        float elapsed = IntroElapsed(b);
-        if (elapsed <= Shot3End) return 1f;
-        return 1f - SmoothStep((elapsed - Shot3End) / (SkyscraperFloor1World.IntroSeconds - Shot3End));
+        float u = IntroProgress(b);
+        if (u <= Shot4EndU) return 1f;
+        return 1f - SmoothStep((u - Shot4EndU) / (1f - Shot4EndU));
     }
 
     internal static Camera3D ResolveCamera(SkyscraperFloor1World world, Camera3D playerCam)
@@ -82,86 +90,117 @@ internal static class BossIntroCutscene
         if (b.State == ElevatorBossState.Repairing)
         {
             float elapsed = RepairElapsed(b);
-            if (elapsed < Shot1End)
-            {
-                // Shot 1 (0.00..1.10s): Angled close-up on sparking repaired brass panel + Floor 01 dial.
-                float u = SmoothStep(elapsed / Shot1End);
-                Vector3 pos = Vector3.Lerp(new(-2.12f, 1.76f, -11.35f), new(-1.78f, 1.92f, -11.48f), u);
-                Vector3 tgt = Vector3.Lerp(new(-0.35f, 1.92f, -8.65f), new(0.45f, 2.28f, -8.50f), u);
+            float r = RepairProgress(b);
 
-                // Subtle crisp electrical tremor during live panel spark bursts.
+            if (r < Shot1EndR)
+            {
+                // Shot 1 (r = 0.00..0.46): Tight Dutch-angle close-up on sparking brass shaft panel & Floor 01 dial.
+                float t = SmoothStep(r / Shot1EndR);
+                Vector3 pos = Vector3.Lerp(new(-2.14f, 1.48f, -10.82f), new(-1.66f, 1.78f, -11.10f), t);
+                Vector3 tgt = Vector3.Lerp(new(-1.42f, 1.44f, -8.85f), new(-0.22f, 2.24f, -8.80f), t);
+
+                // Crisp electrical tremor synchronized to live panel spark bursts.
                 float sparkBurst = (elapsed % 0.38f) < 0.22f ? 1f : 0f;
-                float tremor = sparkBurst * 0.009f;
-                pos += new Vector3(MathF.Sin(elapsed * 57f) * tremor, MathF.Cos(elapsed * 71f) * tremor, 0f);
+                float tremor = sparkBurst * 0.010f;
+                pos += new Vector3(MathF.Sin(elapsed * 59f) * tremor, MathF.Cos(elapsed * 73f) * tremor, 0f);
+
+                float dutchRoll = LerpF(-0.054f, -0.046f, t);
+                Vector3 fwd = Vector3.Normalize(tgt - pos);
+                Vector3 up = Vector3.Transform(Vector3.UnitY, Quaternion.CreateFromAxisAngle(fwd, dutchRoll));
 
                 return new Camera3D
                 {
                     Position = pos,
                     Target = tgt,
-                    Up = Vector3.UnitY,
-                    FovY = LerpF(48f, 50f, u),
+                    Up = up,
+                    FovY = 45f,
                     Projection = CameraProjection.Perspective
                 };
             }
             else
             {
-                // Shot 2 (1.10..2.30s): Low-centered push-in on clearing smoked-glass doors & crouched awakening silhouette.
-                float u = SmoothStep((elapsed - Shot1End) / (SkyscraperFloor1World.RepairSeconds - Shot1End));
-                Vector3 pos = Vector3.Lerp(new(0.35f, 1.44f, -13.05f), new(0.14f, 1.50f, -11.88f), u);
-                Vector3 tgt = Vector3.Lerp(new(0.00f, 1.46f, -7.25f), new(0.00f, 1.54f, -7.15f), u);
+                // Shot 2 (r = 0.46..1.00): Slow ominous low push-in on defrosting smoked-glass Art-Deco elevator doors.
+                float t = SmoothStep((r - Shot1EndR) / (1f - Shot1EndR));
+                Vector3 pos = Vector3.Lerp(new(0.28f, 1.34f, -12.95f), new(0.10f, 1.44f, -11.55f), t);
+                Vector3 tgt = Vector3.Lerp(new(0.00f, 1.44f, -7.65f), new(0.00f, 1.54f, -7.55f), t);
 
-                // Low-frequency quarantine lock-release rumble as the shaft seal breaks.
-                float rumble = SmoothStep((u - 0.55f) / 0.45f) * 0.011f;
-                pos += new Vector3(MathF.Sin(elapsed * 43f) * rumble, MathF.Cos(elapsed * 53f) * rumble * 0.7f, 0f);
+                // Heavy bass thud tremor + quarantine lock-release rumble as crimson visor pierces clearing glass.
+                float thud = MathF.Pow(MathF.Max(0f, MathF.Sin((r - Shot1EndR) * 22f)), 4f);
+                float rumble = SmoothStep((t - 0.35f) / 0.65f) * 0.011f + thud * 0.014f;
+                pos += new Vector3(MathF.Sin(elapsed * 43f) * rumble, MathF.Cos(elapsed * 53f) * rumble * 0.8f, 0f);
 
                 return new Camera3D
                 {
                     Position = pos,
                     Target = tgt,
                     Up = Vector3.UnitY,
-                    FovY = LerpF(47f, 44f, u),
+                    FovY = LerpF(45f, 38f, t),
                     Projection = CameraProjection.Perspective
                 };
             }
         }
         else
         {
-            float elapsed = IntroElapsed(b);
-            Camera3D shot3 = BuildShot3Camera(b, Math.Min(elapsed, Shot3End));
-            if (elapsed <= Shot3End) return shot3;
+            float u = IntroProgress(b);
 
-            // Shot 4 (1.70..2.40s): Seamless SmoothStep pull-back directly into player's live 1st-person eye camera.
-            float blend = SmoothStep((elapsed - Shot3End) / (SkyscraperFloor1World.IntroSeconds - Shot3End));
-            Vector3 up = Vector3.Normalize(Vector3.Lerp(shot3.Up, playerCam.Up, blend));
+            if (u < Shot3EndU)
+            {
+                // Shot 3 (u = 0.00..0.44): Intimate medium close-up portrait framing full tilted helmet, glowing crimson visor & chest core
+                // while SYSTEM ZERO ducks under lintel, plants titanium boot, and tilts helmet curiously.
+                float t = SmoothStep(u / Shot3EndU);
+                Vector3 pos = Vector3.Lerp(new(-0.92f, 1.48f, -12.15f), new(-0.72f, 1.56f, -11.75f), t);
+                Vector3 tgt = b.Position + new Vector3(LerpF(0.00f, 0.04f, t), LerpF(1.76f, 1.82f, t), -0.15f);
+
+                float strideActive = SmoothStep((u - 0.14f) / 0.12f);
+                float footImpact = MathF.Pow(MathF.Abs(MathF.Sin(b.StridePhase)), 8f) * strideActive;
+                float thudY = -0.014f * footImpact;
+                pos += new Vector3(0.005f * footImpact * MathF.Sign(MathF.Cos(b.StridePhase)), thudY, 0f);
+                tgt += new Vector3(0f, thudY * 0.45f, 0f);
+
+                return new Camera3D
+                {
+                    Position = pos,
+                    Target = tgt,
+                    Up = Vector3.UnitY,
+                    FovY = 41f,
+                    Projection = CameraProjection.Perspective
+                };
+            }
+
+            Camera3D shot4 = BuildShot4Camera(b, Math.Min(u, Shot4EndU));
+            if (u <= Shot4EndU) return shot4;
+
+            // Shot 5 (u = 0.82..1.00): Whip-smooth SmoothStep pull-back directly into player's 1st-person eyes.
+            float blend = SmoothStep((u - Shot4EndU) / (1f - Shot4EndU));
+            Vector3 up = Vector3.Normalize(Vector3.Lerp(shot4.Up, playerCam.Up, blend));
             return new Camera3D
             {
-                Position = Vector3.Lerp(shot3.Position, playerCam.Position, blend),
-                Target = Vector3.Lerp(shot3.Target, playerCam.Target, blend),
+                Position = Vector3.Lerp(shot4.Position, playerCam.Position, blend),
+                Target = Vector3.Lerp(shot4.Target, playerCam.Target, blend),
                 Up = up,
-                FovY = LerpF(shot3.FovY, playerCam.FovY, blend),
+                FovY = LerpF(shot4.FovY, playerCam.FovY, blend),
                 Projection = CameraProjection.Perspective
             };
         }
     }
 
-    private static Camera3D BuildShot3Camera(EscapedAgentBoss b, float elapsed)
+    private static Camera3D BuildShot4Camera(EscapedAgentBoss b, float u)
     {
-        // Shot 3 (IntroSpeech 0.00..1.70s): Heroic low-angle tracking sweep onto boss's front-right (+X world) 3/4 weapon side!
-        // Showcases crouched doorway stalk (t=1.05s) uncoiling into towering 2.95m hero reveal with TOKEN-GUN 98 cassette reels & brass coils (t=1.55s).
-        float u = SmoothStep(elapsed / Shot3End);
-        float uncoil = SmoothStep((elapsed - 1.10f) / 0.44f);
-        Vector3 pos = Vector3.Lerp(new(-1.10f, 1.08f, -13.50f), new(2.52f, 1.34f, -13.95f), u);
-        Vector3 tgt = b.Position + new Vector3(LerpF(0.00f, 0.14f, uncoil), LerpF(1.36f, 1.56f, uncoil), 0f);
+        // Shot 4 (u = 0.44..0.82): Low-angle 3/4 weapon-side hero tracking orbit as SYSTEM ZERO uncoils
+        // to full 2.95m towering stature on the compass medallion, swinging TOKEN-GUN 98 broadside across lens.
+        float t = SmoothStep((u - Shot3EndU) / (Shot4EndU - Shot3EndU));
+        float uncoil = SmoothStep((u - Shot3EndU) / 0.14f);
+        Vector3 pos = Vector3.Lerp(new(2.25f, 1.26f, -13.65f), new(2.55f, 1.36f, -13.95f), t);
+        Vector3 tgt = b.Position + new Vector3(LerpF(0.08f, 0.16f, uncoil), LerpF(1.44f, 1.56f, uncoil), 0f);
 
         // Heavy Terminator titanium boot-plant impact tremor synchronized to boss's live stride phase.
-        float strideActive = SmoothStep((elapsed - 0.30f) / 0.25f);
-        float footImpact = MathF.Pow(MathF.Abs(MathF.Sin(b.StridePhase)), 8f) * strideActive;
-        float thudY = -0.022f * footImpact;
-        float thudX = 0.009f * footImpact * MathF.Sign(MathF.Cos(b.StridePhase));
+        float footImpact = MathF.Pow(MathF.Abs(MathF.Sin(b.StridePhase)), 8f);
+        float thudY = -0.020f * footImpact;
+        float thudX = 0.008f * footImpact * MathF.Sign(MathF.Cos(b.StridePhase));
         pos += new Vector3(thudX, thudY, 0f);
         tgt += new Vector3(0f, thudY * 0.5f, 0f);
 
-        float microRoll = 0.008f * footImpact * MathF.Sign(MathF.Cos(b.StridePhase));
+        float microRoll = 0.007f * footImpact * MathF.Sign(MathF.Cos(b.StridePhase));
         Vector3 fwd = Vector3.Normalize(tgt - pos);
         Vector3 up = Vector3.Transform(Vector3.UnitY, Quaternion.CreateFromAxisAngle(fwd, microRoll));
 
@@ -170,7 +209,7 @@ internal static class BossIntroCutscene
             Position = pos,
             Target = tgt,
             Up = up,
-            FovY = LerpF(46f, 51f, u),
+            FovY = 49f,
             Projection = CameraProjection.Perspective
         };
     }
@@ -197,54 +236,56 @@ internal static class BossIntroCutscene
             Raylib.DrawRectangleGradientV(0, barH, sw, 46, new Color(132, 14, 24, (int)(edgeAlpha * 0.65f)), Color.Blank);
         }
 
-        // 2. Razor-clean 2.35:1 matte cinema letterbox bars + hairline antique brushed-brass trim
+        // 2. Pure clean matte-black 2.35:1 cinema letterbox bars ONLY (zero hairlines, zero lower-left title cards)
         if (barH > 0)
         {
             Color cinemaBlack = new(8, 7, 7, 255);
-            Color brassHairline = new(176, 138, 74, (int)(96 * barProgress));
             Raylib.DrawRectangle(0, 0, sw, barH, cinemaBlack);
             Raylib.DrawRectangle(0, sh - barH, sw, barH, cinemaBlack);
-            Raylib.DrawRectangle(0, barH, sw, 1, brassHairline);
-            Raylib.DrawRectangle(0, sh - barH - 1, sw, 1, brassHairline);
         }
 
-        // 3. Art-Deco Cinema Boss Title Card (lower-left active frame during Shot 3, rich dark backing scrim)
-        if (b.State == ElevatorBossState.IntroSpeech)
+        // 3. Razor-crisp movie subtitles centered cleanly INSIDE the bottom 2.35:1 black letterbox bar
+        float subAlpha;
+        string speaker;
+        string line;
+        if (b.State == ElevatorBossState.Repairing)
         {
-            float elapsed = IntroElapsed(b);
-            float cardIn = SmoothStep((elapsed - 0.14f) / 0.32f);
-            float cardOut = 1f - SmoothStep((elapsed - 1.58f) / 0.34f);
-            float cardAlpha = Math.Clamp(cardIn * cardOut, 0f, 1f);
-            if (cardAlpha > 0.02f)
-                DrawArtDecoTitleCard(cardAlpha, sh - barH);
-        }
+            float r = RepairProgress(b);
+            speaker = "ШЛЕЙФ · РАЦИЯ";
+            line = r < Shot1EndR
+                ? "«Стой!! Ты снял карантинный замок с шахты!!»"
+                : "«...В лифте заперт сбежавший ИИ-Агент v0.1!»";
 
-        // 4. High-contrast Cinema Subtitles cleanly centered INSIDE the bottom 2.35:1 black letterbox bar
-        float subAlpha = b.State == ElevatorBossState.Repairing
-            ? SmoothStep(RepairElapsed(b) / 0.28f) * barProgress
-            : (1f - SmoothStep((IntroElapsed(b) - Shot3End) / 0.42f)) * barProgress;
+            // Walkie-talkie signal fade-in, brief static suspense cut across Shot 1->2, then frequency jams at r=0.90..1.00.
+            float fadeIn = SmoothStep(r / 0.10f);
+            float staticCut = r is >= 0.42f and < Shot1EndR
+                ? 0.55f + 0.45f * MathF.Abs(MathF.Sin(r * 190f))
+                : 1f;
+            float jamOut = r > 0.90f
+                ? (1f - SmoothStep((r - 0.90f) / 0.10f)) * (0.40f + 0.60f * MathF.Abs(MathF.Sin(r * 260f)))
+                : 1f;
+            subAlpha = fadeIn * staticCut * jamOut * barProgress;
+        }
+        else
+        {
+            float u = IntroProgress(b);
+            speaker = "ИИ-АГЕНТ v0.1";
+            if (u < DialogueBeat1EndU)
+                line = "«Это ещё что за самозванец?..»";
+            else if (u < Shot3EndU)
+                line = "«Хм... А, это ты.»";
+            else if (u < DialogueBeat3EndU)
+                line = "«Ну, мы тут немного шаманили, пока тебя не было — внедряли ИИ!»";
+            else
+                line = "«Посмотрим, сколько секунд протянет твой ручной код.»";
+
+            subAlpha = (1f - SmoothStep((u - Shot4EndU) / 0.12f)) * barProgress;
+        }
 
         if (subAlpha > 0.04f && barH >= 56)
-        {
-            string speaker;
-            string line;
-            if (b.State == ElevatorBossState.Repairing)
-            {
-                speaker = "ПЕТРОВИЧ · ИНТЕРКОМ";
-                line = "«Стой!! Ты снял карантинный замок с шахты!! В лифте заперт сбежавший ИИ-Агент v0.1!»";
-            }
-            else
-            {
-                speaker = "ИИ-АГЕНТ v0.1";
-                line = IntroElapsed(b) < DialogueSplit
-                    ? "«Это ещё что за самозванец?.. А, это ты.»"
-                    : "«Ну, мы тут немного шаманили, пока тебя не было... внедряли ИИ.»";
-            }
-
             DrawCinemaSubtitleInBar(speaker, line, sw, sh - barH, barH, subAlpha);
-        }
 
-        // 5. Quiet skip hint tucked cleanly inside the bottom-right of the lower letterbox bar
+        // 4. Quiet skip hint tucked cleanly inside the bottom-right of the lower letterbox bar
         if (barProgress > 0.45f)
         {
             float hintAlpha = SmoothStep((barProgress - 0.45f) / 0.40f);
@@ -254,63 +295,6 @@ internal static class BossIntroCutscene
             Color hintInk = new(196, 176, 142, (int)(178 * hintAlpha));
             GameFonts.Draw(hintFont, skipHint, new(sw - 38f - hw, sh - barH * 0.5f - 7f), 13, hintInk, shadowed: false);
         }
-    }
-
-    private static void DrawArtDecoTitleCard(float alpha, int bottomBarTop)
-    {
-        // Anchored cleanly in the lower-left above the bottom 2.35:1 black bar with rich feathered vignette scrim.
-        float slideX = (1f - alpha) * -18f;
-        float x = 56f + slideX;
-        float baseY = bottomBarTop - 118f;
-
-        int a = (int)(255 * alpha);
-        int aMuted = (int)(232 * alpha);
-        Color brass = new(224, 186, 114, a);
-        Color ivory = new(250, 245, 232, a);
-        Color goldSub = new(228, 202, 150, aMuted);
-        Color dropShadow = new(4, 4, 4, (int)(230 * alpha));
-
-        Font eyebrowFont = GameFonts.Get(Typeface.InterfaceBold, 13);
-        Font titleFont = GameFonts.Get(Typeface.SerifBold, 42);
-        Font subFont = GameFonts.Get(Typeface.InterfaceBold, 15);
-
-        const string eyebrow = "КАРАНТИННЫЙ УЗЕЛ «ЭНТРОПИК» · 1998";
-        const string mainTitle = "ИИ-АГЕНТ v0.1";
-        const string subtitle = "СБЕЖАВШИЙ ПРОТОТИП SYSTEM ZERO";
-
-        float titleW = GameFonts.Measure(titleFont, mainTitle, 42).X;
-        float subW = GameFonts.Measure(subFont, subtitle, 15).X;
-        float scrimW = Math.Max(titleW, subW) + 128f;
-
-        // Soft dark feathered vignette scrim behind title card (zero hard edges, razor readability over any backdrop!)
-        Raylib.DrawRectangleGradientH(0, (int)baseY - 18, (int)(x + scrimW), 124,
-            new Color(8, 6, 6, (int)(188 * alpha)), Color.Blank);
-        Raylib.DrawRectangleGradientV(0, (int)baseY - 40, (int)(x + scrimW * 0.85f), 26,
-            Color.Blank, new Color(8, 6, 6, (int)(105 * alpha)));
-
-        // Eyebrow
-        GameFonts.Draw(eyebrowFont, eyebrow, new(x + 1f, baseY + 1.5f), 13, dropShadow, shadowed: false);
-        GameFonts.Draw(eyebrowFont, eyebrow, new(x, baseY), 13, brass, shadowed: false);
-
-        // Main Title (bold Russo One ivory with crisp dark cinema drop shadow)
-        float titleY = baseY + 18f;
-        GameFonts.Draw(titleFont, mainTitle, new(x + 2f, titleY + 3f), 42, dropShadow, shadowed: false);
-        GameFonts.Draw(titleFont, mainTitle, new(x, titleY), 42, ivory, shadowed: false);
-
-        // Clean brushed-brass hairline trimmed precisely to the main title width
-        float ruleY = titleY + 49f;
-        int ruleW = (int)(titleW * alpha);
-        if (ruleW > 4)
-        {
-            Raylib.DrawRectangleGradientH((int)x, (int)ruleY, ruleW, 1,
-                new Color(224, 186, 114, (int)(225 * alpha)),
-                new Color(224, 186, 114, (int)(45 * alpha)));
-        }
-
-        // Subtitle
-        float subY = ruleY + 8f;
-        GameFonts.Draw(subFont, subtitle, new(x + 1.5f, subY + 2f), 15, dropShadow, shadowed: false);
-        GameFonts.Draw(subFont, subtitle, new(x, subY), 15, goldSub, shadowed: false);
     }
 
     private static void DrawCinemaSubtitleInBar(string speaker, string line, int sw, int barTop, int barH, float alpha)
@@ -366,8 +350,14 @@ internal static class BossIntroCutscene
     private static float RepairElapsed(EscapedAgentBoss b) =>
         Math.Clamp(SkyscraperFloor1World.RepairSeconds - b.StateTimer, 0f, SkyscraperFloor1World.RepairSeconds);
 
+    private static float RepairProgress(EscapedAgentBoss b) =>
+        Math.Clamp(RepairElapsed(b) / SkyscraperFloor1World.RepairSeconds, 0f, 1f);
+
     private static float IntroElapsed(EscapedAgentBoss b) =>
         Math.Clamp(SkyscraperFloor1World.IntroSeconds - b.StateTimer, 0f, SkyscraperFloor1World.IntroSeconds);
+
+    private static float IntroProgress(EscapedAgentBoss b) =>
+        Math.Clamp(IntroElapsed(b) / SkyscraperFloor1World.IntroSeconds, 0f, 1f);
 
     private static float LerpF(float a, float b, float t) => a + (b - a) * t;
 

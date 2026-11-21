@@ -724,7 +724,11 @@ public static partial class Program
                 else TickFloor(dt);
                 return;
             }
-            TickFloor(dt);
+            float cinemaDt = MainMenuAndPauseUI.InteractiveDisplay && !Net.Ready
+                && _world.ElevatorBoss.State == ElevatorBossState.IntroSpeech
+                ? dt * 0.27f
+                : dt;
+            TickFloor(cinemaDt);
             BossIntroCutscene.SyncState(_world);
             return;
         }
@@ -781,6 +785,13 @@ public static partial class Program
         // [V] Cheeky Middle-Finger Emote — works on any Vibe Coder, HR Veronika, Boss, or Co-op Teammate!
         if (Raylib.IsKeyPressed(KeyboardKey.V))
             TriggerFlipOffEmote();
+
+        // [X] Walkie-Talkie Radio Hint from Shleif (handed over by Veronika when floor wings open)
+        if ((Floor.HasRadio || Floor.WingsUnlocked) && Raylib.IsKeyPressed(KeyboardKey.X))
+        {
+            AudioMusicSystem.PlayActionClack(1.42f);
+            SetHudBanner(Floor.ShleifRadioHint(_world), 5.6f, foreground: true);
+        }
 
         // Contextual [E] Interaction
         if (Raylib.IsKeyPressed(KeyboardKey.E))
@@ -1191,6 +1202,11 @@ public static partial class Program
         ShadowText(_serif, money, 36, sh - 92, 26, white);
         if(_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated)
             ShadowText(_uiFont, "Ключ-карта СБ", 36, sh - 110, 15, WorldLabelLayout.Ivory);
+        if(Floor.HasRadio || Floor.WingsUnlocked)
+        {
+            int radioY = (_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated) ? sh - 129 : sh - 110;
+            ShadowText(_uiFont, "[X] Рация · Шлейф", 36, radioY, 14, new Color(224, 198, 148, 232));
+        }
         if(Floor.PocketFrogs.Count>0)
         {
             float mw = GameFonts.Measure(_serif, money, 26).X;

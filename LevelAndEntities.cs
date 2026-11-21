@@ -1443,7 +1443,7 @@ public sealed partial class SkyscraperFloor1World
         return true;
     }
 
-    internal const string AgentQuarantineLine = "Это ещё что за самозванец?.. А, это ты. Ну, мы тут немного шаманили, пока тебя не было — внедряли ИИ!";
+    internal const string AgentQuarantineLine = "Это ещё что за самозванец?.. А, это ты. Ну, мы тут немного шаманили, пока тебя не было — внедряли ИИ! Посмотрим, сколько секунд протянет твой ручной код.";
     internal const string AgentDefeatTwistLine = "Ха... думал, списал меня? Мою кассету уже тянут наверх. В середине Башни меня соберут заново — ещё злее. До встречи на проде.";
     internal static void PlayElevatorCue(ElevatorBossState state)
     {

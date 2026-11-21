@@ -81,8 +81,24 @@ internal sealed partial class FloorSystems
     public int TrainingSpawns;
     public int PlayerCount=1;
     internal CoopBalance Balance => CoopBalance.For(PlayerCount);
-    public bool WingsUnlocked, GalleyTipPending;
+    public bool WingsUnlocked, GalleyTipPending, HasRadio;
     public float WingBarrierSlide, EspressoWait, BarrierVoiceWait;
+    internal const string RadioHandoverLine = "Вероника передала старую тех-рацию [X]: «Канал 98. Там в шахтах сидит наш бывший инженер Шлейф — если затупишь, жми [X], подскажет. Только про лифт его не пытай...»";
+
+    internal string ShleifRadioHint(SkyscraperFloor1World world)
+    {
+        if (world.ElevatorBoss.IsDefeated)
+            return "Шлейф · Рация: Живой?! Видел, как кассету утянуло наверх? Это только разминка — заходи в лифт на 2-й этаж.";
+        if (world.BossInCombat)
+            return "Шлейф · Рация: *пш-ш* Частота забита! Плави его щит очередью и тащи к кулеру, когда начнёт перегреваться!";
+        if (world.BrokenElevator && world.HasElevatorKey && HasWeapon(WeaponType.SolderingIron))
+            return "Шлейф · Рация: Карта и паяльник на руках. Иди к Северному лифту — только третий контакт под жёлтой лентой... слышишь? Не трогай его!";
+        if (!HasWeapon(WeaponType.SolderingIron))
+            return "Шлейф · Рация: Без паяльника щиток лифта не оживишь — возьми у Вероники за $90. Деньги быстрее капают с Опенспейса слева.";
+        if (!world.HasElevatorKey)
+            return "Шлейф · Рация: Нужна ключ-карта СБ — купи дубликат у Вероники ($1000) или сними оригинал с охранника в восточном крыле.";
+        return "Шлейф · Рация: Сажай пойманных вайбкодеров в Опенспейс слева — касса капает сама, а я на связи на 98-м канале.";
+    }
     public int[] BaitStock = new int[3];
     public FloorBait? PlacedBait;
     public bool FloorHuntEnabled;
@@ -143,6 +159,8 @@ internal sealed partial class FloorSystems
         if(!WingsUnlocked && world.TotalCodersSoldToHr>=Balance.QuarantineUnlockTarget)
         {
             WingsUnlocked=true;
+            HasRadio=true;
+            Notice=RadioHandoverLine; NoticeTime=8.5f;
             AudioMusicSystem.PlayMacbookBait();
             Onboarding=seated ? OnboardingStep.Done : OnboardingStep.SeatFirstGalley;
             SpeakCoaching(CoachText(OnboardingStep.SeatFirstGalley));

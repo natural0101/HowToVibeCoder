@@ -169,11 +169,11 @@
   },
   "vo_boss_reveal": {
     "character": "robot",
-    "duration": 5.912,
-    "rms": 0.127,
+    "duration": 9.61,
+    "rms": 0.1241,
     "sr": 24000,
-    "bytes": 283816,
-    "text": "Who is this impostor?.. Oh, it's you. Well, we did a little dark magic while you were away — adopting AI!"
+    "bytes": 461338,
+    "text": "Who is this impostor?.. Oh, it's you. Well, we did a little dark magic while you were away — adopting AI! Let's see how many seconds your hand-written code lasts."
   },
   "vo_boss_mock_0": {
     "character": "robot",

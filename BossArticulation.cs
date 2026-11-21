@@ -194,12 +194,13 @@ internal static unsafe partial class VisualEngine3D
 
             case ElevatorBossState.IntroSpeech:
             {
-                // Phase A (introProgress < 0.46): predatory ducked stalk under 2.30m elevator lintel so head & visor stay 100% clear!
-                // Phase B (introProgress 0.46 -> 0.64): dramatic uncoil onto burgundy carpet to towering 2.95m height showcasing TOKEN-GUN 98!
+                // Phase A (introProgress <= 0.44): predatory ducked stalk under 2.30m elevator lintel so head & visor stay 100% clear,
+                // with a charismatic curious helmet tilt (+0.18 rad during 0.20..0.44) as he recognizes the player!
+                // Phase B (introProgress 0.44 -> 0.58): dramatic uncoil onto burgundy carpet to towering 2.95m height showcasing TOKEN-GUN 98!
                 float elapsed = Math.Clamp(SkyscraperFloor1World.IntroSeconds - b.StateTimer, 0f, SkyscraperFloor1World.IntroSeconds);
                 float introProgress = elapsed / SkyscraperFloor1World.IntroSeconds;
                 float walk = SmoothStep((elapsed - 0.28f) / (SkyscraperFloor1World.IntroSeconds - 0.28f));
-                float uncoil = SmoothStep((introProgress - 0.46f) / 0.18f);
+                float uncoil = SmoothStep((introProgress - 0.44f) / 0.14f);
                 float cyc = walk * MathF.PI * 3.5f + 0.55f;
                 float sinS = MathF.Sin(cyc);
                 float cosS = MathF.Cos(cyc);
@@ -236,7 +237,7 @@ internal static unsafe partial class VisualEngine3D
                 p.ElbowLPitch = LerpF(-0.82f, -0.78f, uncoil) - 0.10f * MathF.Max(0f, -sinS);
                 p.ElbowLYaw   = -0.20f;
 
-                // Right forearm TOKEN-GUN 98 angled 3/4 across/forward so twin brass HF-90 cassette reels & 3 coils catch camera cleanly!
+                // Right forearm TOKEN-GUN 98 angled 3/4 broadside so twin brass HF-90 cassette reels & 3 coils catch camera cleanly!
                 float speechWave = MathF.Sin(elapsed * 4.0f);
                 p.ArmRPitch   = LerpF(-0.74f, -0.82f, uncoil) + 0.035f * speechWave;
                 p.ArmRYaw     = LerpF(+0.26f, +0.38f, uncoil);
@@ -248,7 +249,8 @@ internal static unsafe partial class VisualEngine3D
                 p.HeadYaw     = hy;
                 // Keep crimson visor staring straight out under the doorway during crouch, then tracking player smoothly on uncoil!
                 p.HeadPitch   = LerpF(Math.Clamp(-p.TorsoPitch + 0.12f, -0.62f, 0.10f), hp, uncoil);
-                p.HeadRoll    = 0.045f * (1f - uncoil) - 0.022f * sinS;
+                float curiousTilt = SmoothStep((introProgress - 0.20f) / 0.10f) * (1f - uncoil);
+                p.HeadRoll    = 0.18f * curiousTilt - 0.022f * sinS * uncoil;
                 p.PelvisY     = ComputeBossGroundedPelvisY(p, allowKneeRest: false);
                 break;
             }
