@@ -220,6 +220,9 @@ public static partial class Program
             TriggerFlipOffEmote();
             _weapons.UpdateWeapons(0.28f, BuildPlayerCamera());
             capture("65_flipoff_emote_v.png");
+            StyleComboSystem.TriggerVisualDemo();
+            capture("66_style_combo_multiplier.png");
+            StyleComboSystem.Reset();
         }
         ResetNewGameFloor(greet:false);
     }

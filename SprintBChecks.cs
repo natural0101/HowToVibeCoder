@@ -83,7 +83,9 @@ public static partial class Program
         ResetClassicFixture();
         _playerCash=175; Key(KeyboardKey.U); Key(KeyboardKey.Two);
         Key(KeyboardKey.Up);
-        Check(floorRow==(int)Sidegrade.CarryHarness,"up wraps to last card in column");
+        Check(floorRow==(int)Sidegrade.NetPro90s,"up wraps to last card in column");
+        Key(KeyboardKey.Up);
+        Check(floorRow==(int)Sidegrade.CarryHarness,"carry harness reachable");
         Key(KeyboardKey.Enter);
         Check(_playerCash==0 && Floor.Has(Sidegrade.CarryHarness),"harness costs $175");
         Key(KeyboardKey.Escape);
@@ -114,10 +116,10 @@ public static partial class Program
         Click(ArsenalTab(0)); Check(!sidegrades,"mouse opens weapons");
         Key(KeyboardKey.Escape); ResetClassicFixture();
         _playerCash=5000; Key(KeyboardKey.U); Key(KeyboardKey.Two);
-        Check(sidegrades && FloorSystems.GearList.Length==11 && FloorRowRect(10).Y+FloorRowRect(10).Height==610,"all eleven cards fit");
+        Check(sidegrades && FloorSystems.GearList.Length==13 && FloorRowRect(12).Y+FloorRowRect(12).Height<=610,"all thirteen cards fit");
         for(int i=0;i<FloorSystems.GearList.Length;i++)
         {
-            Check(floorRow==i && FloorRowRect(i).Equals(new Rectangle(788+202*(i%2),150+78*(i/2),190,70)),"visible upgrade "+i);
+            Check(floorRow==i && FloorRowRect(i).Equals(new Rectangle(788+202*(i%2),148+66*(i/2),190,60)),"visible upgrade "+i);
             wallet=_playerCash;
             int cost=Floor.Price(FloorSystems.GearList[i]);
             Key(KeyboardKey.Enter);

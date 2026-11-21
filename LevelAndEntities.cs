@@ -80,6 +80,8 @@ public sealed class VibeCoderEntity
     public Color GlassesColor;
     public string SpeechBubble = "";
     public float SpeechTimer;
+    public float FlippedOffTimer, ElectroShockedTimer;
+    public float CaptureMultiplier = 1f;
     public int SpawnSide; // -1 = West door, +1 = East door
 
     public float Composure, Ego, Fear, Greed, Deadline, Ignition;
@@ -1468,6 +1470,10 @@ public sealed partial class SkyscraperFloor1World
 
             if (c.SpeechTimer > 0f)
                 c.SpeechTimer = MathF.Max(0f, c.SpeechTimer - dt);
+            if (c.FlippedOffTimer > 0f)
+                c.FlippedOffTimer = MathF.Max(0f, c.FlippedOffTimer - dt);
+            if (c.ElectroShockedTimer > 0f)
+                c.ElectroShockedTimer = MathF.Max(0f, c.ElectroShockedTimer - dt);
 
             if (c.KnockbackVel.LengthSquared() > .004f)
             {
@@ -2327,6 +2333,15 @@ public sealed partial class SkyscraperFloor1World
             if((target.FloorHunter || target.EscapingToDoor || target.Stress>=70) && TryDodge(target,tool,origin)) { feedback=target.SpeechBubble; weaponSystem.TriggerWeaponAttack(camera); return; }
             bool ambush=target.State==CoderAIState.LuredAtBait && QuietAt(origin) && target.Stress<55;
             if(ambush && tool==WeaponType.CaptureNet) dmg=(int)MathF.Ceiling(target.Hp);
+            else if(tool==WeaponType.CaptureNet && !target.TimidIntern)
+                dmg = Systems.Has(Sidegrade.NetPro90s) ? 38 : Systems.Has(Sidegrade.NetReinforced) ? 24 : 12;
+            bool wasSubduedBefore = target.State == CoderAIState.Subdued;
+            bool wasBaitAmbush = target.State is CoderAIState.SittingAtMacBook or CoderAIState.LuredAtBait;
+            Vector3 coderFwd = new(MathF.Sin(target.FacingYaw), 0f, MathF.Cos(target.FacingYaw));
+            Vector3 toAttacker = new(origin.X - target.Position.X, 0f, origin.Z - target.Position.Z);
+            bool wasBackstab = !target.Aggro && toAttacker.LengthSquared() > 0.01f && Vector3.Dot(coderFwd, Vector3.Normalize(toAttacker)) < -0.25f;
+            bool wasElectro = target.ElectroShockedTimer > 0f || Systems.Puddles.Exists(p => p.Electric > 0 && Vector3.DistanceSquared(target.Position, p.Position) <= 3.3f * 3.3f);
+
             isCrit=ambush || target.State==CoderAIState.SittingAtMacBook;
             if(target.IsCombatCoder)
             {
@@ -2371,7 +2386,40 @@ public sealed partial class SkyscraperFloor1World
                                 other.Pressure(28*power,0,34*fearPower);
                     }
                 }
-                else if(captureTool) { target.HitStaggerTimer=.15f; }
+                else if(captureTool)
+                {
+                    target.HitStaggerTimer=.15f;
+                    if(tool==WeaponType.CaptureNet && !target.TimidIntern && target.State!=CoderAIState.Subdued)
+                    {
+                        if(Systems.Has(Sidegrade.NetPro90s))
+                        {
+                            target.Pressure(48*power, 36*power, 48*fearPower);
+                            target.StunTimer = 2.0f;
+                            if(target.State==CoderAIState.Subdued)
+                                StyleComboSystem.RegisterTrick("САЧОК-ПРО!", "PRO NET!", 0.35f, 32f, new Color(245, 202, 98, 255), hitstop: true, shake: 0.020f);
+                        }
+                        else if(Systems.Has(Sidegrade.NetReinforced))
+                        {
+                            target.Pressure(30*power, 18*power, 30*fearPower);
+                            target.StunTimer = 1.4f;
+                        }
+                        else if(target.Hp > 0)
+                        {
+                            // Weak un-upgraded starter net: non-tutorial vibe coders laugh, taunt you, and dash away!
+                            string[] mocks =
+                            [
+                                "ХА-ХА! С САЧКОМ ПРОТИВ ПРОДА?!",
+                                "С ТАКИМ САЧКОМ ТОЛЬКО БАБОЧЕК ЛОВИТЬ!",
+                                "ЛОЛ, ПРОКАЧАЙ САЧОК У ВЕРОНИКИ!",
+                                "ЩЕКОТНО! ПОЙМАЙ ЕСЛИ СМОЖЕШЬ!"
+                            ];
+                            target.SpeechBubble = mocks[_rng.Next(mocks.Length)];
+                            target.SpeechTimer = 3.0f;
+                            target.Burst = 1.6f;
+                            Panic(target);
+                        }
+                    }
+                }
                 else if(salt) { target.Pressure(38*power,34*power,48*fearPower); target.StunTimer=1.8f; }
                 else
                 {
@@ -2380,6 +2428,9 @@ public sealed partial class SkyscraperFloor1World
                     target.Pressure(14*power,32*power*tape,22*fearPower); target.StunTimer=1.5f*tape;
                 }
                 bool burnedOut=target.Hp<=0 && !target.KnockedOutAlive;
+                bool newlySubdued = !wasSubduedBefore && target.State == CoderAIState.Subdued;
+                if (disarm || newlySubdued || burnedOut)
+                    StyleComboSystem.EvaluateTakedown(target, tool, Program.PlayerAirborne, Program.PlayerDashing, Systems.Coffee > 0f, wasBackstab, wasBaitAmbush, disarm, wasElectro, newlySubdued || burnedOut);
                 if(burnedOut) KillCoder(target,onGrantMoney);
                 feedback=burnedOut ? "Кандидат выбыл от ожогов. СБ +14" : target.State==CoderAIState.Subdued ? "Кандидат сломлен. Подпиши NDA [E]" :
                     disarm ? "Ноутбук выбит. Эго -40" : $"Выдержка {target.Composure:F0}   Эго {target.Ego:F0}";
@@ -2395,7 +2446,12 @@ public sealed partial class SkyscraperFloor1World
                 if(negotiator && !target.IsMiniBoss) dmg=Math.Max(dmg,(int)MathF.Ceiling(target.Hp));
                 target.Hp=Math.Max(0,target.Hp-dmg);
                 Impact(hitPt,target.CombatCenter,dmg,isCrit);
-                if(target.Hp<=0) { KillCoder(target,onGrantMoney); feedback="Кандидат выбыл. СБ +14"; }
+                if(target.Hp<=0)
+                {
+                    StyleComboSystem.EvaluateTakedown(target, tool, Program.PlayerAirborne, Program.PlayerDashing, Systems.Coffee > 0f, wasBackstab, wasBaitAmbush, false, wasElectro, true);
+                    KillCoder(target,onGrantMoney);
+                    feedback="Кандидат выбыл. СБ +14";
+                }
             }
             if(target.Hp>0 && target.State!=CoderAIState.Subdued) { target.Stress=100; Spook(target); }
             if(!target.EscapingToDoor && !target.FloorHunter && target.Hp>0 && !target.CanSignNda && (target.TimidIntern || !target.IsCombatCoder && !target.IsMiniBoss)) Panic(target);
@@ -2539,7 +2595,7 @@ public sealed partial class SkyscraperFloor1World
         Systems.Deliver(c.Archetype,false,c.TarotPayoutValue);
 
         LastTarotCardDrawn=FloorSystems.VibeCheck(c.Archetype);
-        int payout = c.TarotPayoutValue;
+        int payout = StyleComboSystem.ComputeMultipliedPayout(c.TarotPayoutValue, c.CaptureMultiplier, out _);
         LastTarotVerdictText = $"{LastTarotCardDrawn}   {c.Name}   +${payout}";
         TarotVerdictTimer = 6.5f;
 
@@ -4280,6 +4336,7 @@ public sealed partial class SkyscraperFloor1World
             // The first shock does psychological damage. Remaining contact holds the stun.
             if(c.StunTimer<.2f) c.Pressure(42,18,46*Systems.FearMultiplier);
             c.StunTimer=1.8f;
+            c.ElectroShockedTimer=4.5f;
             c.Windup=0;
         }
     }
@@ -4301,6 +4358,7 @@ public sealed partial class SkyscraperFloor1World
             p.Damage*=2; p.Deflected=true; p.WireColor=p.PrimaryColor=Color.Gold; p.Life=3;
             EnemyProjectiles[i]=p;
             Systems.Style(StyleAction.Parry);
+            StyleComboSystem.RegisterTrick("ПАРИРОВАНИЕ!", "BELT PARRY!", 0.45f, 34f, new Color(245, 202, 98, 255), hitstop: true, shake: 0.020f);
             feedback="ОТБИЛ БАГ РЕМНЁМ!";
             weapon.TriggerWeaponAttack(cam,p.Position,true,0,true,customHitLabel:feedback);
             weapon.SpawnBurstSparks(p.Position,direction,24,Color.Gold,Color.Yellow,2,6,false);
@@ -4356,9 +4414,10 @@ public sealed partial class SkyscraperFloor1World
     private void KillCoder(VibeCoderEntity c,Action<int,string>? pay)
     {
         c.State=CoderAIState.Subdued; c.KnockedOutAlive=false; c.Hp=0; c.KnockoutTime=0; c.SpeechTimer=0;
-        int cash=c.IsCombatCoder ? 35 : Math.Max(35,c.TarotPayoutValue/3);
+        int baseCash=c.IsCombatCoder ? 35 : Math.Max(35,c.TarotPayoutValue/3);
+        int cash = StyleComboSystem.ComputeMultipliedPayout(baseCash, c.CaptureMultiplier, out _);
         Systems.Risk(security:14); Systems.Earned+=cash;
-        SpawnCashBurst(c.CombatCenter,8,$"+${cash}"); pay?.Invoke(cash,"Кандидат");
+        SpawnCashBurst(c.CombatCenter, cash > baseCash ? 14 : 8, $"+${cash}"); pay?.Invoke(cash,"Кандидат");
         AudioMusicSystem.PlaySubduedDrop();
         LootElevatorKey(c);
     }

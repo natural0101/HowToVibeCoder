@@ -28,6 +28,8 @@ public static partial class Program
     private static float _pitchSpring, _yawSpring;
     private static Vector3 _dashDirection;
     private static bool _isGrounded = true, _sprinting, _toggleCrouch, _exhausted;
+    internal static bool PlayerAirborne => !_isGrounded;
+    internal static bool PlayerDashing => _dashTime > 0f;
     private static Vector2 _playerHitDir;
     private static float PlayerHitWeight => MathF.Pow(Math.Clamp(_playerHitAnimTimer/.22f,0,1),1.6f);
     private static void TickHitReaction(float dt)
@@ -530,6 +532,7 @@ public static partial class Program
         _energy = 100;
         _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _pitchSpring = _yawSpring = 0;
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _playerHitAnimTimer = 0;
+        StyleComboSystem.Reset();
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _weapons.HitJolt=0;
         _sprinting=_toggleCrouch=_exhausted=false;
         LookAtTarget(_world.HrTarotBoothPos+new Vector3(-.45f,1.26f,0));
@@ -686,6 +689,10 @@ public static partial class Program
         {
             Raylib.DisableCursor();
         }
+        StyleComboSystem.Update(dt);
+        float styleShake = StyleComboSystem.ConsumeShake();
+        if (styleShake > _shake) _shake = styleShake;
+        if (MainMenuAndPauseUI.InteractiveDisplay && StyleComboSystem.ConsumeHitstop(dt)) return;
         _world.UpdateLooseClutter(dt);
         _world.UpdateIntercom(dt);
 
@@ -842,6 +849,7 @@ public static partial class Program
             ];
             bestCoder.SpeechBubble = comebacks[_flipOffLineIdx++ % comebacks.Length];
             bestCoder.SpeechTimer = 3.2f;
+            bestCoder.FlippedOffTimer = 5.5f;
             bestCoder.FacingYaw = MathF.Atan2(cam.Position.X - bestCoder.Position.X, cam.Position.Z - bestCoder.Position.Z);
         }
     }

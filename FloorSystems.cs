@@ -9,7 +9,7 @@ namespace HowToVibeCoder;
 internal enum FloorPanel { None, Contracts, Upgrades, Debrief, Audit, BossFinale }
 internal enum OnboardingStep { TalkToVeronika, CatchFrogs, DepositFrogs, BuyNet, ActivateBait, StunAndHeal, HealAtCoffee, CaptureFirstCoder, SeatFirstGalley, Done }
 internal enum Incident { Printer, Coffee, Bugs, Audit, Ddos, Burnout, Raid, Fire }
-internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2, CarryHarness }
+internal enum Sidegrade { Salt, Negotiator, Tape, Drum, DirectorBelt, Pager, RosinNapalm, CarbonNda, AuthoritySignet, PortableCo2, CarryHarness, NetReinforced, NetPro90s }
 internal enum StyleAction { Belt, Iron, Uzi, Shotgun, Beam, Parry, Water, Capture }
 internal record Job(string Title, string Objective, int Seconds, int Base);
 internal record Gear(string Title, string Detail, int Price, bool FixedPrice=false);
@@ -42,7 +42,9 @@ internal sealed partial class FloorSystems
         new("NDA на копирке","Отлов и подготовка NDA вдвое быстрее. За подпись +6 СБ.",150),
         new("Печатка Авторитета","Авторитет и страх +30%. Цены +15%, кроме паяльника и пропуска.",210),
         new("Карманный CO2-баллон","[Q] Облако дыма и −15 ПРОД. Перезарядка 25 с.",190),
-        new("Плечевой ремень","Быстрее несёшь кадра, можешь бежать и стрелять",175)
+        new("Плечевой ремень","Быстрее несёшь кадра, можешь бежать и стрелять",175),
+        new("Армированный сачок","Титановый обод: ×2 урон и оглушение — вайбкодеры перестают ржать и убегать.",45),
+        new("Сетевой уловитель PRO","Утяжелённый захват 90-х: ×3 урон сачком, нокдаун и бонус +×0.35 к кассе.",115)
     ];
 
     internal static readonly WeaponType[] WeaponOrder = [WeaponType.CaptureNet,
@@ -691,8 +693,8 @@ public static partial class Program
                 _ => new(622, 410, 344, 224),
             };
         }
-        int y=sidegrades ? 150 : 152, height=sidegrades ? 70 : 144;
-        return new(788+202*(i%2),y+(i/2)*(height+(sidegrades ? 8 : 12)),190,height);
+        int y=sidegrades ? 148 : 152, height=sidegrades ? 60 : 144;
+        return new(788+202*(i%2),y+(i/2)*(height+(sidegrades ? 6 : 12)),190,height);
     }
 
     private static bool HandleFloorPanel()
@@ -850,6 +852,7 @@ public static partial class Program
             Right(_uiFont,$"Опенспейс {staff}/4    ${_world.GalleyDesks.Sum(d=>_world.DeskRate(d,lead))+(Floor.Verdict==AgentVerdict.Contained ? 14 : 0):F0}/с",22,16,paper);
         }
         DrawBossTelemetry();
+        StyleComboSystem.DrawHud(UiViewport.Width, UiViewport.Height);
         if(Floor.DiscoveryTime<=0) return;
         var species=VibeCoderCollection.All.FirstOrDefault(s=>s.Id==Floor.DiscoveryId);
         if(species==null) return;
@@ -912,7 +915,7 @@ public static partial class Program
 
     private static readonly string[] UpgradeModels=["weapon_shotgun_90s","weapon_shotgun_90s","weapon_solder_90s",
         "weapon_uzi_90s","weapon_belt_90s","pager","weapon_solder_90s","prop_xerox_printer",
-        "signet","prop_extinguisher","weapon_belt_90s"];
+        "signet","prop_extinguisher","weapon_belt_90s","weapon_net_90s","weapon_net_90s"];
 
     private static void DrawFloorPanel()
     {

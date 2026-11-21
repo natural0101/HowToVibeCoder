@@ -1224,7 +1224,7 @@ internal static unsafe partial class VisualEngine3D
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
                     or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
                     or Finish.BlackMarble or Finish.Bronze or Finish.LiftGlass or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
-        Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(16,25,30,255))
+        Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(22,16,13,255))
                                  : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
         if(f!=Finish.Lift)
@@ -1239,19 +1239,79 @@ internal static unsafe partial class VisualEngine3D
         }
         if(f==Finish.Lift)
         {
-            Color brass=new(235,195,128,255), ivory=new(253,242,215,255);
-            void Letter(string value,int x,int y,int height,Color color)
+            const int W = 1792, H = 384;
+            // Warm matte obsidian-espresso enamel with subtle brushed horizontal metallic sheen & recessed bevel vignette
+            for (int y = 0; y < H; y++)
             {
-                Font native = GameFonts.Get(Typeface.InterfaceBold, Math.Max(1, height / 2));
-                Raylib.ImageDrawTextEx(ref img,native,Loc.Tr(value),new(x,y),native.BaseSize,0,color);
+                float ny = (y - H * 0.5f) / (H * 0.5f);
+                float sheen = 1.0f - 0.34f * ny * ny;
+                for (int x = 0; x < W; x++)
+                {
+                    float nx = (x - W * 0.5f) / (W * 0.5f);
+                    float vig = Math.Clamp(sheen * (1.0f - 0.18f * nx * nx), 0.45f, 1.08f);
+                    int grain = (int)((Hash(x / 3, y) - 128) * 0.035f);
+                    byte r = (byte)Math.Clamp(26 * vig + grain, 10, 48);
+                    byte g = (byte)Math.Clamp(20 * vig + grain, 8, 38);
+                    byte b = (byte)Math.Clamp(16 * vig + grain, 6, 30);
+                    pixels[y * W + x] = new Color(r, g, b, (byte)255);
+                }
             }
-            Letter("ЭТАЖ",92,32,76,brass);
-            Letter("01",78,104,236,ivory);
-            Raylib.ImageDrawRectangle(ref img,496,48,6,288,brass);
-            Letter("CLOUD ENTROPIC",548,46,128,ivory);
-            Letter("T O W E R",552,204,112,brass);
-            Raylib.ImageDrawTriangle(ref img,new(372,155),new(410,102),new(448,155),new Color(111,234,218,255));
-            Raylib.ImageDrawTriangle(ref img,new(372,211),new(448,211),new(410,264),brass);
+            Color bronzeDk = new(96, 68, 36, 255);
+            Color bronze   = new(168, 126, 66, 255);
+            Color brass    = new(226, 184, 110, 255);
+            Color ivory    = new(248, 232, 196, 255);
+            Color enamelIn = new(14, 10, 8, 255);
+
+            void RectBorder(int x, int y, int w, int h, int t, Color c)
+            {
+                Raylib.ImageDrawRectangle(ref img, x, y, w, t, c);
+                Raylib.ImageDrawRectangle(ref img, x, y + h - t, w, t, c);
+                Raylib.ImageDrawRectangle(ref img, x, y, t, h, c);
+                Raylib.ImageDrawRectangle(ref img, x + w - t, y, t, h, c);
+            }
+            // Stepped cast-bronze & champagne-brass Art-Deco perimeter molding
+            RectBorder(0, 0, W, H, 12, bronzeDk);
+            RectBorder(12, 12, W - 24, H - 24, 6, bronze);
+            RectBorder(22, 22, W - 44, H - 44, 3, brass);
+            // Stepped Art-Deco geometric corner brackets & recessed brass rivets
+            foreach (int cx in new[] { 38, W - 38 })
+            foreach (int cy in new[] { 38, H - 38 })
+            {
+                Raylib.ImageDrawRectangle(ref img, cx - 18, cy - 18, 36, 36, enamelIn);
+                RectBorder(cx - 18, cy - 18, 36, 36, 3, brass);
+                Raylib.ImageDrawCircle(ref img, cx, cy, 8, bronzeDk);
+                Raylib.ImageDrawCircle(ref img, cx - 1, cy - 1, 6, brass);
+            }
+
+            // Left floor badge recess with double brass frame
+            Raylib.ImageDrawRectangle(ref img, 84, 48, 304, 288, enamelIn);
+            RectBorder(84, 48, 304, 288, 4, bronze);
+            RectBorder(94, 58, 284, 268, 2, brass);
+
+            void DrawCentered(string text, Typeface tf, int pxSize, int cx, int y, Color col, float spacing = 2f)
+            {
+                Font fnt = GameFonts.Get(tf, pxSize);
+                float tw = Raylib.MeasureTextEx(fnt, text, pxSize, spacing).X;
+                Raylib.ImageDrawTextEx(ref img, fnt, text, new(cx - tw * 0.5f, y), pxSize, spacing, col);
+            }
+
+            DrawCentered(Loc.T("ЭТАЖ", "FLOOR"), Typeface.InterfaceBold, 66, 236, 62, brass, 5f);
+            DrawCentered("01", Typeface.SerifBold, 198, 236, 126, ivory, 2f);
+
+            // Ornamental Art-Deco vertical brass flute divider with center diamond
+            Raylib.ImageDrawRectangle(ref img, 444, 54, 4, 276, bronze);
+            Raylib.ImageDrawRectangle(ref img, 454, 72, 2, 240, brass);
+            for (int d = -18; d <= 18; d++)
+            {
+                int hw = 18 - Math.Abs(d);
+                Raylib.ImageDrawRectangle(ref img, 446 - hw, 192 + d, hw * 2, 1, brass);
+            }
+
+            // Engraved monumental tower title & bold readable floor directory subtitle (right bay center = 1106)
+            DrawCentered(Loc.T("ЭНТРОПИК", "ENTROPIC"), Typeface.SerifBold, 158, 1106, 54, ivory, 10f);
+            Raylib.ImageDrawRectangle(ref img, 540, 260, 110, 4, bronze);
+            Raylib.ImageDrawRectangle(ref img, 1562, 260, 110, 4, bronze);
+            DrawCentered(Loc.T("БАШНЯ · ЛОББИ", "TOWER · LOBBY"), Typeface.InterfaceBold, 82, 1106, 218, brass, 5f);
         }
         if(f==Finish.Tarot) Inscription("A R C A N A",48,436,new Color(244,209,146,255));
         if(f is Finish.JiraSheet or Finish.NdaSheet or Finish.PitchDeck)
