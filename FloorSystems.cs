@@ -832,7 +832,7 @@ public static partial class Program
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)
         {
-            ShadowText(_uiFont,notice,28,guiding || repairObjective ? 102 : 78,15,amber);
+            ShadowText(_uiFont,notice,28,Floor.WingsUnlocked ? 102 : 70,15,amber);
         }
         void Right(Font font,string value,int y,int size,Color ink) =>
             ShadowText(font,value,right-GameFonts.Measure(font,value,size).X,y,size,ink);

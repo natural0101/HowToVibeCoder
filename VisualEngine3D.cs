@@ -157,7 +157,7 @@ internal static unsafe partial class VisualEngine3D
         uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
         uniform float power, clock, flashStrength, cabinPower;
-        uniform vec2 pendants[11];
+        uniform vec2 pendants[19];
         uniform float rackLoad;
         uniform vec3 muzzle;
         uniform int firstPerson;
@@ -285,9 +285,11 @@ internal static unsafe partial class VisualEngine3D
             }
             vec4 ink=colDiffuse*tint;
             if(hitFlash>.001) {
-                vec3 flash=mix(vec3(.98,.075,.13),vec3(1.5,1.32,1.08),smoothstep(.36,.90,hitFlash));
-                tex.rgb=mix(tex.rgb,flash,hitFlash);
-                ink.rgb=mix(ink.rgb,vec3(1.),hitFlash);
+                float rimHit=pow(1.-max(0.,dot(n,v)),2.1);
+                vec3 flash=mix(vec3(.96,.18,.14),vec3(1.18,.88,.76),smoothstep(.45,.95,hitFlash));
+                float amt=clamp(hitFlash*(.12+.42*rimHit),0.,.46);
+                tex.rgb=mix(tex.rgb,flash,amt);
+                ink.rgb=mix(ink.rgb,vec3(1.),amt*.5);
             }
             vec3 base=tex.rgb*ink.rgb;
             bool leather=finish==6 || (finish==17 && colSpecular.a>.49 && colSpecular.a<.51);
@@ -489,7 +491,7 @@ internal static unsafe partial class VisualEngine3D
             light+=vec3(1.48,1.02,.64)*max(0.,dot(n,key))*shadow;
             if(firstPerson==0 && pos.y<9.) {
                 float pool=0.;
-                for(int i=0;i<11;i++) {
+                for(int i=0;i<19;i++) {
                     vec2 offset=pos.xz-pendants[i];
                     pool=max(pool,1.-smoothstep(.18,1.,dot(offset,offset*vec2(.075,.13))));
                 }

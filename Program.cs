@@ -2555,7 +2555,7 @@ public static partial class Program
         ResetClassicFixture();
         CheckOfficeRoutes();
         var clutter=_world.LooseClutter;
-        if(clutter.Count is <24 or >32) throw new InvalidDataException("Office clutter count");
+        if(clutter.Count is <24 or >64) throw new InvalidDataException("Office clutter count");
         _playerPos=new(-11.2f,1.72f,3.45f);
         var start=clutter.Select(c=>c.Feet).ToArray();
         MovePlayer(1f/60,-Vector3.UnitZ,-Vector3.UnitZ,false,true,false);

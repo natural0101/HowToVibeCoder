@@ -328,8 +328,15 @@ public sealed partial class SkyscraperFloor1World
     public readonly List<OfficeProp3D> OfficeProps = new(110);
     internal static readonly Vector2[] PendantLocations = [
         new(0,12.9f),new(3.6f,10.2f),new(-3.9f,9.7f),new(4,13),new(8.9f,13.4f),
-        new(-7.6f,3.7f),new(8.75f,12),new(-14.5f,5.5f),new(-20.7f,-8.5f),new(14.8f,3.5f),new(22,-10.5f)];
+        new(-7.6f,3.7f),new(8.75f,12),new(-14.5f,5.5f),new(-20.7f,-8.5f),new(14.8f,3.5f),new(22,-10.5f),
+        // Warm pendant pools illuminating West & East openspace team pods & scrum nooks!
+        new(-14.5f,12.0f),new(-20.7f,12.0f),new(-17.6f,8.7f),new(-26.9f,5.5f),
+        new(-14.5f,-1.5f),new(-26.9f,-8.5f),new(14.8f,10.5f),new(18.4f,-6.8f)];
     private static readonly Vector3 LoungeTable = new(-3.9f,0,9.7f), BreakTable = new(4,0,13);
+    private static readonly Vector3[] OpenspaceScrumTables = [
+        new(-17.6f,0,8.7f), new(-23.8f,0,1.8f), new(-17.6f,0,-5.0f),
+        new(18.4f,0,7.0f),  new(18.4f,0,-7.0f)
+    ];
     private static readonly Vector3 ArenaTable=new(3.1f,0,-12.3f);
     private Vector3 CartPosition => RackPos+new Vector3(1.13f,0,-.66f);
     private static readonly Vector3[] SideRacks=[new(13.5f,0,-12.4f),new(-22.5f,0,-12.5f)];
@@ -402,8 +409,10 @@ public sealed partial class SkyscraperFloor1World
         chargedSpills.Clear();
         var rng=new Random(812);
         Vector2[] clusters=[new(-11.25f,2.76f),new(11.3f,2.78f),new(4.0f,11.82f),
-            new(-5.03f,9.72f),new(-14.35f,6.85f),new(7.1f,12.05f),new(6.03f,3.07f)];
-        for(int i=0;i<30;i++)
+            new(-5.03f,9.72f),new(-14.35f,6.85f),new(7.1f,12.05f),new(6.03f,3.07f),
+            new(-17.6f,9.1f),new(-21.2f,11.4f),new(-15.2f,-1.2f),new(-23.6f,2.2f),
+            new(18.2f,6.8f),new(15.2f,10.2f),new(18.5f,-6.5f)];
+        for(int i=0;i<56;i++)
         {
             int group=i%clusters.Length;
             Vector2 xy=clusters[group]+new Vector2(rng.NextSingle()-.5f,rng.NextSingle()-.5f)*.91f;
@@ -670,7 +679,7 @@ public sealed partial class SkyscraperFloor1World
         OfficeProps.Add(new() {Kind=OfficePropKind.RollingWhiteboard,Position=new(4.55f,0,15.3f),RotationYaw=171,Size=new(1.9f,1.8f,.55f),HasCollision=true});
         PlaceDispenser(0); // Preserve station indices used by saved drink counts and cooldowns.
         OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=new(4.97f,0,13.28f),Size=new(.4f,.5f,.4f)});
-        // 1. LEFT FORK (WEST OPEN-SPACE CUBICLES, DESKS, CHAIRS, XEROX, WHITEBOARDS & WATER COOLERS)
+        // 1. LEFT FORK (WEST LIVING OPENSPACE: ASYMMETRIC TEAM PODS, SCRUM NOOKS, GREENERY & CLUTTER)
         float[] westRowsZ = { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f };
         for (int r = 0; r < westRowsZ.Length; r++)
         {
@@ -678,10 +687,10 @@ public sealed partial class SkyscraperFloor1World
             for (int c = 0; c < 3; c++)
             {
                 if(r<2 && c<2) continue; // These four workstations are the playable Galley desks.
-                float cx = -14.5f - c * 6.2f;
+                // Organic stagger on deeper rows breaks the stamped factory-grid silhouette!
+                float staggerX = (r >= 2) ? (((r * 3 + c) % 3) - 1) * 0.55f : 0f;
+                float cx = -14.5f - c * 6.2f + staggerX;
 
-
-                // Office Desk with Dual Monitors & Desk Lamp
                 OfficeProps.Add(new OfficeProp3D
                 {
                     Kind = OfficePropKind.DualMonitorDesk,
@@ -692,14 +701,13 @@ public sealed partial class SkyscraperFloor1World
                     HasCollision = true
                 });
 
-
-                // Trash Bin next to every second desk
+                // Trash bin tucked organically on alternating sides
                 if ((r + c) % 2 == 0)
                 {
                     OfficeProps.Add(new OfficeProp3D
                     {
                         Kind = OfficePropKind.TrashBin,
-                        Position = new Vector3(cx + 1.28f, 0f, rz + 0.25f),
+                        Position = new Vector3(cx + ((r % 2 == 0) ? 1.28f : -1.28f), 0f, rz + 0.25f),
                         Size = new Vector3(0.34f, 0.44f, 0.34f),
                         PrimaryColor = new Color(52, 58, 70, 255),
                         AccentColor = new Color(240, 240, 248, 255),
@@ -709,15 +717,60 @@ public sealed partial class SkyscraperFloor1World
             }
         }
 
-        // 2. RIGHT FORK (EAST SERVER & ARCHIVE WING: DESK CLUSTERS, FILING CABINETS, XEROX PHOTOCOPIERS, WHITEBOARDS)
+        // Lived-in West & East Openspace corner ficuses, angled scrum boards & filing pedestals
+        // framing the Galley & team pods so no giant barren warehouse gaps remain!
+        foreach (var (px, pz) in new (float, float)[] {
+            (-11.8f, 15.6f), (-17.5f, 15.5f), (-23.8f, 14.8f), (-11.8f, 4.4f),
+            (-23.8f, 5.2f), (-17.8f, -1.8f), (-23.6f, -8.8f), (-11.9f, -14.2f),
+            (11.9f, 14.4f), (18.4f, 13.8f), (11.9f, 4.2f), (18.6f, -0.4f), (12.2f, -14.4f)
+        })
+        {
+            OfficeProps.Add(new OfficeProp3D
+            {
+                Kind = OfficePropKind.PottedFicus,
+                Position = new Vector3(px, 0f, pz),
+                Size = new Vector3(0.75f, 1.90f, 0.75f),
+                HasCollision = false
+            });
+        }
+        foreach (var (wx, wz, wyaw) in new (float, float, float)[] {
+            (-18.2f, 15.2f, 22f), (-24.6f, 8.8f, -34f), (-17.8f, -12.4f, 148f),
+            (18.6f, 14.2f, -24f), (25.2f, 0.2f, 36f)
+        })
+        {
+            OfficeProps.Add(new OfficeProp3D
+            {
+                Kind = OfficePropKind.RollingWhiteboard,
+                Position = new Vector3(wx, 0f, wz),
+                RotationYaw = wyaw,
+                Size = new Vector3(1.9f, 1.85f, 0.35f),
+                HasCollision = true
+            });
+        }
+        foreach (var (fx, fz, fyaw) in new (float, float, float)[] {
+            (-11.6f, 14.1f, 90f), (-23.6f, 11.8f, 180f), (-11.7f, -4.4f, 90f),
+            (11.8f, 12.6f, -90f), (25.2f, 7.2f, -90f)
+        })
+        {
+            OfficeProps.Add(new OfficeProp3D
+            {
+                Kind = OfficePropKind.FilingCabinet,
+                Position = new Vector3(fx, 0f, fz),
+                RotationYaw = fyaw,
+                Size = new Vector3(0.85f, 0.92f, 0.95f),
+                HasCollision = true
+            });
+        }
+
+        // 2. RIGHT FORK (EAST SERVER & ARCHIVE WING: STAGGERED TEAM PODS, ARCHIVES & LOUNGES)
         float[] eastRowsZ = { 10.5f, 3.5f, -3.5f, -10.5f, -17.5f, -24.5f };
         for (int r = 0; r < eastRowsZ.Length; r++)
         {
             float rz = eastRowsZ[r];
             for (int c = 0; c < 2; c++)
             {
-                float cx = 14.8f + c * 7.2f;
-
+                float staggerX = ((r + c) % 2 == 0) ? 0.45f : -0.40f;
+                float cx = 14.8f + c * 7.2f + staggerX;
 
                 OfficeProps.Add(new OfficeProp3D
                 {
@@ -728,7 +781,6 @@ public sealed partial class SkyscraperFloor1World
                     AccentColor = new Color(255, 185, 55, 255),
                     HasCollision = true
                 });
-
             }
 
             // Tall Metal Filing Cabinets along East Wall
@@ -945,18 +997,19 @@ public sealed partial class SkyscraperFloor1World
                 HasCollision = false
             });
         }
-        // Shared spines in the open wings. The paired worktops stop well short of
-        // both cross aisles and the portals into the reception corridor.
+        // Shared back-to-back team pods across the open wings (forming cozy 2-desk startup islands
+        // instead of solitary desks marooned in empty space!).
         var wingDesks=OfficeProps.Where(p=>p.Kind==OfficePropKind.DualMonitorDesk).ToArray();
         foreach(var desk in wingDesks)
         {
-            if(desk.Position.X is not (-14.5f or -20.7f or 14.8f or 22f) ||
-               desk.Position.Z is not (5.5f or -8.5f or 3.5f or -10.5f)) continue;
+            if(MathF.Abs(desk.Position.X) > 29.5f || desk.RotationYaw != 0f) continue;
+            // Pair alternating & core openspace clusters back-to-back while keeping Galley & aisles open!
+            if(desk.Position.Z is > 11.2f or < -23.5f) continue;
             var opposite=desk;
             opposite.Position.Z-=1.07f;
             opposite.RotationYaw=180;
             OfficeProps.Add(opposite);
-            var bin=opposite.Position+new Vector3(-1.04f,0,.17f);
+            var bin=opposite.Position+new Vector3(-1.08f,0,.17f);
             OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=bin,Size=new(.34f,.44f,.34f)});
         }
         FurnishAtriumBays();
@@ -1031,6 +1084,7 @@ public sealed partial class SkyscraperFloor1World
         Add(ArenaTable,1.5f,.80f,.8f);
         Add(LoungeTable,1.44f,.40f,.68f);
         Add(BreakTable,1.1f,.88f,.88f);
+        foreach(var scrum in OpenspaceScrumTables) Add(scrum,1.15f,.86f,1.15f);
         Add(CartPosition,.85f,.96f,.67f);
         foreach(var rack in SideRacks) Add(rack,.94f,2.05f,.92f);
         Add(VentMouth(0)-Vector3.UnitZ*.44f,1.2f,1.28f,.88f);
@@ -2940,6 +2994,12 @@ public sealed partial class SkyscraperFloor1World
         // Warm textured zone carpets grounding West Dev Openspace & East Lounge/Analytics wings!
         mesh.Add(new(-24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(44,48,60,255),Finish.Carpet);
         mesh.Add(new( 24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(56,48,42,255),Finish.Carpet);
+        // Cozy woven accent rugs breaking up the openspace into distinct human-scaled team neighborhoods!
+        mesh.Add(new(-17.6f,.016f, 8.7f),new(4.6f,.016f,4.2f),new(112,56,48,255),Finish.Carpet);
+        mesh.Add(new(-23.8f,.016f, 1.8f),new(4.4f,.016f,4.0f),new(54,84,82,255),Finish.Carpet);
+        mesh.Add(new(-17.6f,.016f,-5.0f),new(4.8f,.016f,4.2f),new(96,74,50,255),Finish.Carpet);
+        mesh.Add(new( 18.4f,.016f, 7.0f),new(4.6f,.016f,4.2f),new(108,68,46,255),Finish.Carpet);
+        mesh.Add(new( 18.4f,.016f,-7.0f),new(4.6f,.016f,4.2f),new(68,78,94,255),Finish.Carpet);
 
         // Sculpted Walnut & Frosted-Glass Office Cubicle Partitions breaking up the empty warehouse sightlines!
         Color walnutFrame = new(68, 44, 28, 255), frostGlass = new(142, 168, 182, 64);
@@ -3534,16 +3594,68 @@ public sealed partial class SkyscraperFloor1World
 
     private void DrawPod(Vector3 feet,int seat,bool occupied,bool reversed=false)
     {
-        float angle=(seat%2==0 ? 1 : -1)*(8+seat*7%15)*MathF.PI/180;
-        VisualEngine3D.Workstation(feet,occupied ? Vector2.Zero : new(angle,.06f+.035f*(seat%4)),reversed ? 0 : 180);
-        Vector3 top=feet+Vector3.UnitY*(.792f*WorkstationScale);
-        float side=reversed ? -1 : 1;
-        if(seat%6==1) DrawPizza(PodPizza(feet,reversed),13, .78f);
-        else if(seat%4==0) DrawCoffee(top+side*new Vector3(-.61f,0,.12f));
-        if(seat%3!=0)
+        // Unique deterministic personality per desk so ZERO two workstations look stamped!
+        int h = Math.Abs(seat * 37 + (int)MathF.Round(feet.X * 11f) + (int)MathF.Round(feet.Z * 17f));
+        float chairYaw = ((h % 2 == 0) ? 1f : -1f) * (14f + (h * 13 % 34)) * MathF.PI / 180f;
+        float chairPull = 0.05f + (h % 5) * 0.042f;
+        VisualEngine3D.Workstation(feet, occupied ? Vector2.Zero : new(chairYaw, chairPull), reversed ? 0 : 180);
+        Vector3 top = feet + Vector3.UnitY * (.792f * WorkstationScale);
+        float side = reversed ? -1f : 1f;
+        float lampSide = (h % 3 == 0) ? -1f : 1f;
+
+        // 1) Pizza box OR Coffee mug OR Energy drink cans (varied per desk!)
+        if (seat % 6 == 1) DrawPizza(PodPizza(feet, reversed), 13 + (h % 25), .78f);
+        else if (h % 5 != 0)
         {
-            VisualEngine3D.OrientedBox(top+new Vector3(-.36f*side,.004f,.26f*side),new(.08f,.004f,.079f),angle,new(200,186,125,255));
-            VisualEngine3D.OrientedBox(top+new Vector3(-.43f*side,.008f,.24f*side),new(.075f,.004f,.079f),-angle,new(143,181,167,255));
+            DrawCoffee(top + side * new Vector3((h % 2 == 0 ? -.61f : .56f), 0, .12f + (h % 3) * .04f));
+            if (h % 4 == 2) // Extra metallic energy can next to the mug!
+                VisualEngine3D.Rod(top + side * new Vector3(.45f, 0, .18f), top + side * new Vector3(.45f, .125f, .18f), .033f, .033f, 10,
+                    (h % 2 == 0) ? new(42, 168, 132, 255) : new(210, 68, 52, 255));
+        }
+
+        // 2) Warm articulated brass desk lamp on ~60% of workstations!
+        if (h % 5 < 3)
+        {
+            Vector3 lb = top + side * new Vector3(lampSide * .74f, 0, -.20f);
+            VisualEngine3D.Rod(lb, lb + Vector3.UnitY * .025f, .085f, .075f, 12, new(48, 46, 44, 255));
+            Vector3 elbow = lb + new Vector3(-side * lampSide * .08f, .24f, side * .03f);
+            Vector3 head  = lb + new Vector3(-side * lampSide * .14f, .37f, side * .09f);
+            VisualEngine3D.Rod(lb + Vector3.UnitY * .02f, elbow, .012f, .011f, 8, new(168, 132, 74, 255), Finish.Bronze);
+            VisualEngine3D.Rod(elbow, head, .011f, .010f, 8, new(168, 132, 74, 255), Finish.Bronze);
+            VisualEngine3D.Rod(head + Vector3.UnitY * .02f, head - Vector3.UnitY * .055f, .032f, .082f, 12, new(56, 66, 62, 255));
+            VisualEngine3D.Orb(head - Vector3.UnitY * .048f, .038f, new(255, 214, 132, 255), Finish.Lamp);
+        }
+
+        // 3) Stacked colorful Jira/NDA project binders & sheets on ~70% of workstations!
+        if (h % 10 < 7)
+        {
+            float fx = -lampSide * .66f;
+            Vector3 st = top + side * new Vector3(fx, 0, -.06f);
+            Color[] binderColors = [new(158, 72, 54, 255), new(54, 82, 118, 255), new(176, 132, 58, 255), new(64, 108, 82, 255)];
+            int count = 2 + (h % 3);
+            for (int k = 0; k < count; k++)
+            {
+                float a = ((h + k * 5) % 9 - 4) * .07f;
+                VisualEngine3D.OrientedBox(st + Vector3.UnitY * (.011f + k * .022f), new(.23f, .020f, .31f), a, binderColors[(h + k) % binderColors.Length]);
+            }
+            VisualEngine3D.Sheet(st + Vector3.UnitY * (.006f + count * .022f), ((h % 7) - 3) * .09f, 0,
+                (h % 2 == 0) ? Finish.JiraSheet : Finish.PitchDeck);
+        }
+
+        // 4) Mini potted desk succulent/plant on ~45% of workstations!
+        if (h % 9 < 4)
+        {
+            Vector3 pp = top + side * new Vector3(lampSide * .68f, 0, .18f);
+            VisualEngine3D.Rod(pp, pp + Vector3.UnitY * .095f, .048f, .062f, 10, new(166, 94, 62, 255));
+            VisualEngine3D.Oval(pp + Vector3.UnitY * .135f, new(.075f, .068f, .075f), new(54, 128, 72, 255));
+            VisualEngine3D.Oval(pp + new Vector3(.032f, .155f, -.02f), new(.048f, .055f, .048f), new(72, 152, 84, 255));
+        }
+
+        // 5) Bright scattered sticky notes & desk pads
+        if (seat % 3 != 0)
+        {
+            VisualEngine3D.OrientedBox(top + new Vector3(-.36f * side, .004f, .26f * side), new(.08f, .004f, .079f), chairYaw, new(226, 202, 114, 255));
+            VisualEngine3D.OrientedBox(top + new Vector3(-.43f * side, .008f, .24f * side), new(.075f, .004f, .079f), -chairYaw, new(143, 194, 174, 255));
         }
     }
 
@@ -3616,6 +3728,27 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Rod(table,table+Vector3.UnitY*.05f,.33f,.32f,16,new(57,56,53,255));
             VisualEngine3D.Rod(table,table+Vector3.UnitY*.84f,.059f,.052f,12,new(150,113,73,255));
             VisualEngine3D.Rod(table+Vector3.UnitY*.835f,table+Vector3.UnitY*.88f,.55f,.55f,20,new(157,109,73,255));
+        }
+        // Cozy round startup scrum & coffee tables breaking up empty openspace bays!
+        for(int si=0;si<OpenspaceScrumTables.Length;si++)
+        {
+            var st=OpenspaceScrumTables[si];
+            VisualEngine3D.Rod(st,st+Vector3.UnitY*.05f,.36f,.34f,16,new(52,54,58,255));
+            VisualEngine3D.Rod(st,st+Vector3.UnitY*.76f,.062f,.055f,12,new(154,118,76,255),Finish.Bronze);
+            VisualEngine3D.Rod(st+Vector3.UnitY*.755f,st+Vector3.UnitY*.805f,.62f,.62f,22,new(142,96,64,255));
+            // Two organically angled office chairs around each scrum table
+            float baseAng = si * 47f + 22f;
+            for(int ch=0;ch<2;ch++)
+            {
+                float rad=(baseAng + ch*155f + (ch==1 ? 18f : 0f)) * MathF.PI/180f;
+                Vector3 cpos=st + new Vector3(MathF.Cos(rad)*.92f, 0, MathF.Sin(rad)*.92f);
+                VisualEngine3D.Asset("prop_office_chair", cpos, -(baseAng + ch*155f) - 90f, .92f);
+            }
+            if(si%2==0) DrawPizza(st+new Vector3(.12f,.805f,-.08f), 19*si-11, .85f);
+            else VisualEngine3D.OrientedBox(st+new Vector3(-.14f,.825f,.06f), new(.30f,.025f,.22f), .28f*si, new(56,64,78,255));
+            DrawCoffee(st+new Vector3(-.24f,.805f,-.16f));
+            DrawCoffee(st+new Vector3(.26f,.805f,.18f));
+            VisualEngine3D.Sheet(st+new Vector3(-.05f,.810f,.22f), .32f-si*.14f, 0, Finish.PitchDeck);
         }
         DrawCoffee(ShaftCafeTable+new Vector3(.19f,.88f,.11f));
         DrawCoffee(ShaftCafeTable+new Vector3(-.18f,.88f,-.13f));

@@ -1,32 +1,31 @@
-"""High-poly smooth-shaded Titanium & Ceramic Android Boss builder for assets/models/escaped_ai_boss.glb.
-Preserves exact bounding box, origin (Y=0 at soles), and forward orientation (+Z in glTF / -Y in Blender):
-  LO ≈ [-0.5486, -0.3638, 0.0000]
-  HI ≈ [ 0.5486,  0.2759, 2.2365]
-Features:
-  - Cold, featureless/blind sculpted matte-white porcelain face mask with subtle recessed obsidian seam lines (zero cartoon eyes)
-  - Deeply recessed glowing triangular crimson chest core with internal delta lattice & chrome corner lugs (FP16 HDR Bloom ready)
-  - Sleek dark-titanium & matte gunmetal corporate security exo-frame with broad angular pauldrons, dorsal spine vertebrae,
-    articulated hydraulic elbows/knees, and 5-fingered mechanical gauntlets
-  - Embedded 512x512 BossDetailAtlas texture + 24-ray hemisphere BVHTree vertex AO (COLOR_0) + weighted smooth normals
+"""v3 AAA SMOOTH ANATOMICAL MPFB2 CYBER-ANDROID BOSS -> assets/models/escaped_ai_boss.glb
+ZERO blocky Minecraft boxes! Built directly over a real posed heroic athletic MPFB2 human body:
+  - Preserves exact bounding height (Y=0 at soles, height=2.2365m) and +Z forward orientation (-Y in Blender)
+  - Smooth biomechanical matte carbon-fiber musculature undersuit (`CarbonSubframe`)
+  - Body-hugging sculpted curved armor plates extracted directly from real MPFB2 anatomical face zones
+    (Smooth porcelain-white blind android head mask + glossy obsidian wrap-around visor band,
+     sculpted porcelain-white pectoral cuirass, dark-titanium clavicle/abdomen/pelvis/gauntlets/boots,
+     curved shoulder pauldrons, articulated knee/elbow chrome rotary rings, and deeply recessed
+     glowing triangular `CrimsonCore` chest reactor!)
+  - Dedicated per-material 256x256 24-ray BVHTree Baked Ambient Occlusion + Curvature Edge-Wear LUT textures
+    (fixing the old v2 bug where a single near-white atlas overwrote every material's baseColor to white!)
 """
-import json
 import math
 import os
-import struct
 from pathlib import Path
 
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Euler, Matrix, Quaternion, Vector
+from mathutils import Euler, Matrix, Vector
 from mathutils.bvhtree import BVHTree
+
+from bl_ext.blender_org.mpfb.services.humanservice import HumanService
+from bl_ext.blender_org.mpfb.services.targetservice import TargetService
 
 ROOT = Path(__file__).resolve().parents[3]
 OUT_MODELS = ROOT / "assets/models"
-PREVIEW_PNG = ROOT / "assets/external_cc0/office/boss_preview_r7.png"
-ARTIFACT_PROOF_1 = Path(r"C:\Users\se-20\.gemini\antigravity\brain\50fc13b9-24ea-4541-8bcc-1ae74f353f5a\escaped_ai_boss_v2_proof.png")
-ARTIFACT_PROOF_2 = Path(r"C:\Users\se-20\.gemini\antigravity\brain\34a5dbd6-7dba-4b8d-8112-53de935b5112\scratch\escaped_ai_boss_v2_proof.png")
-SCREENSHOT_PROOF = ROOT / "screenshots/escaped_ai_boss_v2_proof.png"
+TARGET_HEIGHT = 2.2365
 
 MAT_ORDER = [
     "DarkArmor",
@@ -38,1186 +37,802 @@ MAT_ORDER = [
     "PistonChrome",
 ]
 
-MAT_SPECS = {
-    # key: (linear_rgba, metallic, roughness, emissive_rgb)
-    "DarkArmor":      ((0.036, 0.044, 0.058, 1.0), 0.78, 0.36, None),
-    "VisorObsidian":  ((0.008, 0.010, 0.015, 1.0), 0.88, 0.14, None),
-    "WhiteCeramic":   ((0.840, 0.855, 0.885, 1.0), 0.05, 0.22, None),
-    "CarbonSubframe": ((0.015, 0.018, 0.024, 1.0), 0.45, 0.58, None),
-    "CrimsonCore":    ((0.920, 0.015, 0.015, 1.0), 0.00, 0.55, (1.00, 0.05, 0.03)),
-    "SatinTitanium":  ((0.095, 0.114, 0.142, 1.0), 0.84, 0.28, None),
-    "PistonChrome":   ((0.460, 0.510, 0.580, 1.0), 0.95, 0.16, None),
-}
 
-MATS = {}
+def build_boss_lut_texture(key):
+    """Per-material 256x256 2D AO+Curvature (u) x Micro-Grain (v) LUT calibrated for Raylib's `pow(base, 0.78)`."""
+    img_name = f"BossLUT_{key}"
+    existing = bpy.data.images.get(img_name)
+    if existing is not None:
+        return existing
 
-
-def clear_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-
-
-# Game coordinates: X right, Y up (height 0..2.2365m), Z forward (+Z faces player)
-# Blender glTF exporter maps (+X -> +X, +Z -> +Y, -Y -> +Z)
-def xyz(p):
-    return Vector((p[0], -p[2], p[1]))
-
-
-def rl_scale(s):
-    return Vector((s[0], s[2], s[1]))
-
-
-def rl_rot(r):
-    return Euler((r[0], -r[2], r[1]), "XYZ")
-
-
-def build_boss_detail_atlas():
-    img = bpy.data.images.get("BossDetailAtlas")
-    if img is not None:
-        return img
-    W, H = 512, 512
+    W, H = 256, 256
     arr = np.ones((H, W, 4), dtype=np.float32)
-    rng = np.random.default_rng(20261120)
-    n1 = rng.uniform(-0.5, 0.5, size=(H, W)).astype(np.float32)
-    n2_s = rng.uniform(-0.5, 0.5, size=(H // 2, W // 2)).astype(np.float32)
-    n2 = np.repeat(np.repeat(n2_s, 2, axis=0), 2, axis=1)
-    y_idx, x_idx = np.mgrid[0:H, 0:W].astype(np.float32)
+    rng = np.random.default_rng(2026 + sum(ord(c) for c in key))
+    y, x = np.mgrid[0:H, 0:W].astype(np.float32)
+    u = x / float(W - 1)
 
-    # Quadrant 0 (x<256, y<256): Brushed Dark Titanium & Satin Titanium micro-grain
-    q0 = (x_idx < 256) & (y_idx < 256)
-    streak = 0.5 * (n1 + np.roll(n1, 1, axis=1))
-    val0 = 0.988 + 0.008 * streak[q0] + 0.004 * n2[q0]
-    for c in range(3):
-        arr[q0, c] = np.clip(val0, 0.975, 1.0)
+    ao_part = np.clip(u / 0.58, 0.0, 1.0)
+    edge_part = np.clip((u - 0.58) / 0.42, 0.0, 1.0)
+    shade = (0.18 + 0.82 * (ao_part ** 1.30)) * (1.0 + 0.65 * (edge_part ** 1.55))
+    noise = rng.normal(0.0, 1.0, (H, W)).astype(np.float32)
 
-    # Quadrant 1 (x>=256, y<256): Matte Carbon Subframe & Obsidian micro-weave
-    q1 = (x_idx >= 256) & (y_idx < 256)
-    val1 = 0.986 + 0.009 * n1[q1] + 0.005 * n2[q1]
-    for c in range(3):
-        arr[q1, c] = np.clip(val1, 0.972, 1.0)
+    if key == "DarkArmor":
+        # Menacing dark gunmetal-titanium corporate security exo-armor
+        grain = 1.0 + 0.045 * np.sin(y * 1.1) + 0.025 * noise
+        base = np.clip(0.026 * shade * grain, 0.004, 0.068)
+        arr[:, :, 0] = base * 0.90
+        arr[:, :, 1] = base * 0.96
+        arr[:, :, 2] = base * 1.12
+    elif key == "SatinTitanium":
+        # Sleek brushed steel-grey titanium accents & segmented ribs/collar
+        grain = 1.0 + 0.055 * np.sin(y * 1.35) + 0.028 * noise
+        base = np.clip(0.088 * shade * grain, 0.015, 0.21)
+        arr[:, :, 0] = base * 0.93
+        arr[:, :, 1] = base * 0.98
+        arr[:, :, 2] = base * 1.09
+    elif key == "WhiteCeramic":
+        # Clean satin porcelain-white carapace (Atomic Heart / I, Robot sleekness with deep crevice AO!)
+        c_shade = (0.28 + 0.72 * (ao_part ** 1.25)) * (1.0 + 0.14 * (edge_part ** 1.4))
+        grain = 1.0 + 0.012 * noise
+        base = np.clip(0.62 * c_shade * grain, 0.12, 0.82)
+        arr[:, :, 0] = base * 0.98
+        arr[:, :, 1] = base * 0.99
+        arr[:, :, 2] = base * 1.02
+    elif key == "CarbonSubframe":
+        # Matte woven charcoal-black biomechanical muscle fiber undersuit
+        weave = 1.0 + 0.08 * np.sin(x * 1.2) * np.cos(y * 1.2) + 0.025 * noise
+        base = np.clip(0.010 * shade * weave, 0.0018, 0.026)
+        arr[:, :, 0] = base * 0.94
+        arr[:, :, 1] = base * 0.97
+        arr[:, :, 2] = base * 1.06
+    elif key == "VisorObsidian":
+        # Razor-glossy jet-black obsidian glass visor
+        base = np.clip(0.0045 * (0.5 + 0.6 * shade), 0.001, 0.014)
+        arr[:, :, 0] = base * 0.88
+        arr[:, :, 1] = base * 0.94
+        arr[:, :, 2] = base * 1.18
+    elif key == "PistonChrome":
+        # Bright machined chrome joints & core lugs
+        grain = 1.0 + 0.04 * np.sin(y * 1.8) + 0.02 * noise
+        base = np.clip(0.32 * (0.35 + 0.65 * shade) * grain, 0.08, 0.62)
+        arr[:, :, 0] = base * 0.95
+        arr[:, :, 1] = base * 0.98
+        arr[:, :, 2] = base * 1.04
+    elif key == "CrimsonCore":
+        # Intense glowing crimson reactor plasma cell
+        pulse = 0.86 + 0.14 * np.clip(u, 0.0, 1.0)
+        arr[:, :, 0] = np.clip(0.96 * pulse, 0.65, 1.0)
+        arr[:, :, 1] = np.clip(0.035 * pulse, 0.01, 0.08)
+        arr[:, :, 2] = np.clip(0.025 * pulse, 0.01, 0.06)
 
-    # Quadrant 2 (x<256, y>=256): Smooth White Porcelain Ceramic & Machined Chrome
-    q2 = (x_idx < 256) & (y_idx >= 256)
-    val2 = 0.994 + 0.004 * n1[q2] + 0.002 * n2[q2]
-    for c in range(3):
-        arr[q2, c] = np.clip(val2, 0.986, 1.0)
-
-    # Quadrant 3 (x>=256, y>=256): High-intensity Crimson Core Plasma Cell
-    q3 = (x_idx >= 256) & (y_idx >= 256)
-    val3 = 0.995 + 0.004 * n1[q3]
-    for c in range(3):
-        arr[q3, c] = np.clip(val3, 0.988, 1.0)
-
-    img = bpy.data.images.new("BossDetailAtlas", width=W, height=H, alpha=False)
+    img = bpy.data.images.new(img_name, width=W, height=H, alpha=False)
     img.pixels.foreach_set(arr.ravel())
     img.pack()
     return img
 
 
-def init_palette():
-    MATS.clear()
-    atlas = build_boss_detail_atlas()
+MAT_PROPS = {
+    # key: (metallic, roughness, emission_rgb_or_None)
+    "DarkArmor":      (0.80, 0.34, None),
+    "VisorObsidian":  (0.90, 0.10, None),
+    "WhiteCeramic":   (0.08, 0.22, None),
+    "CarbonSubframe": (0.35, 0.56, None),
+    "CrimsonCore":    (0.00, 0.30, (1.00, 0.06, 0.03)),
+    "SatinTitanium":  (0.86, 0.26, None),
+    "PistonChrome":   (0.95, 0.15, None),
+}
+
+
+def init_materials():
+    mats = {}
     for key in MAT_ORDER:
-        rgba, met, rough, em = MAT_SPECS[key]
+        met, rough, em = MAT_PROPS[key]
         m = bpy.data.materials.new(name=key)
         m.use_nodes = True
-        m.diffuse_color = rgba
+        m.diffuse_color = (1.0, 1.0, 1.0, 1.0)
         tree = m.node_tree
         bsdf = tree.nodes.get("Principled BSDF")
-        bsdf.inputs["Base Color"].default_value = rgba
+        bsdf.inputs["Base Color"].default_value = (1.0, 1.0, 1.0, 1.0)
         bsdf.inputs["Metallic"].default_value = met
         bsdf.inputs["Roughness"].default_value = rough
         if em is not None and "Emission Color" in bsdf.inputs:
             bsdf.inputs["Emission Color"].default_value = (*em, 1.0)
-            bsdf.inputs["Emission Strength"].default_value = 4.2
+            bsdf.inputs["Emission Strength"].default_value = 5.5
         tex = tree.nodes.new("ShaderNodeTexImage")
-        tex.image = atlas
+        tex.image = build_boss_lut_texture(key)
+        tex.extension = "EXTEND"
         tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-        MATS[key] = m
+        mats[key] = m
+    return mats
 
 
-def smooth_obj(obj):
-    for poly in obj.data.polygons:
-        poly.use_smooth = True
+def apply_weighted_smooth(obj):
+    for p in obj.data.polygons:
+        p.use_smooth = True
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    wn = obj.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
+    wn.mode = "FACE_AREA"
+    wn.weight = 50
+    wn.keep_sharp = False
+    bpy.ops.object.modifier_apply(modifier=wn.name)
+    obj.select_set(False)
     return obj
 
 
-def add_loft_rings(name, rings_game, mat_key, closed_u=True, cap_ends=True):
-    """Create a smooth lofted mesh from a list of rings in game coordinates (x, y, z)."""
-    n_rings = len(rings_game)
-    n_seg = len(rings_game[0])
-    verts = [xyz(p) for ring in rings_game for p in ring]
-    faces = []
-    u_lim = n_seg if closed_u else (n_seg - 1)
-    for r in range(n_rings - 1):
-        for s in range(u_lim):
-            ns = (s + 1) % n_seg
-            a = r * n_seg + s
-            b = r * n_seg + ns
-            c = (r + 1) * n_seg + ns
-            d = (r + 1) * n_seg + s
-            faces.append((a, b, c, d))
-    if closed_u and cap_ends:
-        faces.append(tuple(reversed(range(n_seg))))
-        base = (n_rings - 1) * n_seg
-        faces.append(tuple(range(base, base + n_seg)))
-    m = bpy.data.meshes.new(name)
-    m.from_pydata(verts, [], faces)
-    m.update()
-    obj = bpy.data.objects.new(name, m)
-    bpy.context.collection.objects.link(obj)
-    obj.data.materials.append(MATS[mat_key])
-    return smooth_obj(obj)
+def create_posed_heroic_mpfb_body():
+    """Spawn heroic athletic MPFB2 humanoid, pose into imposing corporate-enforcer stance, scale to 2.2365m."""
+    h = HumanService.create_human()
+    try:
+        TargetService.set_macro_info_dict(h, {
+            "gender": 1.0, "age": 0.32, "muscle": 0.96,
+            "weight": 0.44, "proportions": 0.72, "height": 0.75,
+            "cupsize": 0.0, "firmness": 0.5,
+            "race": {"asian": 0.1, "caucasian": 0.8, "african": 0.1},
+        })
+        TargetService.reapply_macro_details(h)
+    except Exception:
+        pass
+
+    rig = HumanService.add_builtin_rig(h, "game_engine", import_weights=True)
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="POSE")
+
+    def orient_bone(bname, target_dir):
+        pb = rig.pose.bones[bname]
+        b = rig.data.bones[bname]
+        cur_dir = (b.tail_local - b.head_local).normalized()
+        q_world = cur_dir.rotation_difference(target_dir.normalized())
+        bone_mat = b.matrix_local.to_3x3()
+        q_local = (bone_mat.inverted() @ q_world.to_matrix() @ bone_mat).to_quaternion()
+        pb.rotation_mode = "QUATERNION"
+        pb.rotation_quaternion = q_local
+
+    # Menacing powerful corporate-sentinel stance (broad shoulders, slightly abducted combat arms, planted feet)
+    orient_bone("upperarm_l", Vector(( 0.22,  0.04, -0.97)))
+    orient_bone("upperarm_r", Vector((-0.22,  0.04, -0.97)))
+    orient_bone("thigh_l",    Vector(( 0.06, -0.02, -0.99)))
+    orient_bone("thigh_r",    Vector((-0.06, -0.02, -0.99)))
+    bpy.context.view_layer.update()
+
+    # Slight aggressive forward elbow bend so arms look alive & ready (NOT stiff T/I-pose!)
+    for bname, tdir in [
+        ("lowerarm_l", Vector(( 0.06, -0.26, -0.96))),
+        ("lowerarm_r", Vector((-0.06, -0.26, -0.96))),
+        ("calf_l",     Vector(( 0.01,  0.03, -0.99))),
+        ("calf_r",     Vector((-0.01,  0.03, -0.99))),
+    ]:
+        pb = rig.pose.bones[bname]
+        cur_dir = (pb.tail - pb.head).normalized()
+        q_delta = cur_dir.rotation_difference(tdir.normalized())
+        mat_p = pb.matrix.to_3x3()
+        q_loc = (mat_p.inverted() @ q_delta.to_matrix() @ mat_p).to_quaternion()
+        pb.rotation_mode = "QUATERNION"
+        pb.rotation_quaternion = pb.rotation_quaternion @ q_loc
+        bpy.context.view_layer.update()
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    deps = bpy.context.evaluated_depsgraph_get()
+    eval_obj = h.evaluated_get(deps)
+    mesh = bpy.data.meshes.new_from_object(eval_obj)
+    body = bpy.data.objects.new("MPFB_BossBase", mesh)
+    bpy.context.collection.objects.link(body)
+
+    # Copy vertex groups for clean anatomical region extraction
+    for vg in h.vertex_groups:
+        body.vertex_groups.new(name=vg.name)
+    for v in h.data.vertices:
+        for g in v.groups:
+            body.vertex_groups[g.group].add([v.index], g.weight, "REPLACE")
+
+    # Normalize strictly to Z in [0.0, TARGET_HEIGHT], centered on X=0
+    zs = [v.co.z for v in mesh.vertices]
+    min_z, max_z = min(zs), max(zs)
+    scale = TARGET_HEIGHT / max(0.5, max_z - min_z)
+    for v in mesh.vertices:
+        v.co = Vector((v.co.x * scale, v.co.y * scale, (v.co.z - min_z) * scale))
+
+    # Extract key bone landmarks in scaled coordinates
+    def bpos(bname, tail=False):
+        pb = rig.pose.bones[bname]
+        co = pb.tail if tail else pb.head
+        return Vector((co.x * scale, co.y * scale, (co.z - min_z) * scale))
+
+    joints = {
+        "head":      bpos("head"),
+        "neck":      bpos("neck_01"),
+        "chest":     bpos("spine_03"),
+        "spine2":    bpos("spine_02"),
+        "pelvis":    bpos("pelvis"),
+        "sh_l":      bpos("upperarm_l"),
+        "sh_r":      bpos("upperarm_r"),
+        "elb_l":     bpos("lowerarm_l"),
+        "elb_r":     bpos("lowerarm_r"),
+        "wri_l":     bpos("hand_l"),
+        "wri_r":     bpos("hand_r"),
+        "hip_l":     bpos("thigh_l"),
+        "hip_r":     bpos("thigh_r"),
+        "knee_l":    bpos("calf_l"),
+        "knee_r":    bpos("calf_r"),
+        "ankle_l":   bpos("foot_l"),
+        "ankle_r":   bpos("foot_r"),
+    }
+
+    bpy.data.objects.remove(h, do_unlink=True)
+    bpy.data.objects.remove(rig, do_unlink=True)
+    return body, joints
 
 
-def add_oriented_loft(name, p0, p1, up_hint, station_specs, mat_key, n_seg=28):
-    """Loft a smooth contoured limb armor shell along the axis p0 -> p1.
-    station_specs: list of (t, rx, ry, ox, oy, superellipse_p) where x is lateral, y is along up_hint."""
-    v0 = Vector(p0)
-    v1 = Vector(p1)
-    axis = (v1 - v0).normalized()
-    up = Vector(up_hint).normalized()
-    right = up.cross(axis).normalized()
-    up = axis.cross(right).normalized()
-    length = (v1 - v0).length
-
-    rings = []
-    for row in station_specs:
-        t, rx, ry = row[0], row[1], row[2]
-        ox = row[3] if len(row) > 3 else 0.0
-        oy = row[4] if len(row) > 4 else 0.0
-        power = row[5] if len(row) > 5 else 2.0
-        center = v0 + axis * (t * length) + right * ox + up * oy
-        ring = []
-        for i in range(n_seg):
-            a = i * math.tau / n_seg
-            ca, sa = math.cos(a), math.sin(a)
-            if power != 2.0:
-                denom = (abs(ca) ** power + abs(sa) ** power) ** (1.0 / power)
-                ca, sa = ca / max(1e-5, denom), sa / max(1e-5, denom)
-            pt = center + right * (rx * ca) + up * (ry * sa)
-            ring.append((pt.x, pt.y, pt.z))
-        rings.append(ring)
-    return add_loft_rings(name, rings, mat_key, closed_u=True, cap_ends=True)
-
-
-def add_beveled_box(name, pos, size, mat_key, rot=(0, 0, 0), bevel=0.012, segments=3):
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=xyz(pos))
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.scale = rl_scale(size)
-    obj.rotation_euler = rl_rot(rot)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    if bevel > 0:
-        mod = obj.modifiers.new("Bevel", "BEVEL")
-        mod.width = bevel
-        mod.segments = segments
-        mod.limit_method = "ANGLE"
-        bpy.ops.object.modifier_apply(modifier=mod.name)
-    obj.data.materials.append(MATS[mat_key])
-    return smooth_obj(obj)
-
-
-def add_hull(name, pts_game, mat_key, bevel=0.010, segments=3):
+def extract_armor_shell(body_obj, name, face_predicate, mat, thickness=0.016, offset=1.0, smooth_iters=4, bevel_w=0.0045):
+    """Extract a smooth body-hugging sculpted armor carapace plate directly from the real MPFB2 surface!"""
+    src_mesh = body_obj.data
     bm = bmesh.new()
-    for p in pts_game:
-        bm.verts.new(xyz(p))
+    bm.from_mesh(src_mesh)
+    bm.faces.ensure_lookup_table()
     bm.verts.ensure_lookup_table()
-    bmesh.ops.convex_hull(bm, input=list(bm.verts))
+
+    # Delete faces that don't match the anatomical armor zone
+    to_del = [f for f in bm.faces if not face_predicate(f.calc_center_median(), f.normal)]
+    if len(to_del) >= len(bm.faces):
+        bm.free()
+        return None
+    bmesh.ops.delete(bm, geom=to_del, context="FACES")
+
+    # Remove tiny disconnected stray islands (< 10 faces)
+    visited = set()
+    islands = []
+    for f in bm.faces:
+        if f in visited:
+            continue
+        comp = []
+        stack = [f]
+        visited.add(f)
+        while stack:
+            cur = stack.pop()
+            comp.append(cur)
+            for e in cur.edges:
+                for nf in e.link_faces:
+                    if nf not in visited:
+                        visited.add(nf)
+                        stack.append(nf)
+        islands.append(comp)
+    stray = [f for comp in islands if len(comp) < 12 for f in comp]
+    if stray:
+        bmesh.ops.delete(bm, geom=stray, context="FACES")
+    if len(bm.faces) == 0:
+        bm.free()
+        return None
+
+    # Clean smooth boundary & surface fairing so armor plates look sleek and precision-molded
+    if smooth_iters > 0:
+        bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.55, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        for _ in range(smooth_iters - 1):
+            bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.45, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+
     bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
+
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.collection.objects.link(obj)
-    if bevel > 0:
-        bpy.context.view_layer.objects.active = obj
-        obj.select_set(True)
-        mod = obj.modifiers.new("Bevel", "BEVEL")
-        mod.width = bevel
-        mod.segments = segments
-        mod.limit_method = "ANGLE"
-        bpy.ops.object.modifier_apply(modifier=mod.name)
-        obj.select_set(False)
-    obj.data.materials.append(MATS[mat_key])
-    return smooth_obj(obj)
+    obj.data.materials.append(mat)
+
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    sol = obj.modifiers.new("Solidify", "SOLIDIFY")
+    sol.thickness = thickness
+    sol.offset = offset
+    sol.use_even_offset = False
+    sol.use_quality_normals = True
+    bpy.ops.object.modifier_apply(modifier=sol.name)
+
+    if bevel_w > 0.0:
+        bev = obj.modifiers.new("Bevel", "BEVEL")
+        bev.width = min(bevel_w, thickness * 0.35)
+        bev.segments = 2
+        bev.profile = 0.55
+        bev.limit_method = "ANGLE"
+        bev.angle_limit = math.radians(42.0)
+        bev.use_clamp_overlap = True
+        bpy.ops.object.modifier_apply(modifier=bev.name)
+
+    obj.data.validate(verbose=False)
+    obj.select_set(False)
+    return apply_weighted_smooth(obj)
 
 
-def add_oriented_hull(name, origin, forward_dir, up_dir, local_pts, mat_key, bevel=0.010, segments=3):
-    f = Vector(forward_dir).normalized()
-    u = Vector(up_dir).normalized()
-    r = u.cross(f).normalized()
-    u = f.cross(r).normalized()
-    org = Vector(origin)
-    world_pts = [org + r * lx + u * ly + f * lz for lx, ly, lz in local_pts]
-    return add_hull(name, world_pts, mat_key, bevel=bevel, segments=segments)
-
-
-def add_rod(name, p0, p1, r0, r1, mat_key, sides=24):
-    v0 = xyz(p0)
-    v1 = xyz(p1)
-    d = v1 - v0
-    length = d.length
-    if length < 1e-5:
-        return None
-    mid = (v0 + v1) * 0.5
-    bpy.ops.mesh.primitive_cone_add(vertices=sides, radius1=r0, radius2=r1, depth=length, location=mid)
+def add_ring_joint(name, center, axis_dir, radius, tube_r, mat, segs=28):
+    """Sleek machined titanium/chrome rotary joint ring at elbow/knee/collar/waist."""
+    bpy.ops.mesh.primitive_torus_add(
+        major_segments=segs, minor_segments=14,
+        major_radius=radius, minor_radius=tube_r,
+        location=center,
+    )
     obj = bpy.context.active_object
     obj.name = name
-    quat = Vector((0, 0, 1)).rotation_difference(d.normalized())
+    q = Vector((0.0, 0.0, 1.0)).rotation_difference(Vector(axis_dir).normalized())
     obj.rotation_mode = "QUATERNION"
-    obj.rotation_quaternion = quat
+    obj.rotation_quaternion = q
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    obj.data.materials.append(MATS[mat_key])
-    return smooth_obj(obj)
+    obj.data.materials.append(mat)
+    return apply_weighted_smooth(obj)
 
 
-def add_piston(name, p0, p1, r_outer, r_inner, mat_housing="SatinTitanium", mat_rod="PistonChrome"):
-    v0 = Vector(p0)
-    v1 = Vector(p1)
-    c0 = v0 + (v1 - v0) * 0.08
-    mid = v0 * 0.44 + v1 * 0.56
-    collar = v0 * 0.37 + v1 * 0.63
-    c1 = v0 + (v1 - v0) * 0.92
-    add_rod(name + "_MountA", v0, c0, r_outer * 1.15, r_outer * 1.15, "DarkArmor", sides=20)
-    add_rod(name + "_Housing", c0, mid, r_outer, r_outer, mat_housing, sides=24)
-    add_rod(name + "_Collar", mid, collar, r_outer * 1.22, r_outer * 1.14, "DarkArmor", sides=24)
-    add_rod(name + "_Shaft", mid, c1, r_inner, r_inner, mat_rod, sides=20)
-    add_rod(name + "_MountB", c1, v1, r_outer * 1.05, r_outer * 1.05, "DarkArmor", sides=20)
+def add_crimson_delta_core(chest_front_y, chest_z, mats):
+    """Iconic deeply recessed triangular Crimson Core chest reactor + dark-titanium bezel + 3 chrome lugs!"""
+    created = []
+    # 1) Outer beveled dark-titanium triangular housing hugging the sternum
+    bm_bez = bmesh.new()
+    # Downward-pointing corporate delta triangle on front chest (-Y is forward in Blender!)
+    r_out = 0.118
+    r_in  = 0.078
+    y_back = chest_front_y + 0.025
+    y_front = chest_front_y - 0.026
+    angles = [math.radians(90 + 180), math.radians(90 + 180 + 120), math.radians(90 + 180 + 240)]
+    # Point down: -90 deg, +30 deg, +150 deg in (X, Z)
+    pts_out = [(r_out * math.cos(a), r_out * math.sin(a)) for a in (-math.pi / 2, math.pi / 6, 5 * math.pi / 6)]
+    pts_in  = [(r_in  * math.cos(a), r_in  * math.sin(a)) for a in (-math.pi / 2, math.pi / 6, 5 * math.pi / 6)]
+
+    # Build thick chamfered triangular frame
+    ob = [bm_bez.verts.new((px, y_back,  chest_z + pz)) for px, pz in pts_out]
+    of = [bm_bez.verts.new((px * 0.94, y_front, chest_z + pz * 0.94)) for px, pz in pts_out]
+    ib = [bm_bez.verts.new((px, y_back,  chest_z + pz)) for px, pz in pts_in]
+    if_ = [bm_bez.verts.new((px, y_front - 0.002, chest_z + pz)) for px, pz in pts_in]
+    for i in range(3):
+        ni = (i + 1) % 3
+        bm_bez.faces.new((ob[i], ob[ni], of[ni], of[i]))
+        bm_bez.faces.new((of[i], of[ni], if_[ni], if_[i]))
+        bm_bez.faces.new((if_[i], if_[ni], ib[ni], ib[i]))
+        bm_bez.faces.new((ib[i], ib[ni], ob[ni], ob[i]))
+    bmesh.ops.recalc_face_normals(bm_bez, faces=list(bm_bez.faces))
+    m_bez = bpy.data.meshes.new("CoreBezel")
+    bm_bez.to_mesh(m_bez)
+    bm_bez.free()
+    o_bez = bpy.data.objects.new("CoreBezel", m_bez)
+    bpy.context.collection.objects.link(o_bez)
+    o_bez.data.materials.append(mats["DarkArmor"])
+    bpy.context.view_layer.objects.active = o_bez
+    o_bez.select_set(True)
+    bev = o_bez.modifiers.new("Bevel", "BEVEL")
+    bev.width = 0.0055
+    bev.segments = 3
+    bev.use_clamp_overlap = True
+    bpy.ops.object.modifier_apply(modifier=bev.name)
+    o_bez.select_set(False)
+    apply_weighted_smooth(o_bez)
+    created.append(o_bez)
+
+    # 2) Recessed glowing triangular CrimsonCore plasma plate
+    bm_core = bmesh.new()
+    cf = [bm_core.verts.new((px * 1.02, y_front + 0.008, chest_z + pz * 1.02)) for px, pz in pts_in]
+    cb = [bm_core.verts.new((px * 1.02, y_back,          chest_z + pz * 1.02)) for px, pz in pts_in]
+    bm_core.faces.new(list(reversed(cf)))
+    bm_core.faces.new(cb)
+    for i in range(3):
+        ni = (i + 1) % 3
+        bm_core.faces.new((cf[i], cf[ni], cb[ni], cb[i]))
+    bmesh.ops.recalc_face_normals(bm_core, faces=list(bm_core.faces))
+    m_core = bpy.data.meshes.new("CrimsonReactor")
+    bm_core.to_mesh(m_core)
+    bm_core.free()
+    o_core = bpy.data.objects.new("CrimsonReactor", m_core)
+    bpy.context.collection.objects.link(o_core)
+    o_core.data.materials.append(mats["CrimsonCore"])
+    apply_weighted_smooth(o_core)
+    created.append(o_core)
+
+    # 3) 3 Machined Chrome Corner Lugs anchoring the triangular reactor
+    for i, (px, pz) in enumerate(pts_out):
+        bpy.ops.mesh.primitive_cylinder_add(
+            vertices=20, radius=0.014, depth=0.022,
+            location=(px * 0.86, y_front + 0.002, chest_z + pz * 0.86),
+            rotation=(math.pi / 2.0, 0.0, 0.0),
+        )
+        lug = bpy.context.active_object
+        lug.name = f"CoreChromeLug_{i}"
+        lug.data.materials.append(mats["PistonChrome"])
+        apply_weighted_smooth(lug)
+        created.append(lug)
+
+    return created
 
 
-def add_poly_seam(name, pts_game, radius, mat_key="VisorObsidian", bevel_res=5):
-    curve = bpy.data.curves.new(name, "CURVE")
-    curve.dimensions = "3D"
-    curve.bevel_depth = radius
-    curve.bevel_resolution = bevel_res
-    spline = curve.splines.new("POLY")
-    spline.points.add(len(pts_game) - 1)
-    for sp, pt in zip(spline.points, pts_game):
-        v_bl = xyz(pt)
-        sp.co = (v_bl.x, v_bl.y, v_bl.z, 1.0)
-    obj = bpy.data.objects.new(name, curve)
-    bpy.context.collection.objects.link(obj)
-    obj.data.materials.append(MATS[mat_key])
+def build_boss_v3():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    mats = init_materials()
+    body, j = create_posed_heroic_mpfb_body()
+
+    # Smooth the raw MPFB2 face features slightly ONLY on the head region so the android has a
+    # chilling, smooth, featureless blind porcelain android head while keeping sharp cheekbones & jaw!
+    head_z = j["head"].z
+    neck_z = j["neck"].z
+    chest_z = j["chest"].z
+    spine2_z = j["spine2"].z
+    pelvis_z = j["pelvis"].z
+    knee_z = (j["knee_l"].z + j["knee_r"].z) * 0.5
+    ankle_z = (j["ankle_l"].z + j["ankle_r"].z) * 0.5
+    sh_x = abs(j["sh_l"].x)
+    sh_z = j["sh_l"].z
+    elb_z = (j["elb_l"].z + j["elb_r"].z) * 0.5
+    wri_z = (j["wri_l"].z + j["wri_r"].z) * 0.5
+
+    # Measure front chest Y surface on the real MPFB2 torso
+    chest_pts = [v.co.y for v in body.data.vertices if abs(v.co.x) < 0.08 and abs(v.co.z - (chest_z + 0.02)) < 0.06 and v.co.y < 0]
+    chest_front_y = min(chest_pts) if chest_pts else -0.175
+
+    # Smooth out eyes/mouth/nose depressions on head vertices of a dedicated smooth head clone
+    # so the porcelain faceplate looks sleek, sculpted, and blind like a high-end cyber-android!
+    bm_head_src = bmesh.new()
+    bm_head_src.from_mesh(body.data)
+    head_verts = [v for v in bm_head_src.verts if v.co.z > neck_z + 0.02]
+    for _ in range(14):
+        bmesh.ops.smooth_vert(bm_head_src, verts=head_verts, factor=0.55, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    head_src_mesh = bpy.data.meshes.new("SmoothHeadSrc")
+    bm_head_src.to_mesh(head_src_mesh)
+    bm_head_src.free()
+    head_src_obj = bpy.data.objects.new("SmoothHeadSrc", head_src_mesh)
+    bpy.context.collection.objects.link(head_src_obj)
+
+    parts = []
+
+    # -------------------------------------------------------------------------
+    # 1. FULL BIOMECHANICAL CARBON-FIBER MUSCLE UNDERSUIT (Directly from MPFB2!)
+    # -------------------------------------------------------------------------
+    undersuit_mesh = body.data.copy()
+    undersuit = bpy.data.objects.new("CarbonUndersuit", undersuit_mesh)
+    bpy.context.collection.objects.link(undersuit)
+    undersuit.data.materials.clear()
+    undersuit.data.materials.append(mats["CarbonSubframe"])
+    # Slightly inset undersuit by 3mm on non-head body so armor plates sit razor-clean with zero z-fighting
+    for v in undersuit.data.vertices:
+        if v.co.z < neck_z + 0.01:
+            v.co -= v.normal * 0.003
+    # Mild smooth for sleek synthetic muscle fiber look
+    bpy.context.view_layer.objects.active = undersuit
+    undersuit.select_set(True)
+    sm = undersuit.modifiers.new("Smooth", "SMOOTH")
+    sm.factor = 0.45
+    sm.iterations = 3
+    bpy.ops.object.modifier_apply(modifier=sm.name)
+    undersuit.select_set(False)
+    apply_weighted_smooth(undersuit)
+    parts.append(undersuit)
+
+    # -------------------------------------------------------------------------
+    # 2. SLEEK BLIND WHITE-PORCELAIN ANDROID HEAD MASK + GLOSSY OBSIDIAN VISOR!
+    # -------------------------------------------------------------------------
+    # Main sleek sculpted porcelain helmet/faceplate
+    o = extract_armor_shell(
+        head_src_obj, "PorcelainHeadShell",
+        lambda c, n: c.z > neck_z + 0.045,
+        mats["WhiteCeramic"], thickness=0.011, offset=1.0, smooth_iters=3, bevel_w=0.003,
+    )
+    if o:
+        parts.append(o)
+
+    # Razor-sleek wrap-around Glossy Obsidian Visor Band across upper eyes & temples
+    visor_z = head_z + 0.075
+    o = extract_armor_shell(
+        head_src_obj, "ObsidianVisorBand",
+        lambda c, n: (visor_z - 0.036 < c.z < visor_z + 0.036) and (c.y < 0.025),
+        mats["VisorObsidian"], thickness=0.016, offset=1.0, smooth_iters=3, bevel_w=0.003,
+    )
+    if o:
+        parts.append(o)
+
+    # Dark Titanium Armored Neck Collar / Gorget
+    o = extract_armor_shell(
+        body, "TitaniumCollar",
+        lambda c, n: (neck_z - 0.06 < c.z < neck_z + 0.03) and abs(c.x) < 0.19,
+        mats["DarkArmor"], thickness=0.018, offset=1.0, smooth_iters=3, bevel_w=0.004,
+    )
+    if o:
+        parts.append(o)
+
+    # -------------------------------------------------------------------------
+    # 3. SCULPTED ANATOMICAL TORSO CARAPACE (PORCELAIN CHEST + TITANIUM RIBS/SPINE)
+    # -------------------------------------------------------------------------
+    # Heroic Porcelain-White Upper Pectoral Cuirass (hugging real MPFB2 chest!)
+    o = extract_armor_shell(
+        body, "PorcelainChestCuirass",
+        lambda c, n: (chest_z - 0.14 < c.z < sh_z + 0.04) and abs(c.x) < sh_x - 0.035 and c.y < 0.02,
+        mats["WhiteCeramic"], thickness=0.022, offset=1.0, smooth_iters=4, bevel_w=0.0055,
+    )
+    if o:
+        parts.append(o)
+
+    # Dark-Titanium Upper Back & Scapula Carapace
+    o = extract_armor_shell(
+        body, "DarkBackCarapace",
+        lambda c, n: (spine2_z - 0.04 < c.z < sh_z + 0.06) and abs(c.x) < sh_x - 0.025 and c.y >= -0.01,
+        mats["DarkArmor"], thickness=0.022, offset=1.0, smooth_iters=4, bevel_w=0.005,
+    )
+    if o:
+        parts.append(o)
+
+    # Segmented Satin-Titanium Abdominal Armor Plates (front torso between chest & waist)
+    o = extract_armor_shell(
+        body, "TitaniumAbdomen",
+        lambda c, n: (pelvis_z + 0.06 < c.z < chest_z - 0.13) and abs(c.x) < 0.22 and c.y < 0.02,
+        mats["SatinTitanium"], thickness=0.016, offset=1.0, smooth_iters=3, bevel_w=0.004,
+    )
+    if o:
+        parts.append(o)
+
+    # Dark-Titanium Armored Pelvis / Waist Harness
+    o = extract_armor_shell(
+        body, "DarkPelvisArmor",
+        lambda c, n: (pelvis_z - 0.13 < c.z < pelvis_z + 0.07) and abs(c.x) < 0.25,
+        mats["DarkArmor"], thickness=0.018, offset=1.0, smooth_iters=3, bevel_w=0.0045,
+    )
+    if o:
+        parts.append(o)
+
+    # Glowing Triangular Crimson Core embedded seamlessly on the sternum!
+    parts.extend(add_crimson_delta_core(chest_front_y - 0.014, chest_z + 0.025, mats))
+
+    # Dorsal Spine Chrome Vertebral Nodes (sleek anatomical spine accents along back!)
+    for idx in range(5):
+        vz = spine2_z + 0.02 + idx * 0.072
+        back_pts = [v.co.y for v in body.data.vertices if abs(v.co.x) < 0.04 and abs(v.co.z - vz) < 0.03 and v.co.y > 0]
+        by = (max(back_pts) + 0.022) if back_pts else 0.165
+        bpy.ops.mesh.primitive_cylinder_add(
+            vertices=20, radius=0.022, depth=0.056,
+            location=(0.0, by, vz), rotation=(0.0, math.pi / 2.0, 0.0),
+        )
+        node = bpy.context.active_object
+        node.name = f"SpineNode_{idx}"
+        node.data.materials.append(mats["SatinTitanium"] if idx % 2 == 0 else mats["PistonChrome"])
+        apply_weighted_smooth(node)
+        parts.append(node)
+
+    # -------------------------------------------------------------------------
+    # 4. CURVED SHOULDER PAULDRONS + SLEEK ANATOMICAL ARM & GAUNTLET ARMOR
+    # -------------------------------------------------------------------------
+    for side_tag, sgn in (("L", 1.0), ("R", -1.0)):
+        sh_p = j["sh_l"] if sgn > 0 else j["sh_r"]
+        elb_p = j["elb_l"] if sgn > 0 else j["elb_r"]
+
+        # Broad Curved Porcelain-White Deltoid Pauldron hugging real MPFB2 shoulder!
+        o = extract_armor_shell(
+            body, f"Pauldron_{side_tag}",
+            lambda c, n, s=sgn, sp=sh_p: (c.x * s > sh_x - 0.06) and (sp.z - 0.14 < c.z < sp.z + 0.12),
+            mats["WhiteCeramic"], thickness=0.026, offset=1.0, smooth_iters=4, bevel_w=0.0055,
+        )
+        if o:
+            parts.append(o)
+
+        # Dark-Titanium Upper Arm Shell
+        o = extract_armor_shell(
+            body, f"BicepArmor_{side_tag}",
+            lambda c, n, s=sgn, sp=sh_p, ep=elb_p: (c.x * s > sh_x - 0.02) and (ep.z + 0.06 < c.z < sp.z - 0.13),
+            mats["DarkArmor"], thickness=0.015, offset=1.0, smooth_iters=3, bevel_w=0.004,
+        )
+        if o:
+            parts.append(o)
+
+        # Sleek Sculpted Satin-Titanium & Dark Forearm Gauntlets (ZERO Minecraft blocks!)
+        o = extract_armor_shell(
+            body, f"ForearmGauntlet_{side_tag}",
+            lambda c, n, s=sgn, ep=elb_p: (c.x * s > sh_x - 0.02) and (wri_z + 0.02 < c.z < ep.z - 0.03),
+            mats["DarkArmor"], thickness=0.017, offset=1.0, smooth_iters=3, bevel_w=0.004,
+        )
+        if o:
+            parts.append(o)
+
+        # White-Ceramic Forearm Dorsal Crest Plate (outer forearm contrast!)
+        o = extract_armor_shell(
+            body, f"ForearmCrest_{side_tag}",
+            lambda c, n, s=sgn, ep=elb_p: (c.x * s > sh_x + 0.05) and (wri_z + 0.05 < c.z < ep.z - 0.06) and (n.x * s > 0.25),
+            mats["WhiteCeramic"], thickness=0.022, offset=1.0, smooth_iters=3, bevel_w=0.0035,
+        )
+        if o:
+            parts.append(o)
+
+        # Armored Hand Backplate
+        o = extract_armor_shell(
+            body, f"HandArmor_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > sh_x - 0.04) and (wri_z - 0.14 < c.z < wri_z + 0.025) and (n.x * s > 0.15),
+            mats["SatinTitanium"], thickness=0.008, offset=1.0, smooth_iters=2, bevel_w=0.002,
+        )
+        if o:
+            parts.append(o)
+
+        # Sleek Chrome Rotary Elbow Ring
+        parts.append(add_ring_joint(f"ElbowRing_{side_tag}", elb_p, (0.0, 0.2, 1.0), 0.064, 0.011, mats["PistonChrome"]))
+
+    # -------------------------------------------------------------------------
+    # 5. SCULPTED ANATOMICAL THIGH PLATES, KNEE CAPS, SHIN GREAVES & BOOTS
+    # -------------------------------------------------------------------------
+    for side_tag, sgn in (("L", 1.0), ("R", -1.0)):
+        kp = j["knee_l"] if sgn > 0 else j["knee_r"]
+
+        # Porcelain-White Outer Sculpted Thigh Plate
+        o = extract_armor_shell(
+            body, f"ThighPlateOuter_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > 0.04) and (knee_z + 0.10 < c.z < pelvis_z - 0.10) and (c.y < 0.06),
+            mats["WhiteCeramic"], thickness=0.020, offset=1.0, smooth_iters=4, bevel_w=0.005,
+        )
+        if o:
+            parts.append(o)
+
+        # Dark-Titanium Rear Thigh Armor
+        o = extract_armor_shell(
+            body, f"ThighPlateBack_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > 0.03) and (knee_z + 0.12 < c.z < pelvis_z - 0.12) and (c.y >= 0.04),
+            mats["DarkArmor"], thickness=0.016, offset=1.0, smooth_iters=3, bevel_w=0.004,
+        )
+        if o:
+            parts.append(o)
+
+        # Sculpted Satin-Titanium Kneecap
+        o = extract_armor_shell(
+            body, f"KneeCap_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > 0.04) and (knee_z - 0.075 < c.z < knee_z + 0.095) and (c.y < -0.01),
+            mats["SatinTitanium"], thickness=0.024, offset=1.0, smooth_iters=3, bevel_w=0.0045,
+        )
+        if o:
+            parts.append(o)
+
+        # Sleek Contoured Dark-Titanium Shin Greaves
+        o = extract_armor_shell(
+            body, f"ShinGreave_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > 0.03) and (ankle_z + 0.05 < c.z < knee_z - 0.065),
+            mats["DarkArmor"], thickness=0.018, offset=1.0, smooth_iters=4, bevel_w=0.0045,
+        )
+        if o:
+            parts.append(o)
+
+        # Porcelain-White Front Shin Crest
+        o = extract_armor_shell(
+            body, f"ShinCrest_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > 0.05) and (ankle_z + 0.08 < c.z < knee_z - 0.09) and (c.y < -0.025),
+            mats["WhiteCeramic"], thickness=0.023, offset=1.0, smooth_iters=3, bevel_w=0.004,
+        )
+        if o:
+            parts.append(o)
+
+        # Sculpted Tactical Cyber-Boot Shell (ZERO Minecraft block feet!)
+        o = extract_armor_shell(
+            body, f"CyberBoot_{side_tag}",
+            lambda c, n, s=sgn: (c.x * s > 0.02) and (0.012 < c.z < ankle_z + 0.065),
+            mats["DarkArmor"], thickness=0.016, offset=1.0, smooth_iters=3, bevel_w=0.004,
+        )
+        if o:
+            parts.append(o)
+
+        # Chrome Knee Mechanical Ring
+        parts.append(add_ring_joint(f"KneeRing_{side_tag}", kp + Vector((0.0, 0.01, 0.0)), (0.0, 0.0, 1.0), 0.076, 0.010, mats["PistonChrome"]))
+
+    # Remove temporary source meshes
+    bpy.data.objects.remove(body, do_unlink=True)
+    bpy.data.objects.remove(head_src_obj, do_unlink=True)
+
+    # -------------------------------------------------------------------------
+    # 6. JOIN ALL PARTS + NORMALIZE EXACT HEIGHT (Y=0..2.2365m) + 24-RAY BVH AO!
+    # -------------------------------------------------------------------------
     bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.convert(target="MESH")
-    return smooth_obj(obj)
-
-
-def add_smooth_cable(name, pts_game, radius, mat_key="CarbonSubframe", res=12, bevel_res=6):
-    curve = bpy.data.curves.new(name, "CURVE")
-    curve.dimensions = "3D"
-    curve.bevel_depth = radius
-    curve.bevel_resolution = bevel_res
-    curve.resolution_u = res
-    spline = curve.splines.new("BEZIER")
-    spline.bezier_points.add(len(pts_game) - 1)
-    for bp, pt in zip(spline.bezier_points, pts_game):
-        bp.co = xyz(pt)
-        bp.handle_left_type = bp.handle_right_type = "AUTO"
-    obj = bpy.data.objects.new(name, curve)
-    bpy.context.collection.objects.link(obj)
-    obj.data.materials.append(MATS[mat_key])
-    bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.convert(target="MESH")
-    return smooth_obj(obj)
-
-
-def build_porcelain_face_mask_and_head():
-    """1. High-poly sculpted Titanium cranium + Smooth Matte White Porcelain Face Mask with subtle recessed seam lines.
-    NO cheesy glowing cartoon eyes — unsettling cold porcelain stillness."""
-    # 1A. Sculpted Dark Titanium Cranium Shell (Y = 1.89 .. 2.236 m)
-    cranium_specs = [
-        # (y, rx, rz, cz)
-        (1.895, 0.072, 0.074, 0.020),
-        (1.940, 0.094, 0.098, 0.015),
-        (2.010, 0.110, 0.118, 0.012),
-        (2.075, 0.114, 0.124, 0.015),
-        (2.135, 0.108, 0.118, 0.018),
-        (2.185, 0.092, 0.102, 0.022),
-        (2.218, 0.064, 0.072, 0.028),
-        (2.235, 0.025, 0.028, 0.032),
-    ]
-    n_c = 36
-    c_rings = []
-    for y, rx, rz, cz in cranium_specs:
-        ring = []
-        for i in range(n_c):
-            a = i * math.tau / n_c
-            # Subtle temporal ridge & occipital plate contour
-            ridge = 1.0 + 0.03 * math.cos(a * 4.0) * (1.0 if math.cos(a) < 0 else 0.3)
-            x = rx * math.sin(a) * ridge
-            z = cz + rz * math.cos(a) * ridge
-            ring.append((x, y, z))
-        c_rings.append(ring)
-    add_loft_rings("TitaniumCraniumShell", c_rings, "DarkArmor", closed_u=True, cap_ends=True)
-
-    # Dark obsidian recessed sub-mask liner (sits 26mm behind the porcelain mask so it never pokes through orbitals or cheeks!)
-    liner_specs = [
-        (1.895, 0.042, 0.055, 0.080),
-        (1.940, 0.068, 0.070, 0.072),
-        (2.010, 0.084, 0.078, 0.070),
-        (2.075, 0.086, 0.080, 0.072),
-        (2.145, 0.078, 0.075, 0.068),
-        (2.200, 0.058, 0.058, 0.060),
-    ]
-    l_rings = []
-    for y, rx, rz, cz in liner_specs:
-        l_rings.append([(rx * math.sin(i * math.tau / 32), y, cz + rz * math.cos(i * math.tau / 32)) for i in range(32)])
-    add_loft_rings("ObsidianMaskLiner", l_rings, "VisorObsidian", closed_u=True, cap_ends=True)
-
-    # 1B. High-Poly Sculpted Matte White Porcelain Face Mask (65 cols x 54 rows, smooth anatomical stillness + razor-sharp recessed seam lines)
-    def porcelain_surface(u, v):
-        """u in [-1..1] left-to-right across face, v in [0..1] chin (0) to forehead crown (1)."""
-        y = 1.890 + v * 0.332  # 1.890 .. 2.222
-        chin_taper = 0.46 + 0.54 * (math.sin(min(1.0, v / 0.52) * math.pi * 0.5) ** 0.78)
-        crown_taper = 1.0 - 0.34 * (max(0.0, (v - 0.65) / 0.35) ** 1.6)
-        half_w = 0.104 * chin_taper * crown_taper
-
-        ang = u * math.pi * 0.46
-        x = half_w * math.sin(ang)
-        base_z = 0.084 + 0.102 * math.cos(ang) * (0.86 + 0.14 * math.sin(v * math.pi))
-
-        # 1) Nose bridge & subtle nasal ridge (v in 0.28..0.64, u near 0)
-        nose_v = math.exp(-((v - 0.44) / 0.14) ** 2) * (1.0 - 0.45 * max(0.0, (0.30 - v) / 0.10))
-        nose_u = math.exp(-((u / 0.18) ** 2))
-        nose_tip = 0.0085 * math.exp(-((v - 0.34) / 0.055) ** 2) * math.exp(-((u / 0.13) ** 2))
-        dz_nose = (0.0175 * nose_v * nose_u) + nose_tip
-
-        # 2) Calm closed-eye orbital depressions (cold blind porcelain android stillness — ZERO glowing cartoon eyes!)
-        eye_u = math.exp(-(((abs(u) - 0.38) / 0.21) ** 2))
-        eye_v = math.exp(-(((v - 0.545) / 0.072) ** 2))
-        lid_swell = 0.0040 * math.exp(-(((abs(u) - 0.37) / 0.14) ** 2)) * math.exp(-(((v - 0.540) / 0.028) ** 2))
-        dz_orbit = -0.0085 * eye_u * eye_v + lid_swell
-
-        # 3) Supraorbital brow ridge (v around 0.63)
-        brow_v = math.exp(-(((v - 0.635) / 0.055) ** 2))
-        brow_u = math.exp(-((u / 0.72) ** 4))
-        dz_brow = 0.0085 * brow_v * brow_u
-
-        # 4) Sculpted cheekbones & subtle lower cheek contour
-        cheek_arch = 0.0075 * math.exp(-(((abs(u) - 0.56) / 0.24) ** 2)) * math.exp(-(((v - 0.44) / 0.09) ** 2))
-        cheek_hollow = -0.0035 * math.exp(-(((abs(u) - 0.46) / 0.20) ** 2)) * math.exp(-(((v - 0.26) / 0.09) ** 2))
-
-        # 5) Calm, sealed porcelain lips & chin contour
-        lips = 0.0055 * math.exp(-((u / 0.26) ** 2)) * math.exp(-(((v - 0.21) / 0.045) ** 2))
-        lip_part = -0.0022 * math.exp(-((u / 0.24) ** 2)) * math.exp(-(((v - 0.21) / 0.009) ** 2))
-        chin_pad = 0.0065 * math.exp(-((u / 0.28) ** 2)) * math.exp(-(((v - 0.08) / 0.055) ** 2))
-
-        # 6) Subtle recessed architectural seam lines in the porcelain mask
-        seam_ocular = math.exp(-(((v - (0.540 - 0.015 * (u ** 2))) / 0.0085) ** 2)) * (1.0 - math.exp(-((abs(u) / 0.14) ** 4))) * math.exp(-((u / 0.88) ** 6))
-        u_cheek_seam = 0.35 + 0.27 * v
-        seam_cheek = math.exp(-(((abs(u) - u_cheek_seam) / 0.014) ** 2)) * (1.0 - 0.6 * max(0.0, (v - 0.70) / 0.30))
-        seam_crown = math.exp(-((u / 0.013) ** 2)) * max(0.0, min(1.0, (v - 0.64) / 0.08))
-        seam_val = max(seam_ocular, 0.88 * seam_cheek, 0.80 * seam_crown)
-        seam_depth = -0.0036 * seam_val
-
-        z = base_z + dz_nose + dz_orbit + dz_brow + cheek_arch + cheek_hollow + lips + lip_part + chin_pad + seam_depth
-        return Vector((x, y, z)), seam_val > 0.58
-
-    n_u, n_v = 65, 54
-    mask_verts = []
-    mask_seams = []
-    # Front porcelain surface + inner return rim for thickness
-    for j in range(n_v):
-        v = j / (n_v - 1)
-        for i in range(n_u):
-            u = -1.0 + 2.0 * i / (n_u - 1)
-            pt, is_seam = porcelain_surface(u, v)
-            mask_verts.append(xyz(pt))
-            mask_seams.append(is_seam)
-
-    # Back rim vertices inset by 12mm in -Z so the mask has thick sculpted porcelain edges
-    for j in range(n_v):
-        v = j / (n_v - 1)
-        for i in range(n_u):
-            u = -1.0 + 2.0 * i / (n_u - 1)
-            pt, _ = porcelain_surface(u, v)
-            pt_back = Vector((pt.x * 0.96, pt.y, pt.z - 0.014))
-            mask_verts.append(xyz(pt_back))
-
-    mask_faces = []
-    for j in range(n_v - 1):
-        for i in range(n_u - 1):
-            a = j * n_u + i
-            b = j * n_u + (i + 1)
-            c = (j + 1) * n_u + (i + 1)
-            d = (j + 1) * n_u + i
-            mask_faces.append((a, b, c, d))
-
-    # Stitch outer perimeter border between front surface and back inset surface
-    back_offset = n_u * n_v
-    for i in range(n_u - 1):
-        a, b = i, i + 1
-        mask_faces.append((b, a, back_offset + a, back_offset + b))
-    top_row = (n_v - 1) * n_u
-    for i in range(n_u - 1):
-        a, b = top_row + i, top_row + i + 1
-        mask_faces.append((a, b, back_offset + b, back_offset + a))
-    for j in range(n_v - 1):
-        a, b = j * n_u, (j + 1) * n_u
-        mask_faces.append((a, b, back_offset + b, back_offset + a))
-    for j in range(n_v - 1):
-        a, b = j * n_u + (n_u - 1), (j + 1) * n_u + (n_u - 1)
-        mask_faces.append((b, a, back_offset + a, back_offset + b))
-
-    m_mask = bpy.data.meshes.new("PorcelainFaceMask")
-    m_mask.from_pydata(mask_verts, [], mask_faces)
-    m_mask.update()
-    o_mask = bpy.data.objects.new("PorcelainFaceMask", m_mask)
-    bpy.context.collection.objects.link(o_mask)
-    o_mask.data.materials.append(MATS["WhiteCeramic"])
-    for poly in o_mask.data.polygons:
-        poly.use_smooth = True
-
-    # Continuous high-density recessed obsidian seam inlays nestled flush inside the sculpted porcelain seam grooves (100% unbroken!)
-    for side in (-1, 1):
-        # 1) Recessed horizontal ocular seam line (blind porcelain slit where eyes would be — zero glowing cartoon eyes!)
-        ocular_pts = []
-        for k in range(36):
-            u_s = side * (0.14 + 0.70 * (k / 35.0))
-            v_s = 0.540 - 0.015 * (u_s ** 2)
-            pt, _ = porcelain_surface(u_s, v_s)
-            n_out = Vector((pt.x, 0.0, pt.z - 0.075)).normalized()
-            p_seam = pt + n_out * 0.0030
-            ocular_pts.append((p_seam.x, p_seam.y, p_seam.z))
-        add_poly_seam(f"PorcelainOcularSeam_{side}", ocular_pts, 0.0011, "VisorObsidian", bevel_res=5)
-
-        # 2) Recessed vertical cheek/mandible panel seam line
-        cheek_pts = []
-        for k in range(40):
-            v_s = 0.06 + 0.70 * (k / 39.0)
-            u_s = side * (0.35 + 0.27 * v_s)
-            pt, _ = porcelain_surface(u_s, v_s)
-            n_out = Vector((pt.x, 0.0, pt.z - 0.075)).normalized()
-            p_seam = pt + n_out * 0.0032
-            cheek_pts.append((p_seam.x, p_seam.y, p_seam.z))
-        add_poly_seam(f"PorcelainCheekSeam_{side}", cheek_pts, 0.00095, "VisorObsidian", bevel_res=5)
-
-    # 3) Recessed central forehead crown seam line
-    crown_pts = []
-    for k in range(24):
-        v_s = 0.62 + 0.34 * (k / 23.0)
-        pt, _ = porcelain_surface(0.0, v_s)
-        n_out = Vector((pt.x, 0.0, pt.z - 0.075)).normalized()
-        p_seam = pt + n_out * 0.0024
-        crown_pts.append((p_seam.x, p_seam.y, p_seam.z))
-    add_poly_seam("PorcelainCrownSeam", crown_pts, 0.0009, "VisorObsidian", bevel_res=5)
-
-    # 1C. Precision Machined Ear-Turret Assemblies & Cranial Crown Ribs (zero glowing cartoon head lights!)
-    for side in (-1, 1):
-        add_rod(f"EarTurretBase_{side}", (side * 0.102, 2.060, 0.032), (side * 0.128, 2.060, 0.032),
-                0.038, 0.035, "SatinTitanium", sides=28)
-        add_rod(f"EarTurretRing_{side}", (side * 0.128, 2.060, 0.032), (side * 0.135, 2.060, 0.032),
-                0.028, 0.026, "PistonChrome", sides=28)
-        add_rod(f"EarTurretCore_{side}", (side * 0.135, 2.060, 0.032), (side * 0.139, 2.060, 0.032),
-                0.018, 0.016, "CarbonSubframe", sides=24)
-        # Sleek titanium temple locking clasp anchoring the porcelain mask
-        add_beveled_box(f"TempleMaskClasp_{side}", (side * 0.104, 2.092, 0.095),
-                        (0.024, 0.028, 0.068), "SatinTitanium", rot=(0.12, -side * 0.18, 0), bevel=0.004, segments=3)
-
-
-def build_hydraulic_neck_and_collar():
-    """2. Multi-vertebra hydraulic neck column, smooth braided hoses, and high armored gorget collar."""
-    add_rod("NeckSpineColumn", (0, 1.72, -0.008), (0, 1.93, 0.025), 0.056, 0.046, "CarbonSubframe", sides=24)
-    for ring_y in (1.755, 1.800, 1.845, 1.885):
-        add_rod(f"NeckVertebra_{ring_y}", (0, ring_y - 0.011, 0.006), (0, ring_y + 0.011, 0.009),
-                0.065, 0.062, "DarkArmor", sides=24)
-
-    for side in (-1, 1):
-        add_piston(f"NeckPistonFront_{side}", (side * 0.092, 1.73, 0.082), (side * 0.058, 1.905, 0.098), 0.016, 0.010)
-        add_piston(f"NeckPistonRear_{side}", (side * 0.112, 1.74, -0.075), (side * 0.072, 1.925, -0.045), 0.018, 0.011)
-        add_smooth_cable(f"NeckCableOuter_{side}", [
-            (side * 0.112, 2.02, 0.00),
-            (side * 0.152, 1.91, -0.04),
-            (side * 0.182, 1.78, -0.03),
-            (side * 0.165, 1.66, 0.02),
-        ], 0.0125, "CarbonSubframe")
-        add_smooth_cable(f"NeckCableInner_{side}", [
-            (side * 0.086, 1.98, -0.05),
-            (side * 0.122, 1.86, -0.08),
-            (side * 0.138, 1.72, -0.07),
-        ], 0.0105, "SatinTitanium")
-
-        add_hull(f"CollarGorget_{side}", [
-            (side * 0.082, 1.72,  0.145),
-            (side * 0.238, 1.73,  0.085),
-            (side * 0.248, 1.84, -0.055),
-            (side * 0.108, 1.87, -0.095),
-            (side * 0.092, 1.81,  0.115),
-        ], "DarkArmor", bevel=0.012, segments=3)
-
-
-def build_torso_and_recessed_crimson_core():
-    """3. V-tapered dark-titanium corporate security torso with deeply recessed glowing triangular crimson chest core."""
-    # Sculpted Thorax Subframe Loft
-    thorax_specs = [
-        (1.30, 0.215, 0.142, 0.005),
-        (1.42, 0.255, 0.165, 0.012),
-        (1.56, 0.295, 0.182, 0.018),
-        (1.70, 0.312, 0.184, 0.012),
-        (1.76, 0.245, 0.145, 0.000),
-    ]
-    t_rings = []
-    for y, rx, rz, cz in thorax_specs:
-        t_rings.append([(rx * math.sin(i * math.tau / 32), y, cz + rz * math.cos(i * math.tau / 32)) for i in range(32)])
-    add_loft_rings("ThoraxSubframe", t_rings, "CarbonSubframe", closed_u=True, cap_ends=True)
-
-    # Left & Right Sculpted Pectoral Armor Plates framing the central recessed triangular reactor cavity
-    for side in (-1, 1):
-        s = side
-        add_hull(f"PectoralArmorMain_{s}", [
-            (s * 0.092, 1.675, 0.236),  # upper inner corner next to triangle top vertex
-            (s * 0.022, 1.435, 0.228),  # lower inner corner next to triangle bottom apex
-            (s * 0.235, 1.390, 0.182),
-            (s * 0.318, 1.675, 0.168),
-            (s * 0.145, 1.755, 0.195),
-            (s * 0.215, 1.545, 0.242),
-            (s * 0.085, 1.675, 0.185),
-            (s * 0.022, 1.435, 0.180),
-        ], "DarkArmor", bevel=0.014, segments=3)
-
-        add_hull(f"ClaviclePlate_{s}", [
-            (s * 0.105, 1.685, 0.218),
-            (s * 0.298, 1.665, 0.175),
-            (s * 0.322, 1.765, 0.045),
-            (s * 0.132, 1.785, 0.095),
-        ], "SatinTitanium", bevel=0.010, segments=3)
-
-        for rib_idx, ry in enumerate((1.355, 1.445, 1.535)):
-            add_beveled_box(f"RibArmorGill_{s}_{rib_idx}",
-                            (s * (0.238 + rib_idx * 0.016), ry, 0.062),
-                            (0.068, 0.066, 0.258),
-                            "SatinTitanium" if rib_idx == 1 else "DarkArmor",
-                            rot=(0.12, s * 0.18, -s * 0.15), bevel=0.009, segments=3)
-
-    # ==========================================================================
-    # RECESSED GLOWING TRIANGULAR CRIMSON CHEST CORE (Y = 1.43 .. 1.67 m)
-    # ==========================================================================
-    # 1) Outer beveled triangular bezel frame (3 thick sculpted SatinTitanium walls forming the recessed cavity)
-    tri_outer = [(-0.096, 1.662), (0.096, 1.662), (0.000, 1.442)]
-    tri_inner = [(-0.068, 1.640), (0.068, 1.640), (0.000, 1.482)]
-    for e_i in range(3):
-        ne = (e_i + 1) % 3
-        ox0, oy0 = tri_outer[e_i]
-        ox1, oy1 = tri_outer[ne]
-        ix0, iy0 = tri_inner[e_i]
-        ix1, iy1 = tri_inner[ne]
-        add_hull(f"CoreBezelWall_{e_i}", [
-            (ox0, oy0, 0.244), (ox1, oy1, 0.244),
-            (ix0, iy0, 0.236), (ix1, iy1, 0.236),
-            (ox0, oy0, 0.195), (ox1, oy1, 0.195),
-            (ix0, iy0, 0.195), (ix1, iy1, 0.195),
-        ], "SatinTitanium", bevel=0.004, segments=3)
-
-        # Stepped inner carbon recess wall leading down to the glowing crimson core
-        add_hull(f"CoreRecessStep_{e_i}", [
-            (ix0, iy0, 0.234), (ix1, iy1, 0.234),
-            (ix0 * 0.86, iy0 * 0.86 + 1.587 * 0.14, 0.214),
-            (ix1 * 0.86, iy1 * 0.86 + 1.587 * 0.14, 0.214),
-            (ix0, iy0, 0.198), (ix1, iy1, 0.198),
-        ], "CarbonSubframe", bevel=0.002, segments=2)
-
-    # 3 Machined Chrome Corner Clamps on the triangular core vertices
-    for c_idx, (cx, cy) in enumerate(tri_outer):
-        add_rod(f"CoreCornerLug_{c_idx}", (cx * 0.92, cy * 0.98 + 1.587 * 0.02, 0.228),
-                (cx * 0.92, cy * 0.98 + 1.587 * 0.02, 0.247), 0.011, 0.009, "PistonChrome", sides=18)
-
-    # 2) Deeply Recessed Glowing Triangular Crimson Core Plate + faceted crimson crystal prism inside the cavity
-    add_hull("RecessedCrimsonCorePrism", [
-        (-0.066, 1.638, 0.224),
-        ( 0.066, 1.638, 0.224),
-        ( 0.000, 1.484, 0.220),
-        ( 0.000, 1.585, 0.231),  # slightly domed triangular crystal apex inside the recess
-        (-0.066, 1.638, 0.205),
-        ( 0.066, 1.638, 0.205),
-        ( 0.000, 1.484, 0.205),
-    ], "CrimsonCore", bevel=0.002, segments=2)
-
-    # Precision dark-titanium Y-lattice retention ribs recessed across the glowing crimson core
-    core_center = (0.0, 1.582, 0.229)
-    for r_idx, (vx, vy) in enumerate(tri_inner):
-        add_rod(f"CoreRetentionStrut_{r_idx}", core_center, (vx * 0.92, vy * 0.98 + 1.582 * 0.02, 0.227),
-                0.0042, 0.0038, "VisorObsidian", sides=12)
-    add_rod("CoreCenterNode", (0.0, 1.582, 0.224), (0.0, 1.582, 0.233), 0.011, 0.009, "VisorObsidian", sides=18)
-
-    # Dorsal Back Carapace, Dual Heat-Sink Vents & Articulated Mechanical Spine
-    add_hull("UpperBackCarapace", [
-        (-0.28, 1.40, -0.15), (0.28, 1.40, -0.15),
-        (-0.32, 1.74, -0.16), (0.32, 1.74, -0.16),
-        (-0.18, 1.78, -0.25), (0.18, 1.78, -0.25),
-        (-0.15, 1.38, -0.24), (0.15, 1.38, -0.24),
-    ], "DarkArmor", bevel=0.015, segments=3)
-
-    for side in (-1, 1):
-        add_beveled_box(f"DorsalCoolingPod_{side}", (side * 0.165, 1.60, -0.215),
-                        (0.088, 0.24, 0.075), "SatinTitanium", rot=(-0.08, side * 0.14, 0), bevel=0.008, segments=3)
-        add_piston(f"DorsalSpineActuator_{side}", (side * 0.135, 1.16, -0.155), (side * 0.160, 1.48, -0.205), 0.020, 0.012)
-
-    for v_idx in range(8):
-        vy = 1.08 + v_idx * 0.088
-        vz = -0.185 if v_idx < 3 else (-0.215 if v_idx < 5 else -0.242)
-        add_beveled_box(f"SpineVertebraBlock_{v_idx}", (0, vy, vz),
-                        (0.096, 0.062, 0.078), "SatinTitanium" if v_idx % 2 == 0 else "DarkArmor",
-                        rot=(0.15, 0, 0), bevel=0.009, segments=3)
-
-
-def build_abdomen_and_pelvis():
-    """4. V-Chevron articulated abdomen, central hydraulic actuator & armored pelvis (no cartoon glowing codpiece!)."""
-    add_rod("AbdomenCoreColumn", (0, 0.98, 0.0), (0, 1.38, 0.01), 0.138, 0.158, "CarbonSubframe", sides=28)
-    add_piston("CentralLineaAlbaActuator", (0, 1.05, 0.165), (0, 1.39, 0.185), 0.028, 0.018)
-
-    for side in (-1, 1):
-        s = side
-        for ab_idx, ay in enumerate((1.10, 1.18, 1.26, 1.34)):
-            w_out = 0.158 + ab_idx * 0.016
-            add_hull(f"AbdominalChevron_{s}_{ab_idx}", [
-                (s * 0.032, ay - 0.030, 0.182),
-                (s * 0.032, ay + 0.022, 0.186),
-                (s * w_out, ay + 0.048, 0.135),
-                (s * w_out, ay - 0.008, 0.130),
-                (s * 0.032, ay - 0.030, 0.110),
-                (s * w_out, ay + 0.048, 0.065),
-            ], "DarkArmor" if ab_idx % 2 == 0 else "SatinTitanium", bevel=0.008, segments=3)
-
-        add_piston(f"WaistHydraulicOuter_{s}",
-                   (s * 0.185, 1.02, 0.06), (s * 0.235, 1.36, 0.09), 0.024, 0.015)
-        add_piston(f"WaistHydraulicRear_{s}",
-                   (s * 0.165, 1.02, -0.09), (s * 0.215, 1.36, -0.12), 0.024, 0.015)
-
-    add_hull("PelvisCenterBlock", [
-        (-0.16, 0.96, -0.14), (0.16, 0.96, -0.14),
-        (-0.14, 1.06,  0.175), (0.14, 1.06,  0.175),
-        (-0.075, 0.83, 0.195), (0.075, 0.83, 0.195),
-        (-0.095, 0.83, -0.13), (0.095, 0.83, -0.13),
-    ], "DarkArmor", bevel=0.014, segments=3)
-
-    # Subtle SatinTitanium & WhiteCeramic pelvic Serial Plate (replaces glowing red triangle on crotch)
-    add_hull("PelvisTitaniumEscutcheon", [
-        (-0.042, 0.985, 0.192), (0.042, 0.985, 0.192),
-        (-0.028, 0.895, 0.196), (0.028, 0.895, 0.196),
-        (-0.042, 0.985, 0.175), (0.042, 0.985, 0.175),
-        (-0.028, 0.895, 0.175), (0.028, 0.895, 0.175),
-    ], "SatinTitanium", bevel=0.004, segments=3)
-
-    for side in (-1, 1):
-        s = side
-        add_hull(f"HipBeltArmorPod_{s}", [
-            (s * 0.14, 1.04,  0.14), (s * 0.28, 1.01,  0.11),
-            (s * 0.29, 0.89,  0.09), (s * 0.15, 0.88,  0.13),
-            (s * 0.14, 1.04, -0.12), (s * 0.28, 1.01, -0.11),
-            (s * 0.29, 0.89, -0.10), (s * 0.15, 0.88, -0.12),
-        ], "SatinTitanium", bevel=0.011, segments=3)
-
-
-def build_pauldrons_and_hydraulic_arms():
-    """5. Broad angular pauldrons, smooth lofted bicep/forearm armor shells, double-clevis hydraulic elbows & 5-fingered gauntlets."""
-    for side in (-1, 1):
-        s = side
-        sh_p = Vector((s * 0.375, 1.66, 0.00))
-        el_p = Vector((s * 0.445, 1.28, 0.05))
-        wr_p = Vector((s * 0.390, 0.96, 0.26))
-
-        # 5A. Broad Angular Multi-Layered Pauldrons (exact outer X = ±0.5486 preserved!)
-        add_hull(f"PauldronUpperShell_{s}", [
-            (s * 0.26, 1.74, -0.15), (s * 0.26, 1.74,  0.15),
-            (s * 0.35, 1.83, -0.12), (s * 0.35, 1.83,  0.12),
-            (s * 0.52, 1.71, -0.16), (s * 0.52, 1.71,  0.16),
-            (s * 0.54, 1.56, -0.15), (s * 0.54, 1.56,  0.15),
-            (s * 0.36, 1.58, -0.17), (s * 0.36, 1.58,  0.17),
-        ], "DarkArmor", bevel=0.015, segments=3)
-
-        add_hull(f"PauldronLowerSkirt_{s}", [
-            (s * 0.38, 1.58, -0.14), (s * 0.38, 1.58,  0.14),
-            (s * 0.548, 1.57, -0.13), (s * 0.548, 1.57, 0.13),
-            (s * 0.52, 1.43, -0.11), (s * 0.52, 1.43,  0.11),
-            (s * 0.38, 1.45, -0.13), (s * 0.38, 1.45,  0.13),
-        ], "SatinTitanium", bevel=0.011, segments=3)
-
-        # 5B. Rotary Shoulder Actuator & Smooth Lofted Bicep Shell
-        add_rod(f"ShoulderBallActuator_{s}", sh_p - Vector((s * 0.065, 0, 0)), sh_p + Vector((s * 0.055, 0, 0)),
-                0.084, 0.084, "CarbonSubframe", sides=28)
-        add_rod(f"UpperArmCore_{s}", sh_p, el_p, 0.066, 0.056, "CarbonSubframe", sides=24)
-
-        add_oriented_loft(f"BicepSculptedShell_{s}", sh_p, el_p, (0, 0, 1), [
-            (0.08, 0.066, 0.068, 0.0, 0.0, 2.4),
-            (0.22, 0.082, 0.086, s * 0.006, 0.004, 2.6),
-            (0.55, 0.084, 0.088, s * 0.008, 0.006, 2.6),
-            (0.82, 0.072, 0.076, s * 0.004, 0.002, 2.4),
-            (0.92, 0.058, 0.062, 0.0, 0.0, 2.2),
-        ], "DarkArmor", n_seg=28)
-
-        add_piston(f"BicepHydraulic_{s}",
-                   sh_p + Vector((-s * 0.032, -0.05, 0.072)),
-                   el_p + Vector((-s * 0.022,  0.04, 0.072)), 0.019, 0.012)
-
-        # 5C. Articulated Double-Clevis Elbow Joint
-        add_rod(f"ElbowHingeAxle_{s}", el_p - Vector((0.086, 0, 0)), el_p + Vector((0.086, 0, 0)),
-                0.054, 0.054, "SatinTitanium", sides=28)
-        add_rod(f"ElbowChromeCaps_{s}", el_p - Vector((0.092, 0, 0)), el_p + Vector((0.092, 0, 0)),
-                0.034, 0.034, "PistonChrome", sides=24)
-        add_beveled_box(f"ElbowGuardCowl_{s}", el_p + Vector((s * 0.018, 0, -0.062)),
-                        (0.112, 0.118, 0.088), "SatinTitanium", bevel=0.012, segments=3)
-
-        # 5D. Smooth Lofted Tapered Forearm Gauntlet Shell
-        f_axis = (wr_p - el_p).normalized()
-        f_mid = (el_p + wr_p) * 0.5
-        add_rod(f"ForearmCore_{s}", el_p, wr_p, 0.058, 0.046, "CarbonSubframe", sides=24)
-
-        add_oriented_loft(f"ForearmSculptedGauntlet_{s}", el_p, wr_p, (0, 1, 0), [
-            (0.08, 0.062, 0.062, 0.0, 0.0, 2.2),
-            (0.22, 0.082, 0.078, s * 0.006, 0.002, 2.6),
-            (0.58, 0.074, 0.070, s * 0.004, 0.002, 2.6),
-            (0.88, 0.058, 0.056, 0.0, 0.0, 2.4),
-            (0.98, 0.048, 0.046, 0.0, 0.0, 2.2),
-        ], "DarkArmor", n_seg=28)
-
-        add_oriented_hull(f"ForearmKineticBlade_{s}", f_mid + Vector((s * 0.058, 0.01, 0.0)), f_axis, (0, 1, 0), [
-            (-0.018, -0.055, -0.12), ( 0.018, -0.045, -0.12),
-            (-0.018,  0.060, -0.11), ( 0.022,  0.055, -0.11),
-            (-0.016, -0.042,  0.13), ( 0.016, -0.035,  0.13),
-            (-0.016,  0.045,  0.13), ( 0.018,  0.042,  0.13),
-        ], "SatinTitanium", bevel=0.008, segments=3)
-
-        add_piston(f"ForearmPiston_{s}",
-                   el_p + Vector((s * 0.042, -0.03, -0.052)),
-                   wr_p + Vector((s * 0.032,  0.03, -0.042)), 0.017, 0.011)
-
-        # 5E. Articulated 5-Fingered Mechanical Hand (with knuckle spheres so zero gaps!)
-        add_rod(f"WristRotaryCuff_{s}", wr_p - f_axis * 0.015, wr_p + f_axis * 0.020, 0.048, 0.046, "SatinTitanium", sides=24)
-        palm_c = wr_p + f_axis * 0.055
-        add_oriented_hull(f"HandPalmHull_{s}", palm_c, f_axis, (0, 1, 0), [
-            (-0.046, -0.028, -0.045), ( 0.046, -0.028, -0.045),
-            (-0.048,  0.032, -0.045), ( 0.048,  0.032, -0.045),
-            (-0.044, -0.024,  0.048), ( 0.044, -0.024,  0.048),
-            (-0.046,  0.028,  0.048), ( 0.046,  0.028,  0.048),
-        ], "DarkArmor", bevel=0.008, segments=3)
-
-        add_oriented_hull(f"HandDorsalCeramic_{s}", palm_c + Vector((s * 0.022, 0.012, 0)), f_axis, (0, 1, 0), [
-            (-0.018, -0.026, -0.036), ( 0.018, -0.026, -0.036),
-            (-0.018,  0.026, -0.036), ( 0.018,  0.026, -0.036),
-            (-0.016, -0.024,  0.036), ( 0.016, -0.024,  0.036),
-            (-0.016,  0.024,  0.036), ( 0.016,  0.024,  0.036),
-        ], "WhiteCeramic", bevel=0.005, segments=3)
-
-        for f_idx in range(4):
-            u_off = (f_idx - 1.5) * 0.022
-            k0 = palm_c + f_axis * 0.044 + Vector((s * 0.018, u_off, 0.0))
-            k1 = k0 + f_axis * 0.044 + Vector((-s * 0.016, 0.0, 0.010))
-            k2 = k1 + f_axis * 0.020 + Vector((-s * 0.036, 0.0, -0.012))
-            add_rod(f"FingerProx_{s}_{f_idx}", k0, k1, 0.0135, 0.0115, "SatinTitanium", sides=16)
-            add_rod(f"FingerMid_{s}_{f_idx}", k1 - (k1 - k0).normalized() * 0.004, k2, 0.0115, 0.0075, "DarkArmor", sides=16)
-
-        t0 = palm_c + Vector((-s * 0.018, 0.034, 0.015))
-        t1 = t0 + f_axis * 0.042 + Vector((-s * 0.022, -0.010, 0.015))
-        t2 = t1 + f_axis * 0.026 + Vector(( s * 0.012, -0.018, 0.0))
-        add_rod(f"ThumbProx_{s}", t0, t1, 0.0155, 0.0125, "SatinTitanium", sides=16)
-        add_rod(f"ThumbDist_{s}", t1 - (t1 - t0).normalized() * 0.004, t2, 0.0125, 0.0085, "DarkArmor", sides=16)
-
-
-def build_sculpted_hydraulic_legs_and_boots():
-    """6. Smooth lofted thigh & shin armor shells, articulated hydraulic knees, twin calf shock absorbers & split-toe boots at Y=0.0."""
-    for side in (-1, 1):
-        s = side
-        hip_p   = Vector((s * 0.215, 0.92,  0.00))
-        knee_p  = Vector((s * 0.250, 0.50,  0.04))
-        ankle_p = Vector((s * 0.265, 0.13, -0.03))
-
-        # 6A. Smooth Lofted Thigh Armor Shell (Cuisse)
-        add_rod(f"HipBallJoint_{s}", hip_p - Vector((s * 0.06, 0, 0)), hip_p + Vector((s * 0.05, 0, 0)),
-                0.096, 0.096, "CarbonSubframe", sides=28)
-        add_rod(f"ThighCore_{s}", hip_p, knee_p, 0.095, 0.080, "CarbonSubframe", sides=24)
-
-        add_oriented_loft(f"ThighSculptedShell_{s}", hip_p, knee_p, (0, 0, 1), [
-            (0.06, 0.092, 0.105, s * 0.015, 0.010, 2.4),
-            (0.20, 0.114, 0.132, s * 0.022, 0.018, 2.6),
-            (0.55, 0.108, 0.126, s * 0.018, 0.016, 2.6),
-            (0.84, 0.092, 0.108, s * 0.010, 0.010, 2.4),
-            (0.95, 0.078, 0.088, 0.0, 0.0, 2.2),
-        ], "DarkArmor", n_seg=32)
-
-        thigh_mid = (hip_p + knee_p) * 0.5
-        add_hull(f"ThighOuterReactive_{s}", [
-            (s * 0.315, 0.86,  0.085), (s * 0.368, 0.84,  0.065),
-            (s * 0.315, 0.86, -0.085), (s * 0.368, 0.84, -0.065),
-            (s * 0.315, 0.58,  0.075), (s * 0.358, 0.59,  0.055),
-            (s * 0.315, 0.58, -0.075), (s * 0.358, 0.59, -0.055),
-        ], "SatinTitanium", bevel=0.010, segments=3)
-
-        add_piston(f"ThighInnerPiston_{s}",
-                   hip_p + Vector((-s * 0.075, -0.04, 0.07)),
-                   knee_p + Vector((-s * 0.070, 0.05, 0.06)), 0.021, 0.013)
-
-        # 6B. Articulated Hydraulic Knee Joint & Sculpted Patella Shield
-        add_rod(f"KneeAxle_{s}", knee_p - Vector((0.105, 0, 0)), knee_p + Vector((0.105, 0, 0)),
-                0.068, 0.068, "SatinTitanium", sides=28)
-        add_rod(f"KneeChromeCaps_{s}", knee_p - Vector((0.112, 0, 0)), knee_p + Vector((0.112, 0, 0)),
-                0.042, 0.042, "PistonChrome", sides=24)
-        add_hull(f"KneeShield_{s}", [
-            (knee_p.x - 0.072, knee_p.y - 0.085, knee_p.z + 0.055),
-            (knee_p.x + 0.072, knee_p.y - 0.085, knee_p.z + 0.055),
-            (knee_p.x - 0.082, knee_p.y + 0.085, knee_p.z + 0.065),
-            (knee_p.x + 0.082, knee_p.y + 0.085, knee_p.z + 0.065),
-            (knee_p.x,         knee_p.y + 0.015, knee_p.z + 0.148),
-        ], "DarkArmor", bevel=0.011, segments=3)
-
-        # 6C. Smooth Lofted Shin Greave & Twin Rear Calf Hydraulic Shock Absorbers
-        add_rod(f"ShinCore_{s}", knee_p, ankle_p, 0.078, 0.062, "CarbonSubframe", sides=24)
-
-        add_oriented_loft(f"ShinSculptedGreave_{s}", knee_p, ankle_p, (0, 0, 1), [
-            (0.08, 0.076, 0.088, 0.0, 0.018, 2.3),
-            (0.22, 0.088, 0.105, 0.0, 0.025, 2.6),
-            (0.62, 0.078, 0.095, 0.0, 0.022, 2.6),
-            (0.90, 0.066, 0.082, 0.0, 0.014, 2.3),
-        ], "DarkArmor", n_seg=32)
-
-        add_hull(f"ShinCrestPlate_{s}", [
-            (ankle_p.x - 0.028, 0.17, 0.112), (ankle_p.x + 0.028, 0.17, 0.112),
-            (knee_p.x  - 0.035, 0.42, 0.148), (knee_p.x  + 0.035, 0.42, 0.148),
-            (ankle_p.x - 0.032, 0.17, 0.075), (ankle_p.x + 0.032, 0.17, 0.075),
-            (knee_p.x  - 0.040, 0.42, 0.105), (knee_p.x  + 0.040, 0.42, 0.105),
-        ], "SatinTitanium", bevel=0.007, segments=3)
-
-        for px_off in (-0.036, 0.036):
-            add_piston(f"CalfPiston_{s}_{px_off}",
-                       knee_p + Vector((px_off, -0.03, -0.070)),
-                       ankle_p + Vector((px_off,  0.03, -0.090)), 0.023, 0.015)
-
-        # 6D. Heavy Split-Toe Cybernetic Combat Boot planted solidly at Y = 0.0000 m
-        fx = ankle_p.x
-        add_beveled_box(f"AnkleCollar_{s}", (fx, 0.135, -0.02), (0.142, 0.092, 0.162), "SatinTitanium", bevel=0.012, segments=3)
-        add_hull(f"BootHeelSpur_{s}", [
-            (fx - 0.072, 0.00, -0.155), (fx + 0.072, 0.00, -0.155),
-            (fx - 0.080, 0.00, -0.020), (fx + 0.080, 0.00, -0.020),
-            (fx - 0.068, 0.10, -0.020), (fx + 0.068, 0.10, -0.020),
-            (fx - 0.060, 0.08, -0.140), (fx + 0.060, 0.08, -0.140),
-        ], "DarkArmor", bevel=0.010, segments=3)
-
-        for toe_side in (-1, 1):
-            tx = fx + toe_side * 0.045
-            add_hull(f"BootToeClaw_{s}_{toe_side}", [
-                (tx - 0.036, 0.00, -0.02), (tx + 0.036, 0.00, -0.02),
-                (tx - 0.030, 0.00,  0.185), (tx + 0.030, 0.00,  0.185),
-                (tx - 0.026, 0.048, 0.195), (tx + 0.026, 0.048, 0.195),
-                (tx - 0.034, 0.095, 0.01), (tx + 0.034, 0.095, 0.01),
-            ], "DarkArmor", bevel=0.009, segments=3)
-
-        add_beveled_box(f"BootInstepGuard_{s}", (fx, 0.088, 0.065),
-                        (0.132, 0.056, 0.142), "SatinTitanium", rot=(0.32, 0, 0), bevel=0.010, segments=3)
-
-
-def assign_uvs_and_bake_ao_24(boss):
+    for o in parts:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+    boss = bpy.context.active_object
+    boss.name = "EscapedAIBoss_v3"
     mesh = boss.data
 
-    old_names = [m.name.split(".")[0] if m else "DarkArmor" for m in mesh.materials]
-    name_to_idx = {name: idx for idx, name in enumerate(MAT_ORDER)}
-    poly_targets = [name_to_idx.get(old_names[p.material_index], 0) for p in mesh.polygons]
-    mesh.materials.clear()
-    for name in MAT_ORDER:
-        mesh.materials.append(MATS[name])
-    for poly, ni in zip(mesh.polygons, poly_targets):
-        poly.material_index = ni
-
-    bm = bmesh.new()
-    bm.from_mesh(mesh)
-    bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-6)
-    bmesh.ops.dissolve_degenerate(bm, edges=list(bm.edges), dist=1e-6)
-    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
-    bm.normal_update()
-    bm.to_mesh(mesh)
-    bm.free()
-
-    # Clamp bottom-most boot sole vertices to exact Z_bl = 0.0000 (Y_gltf = 0.0000) so origin is 100% flush with floor
+    # Ensure soles sit strictly at Z=0.0 and total height is exactly TARGET_HEIGHT (2.2365m)
+    zs = [v.co.z for v in mesh.vertices]
+    lo_z, hi_z = min(zs), max(zs)
+    sc = TARGET_HEIGHT / max(0.5, hi_z - lo_z)
     for v in mesh.vertices:
-        if v.co.z < 0.002:
-            v.co.z = 0.0
-        elif v.co.z > 2.2365:
-            v.co.z = 2.2365
-    for poly in mesh.polygons:
-        poly.use_smooth = True
-    mesh.update()
+        # Subtle heroic V-taper broadening above waist so sentinel silhouette reads commanding!
+        z_norm = (v.co.z - lo_z) * sc
+        v_taper = 1.0 + 0.14 * max(0.0, min(1.0, (z_norm - 1.10) / 0.72)) * (1.0 if z_norm < 1.92 else 0.35)
+        v.co = Vector((v.co.x * sc * v_taper, v.co.y * sc, z_norm))
+    mesh.validate(verbose=False)
 
-    # Apply Weighted Normals modifier so beveled armor plates have razor-crisp planar reflections & smooth edges
-    bpy.context.view_layer.objects.active = boss
-    boss.select_set(True)
-    wn = boss.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
-    wn.keep_sharp = False
-    wn.weight = 50
-    try:
-        bpy.ops.object.modifier_apply(modifier=wn.name)
-    except Exception:
-        boss.modifiers.remove(wn)
+    # Build BVHTree & bake 24-ray hemisphere Ambient Occlusion + Curvature Edge-Wear into UV.u!
+    bm_ao = bmesh.new()
+    bm_ao.from_mesh(mesh)
+    bmesh.ops.triangulate(bm_ao, faces=bm_ao.faces)
+    bvh = BVHTree.FromBMesh(bm_ao)
+    bm_ao.free()
+
+    n_rays = 24
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    local_dirs = []
+    for k in range(n_rays):
+        zc = (k + 0.5) / n_rays
+        r_h = math.sqrt(max(0.0, 1.0 - zc * zc))
+        theta = golden * k
+        local_dirs.append(Vector((math.cos(theta) * r_h, math.sin(theta) * r_h, zc)).normalized())
+
+    verts = mesh.vertices
+    v_coords = [v.co.copy() for v in verts]
+    neighbors = [[] for _ in range(len(verts))]
+    for edge in mesh.edges:
+        a, c = edge.vertices[0], edge.vertices[1]
+        neighbors[a].append(c)
+        neighbors[c].append(a)
+
+    max_dist = 0.28
+    vert_u = [0.58] * len(verts)
+    vert_col = [1.0] * len(verts)
+
+    for idx, v in enumerate(verts):
+        p = v.co
+        n = v.normal.normalized() if v.normal.length > 1e-6 else Vector((0.0, 0.0, 1.0))
+        up = Vector((0.0, 0.0, 1.0)) if abs(n.z) < 0.9 else Vector((1.0, 0.0, 0.0))
+        t1 = n.cross(up).normalized()
+        t2 = n.cross(t1).normalized()
+
+        origin = p + n * 0.0025
+        occ = 0.0
+        for ld in local_dirs:
+            d = (t1 * ld.x + t2 * ld.y + n * ld.z).normalized()
+            hit_loc, _, _, hit_dist = bvh.ray_cast(origin, d, max_dist)
+            if hit_loc is not None and hit_dist is not None:
+                occ += (1.0 - min(1.0, hit_dist / max_dist)) ** 1.35
+        ao = max(0.0, 1.0 - (occ / n_rays) * 1.10)
+
+        curv = 0.0
+        if neighbors[idx]:
+            acc = 0.0
+            for nb in neighbors[idx]:
+                dv = v_coords[nb] - p
+                if dv.length > 1e-6:
+                    acc += dv.normalized().dot(n)
+            mean_dot = acc / len(neighbors[idx])
+            curv = max(-0.18, min(0.24, -mean_dot * 0.55))
+
+        vert_u[idx] = min(0.97, max(0.04, 0.10 + 0.54 * (ao ** 1.25) + curv))
+        vert_col[idx] = min(1.0, max(0.26, 0.26 + 0.74 * (ao ** 1.18)))
 
     while mesh.uv_layers:
         mesh.uv_layers.remove(mesh.uv_layers[0])
     uv_layer = mesh.uv_layers.new(name="UVMap")
 
-    quad_offsets = {
-        "DarkArmor":      (0.04, 0.04),
-        "SatinTitanium":  (0.04, 0.04),
-        "CarbonSubframe": (0.54, 0.04),
-        "VisorObsidian":  (0.54, 0.04),
-        "WhiteCeramic":   (0.04, 0.54),
-        "PistonChrome":   (0.04, 0.54),
-        "CrimsonCore":    (0.54, 0.54),
-    }
-
-    verts = mesh.vertices
-    for poly in mesh.polygons:
-        m_name = MAT_ORDER[poly.material_index]
-        u_base, v_base = quad_offsets.get(m_name, (0.04, 0.04))
-        for li in poly.loop_indices:
-            v_co = verts[mesh.loops[li].vertex_index].co
-            tu = min(1.0, max(0.0, (v_co.x + 0.56 + 0.15 * v_co.y) / 1.12))
-            tv = min(1.0, max(0.0, (v_co.z + 0.08 * v_co.y) / 2.25))
-            uv_layer.data[li].uv = (tu * 0.42 + u_base, tv * 0.42 + v_base)
-
     while mesh.color_attributes:
         mesh.color_attributes.remove(mesh.color_attributes[0])
-    vcol = mesh.color_attributes.new(name="Color", type="BYTE_COLOR", domain="POINT")
+    col_attr = mesh.color_attributes.new(name="Col", type="BYTE_COLOR", domain="CORNER")
 
-    tree = BVHTree.FromPolygons([v.co for v in verts], [tuple(p.vertices) for p in mesh.polygons])
-    v_mat = [0] * len(verts)
-    v_norms = [Vector((0.0, 0.0, 0.0)) for _ in range(len(verts))]
-    v_neighbors = [set() for _ in range(len(verts))]
+    crimson_idx = next((i for i, m in enumerate(mesh.materials) if m and m.name == "CrimsonCore"), -1)
     for poly in mesh.polygons:
-        mi = poly.material_index
-        pn = poly.normal * max(1e-6, poly.area)
-        pverts = poly.vertices
-        for vi in pverts:
-            v_norms[vi] += pn
-            if mi > v_mat[vi]:
-                v_mat[vi] = mi
-        for idx_a in range(len(pverts)):
-            va = pverts[idx_a]
-            vb = pverts[(idx_a + 1) % len(pverts)]
-            v_neighbors[va].add(vb)
-            v_neighbors[vb].add(va)
+        poly.use_smooth = True
+        is_core = (poly.material_index == crimson_idx)
+        for li in poly.loop_indices:
+            vi = mesh.loops[li].vertex_index
+            v_co = verts[vi].co
+            tu = 0.92 if is_core else vert_u[vi]
+            tv = min(0.98, max(0.02, v_co.z / TARGET_HEIGHT))
+            uv_layer.data[li].uv = (tu, tv)
+            c = 1.0 if is_core else vert_col[vi]
+            col_attr.data[li].color = (c, c, c, 1.0)
 
-    golden_angle = 2.39996323
-    world_rays = []
-    n_sphere = 24
-    for j in range(n_sphere):
-        z_r = 1.0 - 2.0 * (j + 0.5) / n_sphere
-        rad_r = math.sqrt(max(0.0, 1.0 - z_r * z_r))
-        ang_r = j * golden_angle
-        world_rays.append(Vector((rad_r * math.cos(ang_r), rad_r * math.sin(ang_r), z_r)).normalized())
+    mesh.update()
 
-    shades = [1.0] * len(verts)
-    for v in verts:
-        vi = v.index
-        m_name = MAT_ORDER[v_mat[vi]]
-        if m_name == "CrimsonCore":
-            shades[vi] = 1.0
-            continue
-        n = v_norms[vi].normalized()
-        if n.length_squared < 0.01:
-            n = Vector((0.0, -1.0, 0.0))
-        origin = v.co + n * 0.005
-        ao = 0.0
-        valid = 0
-        max_dist = 0.085
-        for ray in world_rays:
-            nd = ray.dot(n)
-            if nd <= 0.45:
-                continue
-            valid += 1
-            hit_dist = tree.ray_cast(origin, ray, max_dist)[3]
-            if hit_dist is not None and hit_dist > 0.007:
-                ao += (1.0 - hit_dist / max_dist) * nd
-        if valid > 0:
-            ao /= valid
-        v_grad = 0.94 + 0.06 * min(1.0, max(0.0, v.co.z / 2.20))
-        ao_strength = 0.22 if m_name == "WhiteCeramic" else 0.36
-        shades[vi] = max(0.65, min(1.0, v_grad * (1.0 - ao_strength * ao)))
+    # Report exact bounds
+    xs = [v.co.x for v in verts]
+    ys = [v.co.y for v in verts]
+    zs = [v.co.z for v in verts]
+    print(f"Boss v3 bounds: X=[{min(xs):.3f},{max(xs):.3f}] Y=[{min(ys):.3f},{max(ys):.3f}] Z=[{min(zs):.3f},{max(zs):.3f}] Polys={len(mesh.polygons)} Mats={len(mesh.materials)}")
 
-    for v in verts:
-        vi = v.index
-        m_name = MAT_ORDER[v_mat[vi]]
-        if m_name == "CrimsonCore":
-            vcol.data[vi].color = (1.0, 1.0, 1.0, 1.0)
-            continue
-        nbrs = v_neighbors[vi]
-        shade = (0.55 * shades[vi] + 0.45 * (sum(shades[nb] for nb in nbrs) / len(nbrs))) if nbrs else shades[vi]
-        vcol.data[vi].color = (shade, shade, shade, 1.0)
-
-
-def patch_boss_glb_materials(glb_path):
-    raw = glb_path.read_bytes()
-    magic, version, _ = struct.unpack("<III", raw[:12])
-    json_len, json_type = struct.unpack("<II", raw[12:20])
-    gltf = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
-    bin_chunk = raw[20 + json_len :]
-
-    has_tex = bool(gltf.get("textures"))
-    materials = gltf.get("materials", [])
-    for idx, key in enumerate(MAT_ORDER):
-        if idx >= len(materials):
-            break
-        rgba, met, rough, em = MAT_SPECS[key]
-        m_dict = materials[idx]
-        m_dict["name"] = key
-        pbr = m_dict.setdefault("pbrMetallicRoughness", {})
-        pbr["baseColorFactor"] = [round(c, 5) for c in rgba]
-        pbr["metallicFactor"] = met
-        pbr["roughnessFactor"] = rough
-        if has_tex:
-            pbr["baseColorTexture"] = {"index": 0}
-        if em is not None:
-            m_dict["emissiveFactor"] = [round(c, 5) for c in em]
-
-    new_json = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
-    pad = (4 - (len(new_json) % 4)) % 4
-    new_json += b" " * pad
-    total = 12 + 8 + len(new_json) + len(bin_chunk)
-    out = struct.pack("<III", magic, version, total) + struct.pack("<II", len(new_json), json_type) + new_json + bin_chunk
-    glb_path.write_bytes(out)
-
-
-def render_boss_v2_proof(out_glb):
-    """Render 3-panel inspection proof sheet (Front 3/4, Back 3/4, Close-Up Porcelain Mask & Recessed Triangular Crimson Core)."""
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    sc = bpy.context.scene
-    sc.render.engine = "BLENDER_EEVEE"
-    sc.render.resolution_x = 1800
-    sc.render.resolution_y = 1080
-    sc.render.film_transparent = False
-    world = bpy.data.worlds.new("ProofWorld")
-    sc.world = world
-    bg = world.node_tree.nodes.get("Background")
-    if bg:
-        bg.inputs[0].default_value = (0.07, 0.085, 0.11, 1.0)
-        bg.inputs[1].default_value = 0.7
-
-    # 1. Left Panel (x = -1.35): Full-body Front 3/4 view (head to boots)
-    before = set(bpy.data.objects)
-    bpy.ops.import_scene.gltf(filepath=str(out_glb))
-    front_objs = [o for o in set(bpy.data.objects) - before if o.type == "MESH"]
-    for o in front_objs:
-        o.location = Vector((-1.35, 0.0, 0.0))
-        o.rotation_mode = "XYZ"
-        o.rotation_euler = (0.0, 0.0, math.radians(-20.0))
-
-    # 2. Center Panel (x = -0.12): Full-body Back 3/4 view (dorsal carapace, cooling pods, hydraulic spine vertebrae & calf shock absorbers)
-    before = set(bpy.data.objects)
-    bpy.ops.import_scene.gltf(filepath=str(out_glb))
-    back_objs = [o for o in set(bpy.data.objects) - before if o.type == "MESH"]
-    for o in back_objs:
-        o.location = Vector((-0.12, 0.0, 0.0))
-        o.rotation_mode = "XYZ"
-        o.rotation_euler = (0.0, 0.0, math.radians(156.0))
-
-    # 3. Right Panel (x = +1.22): Close-up Bust of Smooth White Porcelain Face Mask + Recessed Glowing Triangular Crimson Chest Core
-    before = set(bpy.data.objects)
-    bpy.ops.import_scene.gltf(filepath=str(out_glb))
-    bust_objs = [o for o in set(bpy.data.objects) - before if o.type == "MESH"]
-    for o in bust_objs:
-        bm = bmesh.new()
-        bm.from_mesh(o.data)
-        geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
-        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=Vector((0.0, 0.0, 1.34)), plane_no=Vector((0.0, 0.0, 1.0)), clear_inner=True)
-        bm.normal_update()
-        bm.to_mesh(o.data)
-        bm.free()
-        o.scale = (1.72, 1.72, 1.72)
-        o.location = Vector((1.22, 0.0, -1.84))
-        o.rotation_mode = "XYZ"
-        o.rotation_euler = (0.0, 0.0, math.radians(12.0))
-
-    # Boost CrimsonCore emission in Blender's imported shader so EEVEE proof shows the glowing crimson reactor core clearly
-    for mat in bpy.data.materials:
-        if mat.name.startswith("CrimsonCore") and mat.node_tree:
-            bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
-            if bsdf and "Emission Strength" in bsdf.inputs:
-                bsdf.inputs["Emission Color"].default_value = (1.0, 0.08, 0.05, 1.0)
-                bsdf.inputs["Emission Strength"].default_value = 6.5
-
-    target = bpy.data.objects.new("Target", None)
-    sc.collection.objects.link(target)
-    target.location = (0.0, 0.0, 1.12)
-
-    for name, loc, energy, col in [
-        ("Key",  (2.4, -3.5, 3.0), 3.6, (1.0, 0.96, 0.90)),
-        ("Fill", (-2.6, -2.5, 1.8), 1.9, (0.76, 0.86, 1.0)),
-        ("Rim",  (0.0, 3.2, 2.8),   2.8, (1.0, 0.55, 0.48)),
-    ]:
-        ld = bpy.data.lights.new(name, type="SUN")
-        ld.energy = energy
-        ld.color = col
-        lo = bpy.data.objects.new(name, ld)
-        sc.collection.objects.link(lo)
-        lo.location = loc
-        d = Vector((0.0, 0.0, 1.12)) - Vector(loc)
-        lo.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
-
-    cd = bpy.data.cameras.new("ProofCam")
-    cd.type = "ORTHO"
-    cd.ortho_scale = 4.25
-    co = bpy.data.objects.new("ProofCam", cd)
-    sc.collection.objects.link(co)
-    sc.camera = co
-    co.location = (0.0, -4.5, 1.12)
-    co.rotation_euler = (math.radians(90.0), 0.0, 0.0)
-
-    for target_path in (ARTIFACT_PROOF_1, ARTIFACT_PROOF_2, SCREENSHOT_PROOF, PREVIEW_PNG):
-        try:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            sc.render.filepath = str(target_path)
-            bpy.ops.render.render(write_still=True)
-            print("Saved proof:", target_path)
-        except Exception as exc:
-            print("Warning saving proof to", target_path, ":", exc)
-
-
-def build_escaped_ai_boss():
-    clear_scene()
-    init_palette()
-
-    build_porcelain_face_mask_and_head()
-    build_hydraulic_neck_and_collar()
-    build_torso_and_recessed_crimson_core()
-    build_abdomen_and_pelvis()
-    build_pauldrons_and_hydraulic_arms()
-    build_sculpted_hydraulic_legs_and_boots()
-
-    mesh_objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
-    bpy.ops.object.select_all(action="DESELECT")
-    for o in mesh_objs:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = mesh_objs[0]
-    bpy.ops.object.join()
-    boss = bpy.context.active_object
-    boss.name = boss.data.name = "escaped_ai_boss"
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-
-    assign_uvs_and_bake_ao_24(boss)
-
-    os.makedirs(OUT_MODELS, exist_ok=True)
-    out_glb = OUT_MODELS / "escaped_ai_boss.glb"
+    out_path = OUT_MODELS / "escaped_ai_boss.glb"
     bpy.ops.export_scene.gltf(
-        filepath=str(out_glb),
+        filepath=str(out_path),
         export_format="GLB",
-        export_vertex_color="ACTIVE",
         export_normals=True,
         export_texcoords=True,
+        export_attributes=True,
+        export_active_vertex_color_when_no_material=True,
+        export_vertex_color="ACTIVE",
         export_animations=False,
-        export_cameras=False,
-        export_lights=False,
     )
-    patch_boss_glb_materials(out_glb)
-
-    pts = [boss.matrix_world @ v.co for v in boss.data.vertices]
-    tris = sum(len(p.vertices) - 2 for p in boss.data.polygons)
-    print(f"Exported escaped_ai_boss.glb: {out_glb} Size: {os.path.getsize(out_glb)} Verts: {len(boss.data.vertices)} Tris: {tris}")
-    print("BBOX X:", round(min(p.x for p in pts), 4), round(max(p.x for p in pts), 4))
-    print("BBOX Y:", round(min(p.y for p in pts), 4), round(max(p.y for p in pts), 4))
-    print("BBOX Z:", round(min(p.z for p in pts), 4), round(max(p.z for p in pts), 4))
-
-    render_boss_v2_proof(out_glb)
+    print("Exported AAA Anatomical MPFB2 escaped_ai_boss.glb:", out_path, os.path.getsize(out_path))
 
 
 if __name__ == "__main__":
-    build_escaped_ai_boss()
+    build_boss_v3()
