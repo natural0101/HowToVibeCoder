@@ -23,7 +23,7 @@ internal sealed class PartnerAvatar(int slot=0)
     public PlayerPose Pose = new(new(2,1.72f,10),MathF.PI,0,WeaponType.MicroUzi);
     public Vector3 Feet => new(Pose.Eye.X,0,Pose.Eye.Z);
     public readonly WeaponAndCombatView Effects = new();
-    private float stride, flash, botCooldown;
+    private float stride, flash, botCooldown, combatStrafe;
 
     public void Move(PlayerPose pose)
     {
@@ -50,13 +50,59 @@ internal sealed class PartnerAvatar(int slot=0)
     public void Follow(float dt, PlayerPose player, SkyscraperFloor1World world, Action<int,string> grant)
     {
         Vector3 flank=new(-MathF.Cos(player.Yaw),0,MathF.Sin(player.Yaw));
-        Vector3 goal=player.Eye+flank*1.7f+player.Forward*1.5f;
+        Vector3 goal;
+        float moveSpeed=6.8f;
+        if(world.BossInCombat)
+        {
+            combatStrafe+=dt*1.9f;
+            Vector3 bossPos=world.ElevatorBoss.Position;
+            Vector3 fromBoss=new(player.Eye.X-bossPos.X,0,player.Eye.Z-bossPos.Z);
+            Vector3 away=fromBoss.LengthSquared()>.04f ? Vector3.Normalize(fromBoss) : -new Vector3(player.Forward.X,0,player.Forward.Z);
+            if(away.LengthSquared()<.01f) away=new(0,0,-1);
+            away=Vector3.Normalize(away);
+            Vector3 side=new(-away.Z,0,away.X);
+            float orbitOffset=2.55f+MathF.Sin(combatStrafe)*.45f;
+            goal=player.Eye+side*orbitOffset+away*.35f;
+
+            // Strict >= 3.4m tactical flanking buffer around the boss (never crowd into boss legs!)
+            const float minBossClearance=3.45f;
+            Vector3 goalFromBoss=new(goal.X-bossPos.X,0,goal.Z-bossPos.Z);
+            float gDist=goalFromBoss.Length();
+            if(gDist<minBossClearance)
+            {
+                Vector3 pushDir=gDist>.15f ? goalFromBoss/gDist : Vector3.Normalize(away*.72f+side*.69f);
+                goal=new(bossPos.X+pushDir.X*minBossClearance,1.72f,bossPos.Z+pushDir.Z*minBossClearance);
+            }
+            Vector3 curFromBoss=new(Pose.Eye.X-bossPos.X,0,Pose.Eye.Z-bossPos.Z);
+            if(curFromBoss.LengthSquared()<3.2f*3.2f)
+            {
+                Vector3 evadeDir=curFromBoss.LengthSquared()>.04f ? Vector3.Normalize(curFromBoss) : Vector3.Normalize(away*.7f+side*.7f);
+                goal=new(bossPos.X+evadeDir.X*3.85f+side.X*.65f,1.72f,bossPos.Z+evadeDir.Z*3.85f+side.Z*.65f);
+                moveSpeed=8.4f;
+            }
+        }
+        else
+        {
+            goal=player.Eye+flank*1.7f+player.Forward*1.5f;
+        }
+
         Vector3 delta=new(goal.X-Pose.Eye.X,0,goal.Z-Pose.Eye.Z);
         Vector3 eye=Pose.Eye;
         if(delta.LengthSquared()>11*11) eye=world.ResolvePlayerCollision(new(goal.X,1.72f,goal.Z));
-        else if(delta.LengthSquared()>.25f)
-            eye=world.ResolvePlayerCollision(eye+Vector3.Normalize(delta)*Math.Min(delta.Length(),dt*6.8f));
-        Vector3? target=world.BossInCombat ? world.ElevatorBoss.Position+Vector3.UnitY*1.35f :
+        else if(delta.LengthSquared()>.16f)
+            eye=world.ResolvePlayerCollision(eye+Vector3.Normalize(delta)*Math.Min(delta.Length(),dt*moveSpeed));
+        if(world.BossInCombat)
+        {
+            Vector3 bossPos=world.ElevatorBoss.Position;
+            Vector3 post=new(eye.X-bossPos.X,0,eye.Z-bossPos.Z);
+            float pDist=post.Length();
+            if(pDist<3.2f)
+            {
+                Vector3 push=pDist>.05f ? post/pDist : new(1,0,0);
+                eye=world.ResolvePlayerCollision(new(bossPos.X+push.X*3.25f,eye.Y,bossPos.Z+push.Z*3.25f));
+            }
+        }
+        Vector3? target=world.BossInCombat ? world.ElevatorBoss.Position+Vector3.UnitY*1.55f :
             world.ActiveCoders.Where(c=>c.State!=CoderAIState.Subdued).OrderBy(c=>Vector3.DistanceSquared(c.Position,eye))
                 .Select(c=>(Vector3?)c.CombatCenter).FirstOrDefault();
         Vector3 aim=target.HasValue ? Vector3.Normalize(target.Value-eye) : player.Forward;
@@ -73,17 +119,22 @@ internal sealed class PartnerAvatar(int slot=0)
     {
         float yaw=Pose.Yaw;
         Vector3 f=new(MathF.Sin(yaw),0,MathF.Cos(yaw)), r=new(f.Z,0,-f.X);
-        float height=Pose.Eye.Y<1.4f ? .75f : 1;
+        float recoilPhase = flash>0 ? MathF.Sin((flash/.12f)*MathF.PI) : 0f;
+        // Tactical firing crouch stance when actively shooting (bent knees / lower center of gravity)
+        float height=Pose.Eye.Y<1.4f ? .75f : (flash>0 ? .91f : 1f);
         Vector3 P(float x,float y,float z) => Feet+r*x+Vector3.UnitY*(y*height)+f*z;
         Color dark=new(38,42,55,255), metal=new(89,99,113,255);
         void Tube(Vector3 a,Vector3 b,float ra,float rb,Color c) => VisualEngine3D.Rod(a,b,ra,rb,10,c);
-        float step = MathF.Abs(MathF.Sin(stride))*.016f;
+        float step = MathF.Abs(MathF.Sin(stride))*.024f;
+        float combatLean = Pose.Weapon == WeaponType.MicroUzi ? (flash>0 ? .115f : .075f) : .025f;
+        float leanTilt = combatLean + .032f*MathF.Sin(stride*2f) - .045f*recoilPhase;
         VisualEngine3D.DrawCharacterDirectionalShadow(Feet,1.70f*height,.32f);
         // The authored SMG is a separate material group in the character asset.
         bool smg = Pose.Weapon == WeaponType.MicroUzi;
         VisualEngine3D.Asset("char_partner_90s",Feet+Vector3.UnitY*step,yaw*180/MathF.PI,
-            stretch:new Vector3(1,height,1), hideProp:true,tint:Blazer);
-        float kick=flash>0 ? .045f : 0;
+            tilt:leanTilt,stretch:new Vector3(1,height,1), hideProp:true,tint:Blazer);
+        float kick=.048f*recoilPhase;
+        float climb=.016f*recoilPhase;
         float lash=MathF.Sin(Pose.Swing*MathF.PI)*.6f;
         // Raised 3D middle-finger salute when teammate triggers [V]!
         if (FlipOffTimer > 0)
@@ -96,8 +147,22 @@ internal sealed class PartnerAvatar(int slot=0)
         }
         if (smg)
         {
-            VisualEngine3D.Asset("weapon_uzi_90s",P(-.094f,1.324f,.258f-kick)+Vector3.UnitY*step,
-                yaw*180f/MathF.PI+194f, scale:.66f*height);
+            VisualEngine3D.Asset("weapon_uzi_90s",P(-.092f,1.335f+climb,.315f-kick)+Vector3.UnitY*step,
+                yaw*180f/MathF.PI+194f, scale:.74f*height, tilt:-.10f*recoilPhase);
+            if (flash > 0f && !VisualEngine3D.CastingShadows)
+            {
+                // Crisp jagged orange-gold multi-ray star muzzle flash (zero flat white oval blob!)
+                Vector3 muzzle = P(-.095f, 1.358f + climb, .545f - kick) + Vector3.UnitY * step;
+                Color gold = new(255, 184, 52, 255), hot = new(255, 240, 172, 255);
+                VisualEngine3D.Rod(muzzle, muzzle + f * (.14f + .05f * recoilPhase), .016f, .003f, 6, hot, Finish.Lamp);
+                for (int k = 0; k < 5; k++)
+                {
+                    float a = k * MathF.Tau / 5f + stride * 2.3f;
+                    Vector3 spike = f * 0.45f + r * MathF.Cos(a) * 0.90f + Vector3.UnitY * MathF.Sin(a) * 0.90f;
+                    VisualEngine3D.Rod(muzzle, muzzle + Vector3.Normalize(spike) * (.095f + .045f * (k % 2)),
+                        .012f, .002f, 5, gold, Finish.Lamp);
+                }
+            }
         }
         switch(Pose.Weapon)
         {

@@ -1248,7 +1248,9 @@ public static partial class Program
             Raylib.DrawRectangleGradientV(0,0,sw,height,Edge(_playerHitDir.Y),Color.Blank);
             Raylib.DrawRectangleGradientV(0,sh-height,sw,height,Color.Blank,Edge(-_playerHitDir.Y));
         }
-        if(CoachingSubtitle || (AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
+        bool bossTapeShownAtTop = _world.BossHudOpacity > 0.5f && _world.ElevatorBoss.Phase == 3
+            && AudioMusicSystem.ActiveVoiceText == _world.CurrentTape;
+        if(CoachingSubtitle || (!bossTapeShownAtTop && AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
         {
             var face=GameFonts.Get(Typeface.InterfaceBold,18);
             float limit=Math.Min(sw-100,940);
@@ -1266,7 +1268,7 @@ public static partial class Program
             for(int i=0;i<lines.Count;i++)
                 ShadowText(face,lines[i],cx-GameFonts.Measure(face,lines[i],18).X/2,sh-125-(lines.Count-1-i)*23,18,white);
         }
-        else if (AudioMusicSystem.VoiceTimer>0)
+        else if (!bossTapeShownAtTop && AudioMusicSystem.VoiceTimer>0)
         {
             string line=Loc.IsEn ? AudioMusicSystem.ActiveSpeaker+": "+AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
             float width=Math.Min(sw-24,GameFonts.Measure(_uiFont,line,16).X+22);
@@ -3014,21 +3016,99 @@ public static partial class Program
         _world.HasElevatorKey = true;
         _world.TrySummonElevatorBoss( out _);
         FinishElevatorIntro();
-        _world.ElevatorBoss.Position = new Vector3(0.0f,.16f,-9.8f);
-        _world.ElevatorDoorOpenAmount=.86f;
-        _world.ElevatorBoss.Hp = 480f;
+        _world.ElevatorBoss.Position = new Vector3(0.0f,0.0f,-10.35f);
+        _world.ElevatorDoorOpenAmount=.92f;
+        _world.ElevatorBoss.Hp = 595f;
         _world.ElevatorBoss.ShieldHp=0; _world.ElevatorBoss.ShieldDelay=5;
         _world.ElevatorBoss.FacingYaw = 3.14159f; // Facing North toward player in North Boss Arena
-        _world.SpawnNodeModulesCube(new Vector3(3.35f, 1.15f, -8.1f), new Vector3(0f, 1.5f, -18.5f));
-        _world.SpawnNodeModulesCube(new Vector3(-3.2f, 2.55f, -9.1f), new Vector3(0f, 1.5f, -18.5f));
-        _playerPos = new Vector3(-1.35f, 1.72f, -14.2f);
-        LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.15f,0));
+        _world.ElevatorBoss.State = ElevatorBossState.ThrowingNodeModules;
+        _world.ElevatorBoss.StateTimer = 2.4f;
+        _world.ElevatorBoss.ThrowCycleDuration = 0.95f;
+        _world.ElevatorBoss.AttackSubTimer = 0.24f; // Peak explosive throw windup!
+        _world.ElevatorBoss.LookTarget = new Vector3(-1.45f, 1.72f, -14.85f);
+        _world.ElevatorBoss.SnapPose = true;
+        _world.SpawnNodeModulesCube(new Vector3(3.35f, 1.15f, -8.5f), new Vector3(0f, 1.5f, -18.5f));
+        _world.SpawnNodeModulesCube(new Vector3(-3.2f, 2.55f, -9.5f), new Vector3(0f, 1.5f, -18.5f));
+        _playerPos = new Vector3(-1.45f, 1.72f, -14.85f);
+        LookAtTarget(_world.ElevatorBoss.Position+new Vector3(.15f,2.05f,0));
         UpdateTrigger(1f/60,true,true,false,false);
         if (_weapons.Ammo!=1 || _world.ElevatorBoss.HitFlinchTimer!=.24f || _world.ElevatorBoss.Hp>=480) throw new InvalidDataException("Shotgun boss shot failed");
         UpdateTrigger(.018f,false,false,false,false);
+        // Keep clean Phase 2 active throw-coil pose (no shield cage clutter, no stray damage label over elevator dial)
+        _world.ElevatorBoss.ShieldHp = 0;
+        _world.ElevatorBoss.State = ElevatorBossState.ThrowingNodeModules;
+        _world.ElevatorBoss.ThrowCycleDuration = 0.95f;
+        _world.ElevatorBoss.AttackSubTimer = 0.24f;
+        _world.ElevatorBoss.LookTarget = _playerPos;
+        _world.ElevatorBoss.SnapPose = true;
         _hudStatusTimer = 0;
-        StagePartner(new(.1f,0,-10.4f),_world.ElevatorBoss.Position+Vector3.UnitY*1.4f);
+        _lastDamageTimer = 0;
+        _playerHitAnimTimer = 0;
+        // Tactical flanking partner at 3.23m from boss cleanly on burgundy carpet border (100% clear of left desk!)
+        StagePartner(new(1.62f,0,-13.15f),_world.ElevatorBoss.Position+Vector3.UnitY*1.55f);
         CaptureShot("05_elevator_boss_escaped_agent.png","crop_slot_4_shotgun.png",new(605,350,520,370));
+
+        // 5b. Live 10-part boss action animation proof captures — OPEN BURGUNDY CARPET CAMERAS (clear of Z=-15.8 partition wall!)
+        {
+            var boss = _world.ElevatorBoss;
+            _world.Partner = null;
+            _world.EnemyProjectiles.Clear();
+            boss.HitFlinchTimer = 0f;
+            boss.HitFlashTimer = 0f;
+            boss.HitDirection = Vector3.Zero;
+            boss.ShieldHp = 0f;
+            boss.Position = new Vector3(0.0f, 0.0f, -10.8f);
+
+            // 67_boss_action_charge.png: Ferocious juggernaut bull-rush sprint (unobstructed 3/4 view!)
+            boss.State = ElevatorBossState.ChargingPlayer;
+            boss.StateTimer = 1.6f;
+            boss.FacingYaw = MathF.PI - 0.14f;
+            boss.StridePhase = 1.45f;
+            boss.LookTarget = new Vector3(-2.15f, 1.54f, -14.75f);
+            boss.SnapPose = true;
+            _world.AdvanceLighting(0.05f);
+            CaptureShot("67_boss_action_charge.png", sceneCamera: new Camera3D
+            {
+                Position = new Vector3(-2.15f, 1.54f, -14.75f),
+                Target = new Vector3(0.0f, 1.48f, -10.8f),
+                Up = Vector3.UnitY,
+                FovY = 58f
+            });
+
+            // 68_boss_action_throw.png: Cocked-back pitcher throw windup + spinning crimson node_modules core
+            boss.State = ElevatorBossState.ThrowingNodeModules;
+            boss.StateTimer = 2.2f;
+            boss.FacingYaw = MathF.PI + 0.10f;
+            boss.ThrowCycleDuration = 0.95f;
+            boss.AttackSubTimer = 0.24f;
+            boss.LookTarget = new Vector3(2.10f, 1.58f, -14.70f);
+            boss.SnapPose = true;
+            _world.SpawnNodeModulesCube(new Vector3(-2.45f, 2.25f, -10.4f), new Vector3(2.10f, 1.5f, -18.5f));
+            _world.AdvanceLighting(0.05f);
+            CaptureShot("68_boss_action_throw.png", sceneCamera: new Camera3D
+            {
+                Position = new Vector3(2.10f, 1.58f, -14.70f),
+                Target = new Vector3(0.0f, 1.52f, -10.8f),
+                Up = Vector3.UnitY,
+                FovY = 58f
+            });
+
+            // 69_boss_action_stun.png: Wall-crash damaged glitching stagger (unobstructed 3/4 view!)
+            _world.EnemyProjectiles.Clear();
+            boss.State = ElevatorBossState.StunnedWallCrash;
+            boss.StateTimer = 1.85f;
+            boss.FacingYaw = MathF.PI - 0.16f;
+            boss.LookTarget = new Vector3(-2.05f, 1.46f, -14.65f);
+            boss.SnapPose = true;
+            _world.AdvanceLighting(0.11f);
+            CaptureShot("69_boss_action_stun.png", sceneCamera: new Camera3D
+            {
+                Position = new Vector3(-2.05f, 1.46f, -14.65f),
+                Target = new Vector3(0.0f, 1.32f, -10.8f),
+                Up = Vector3.UnitY,
+                FovY = 58f
+            });
+        }
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N]
         LoreAndMenusUI.IsLoreOpen = true;

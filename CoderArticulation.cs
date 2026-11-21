@@ -16,7 +16,7 @@ internal static unsafe partial class VisualEngine3D
         if (reader.ReadUInt32() != 0x4E4F534A) throw new InvalidDataException(path);
         using var json = JsonDocument.Parse(reader.ReadBytes(length));
         var ranges = new (int Start, int Count)[10];
-        int index = 0;
+        int index = 0, matched = 0;
         foreach (var mesh in json.RootElement.GetProperty("meshes").EnumerateArray())
         {
             int count = mesh.GetProperty("primitives").GetArrayLength();
@@ -34,11 +34,13 @@ internal static unsafe partial class VisualEngine3D
                 "ShinR_Mesh"     => 9,
                 _ => -1,
             };
-            if (slot >= 0) ranges[slot] = (index, count);
+            if (slot >= 0) { ranges[slot] = (index, count); matched++; }
             index += count;
         }
-        if (index != meshCount) throw new InvalidDataException($"Incomplete Vibe Coder mesh groups: {path}");
-        coderParts[asset] = ranges;
+        if (index != meshCount) throw new InvalidDataException($"Incomplete mesh groups: {path}");
+        if (matched == 10) coderParts[asset] = ranges;
+        else if (asset.StartsWith("vc_", StringComparison.Ordinal))
+            throw new InvalidDataException($"Incomplete Vibe Coder mesh groups ({matched}/10): {path}");
     }
 
     internal static int SpeciesHeadIndex(string speciesId, int fallbackId = 0) => speciesId switch
@@ -376,15 +378,25 @@ internal static unsafe partial class VisualEngine3D
         }
         else if (walking)
         {
-            p.PelvisY = .89f + .025f * MathF.Abs(sinC);
-            p.TorsoPitch = .11f + extraTilt * .5f;
-            p.TorsoYaw = -.12f * sinC;
-            p.ThighLPitch = -.52f * sinC; p.ThighLRoll = .05f;
-            p.ShinLPitch = Math.Max(0f, .58f * MathF.Sin(cyc + .85f) + .14f);
-            p.ThighRPitch = .52f * sinC; p.ThighRRoll = -.05f;
-            p.ShinRPitch = Math.Max(0f, .58f * MathF.Sin(cyc + MathF.PI + .85f) + .14f);
-            p.ArmLPitch = .46f * sinC - .06f; p.ArmLRoll = .09f; p.ElbowLPitch = -.58f - .25f * Math.Max(0f, -sinC); p.ElbowLYaw = -.08f;
-            p.ArmRPitch = -.46f * sinC - .06f; p.ArmRRoll = -.09f; p.ElbowRPitch = -.58f - .25f * Math.Max(0f, sinC); p.ElbowRYaw = .08f;
+            bool combatRush = c.IsCombatCoder && c.State == CoderAIState.CombatHostile;
+            p.PelvisY = (combatRush ? .86f : .89f) + (combatRush ? .038f : .025f) * MathF.Abs(sinC);
+            p.TorsoPitch = (combatRush ? .22f : .11f) + extraTilt * .5f;
+            p.TorsoYaw = (combatRush ? -.19f : -.12f) * sinC;
+            p.TorsoRoll = combatRush ? .06f * sinC : 0f;
+            p.ThighLPitch = (combatRush ? -.66f : -.52f) * sinC - (combatRush ? .08f : 0f); p.ThighLRoll = combatRush ? .07f : .05f;
+            p.ShinLPitch = Math.Max(0f, (combatRush ? .76f : .58f) * MathF.Sin(cyc + .85f) + (combatRush ? .22f : .14f));
+            p.ThighRPitch = (combatRush ? .66f : .52f) * sinC - (combatRush ? .08f : 0f); p.ThighRRoll = combatRush ? -.07f : -.05f;
+            p.ShinRPitch = Math.Max(0f, (combatRush ? .76f : .58f) * MathF.Sin(cyc + MathF.PI + .85f) + (combatRush ? .22f : .14f));
+            if (combatRush)
+            {
+                p.ArmLPitch = .58f * sinC - .32f; p.ArmLRoll = .16f; p.ElbowLPitch = -1.24f - .22f * Math.Max(0f, -sinC); p.ElbowLYaw = -.18f;
+                p.ArmRPitch = -.58f * sinC - .32f; p.ArmRRoll = -.16f; p.ElbowRPitch = -1.24f - .22f * Math.Max(0f, sinC); p.ElbowRYaw = .18f;
+            }
+            else
+            {
+                p.ArmLPitch = .46f * sinC - .06f; p.ArmLRoll = .09f; p.ElbowLPitch = -.58f - .25f * Math.Max(0f, -sinC); p.ElbowLYaw = -.08f;
+                p.ArmRPitch = -.46f * sinC - .06f; p.ArmRRoll = -.09f; p.ElbowRPitch = -.58f - .25f * Math.Max(0f, sinC); p.ElbowRYaw = .08f;
+            }
         }
         else
         {
@@ -402,11 +414,16 @@ internal static unsafe partial class VisualEngine3D
 
         if (c.IsCombatCoder && c.Windup > 0f && !knockedOut)
         {
-            float lift = 1f - c.Windup / (c.WindingSlap ? .38f : .58f);
-            p.ArmRPitch = -1.45f - .55f * lift;
-            p.ArmRRoll = -.28f;
-            p.ElbowRPitch = -1.25f;
-            p.TorsoYaw = -.32f * lift;
+            float lift = Math.Clamp(1f - c.Windup / (c.WindingSlap ? .38f : .58f), 0f, 1f);
+            p.ArmRPitch = -1.52f - .62f * lift;
+            p.ArmRRoll = -.34f;
+            p.ElbowRPitch = -1.28f;
+            p.ArmLPitch = -.86f * lift;
+            p.ArmLRoll = .20f;
+            p.ElbowLPitch = -.52f;
+            p.TorsoYaw = -.42f * lift;
+            p.TorsoPitch = -.06f * lift;
+            p.HeadYaw = .36f * lift;
         }
 
         Matrix4x4 root = Matrix4x4.CreateRotationX(p.RootTilt)

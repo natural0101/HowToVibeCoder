@@ -272,12 +272,16 @@ public sealed class EscapedAgentBoss
     public ElevatorBossState State = ElevatorBossState.Inactive;
     public float StateTimer;
     public float AttackSubTimer;
+    public float ThrowCycleDuration = 0.95f;
+    public float StridePhase;
     public float WheelSpinPhase;
+    public Vector3 LookTarget = new(0f, 1.72f, -15.5f);
     public float HitFlashTimer, HitFlinchTimer;
     public Vector3 HitDirection, KnockbackVel;
     public string SpeechBubble = "";
     public float SpeechTimer;
     public Vector3 ChargeDirection;
+    [System.Text.Json.Serialization.JsonIgnore] public bool SnapPose;
 }
 
 public sealed partial class SkyscraperFloor1World
@@ -1428,10 +1432,11 @@ public sealed partial class SkyscraperFloor1World
         ElevatorRepaired = true;
         ElevatorGlassOpacity = 1f;
         ElevatorDoorOpenAmount = 0f;
+        VisualEngine3D.ResetBossPose();
         ElevatorBoss = new() {
             Hp=600*Systems.Balance.BossHpScale, MaxHp=600*Systems.Balance.BossHpScale,
             IsActive = true, Position = NorthElevatorPos + new Vector3(0,.16f,1.35f), FacingYaw = MathF.PI,
-            State = ElevatorBossState.Repairing, StateTimer = RepairSeconds
+            State = ElevatorBossState.Repairing, StateTimer = RepairSeconds, SnapPose = true
         };
         PlayElevatorCue(ElevatorBoss.State);
         message = ElevatorPrompt();
@@ -1971,6 +1976,7 @@ public sealed partial class SkyscraperFloor1World
 
     private void UpdateElevatorBoss(float dt, Vector3 playerPos)
     {
+        ElevatorBoss.LookTarget = playerPos;
         ElevatorBoss.HitFlinchTimer=Math.Max(0,ElevatorBoss.HitFlinchTimer-dt);
         if (!ElevatorBoss.IsActive || ElevatorBoss.IsDefeated)
         {
@@ -2022,8 +2028,9 @@ public sealed partial class SkyscraperFloor1World
                 float elapsed = IntroSeconds - b.StateTimer;
                 ElevatorDoorOpenAmount = Smooth(elapsed / 1.05f);
                 float stride = Smooth((elapsed - .28f) / (IntroSeconds - .28f));
-                float bob = .055f * MathF.Abs(MathF.Sin(stride * MathF.PI * 5));
-                b.Position = NorthElevatorPos + new Vector3(0,.16f*(1-stride)+bob,1.35f-4.35f*stride);
+                b.StridePhase = stride * MathF.PI * 4.5f;
+                float stepDown = Smooth((stride - .18f) / .20f);
+                b.Position = NorthElevatorPos + new Vector3(0,.16f*(1-stepDown),1.35f-4.35f*stride);
                 if (b.StateTimer <= 0f)
                 {
                     StartBossCharge(playerPos);
@@ -2034,6 +2041,7 @@ public sealed partial class SkyscraperFloor1World
             case ElevatorBossState.ChargingPlayer:
             {
                 b.Position += b.ChargeDirection * (b.Phase==3 ? 13f : 9.2f) * dt;
+                b.StridePhase += dt * (b.Phase == 3 ? 13.5f : 10.6f);
                 b.WheelSpinPhase += dt * 18f;
 
                 // Check if boss crashed into any Pillar or Wall!
@@ -2082,7 +2090,8 @@ public sealed partial class SkyscraperFloor1World
                 {
                     b.State = ElevatorBossState.ThrowingNodeModules;
                     b.StateTimer = 3.4f;
-                    b.AttackSubTimer = 0.25f;
+                    b.ThrowCycleDuration = 0.65f;
+                    b.AttackSubTimer = 0.65f;
                     b.SpeechBubble = "БРОСАЮ АРХИВ NODE_MODULES ВЕСОМ 40 ГИГАБАЙТ!";
                     b.SpeechTimer = 3.2f;
                 }
@@ -2113,8 +2122,11 @@ public sealed partial class SkyscraperFloor1World
                 b.AttackSubTimer -= dt*Systems.Balance.BossCadenceScale;
                 if (b.AttackSubTimer <= 0f)
                 {
-                    b.AttackSubTimer = b.Phase>=2 ? .45f : .95f;
-                    SpawnNodeModulesCube(b.Position + new Vector3(0f, 2.0f, 0f), playerPos);
+                    float nextCycle = b.Phase>=2 ? .55f : .95f;
+                    b.ThrowCycleDuration = nextCycle;
+                    b.AttackSubTimer = nextCycle;
+                    Vector3 rightHandOffset = new(-MathF.Cos(b.FacingYaw) * 0.45f, 2.15f, MathF.Sin(b.FacingYaw) * 0.45f);
+                    SpawnNodeModulesCube(b.Position + rightHandOffset, playerPos);
                 }
 
                 if (b.StateTimer <= 0f)
@@ -4298,15 +4310,49 @@ public sealed partial class SkyscraperFloor1World
         if (!BossModelVisible) return;
         Color tint=b.State==ElevatorBossState.Repairing ? new Color(73,65,70,255) : b.HitFlashTimer>0 ? new Color(255,225,235,255) : b.State==ElevatorBossState.StunnedWallCrash
             ? new Color(255,166,166,255) : Color.White;
-        // MPFB anatomy faces +Z, matching FacingYaw (the retired robot faced -Z).
+        // 10-part hierarchical boss rig faces +Z, matching FacingYaw.
         float shutdown=b.IsDefeated ? Math.Clamp(1-Systems.ShutdownTime/.8f,0,1) : 0;
-        float recoil=HitRecoil(b.HitFlinchTimer,b.ChestCore,b.HitDirection,.52f);
+        float hitT=Math.Clamp(b.HitFlinchTimer/.24f,0,1);
+        float recoil=hitT*hitT;
         if(recoil>0) VisualEngine3D.SetHitFlash(recoil);
-        VisualEngine3D.Asset("escaped_ai_boss",b.Position+b.HitDirection*(.16f*recoil),b.FacingYaw*180/MathF.PI,scale:1.32f,
-            tint:Raylib.ColorLerp(tint,Color.Gray,shutdown),tilt:shutdown*.32f-.36f*recoil,stretch:new Vector3(1,1-.33f*shutdown,1));
+        VisualEngine3D.DrawEscapedAgentBoss(b,b.LookTarget,_worldClock,ElevatorGlassOpacity,shutdown,recoil,
+            Raylib.ColorLerp(tint,Color.Gray,shutdown));
         if(recoil>0) VisualEngine3D.SetHitFlash(0);
+        // Crisp directional armor impact sparks tightly on the chest cuirass (no oversized cartoon star floating off elbow!)
+        if(hitT>.42f && !VisualEngine3D.CastingShadows)
+        {
+            Vector3 hitDir=b.HitDirection.LengthSquared()>.01f ? Vector3.Normalize(b.HitDirection) : new Vector3(0,0,1);
+            Vector3 impact=b.ChestCore - hitDir * .24f;
+            Vector3 up=Vector3.UnitY;
+            Vector3 side=Vector3.Normalize(Vector3.Cross(up, hitDir));
+            if(side.LengthSquared()<.01f) side=Vector3.UnitX;
+            VisualEngine3D.Orb(impact, .042f*hitT, new Color(255,244,195,255), Finish.Lamp);
+            for(int s=0; s<5; s++)
+            {
+                float a = s * MathF.Tau / 5f + _worldClock * 11f;
+                Vector3 ray = Vector3.Normalize(-hitDir * 0.72f + side * MathF.Cos(a) * 0.85f + up * MathF.Sin(a) * 0.85f);
+                VisualEngine3D.Rod(impact, impact + ray * (.18f + .10f * (s % 2)) * hitT, .009f, .002f, 5,
+                    s % 2 == 0 ? new Color(255, 186, 62, 255) : new Color(255, 232, 145, 255), Finish.Lamp);
+            }
+        }
         if(BossRevealed && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
-            Raylib.DrawSphereWires(b.Position+Vector3.UnitY*1.42f,1.48f,6,12,new Color(115,198,222,95));
+        {
+            // Sleek Art-Deco perimeter energy barrier framing System Zero without obscuring his armor silhouette
+            float pulse = 0.72f + 0.28f * MathF.Sin(_worldClock * 4.5f);
+            Color rimCol = new(118, 208, 232, (int)(128 * pulse));
+            Color softCol = new(118, 208, 232, (int)(74 * pulse));
+            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 0.06f, 1.32f, Vector3.UnitX, 90f, rimCol);
+            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 0.14f, 1.40f, Vector3.UnitX, 90f, softCol);
+            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 1.10f, 1.24f, Vector3.UnitX, 90f, softCol);
+            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 3.02f, 0.94f, Vector3.UnitX, 90f, rimCol);
+            for (int r = 0; r < 6; r++)
+            {
+                float a = _worldClock * 0.65f + r * MathF.Tau / 6f;
+                Vector3 dir = new(MathF.Cos(a), 0f, MathF.Sin(a));
+                Raylib.DrawLine3D(b.Position + dir * 1.32f + Vector3.UnitY * 0.06f,
+                                  b.Position + dir * 1.24f + Vector3.UnitY * 1.10f, softCol);
+            }
+        }
     }
 
     private static void DrawFicus(Vector3 p)

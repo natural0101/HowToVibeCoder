@@ -177,7 +177,7 @@ internal static unsafe partial class VisualEngine3D
             vec4 light=lightVP*vec4(pos,1.);
             vec3 q=light.xyz/light.w*.5+.5;
             if(any(lessThan(q,vec3(.001))) || any(greaterThan(q,vec3(.999)))) return 1.;
-            float bias=max(.0008,.0032*(1.-dot(n,sunDir)));
+            float bias=max(.0014,.0058*(1.-clamp(dot(n,sunDir),0.,1.)));
             float visibility=0.;
             for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++)
                 visibility+=step(q.z-bias,texture(shadowMap,q.xy+vec2(x,y)/2048.).r);
@@ -611,7 +611,7 @@ internal static unsafe partial class VisualEngine3D
             RestoreBoothPalette(path,name,model);
             imports.Add(name, model);
             if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
-            else if (name.StartsWith("vc_", StringComparison.Ordinal)) ReadCoderParts(path, name, model.MeshCount);
+            else if (name.StartsWith("vc_", StringComparison.Ordinal) || name == "escaped_ai_boss") ReadCoderParts(path, name, model.MeshCount);
         }
     }
 
