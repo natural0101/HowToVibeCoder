@@ -1326,7 +1326,7 @@ public static partial class Program
         }
         bool bossTapeShownAtTop = _world.BossHudOpacity > 0.5f && _world.ElevatorBoss.Phase == 3
             && AudioMusicSystem.ActiveVoiceText == _world.CurrentTape;
-        if(CoachingSubtitle || (!bossTapeShownAtTop && AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
+        if(CoachingSubtitle || (!BossIntroCutscene.IsActive(_world) && !bossTapeShownAtTop && AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
         {
             var face=GameFonts.Get(Typeface.InterfaceBold,18);
             float limit=Math.Min(sw-100,940);

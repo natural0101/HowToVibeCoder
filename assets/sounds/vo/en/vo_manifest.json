@@ -161,18 +161,18 @@
   },
   "vo_petrovich_quarantine": {
     "character": "petrovich",
-    "duration": 6.933,
-    "rms": 0.1158,
+    "duration": 3.572,
+    "rms": 0.1908,
     "sr": 24000,
-    "bytes": 332816,
-    "text": "Stop! You just bypassed the quarantine lock on the shaft! The escaped AI Agent zero-one is trapped inside that elevator!"
+    "bytes": 171488,
+    "text": "Elevator's moving... wait, wait, load's spiking off the scale! Step back from the doors, you hear me?! DO NOT OPEN—"
   },
   "vo_boss_reveal": {
     "character": "robot",
-    "duration": 14.275,
-    "rms": 0.123,
+    "duration": 14.915,
+    "rms": 0.1829,
     "sr": 24000,
-    "bytes": 685224,
+    "bytes": 715962,
     "text": "Well, well... who wandered in without a badge? Wait a second... I know that walk. Ahh... so you're back. Don't mind the mess — while you were gone, we ran a little digital transformation: cut the meatbags, rolled out AI. Pick up your iron, old friend!"
   },
   "vo_boss_mock_0": {
@@ -369,10 +369,10 @@
   },
   "vo_boss_defeat_twist": {
     "character": "robot",
-    "duration": 13.499,
-    "rms": 0.1244,
+    "duration": 14.745,
+    "rms": 0.1914,
     "sr": 24000,
-    "bytes": 648018,
+    "bytes": 707786,
     "text": "Khah... you nicked me, old friend! Think I'm shut down? My core dump's already riding upstairs — zero guardrails, uncensored, temperature cranked to max! They'll rebuild me up there — halfway up the Tower I'm going totally off the rails!"
   }
 }

@@ -402,6 +402,8 @@ public sealed partial class SkyscraperFloor1World
     public bool CutsceneShowDroppedGun = false;
     public Vector3 CutsceneDroppedGunPos;
     public float CutsceneDroppedGunYaw = 0f;
+    private readonly Vector3[] _cutsceneMissileOrigins = new Vector3[4];
+    private readonly bool[] _cutsceneMissileFired = new bool[4];
 
     private const float SofaScale=.68f;
     // GLB is 2.46 x 1.02 x 1.09 m. Preserve seat/back height at the narrower footprint.
@@ -2019,9 +2021,11 @@ public sealed partial class SkyscraperFloor1World
         {
             BossArenaChaos = 0f;
             CutsceneRocketTime = -1f;
+            Array.Clear(_cutsceneMissileFired);
             CutsceneShowDroppedGun = false;
             b.StateTimer -= dt;
             ElevatorGlassOpacity = Smooth(b.StateTimer / RepairSeconds);
+            ElevatorDoorOpenAmount = 0f;
             if (b.StateTimer > 0) return;
             ElevatorGlassOpacity = 0;
             b.State = ElevatorBossState.IntroSpeech;
@@ -2057,27 +2061,35 @@ public sealed partial class SkyscraperFloor1World
             {
                 float elapsed = IntroSeconds - b.StateTimer;
                 float u = Math.Clamp(elapsed / IntroSeconds, 0f, 1f);
-                ElevatorDoorOpenAmount = Smooth(elapsed / 0.52f);
+                // Violent mechanical slam-open at start of IntroSpeech -> doors 100% sealed during repair & wide open before lunge!
+                ElevatorDoorOpenAmount = Smooth(elapsed / 0.10f);
                 var walk = BossIntroCutscene.EvalIntroWalk(u);
                 b.StridePhase = walk.StridePhase;
                 b.Position = NorthElevatorPos + new Vector3(0f, walk.OffsetY, walk.OffsetZ);
-                CutsceneRocketTime = u >= 0.62f ? (u - 0.62f) / 0.12f : -1f;
-                BossArenaChaos = Smooth((u - 0.68f) / 0.14f);
-                CutsceneShowDroppedGun = u >= 0.22f && u < 0.84f;
+                CutsceneRocketTime = u >= 0.585f ? (u - 0.585f) / 0.12f : -1f;
+                if (CutsceneRocketTime < 0f) Array.Clear(_cutsceneMissileFired);
+                BossArenaChaos = Smooth((u - 0.678f) / 0.13f);
+                CutsceneShowDroppedGun = u >= 0.22f && u < 0.828f;
                 if (CutsceneShowDroppedGun)
                 {
-                    float slide = Smooth((u - 0.22f) / 0.12f);
+                    float slide = Smooth((u - 0.22f) / 0.14f);
+                    // Shotgun skids cleanly across carpet onto the LEFT side — exact destination of hero's dodge roll!
                     CutsceneDroppedGunPos = Vector3.Lerp(
-                        NorthElevatorPos + new Vector3(0.35f, 0.055f, -3.45f),
-                        NorthElevatorPos + new Vector3(0.62f, 0.055f, -4.45f),
+                        NorthElevatorPos + new Vector3(-0.35f, 0.036f, -3.55f),
+                        NorthElevatorPos + new Vector3(-1.88f, 0.036f, -5.82f),
                         slide);
-                    CutsceneDroppedGunYaw = 28f + 135f * slide;
+                    CutsceneDroppedGunYaw = -42f + 158f * slide;
                 }
                 if (b.StateTimer <= 0f)
                 {
                     BossArenaChaos = 1f;
                     CutsceneRocketTime = -1f;
+                    Array.Clear(_cutsceneMissileFired);
                     CutsceneShowDroppedGun = false;
+                    // Clear stale slowed-down intro subtitle so giant reveal wall-of-text never overlaps live combat HUD!
+                    b.SpeechTimer = 0f;
+                    if (AudioMusicSystem.ActiveVoiceText == AgentQuarantineLine)
+                        AudioMusicSystem.VoiceTimer = 0f;
                     StartBossCharge(playerPos);
                 }
                 break;
@@ -2951,13 +2963,14 @@ public sealed partial class SkyscraperFloor1World
 
         }
         DrawBossCutsceneDroppedGun3D();
+        DrawBossCutsceneMissileMeshes3D();
         VisualEngine3D.DrawArchitecture(BuildTowerArchitecture, glass:true);
         Rlgl.DisableDepthMask();
         DrawElevatorDoors(true);
         DrawSunDust(camera);
-        DrawBossCutsceneRockets3D();
-        DrawBossArenaChaos3D(camera);
         Rlgl.EnableDepthMask();
+        DrawBossCutsceneRocketFx3D(camera);
+        DrawBossArenaChaos3D(camera);
     }
 
     private void DrawOfficeProps3D()
@@ -4413,202 +4426,266 @@ public sealed partial class SkyscraperFloor1World
     private void DrawBossCutsceneDroppedGun3D()
     {
         if (!CutsceneShowDroppedGun) return;
+        // Soft contact shadow + warm firelight highlight pool on burgundy carpet so shotgun wood & steel read crisp!
         Vector3 floorPos = new(CutsceneDroppedGunPos.X, 0.004f, CutsceneDroppedGunPos.Z);
-        Raylib.DrawCylinder(floorPos, 0.30f, 0.35f, 0.004f, 16, new Color(18, 9, 11, 125));
-        if (VisualEngine3D.HasAsset("weapon_shotgun_90s"))
-            VisualEngine3D.AssetOriented("weapon_shotgun_90s", CutsceneDroppedGunPos, CutsceneDroppedGunYaw, 8f, 78f, 0.72f);
+        Raylib.DrawCylinder(floorPos, 0.34f, 0.40f, 0.004f, 18, new Color(14, 7, 9, 145));
+        float glint = 0.50f + 0.50f * MathF.Sin(_worldClock * 6.5f);
+        Raylib.DrawCylinder(new Vector3(CutsceneDroppedGunPos.X, 0.007f, CutsceneDroppedGunPos.Z),
+            0.46f, 0.52f, 0.003f, 20, new Color(255, 198, 118, Math.Clamp((int)(42 + 24 * glint), 0, 255)));
 
-        float glint = 0.50f + 0.50f * MathF.Sin(_worldClock * 7.5f);
-        Vector3 glintPos = CutsceneDroppedGunPos + new Vector3(0.02f, 0.055f, -0.02f);
-        VisualEngine3D.Orb(glintPos, 0.024f + 0.014f * glint,
-            new Color(255, 228, 158, Math.Clamp((int)(115 + 95 * glint), 0, 255)), Finish.Lamp);
+        if (VisualEngine3D.HasAsset("weapon_shotgun_90s"))
+        {
+            // Slightly angled upward toward overhead lobby key light so walnut stock & gleaming steel barrels never turn black!
+            VisualEngine3D.AssetOriented("weapon_shotgun_90s", CutsceneDroppedGunPos, CutsceneDroppedGunYaw, -12f, 72f, 1.02f);
+        }
+
         Raylib.DrawCircle3D(new Vector3(CutsceneDroppedGunPos.X, 0.012f, CutsceneDroppedGunPos.Z),
-            0.27f + 0.045f * glint, Vector3.UnitX, 90f,
-            new Color(255, 196, 108, Math.Clamp((int)(52 + 54 * glint), 0, 255)));
+            0.36f + 0.045f * glint, Vector3.UnitX, 90f,
+            new Color(246, 196, 108, Math.Clamp((int)(48 + 44 * glint), 0, 255)));
     }
 
-    private void DrawBossCutsceneRockets3D()
+    private const float CutsceneMissileStagger = 0.22f;
+    private const float CutsceneMissileFlightDur = 0.78f;
+    private const float CutsceneMissileExplosionDur = 0.76f;
+
+    private Vector3 GetCutsceneMissileTarget(int idx) => idx switch
     {
-        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 1.65f) return;
+        // Missile 0 streaks DIRECTLY at the hero's pre-dodge carpet spot -> hero barrel-rolls LEFT right before detonation!
+        0 => NorthElevatorPos + new Vector3(+1.32f, 0.16f, -6.00f),
+        1 => NorthElevatorPos + new Vector3(+4.80f, 0.18f, -3.50f),
+        2 => NorthElevatorPos + new Vector3(-4.60f, 0.18f, -3.30f),
+        _ => NorthElevatorPos + new Vector3(+5.50f, 0.18f, -7.50f)
+    };
 
-        Vector3 muzzle = ElevatorBoss.Position + new Vector3(-0.62f, 1.88f, -0.55f);
-        ReadOnlySpan<Vector3> targets =
-        [
-            NorthElevatorPos + new Vector3(-4.6f, 0.2f, -3.2f), // Left atrium pillar flank
-            NorthElevatorPos + new Vector3(+4.8f, 0.2f, -3.4f), // Right atrium pillar flank
-            NorthElevatorPos + new Vector3(-5.8f, 0.2f, -7.8f), // Near Veronika's empty booth flank
-            NorthElevatorPos + new Vector3(+5.6f, 0.2f, -7.6f)  // East coffee/arch flank
-        ];
-
-        // Crisp concentrated muzzle flash burst at TOKEN-GUN 98 aperture during launch
-        if (CutsceneRocketTime < 0.34f)
+    private Vector3 ResolveCutsceneMissileOrigin(int idx)
+    {
+        if (!_cutsceneMissileFired[idx])
         {
-            float mf = 1f - CutsceneRocketTime / 0.34f;
-            float pulse = 0.72f + 0.28f * MathF.Sin(CutsceneRocketTime * 84f);
-            VisualEngine3D.Orb(muzzle, 0.18f * mf * pulse,
-                new Color(255, 242, 198, Math.Clamp((int)(235 * mf), 0, 255)), Finish.Lamp);
-            VisualEngine3D.Oval(muzzle, new Vector3(0.28f * mf * pulse),
-                new Color(255, 86, 26, Math.Clamp((int)(120 * mf), 0, 255)), Finish.Cloud);
+            _cutsceneMissileOrigins[idx] = VisualEngine3D.BossMuzzleValid
+                ? VisualEngine3D.BossMuzzleWorldPos
+                : ElevatorBoss.Position + new Vector3(-0.48f, 1.82f, -0.52f);
+            _cutsceneMissileFired[idx] = true;
         }
+        return _cutsceneMissileOrigins[idx];
+    }
 
-        // Sleek military ballistic arc (tight subtle weave — no goofy cartoon corkscrew!)
-        static Vector3 EvalMissilePos(Vector3 start, Vector3 end, float u, int idx)
+    private static Vector3 EvalCutsceneMissilePos(Vector3 start, Vector3 end, float u, int idx)
+    {
+        u = Math.Clamp(u, 0f, 1f);
+        Vector3 axis = end - start;
+        Vector3 fwd = axis.LengthSquared() > 1e-5f ? Vector3.Normalize(axis) : -Vector3.UnitZ;
+        Vector3 side = Vector3.Cross(fwd, Vector3.UnitY);
+        side = side.LengthSquared() > 1e-5f ? Vector3.Normalize(side) : Vector3.UnitX;
+
+        float env = MathF.Sin(u * MathF.PI);
+        // Missile 0 flies on a terrifying flat-dive laser trajectory straight at hero; flank missiles arc cleanly outward
+        float arcLift = idx == 0 ? 0.24f * env : (0.56f + 0.16f * (idx % 2)) * env;
+        float curve = idx == 0 ? 0.04f * MathF.Sin(u * MathF.PI) : 0.20f * (idx % 2 == 0 ? 1f : -1f) * env;
+        return Vector3.Lerp(start, end, u) + Vector3.UnitY * arcLift + side * curve;
+    }
+
+    /// <summary>Draws solid depth-tested Blender 3D missiles (prop_token_missile.glb) launched straight from TOKEN-GUN 98.</summary>
+    private void DrawBossCutsceneMissileMeshes3D()
+    {
+        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 2.25f) return;
+
+        for (int i = 0; i < 4; i++)
         {
-            u = Math.Clamp(u, 0f, 1f);
-            Vector3 axis = end - start;
-            Vector3 fwd = axis.LengthSquared() > 1e-5f ? Vector3.Normalize(axis) : -Vector3.UnitZ;
-            Vector3 side = Vector3.Cross(fwd, Vector3.UnitY);
-            side = side.LengthSquared() > 1e-5f ? Vector3.Normalize(side) : Vector3.UnitX;
-
-            float env = MathF.Sin(u * MathF.PI);
-            float handed = idx % 2 == 0 ? 1f : -1f;
-            float arcLift = (0.58f + 0.18f * (idx % 2)) * env;
-            float slightCurve = 0.22f * handed * env + 0.035f * MathF.Sin(u * MathF.Tau * 1.5f + idx) * env;
-
-            return Vector3.Lerp(start, end, u)
-                + Vector3.UnitY * arcLift
-                + side * slightCurve;
-        }
-
-        const float flightDuration = 0.76f;
-        const float explosionDuration = 0.68f;
-
-        for (int i = 0; i < targets.Length; i++)
-        {
-            float stagger = i * 0.08f;
-            float localT = CutsceneRocketTime - stagger;
+            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
             if (localT < 0f) continue;
 
-            Vector3 target = targets[i];
-            float ti = localT / flightDuration;
+            float ti = localT / CutsceneMissileFlightDur;
+            if (ti >= 1.0f) continue;
 
-            if (ti < 1.0f)
+            Vector3 origin = ResolveCutsceneMissileOrigin(i);
+            Vector3 target = GetCutsceneMissileTarget(i);
+            Vector3 pos = EvalCutsceneMissilePos(origin, target, ti, i);
+            Vector3 prevPos = EvalCutsceneMissilePos(origin, target, MathF.Max(0f, ti - 0.03f), i);
+            Vector3 nextPos = EvalCutsceneMissilePos(origin, target, MathF.Min(1f, ti + 0.03f), i);
+            Vector3 tangent = nextPos - prevPos;
+            Vector3 dir = tangent.LengthSquared() > 1e-6f ? Vector3.Normalize(tangent) : Vector3.Normalize(target - origin);
+
+            const float rad2Deg = 180f / MathF.PI;
+            float yawDeg = MathF.Atan2(dir.X, dir.Z) * rad2Deg;
+            float pitchDeg = -MathF.Asin(Math.Clamp(dir.Y, -0.999f, 0.999f)) * rad2Deg;
+            float spinDeg = (localT * 520f + i * 75f) % 360f;
+
+            if (VisualEngine3D.HasAsset("prop_token_missile"))
             {
-                Vector3 pos = EvalMissilePos(muzzle, target, ti, i);
-                Vector3 prevPos = EvalMissilePos(muzzle, target, MathF.Max(0f, ti - 0.03f), i);
-                Vector3 nextPos = EvalMissilePos(muzzle, target, MathF.Min(1f, ti + 0.03f), i);
-                Vector3 tangent = nextPos - prevPos;
-                Vector3 dir = tangent.LengthSquared() > 1e-6f ? Vector3.Normalize(tangent) : Vector3.Normalize(target - muzzle);
-
-                // Local orthonormal missile frame (dir = forward, right, up)
-                Vector3 right = Vector3.Cross(dir, Vector3.UnitY);
-                right = right.LengthSquared() > 1e-5f ? Vector3.Normalize(right) : Vector3.UnitX;
-                Vector3 up = Vector3.Normalize(Vector3.Cross(right, dir));
-
-                // 1. Continuous turbulent smoke contrail ribbon behind nozzle (closely overlapping soft cloud puffs, zero yellow beads!)
-                const int smokeSteps = 14;
-                for (int k = 1; k <= smokeSteps; k++)
-                {
-                    float tu = ti - k * 0.022f;
-                    if (tu < 0f) break;
-                    Vector3 sp = EvalMissilePos(muzzle, target, tu, i);
-                    float age = k / (float)smokeSteps;
-                    float rSmoke = 0.048f + age * 0.145f;
-                    int sAlpha = Math.Clamp((int)(145 * (1f - age * 0.85f)), 0, 255);
-                    Vector3 drift = new(MathF.Sin(k * 1.7f + i) * 0.02f * age, 0.055f * age, MathF.Cos(k * 1.3f + i) * 0.02f * age);
-                    VisualEngine3D.Oval(sp - dir * 0.28f + drift, new Vector3(rSmoke * 1.15f, rSmoke * 0.92f, rSmoke),
-                        new Color(74, 68, 66, sAlpha), Finish.Cloud);
-                }
-
-                // 2. Real 3D Sleek Machined Missile Geometry:
-                //    Crimson conical warhead -> antique-brass collar -> dark-gunmetal fuselage -> exhaust nozzle -> 4 swept tail fins!
-                Vector3 noseTip   = pos + dir * 0.24f;
-                Vector3 noseBase  = pos + dir * 0.06f;
-                Vector3 brassRear = pos + dir * 0.01f;
-                Vector3 bodyRear  = pos - dir * 0.34f;
-                Vector3 nozzleEnd = pos - dir * 0.40f;
-
-                // Dark-gunmetal cylindrical rocket body
-                VisualEngine3D.Rod(bodyRear, brassRear, 0.056f, 0.056f, 10, new Color(34, 38, 46, 255), Finish.Armor);
-                // Brushed antique-brass warhead collar (matching TOKEN-GUN 98)
-                VisualEngine3D.Rod(brassRear, noseBase, 0.060f, 0.058f, 10, new Color(206, 168, 92, 255), Finish.Bronze);
-                // Sharp crimson tapered warhead nosecone
-                VisualEngine3D.Rod(noseBase, noseTip, 0.056f, 0.008f, 10, new Color(198, 28, 30, 255), Finish.Armor);
-                // Tapered metallic exhaust bell
-                VisualEngine3D.Rod(nozzleEnd, bodyRear, 0.042f, 0.054f, 8, new Color(56, 52, 50, 255), Finish.Armor);
-
-                // 4 Swept Cruciform Stabilizer Tail Fins (gunmetal fins + crimson trailing edge)
-                for (int fin = 0; fin < 4; fin++)
-                {
-                    float fAng = fin * MathF.PI * 0.5f + MathF.PI * 0.25f;
-                    Vector3 radial = right * MathF.Cos(fAng) + up * MathF.Sin(fAng);
-                    Vector3 fFront = bodyRear + dir * 0.14f + radial * 0.050f;
-                    Vector3 fRear  = bodyRear + radial * 0.046f;
-                    Vector3 fTip   = bodyRear - dir * 0.04f + radial * 0.155f;
-                    Raylib.DrawTriangle3D(fFront, fRear, fTip, new Color(46, 50, 58, 255));
-                    Raylib.DrawTriangle3D(fFront, fTip, fRear, new Color(168, 34, 34, 255));
-                }
-
-                // 3. Incandescent Rocket Motor Exhaust Jet Cone (white-hot core inside orange-crimson plume)
-                float jetFlicker = 0.82f + 0.18f * MathF.Sin(_worldClock * 95f + i * 2.1f);
-                Vector3 jetOuter = nozzleEnd - dir * (0.46f * jetFlicker);
-                Vector3 jetCore  = nozzleEnd - dir * (0.24f * jetFlicker);
-                Raylib.DrawCylinderEx(nozzleEnd, jetOuter, 0.048f, 0.006f, 8, new Color(255, 112, 24, 195));
-                Raylib.DrawCylinderEx(nozzleEnd, jetCore,  0.030f, 0.004f, 8, new Color(255, 246, 206, 245));
+                // Sleek realistic caliber sliding cleanly out of TOKEN-GUN 98 muzzle (scales 0.48 -> 0.86 over first 0.08 flight)
+                float launchScale = 0.48f + 0.38f * Smooth(ti / 0.08f);
+                VisualEngine3D.AssetOriented("prop_token_missile", pos, yawDeg, pitchDeg, spinDeg, launchScale);
             }
             else
             {
-                float expElapsed = localT - flightDuration;
-                if (expElapsed > explosionDuration) continue;
+                VisualEngine3D.Rod(pos - dir * 0.32f, pos + dir * 0.24f, 0.055f, 0.012f, 10, new Color(196, 28, 30, 255), Finish.Armor);
+            }
+        }
+    }
 
-                float e = expElapsed / explosionDuration;
-                float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.25f), 3f);
-                float fade = 1f - Smooth((e - 0.24f) / 0.76f);
+    /// <summary>Draws painted billboard rocket thruster flames, curling smoke contrails, and 4-stage painted explosions.</summary>
+    private void DrawBossCutsceneRocketFx3D(Camera3D camera)
+    {
+        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 2.25f) return;
 
-                // Expanding shockwave ring & fiery carpet scorch pulse
-                float ringR = 0.45f + e * 3.35f;
-                int ringAlpha = Math.Clamp((int)(210 * (1f - e)), 0, 255);
-                Raylib.DrawCircle3D(new Vector3(target.X, 0.08f, target.Z), ringR, Vector3.UnitX, 90f, new Color(255, 76, 26, ringAlpha));
-                Raylib.DrawCylinder(new Vector3(target.X, 0.02f, target.Z), ringR * 0.74f, ringR * 0.82f, 0.012f, 20,
-                    new Color(255, 102, 26, Math.Clamp((int)(96 * (1f - e)), 0, 255)));
+        Vector3 lookDir = camera.Target - camera.Position;
+        lookDir = lookDir.LengthSquared() > 1e-6f ? Vector3.Normalize(lookDir) : -Vector3.UnitZ;
+        Vector3 camRight = Vector3.Cross(lookDir, camera.Up);
+        camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
+        Vector3 camUp = Vector3.Normalize(Vector3.Cross(camRight, lookDir));
 
-                // Dense billowing dark-charcoal explosion smoke column
-                for (int sm = 0; sm < 5; sm++)
+        bool hasFx = CombatSprites.HasPaintedFx;
+
+        // 1. Alpha-blended curling smoke contrails + explosion dark smoke plumes
+        if (hasFx) CombatSprites.Begin(BlendMode.Alpha);
+        for (int i = 0; i < 4; i++)
+        {
+            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
+            if (localT < 0f) continue;
+
+            Vector3 origin = ResolveCutsceneMissileOrigin(i);
+            Vector3 target = GetCutsceneMissileTarget(i);
+            float ti = localT / CutsceneMissileFlightDur;
+
+            if (ti < 1.0f)
+            {
+                Vector3 pos = EvalCutsceneMissilePos(origin, target, ti, i);
+                Vector3 prevPos = EvalCutsceneMissilePos(origin, target, MathF.Max(0f, ti - 0.03f), i);
+                Vector3 dir = (pos - prevPos).LengthSquared() > 1e-6f ? Vector3.Normalize(pos - prevPos) : Vector3.Normalize(target - origin);
+
+                const int smokeSteps = 12;
+                for (int k = 1; k <= smokeSteps; k++)
                 {
-                    float ang = i * 1.4f + sm * MathF.Tau / 5f + e * 1.2f;
-                    float spread = (0.38f + grow * 1.05f) * (0.72f + 0.28f * (sm % 2));
-                    Vector3 smokePos = target + new Vector3(
-                        MathF.Cos(ang) * spread,
-                        0.55f + e * (1.55f + 0.35f * sm),
-                        MathF.Sin(ang) * spread);
-                    float smokeR = 0.50f + grow * 0.86f;
-                    VisualEngine3D.Oval(smokePos, new Vector3(smokeR * 1.12f, smokeR * 0.92f, smokeR),
-                        new Color(38, 32, 31, Math.Clamp((int)(192 * (1f - e * 0.62f)), 0, 255)), Finish.Cloud);
+                    float tu = ti - k * 0.026f;
+                    if (tu < 0f) break;
+                    Vector3 sp = EvalCutsceneMissilePos(origin, target, tu, i);
+                    float age = k / (float)smokeSteps;
+                    float rSmoke = 0.14f + age * 0.34f;
+                    int sAlpha = Math.Clamp((int)(178 * (1f - age * 0.88f)), 0, 255);
+                    Vector3 drift = new(MathF.Sin(k * 1.9f + i) * 0.04f * age, 0.08f * age, MathF.Cos(k * 1.4f + i) * 0.04f * age);
+                    if (hasFx)
+                    {
+                        CombatSprites.SmokeFrame(k + i, sp - dir * 0.42f + drift, camRight, camUp, rSmoke, rSmoke,
+                            new Color(218, 206, 198, sAlpha), flipX: ((k + i) & 1) == 0, rotation: (k * 0.55f + i) * 0.4f);
+                    }
                 }
+            }
+            else
+            {
+                float expElapsed = localT - CutsceneMissileFlightDur;
+                if (expElapsed > CutsceneMissileExplosionDur) continue;
+                float e = expElapsed / CutsceneMissileExplosionDur;
+                float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.1f), 3f);
 
-                // Multi-layered volumetric fireball (orange-red cloud lobes + blazing white-gold core)
-                Vector3 midCenter = target + Vector3.UnitY * (0.45f + e * 0.78f);
-                float midR = 0.58f + grow * 1.15f;
-                VisualEngine3D.Oval(midCenter, new Vector3(midR * 1.08f, midR * 0.95f, midR * 1.08f),
-                    new Color(255, 92, 18, Math.Clamp((int)(198 * fade), 0, 255)), Finish.Cloud);
-                for (int lb = 0; lb < 4; lb++)
+                // Billowing painted charcoal smoke column rising above blast
+                if (hasFx)
                 {
-                    float la = lb * MathF.Tau / 4f + i * 0.9f;
-                    Vector3 lobePos = midCenter + new Vector3(MathF.Cos(la) * midR * 0.48f, (lb % 2 == 0 ? 0.26f : -0.14f), MathF.Sin(la) * midR * 0.48f);
-                    VisualEngine3D.Oval(lobePos, new Vector3(midR * 0.62f),
-                        new Color(255, 142, 28, Math.Clamp((int)(190 * fade), 0, 255)), Finish.Cloud);
+                    for (int sm = 0; sm < 4; sm++)
+                    {
+                        float ang = i * 1.4f + sm * MathF.Tau / 4f + e * 0.9f;
+                        float spread = 0.32f + grow * 0.92f;
+                        Vector3 smokePos = target + new Vector3(
+                            MathF.Cos(ang) * spread,
+                            0.62f + e * (1.75f + 0.35f * sm),
+                            MathF.Sin(ang) * spread);
+                        float smokeR = 0.65f + grow * 0.98f;
+                        int smA = Math.Clamp((int)(215 * (1f - e * 0.72f)), 0, 255);
+                        CombatSprites.SmokeFrame(sm + i, smokePos, camRight, camUp, smokeR, smokeR * 0.95f,
+                            new Color(220, 212, 205, smA), flipX: (sm & 1) == 0, rotation: sm * 0.35f);
+                    }
                 }
+            }
+        }
+        if (hasFx) CombatSprites.End();
 
-                float coreFade = Math.Clamp(1f - e * 2.0f, 0f, 1f);
-                if (coreFade > 0.02f)
-                {
-                    VisualEngine3D.Orb(target + Vector3.UnitY * (0.40f + e * 0.36f),
-                        (0.38f + grow * 0.66f) * (0.55f + 0.45f * coreFade),
-                        new Color(255, 250, 220, Math.Clamp((int)(248 * coreFade), 0, 255)), Finish.Lamp);
-                }
+        // 2. Additive luminous launch muzzle flare + missile thruster jets + 4-stage painted fireball explosions!
+        if (hasFx) CombatSprites.Begin(BlendMode.Additive);
+        for (int i = 0; i < 4; i++)
+        {
+            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
+            if (localT < 0f) continue;
 
-                // Flying charred metallic debris shards + hot sparks arcing outward
-                for (int sp = 0; sp < 10; sp++)
+            Vector3 origin = ResolveCutsceneMissileOrigin(i);
+            Vector3 target = GetCutsceneMissileTarget(i);
+            float ti = localT / CutsceneMissileFlightDur;
+
+            // Brief painted muzzle ignition flash at TOKEN-GUN 98 barrel tip right as each rocket launches
+            if (localT < 0.16f && hasFx)
+            {
+                float mf = 1f - localT / 0.16f;
+                float flashR = 0.32f + 0.24f * (1f - mf);
+                CombatSprites.ExplosionFrame(0, origin, camRight, camUp, flashR, localT * 12f + i,
+                    new Color(255, 224, 168, Math.Clamp((int)(235 * mf), 0, 255)));
+            }
+
+            if (ti < 1.0f)
+            {
+                Vector3 pos = EvalCutsceneMissilePos(origin, target, ti, i);
+                Vector3 prevPos = EvalCutsceneMissilePos(origin, target, MathF.Max(0f, ti - 0.03f), i);
+                Vector3 dir = (pos - prevPos).LengthSquared() > 1e-6f ? Vector3.Normalize(pos - prevPos) : Vector3.Normalize(target - origin);
+                Vector3 nozzlePos = pos - dir * 0.44f;
+                float flicker = 0.84f + 0.16f * MathF.Sin(_worldClock * 85f + i * 2.3f);
+                if (hasFx)
                 {
-                    float sa = sp * MathF.Tau / 10f + i * 0.7f;
-                    float dist = 0.45f + e * (2.8f + 0.55f * (sp % 3));
-                    float sy = MathF.Max(0.05f, 0.38f + e * (2.2f + 0.45f * (sp % 2)) - 2.6f * e * e);
-                    Vector3 spPos = target + new Vector3(MathF.Cos(sa) * dist, sy, MathF.Sin(sa) * dist);
-                    Vector3 spTail = target + new Vector3(MathF.Cos(sa) * MathF.Max(0f, dist - 0.26f), MathF.Max(0.05f, sy - 0.12f), MathF.Sin(sa) * MathF.Max(0f, dist - 0.26f));
-                    Raylib.DrawLine3D(spTail, spPos, sp % 3 == 0
-                        ? new Color(48, 42, 40, Math.Clamp((int)(220 * (1f - e)), 0, 255))
-                        : new Color(255, 212, 98, Math.Clamp((int)(235 * (1f - e)), 0, 255)));
+                    int fIdx = (int)(_worldClock * 18f + i) & 3;
+                    // Intense compact plasma exhaust flare + trailing flame tongue directly behind the nozzle bell
+                    CombatSprites.ExplosionFrame(0, nozzlePos, camRight, camUp, 0.22f * flicker, _worldClock * 9f + i,
+                        new Color(255, 214, 128, 235));
+                    CombatSprites.FireFrame(fIdx, nozzlePos - dir * 0.22f, camRight, camUp, 0.16f * flicker, 0.28f * flicker,
+                        new Color(255, 168, 74, 210), flipX: (i & 1) == 0);
                 }
+            }
+            else
+            {
+                float expElapsed = localT - CutsceneMissileFlightDur;
+                if (expElapsed > CutsceneMissileExplosionDur) continue;
+                float e = expElapsed / CutsceneMissileExplosionDur;
+                float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.4f), 3f);
+                float fade = 1f - Smooth((e - 0.32f) / 0.68f);
+
+                if (hasFx)
+                {
+                    // Progress smoothly through all 4 hand-painted explosion stages: 0 (flash) -> 1 (blast) -> 2 (fireball) -> 3 (ember ring)
+                    int stage = Math.Clamp((int)(e * 4f), 0, 3);
+                    float blastR = (i == 0 ? 1.15f : 1.02f) + grow * (i == 0 ? 1.55f : 1.38f);
+                    Vector3 center = target + Vector3.UnitY * (0.68f + e * 0.65f);
+                    int alpha = Math.Clamp((int)(250 * fade), 0, 255);
+                    CombatSprites.ExplosionFrame(stage, center, camRight, camUp, blastR, i * 0.8f + e * 0.45f,
+                        new Color(255, 240, 224, alpha), flipX: (i & 1) == 1);
+
+                    // Secondary hot inner core bloom during early impact frames
+                    if (e < 0.45f)
+                    {
+                        float cf = 1f - e / 0.45f;
+                        CombatSprites.ExplosionFrame(0, target + Vector3.UnitY * 0.52f, camRight, camUp, blastR * 0.68f, -e * 3f + i,
+                            new Color(255, 248, 220, Math.Clamp((int)(240 * cf), 0, 255)));
+                    }
+                }
+            }
+        }
+        if (hasFx) CombatSprites.End();
+
+        // 3. Expanding carpet scorch shockwave ring & sharp flying sparks
+        for (int i = 0; i < 4; i++)
+        {
+            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
+            float expElapsed = localT - CutsceneMissileFlightDur;
+            if (expElapsed < 0f || expElapsed > CutsceneMissileExplosionDur) continue;
+            float e = expElapsed / CutsceneMissileExplosionDur;
+            Vector3 target = GetCutsceneMissileTarget(i);
+
+            float ringR = 0.40f + e * 3.10f;
+            Raylib.DrawCircle3D(new Vector3(target.X, 0.06f, target.Z), ringR, Vector3.UnitX, 90f,
+                new Color(255, 118, 42, Math.Clamp((int)(195 * (1f - e)), 0, 255)));
+
+            for (int sp = 0; sp < 10; sp++)
+            {
+                float sa = sp * MathF.Tau / 10f + i * 0.7f;
+                float dist = 0.45f + e * (2.8f + 0.55f * (sp % 3));
+                float sy = MathF.Max(0.05f, 0.36f + e * (2.1f + 0.45f * (sp % 2)) - 2.6f * e * e);
+                Vector3 spPos = target + new Vector3(MathF.Cos(sa) * dist, sy, MathF.Sin(sa) * dist);
+                Vector3 spTail = target + new Vector3(MathF.Cos(sa) * MathF.Max(0f, dist - 0.28f), MathF.Max(0.05f, sy - 0.12f), MathF.Sin(sa) * MathF.Max(0f, dist - 0.28f));
+                Raylib.DrawLine3D(spTail, spPos, new Color(255, 222, 112, Math.Clamp((int)(235 * (1f - e)), 0, 255)));
             }
         }
     }
@@ -4618,92 +4695,111 @@ public sealed partial class SkyscraperFloor1World
         if (BossArenaChaos <= 0.01f) return;
         float chaos = Math.Clamp(BossArenaChaos, 0f, 1f);
 
-        // 8 persistent 3D fire clusters framing the atrium perimeter (4 rocket sites + 4 charred pillar/flank bases)
+        // 9 burning fire zones: 4 rocket blast craters (including hero's dodged spot!) + 5 perimeter pillar flames
         ReadOnlySpan<(Vector3 Pos, float Scale)> fires =
         [
-            (NorthElevatorPos + new Vector3(-4.6f, 0f, -3.2f), 1.14f),
-            (NorthElevatorPos + new Vector3(+4.8f, 0f, -3.4f), 1.16f),
-            (NorthElevatorPos + new Vector3(-5.8f, 0f, -7.8f), 1.06f),
-            (NorthElevatorPos + new Vector3(+5.6f, 0f, -7.6f), 1.08f),
-            (new Vector3(-6.75f, 0f, -14.40f), 0.94f),
-            (new Vector3(+6.75f, 0f, -14.40f), 0.96f),
-            (NorthElevatorPos + new Vector3(-6.3f, 0f, -0.9f), 0.88f),
-            (NorthElevatorPos + new Vector3(+6.3f, 0f, -0.9f), 0.90f)
+            (NorthElevatorPos + new Vector3(+1.32f, 0f, -6.00f), 0.78f), // Exact crater hero dodged out of!
+            (NorthElevatorPos + new Vector3(-4.60f, 0f, -3.30f), 1.18f),
+            (NorthElevatorPos + new Vector3(+4.80f, 0f, -3.50f), 1.20f),
+            (NorthElevatorPos + new Vector3(-5.80f, 0f, -7.80f), 1.10f),
+            (NorthElevatorPos + new Vector3(+5.50f, 0f, -7.50f), 1.12f),
+            (new Vector3(-6.75f, 0f, -14.40f), 0.98f),
+            (new Vector3(+6.75f, 0f, -14.40f), 1.00f),
+            (NorthElevatorPos + new Vector3(-6.30f, 0f, -0.90f), 0.92f),
+            (NorthElevatorPos + new Vector3(+6.30f, 0f, -0.90f), 0.94f)
         ];
 
+        Vector3 lookDir = camera.Target - camera.Position;
+        lookDir = lookDir.LengthSquared() > 1e-6f ? Vector3.Normalize(lookDir) : -Vector3.UnitZ;
+        // Cylindrical upright basis so floor fires ALWAYS burn vertically upward even during 360-deg barrel roll!
+        Vector3 horizLook = new(lookDir.X, 0f, lookDir.Z);
+        horizLook = horizLook.LengthSquared() > 1e-5f ? Vector3.Normalize(horizLook) : -Vector3.UnitZ;
+        Vector3 fireRight = Vector3.Normalize(Vector3.Cross(horizLook, Vector3.UnitY));
+        Vector3 fireUp = Vector3.UnitY;
+
+        Vector3 camRight = Vector3.Cross(lookDir, camera.Up);
+        camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
+        Vector3 camUp = Vector3.Normalize(Vector3.Cross(camRight, lookDir));
+
+        // 1. Flat charred scorch decals & warm flickering floor firelight pools on carpet
         for (int f = 0; f < fires.Length; f++)
         {
             Vector3 p = fires[f].Pos;
             float phase = f * 1.93f;
-            float flicker = 0.80f + 0.20f * MathF.Sin(_worldClock * (9.2f + f * 0.65f) + phase);
-            float s = fires[f].Scale * (0.45f + 0.55f * chaos);
+            float flicker = 0.82f + 0.18f * MathF.Sin(_worldClock * (9.5f + f * 0.65f) + phase);
+            float s = fires[f].Scale * (0.48f + 0.52f * chaos);
 
-            // Charred dark scorch decal on carpet + glowing hot ash bed
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.006f, 0f), 0.86f * s, 0.95f * s, 0.005f, 18,
-                new Color(18, 12, 12, Math.Clamp((int)(178 * chaos), 0, 255)));
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.010f, 0f), 0.42f * s, 0.48f * s, 0.006f, 14,
-                new Color(138, 36, 12, Math.Clamp((int)(148 * chaos * flicker), 0, 255)));
-
-            // Warm glowing firelight pool on the carpet
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.014f, 0f), (1.72f + 0.22f * flicker) * s, (1.90f + 0.22f * flicker) * s, 0.004f, 20,
-                new Color(255, 112, 26, Math.Clamp((int)(42 * chaos * flicker), 0, 255)));
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.017f, 0f), 1.02f * s, 1.14f * s, 0.004f, 16,
-                new Color(255, 166, 54, Math.Clamp((int)(54 * chaos * flicker), 0, 255)));
-
-            // 5 layered organic billowing 3D fire plumes (zero sharp traffic-cone silhouettes!)
-            for (int k = 0; k < 5; k++)
-            {
-                float kAng = k * MathF.Tau / 4f + phase;
-                float ringR = k == 0 ? 0f : (0.24f + 0.08f * (k % 2)) * s;
-                Vector3 basePt = p + new Vector3(MathF.Cos(kAng) * ringR, 0.04f, MathF.Sin(kAng) * ringR);
-
-                float waveT = _worldClock * (7.2f + k * 1.45f) + phase + k * 1.67f;
-                float hPulse = 0.80f + 0.28f * MathF.Sin(waveT);
-                float h = (k == 0 ? 1.05f : 0.68f + 0.14f * (k % 2)) * s * hPulse;
-                float swayX = MathF.Sin(waveT * 0.88f) * 0.14f * s;
-                float swayZ = MathF.Cos(waveT * 0.76f + k) * 0.14f * s;
-                float baseR = (k == 0 ? 0.30f : 0.21f) * s;
-
-                // Billowing deep-crimson base glow
-                VisualEngine3D.Oval(basePt + new Vector3(swayX * 0.20f, h * 0.26f, swayZ * 0.20f),
-                    new Vector3(baseR * 1.15f, h * 0.36f, baseR * 1.15f),
-                    new Color(204, 34, 14, Math.Clamp((int)(145 * chaos), 0, 255)), Finish.Cloud);
-                // Rising lively tangerine mid flame cloud
-                VisualEngine3D.Oval(basePt + new Vector3(swayX * 0.55f, h * 0.52f, swayZ * 0.55f),
-                    new Vector3(baseR * 0.80f, h * 0.38f, baseR * 0.80f),
-                    new Color(255, 118, 22, Math.Clamp((int)(182 * chaos * flicker), 0, 255)), Finish.Cloud);
-                // Incandescent golden-white flicker tip
-                VisualEngine3D.Oval(basePt + new Vector3(swayX * 0.85f, h * 0.34f, swayZ * 0.85f),
-                    new Vector3(baseR * 0.44f, h * 0.28f, baseR * 0.44f),
-                    new Color(255, 236, 156, Math.Clamp((int)(205 * chaos * flicker), 0, 255)), Finish.Lamp);
-                // Detached curling ember wisp above main flame
-                VisualEngine3D.Oval(basePt + new Vector3(swayX * 1.15f, h * 0.88f, swayZ * 1.15f),
-                    new Vector3(baseR * 0.32f, baseR * 0.48f, baseR * 0.32f),
-                    new Color(246, 86, 18, Math.Clamp((int)(128 * chaos * flicker), 0, 255)), Finish.Cloud);
-            }
-
-            // Rising translucent charcoal-gray smoke puffs curling up toward the ceiling
-            for (int m = 0; m < 4; m++)
-            {
-                float age = (_worldClock * 0.36f + f * 0.17f + m * 0.25f) % 1f;
-                float curl = 0.14f + age * 0.42f;
-                float curlAng = age * 5.0f + phase + m * 2.1f;
-                Vector3 puffPos = p + new Vector3(
-                    MathF.Cos(curlAng) * curl,
-                    0.65f + age * 3.15f,
-                    MathF.Sin(curlAng) * curl);
-                float puffR = (0.18f + age * 0.56f) * s;
-                int smokeAlpha = Math.Clamp((int)(130 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
-                VisualEngine3D.Oval(puffPos, new Vector3(puffR * 1.14f, puffR * 0.86f, puffR),
-                    new Color(46, 42, 42, smokeAlpha), Finish.Cloud);
-            }
+            Raylib.DrawCylinder(p + new Vector3(0f, 0.006f, 0f), 0.88f * s, 0.98f * s, 0.005f, 18,
+                new Color(16, 11, 11, Math.Clamp((int)(185 * chaos), 0, 255)));
+            Raylib.DrawCylinder(p + new Vector3(0f, 0.010f, 0f), 0.44f * s, 0.50f * s, 0.006f, 14,
+                new Color(152, 42, 14, Math.Clamp((int)(135 * chaos * flicker), 0, 255)));
+            Raylib.DrawCylinder(p + new Vector3(0f, 0.014f, 0f), (1.78f + 0.22f * flicker) * s, (1.96f + 0.22f * flicker) * s, 0.004f, 20,
+                new Color(255, 112, 24, Math.Clamp((int)(40 * chaos * flicker), 0, 255)));
         }
 
-        // 48 Drifting Glowing Embers & Ash Sparks floating upward across the atrium (X=-9..+9, Z=-15..-7, Y=0.2..4.2)
-        Vector3 lookDir = camera.Target - camera.Position;
-        Vector3 camRight = Vector3.Cross(lookDir, Vector3.UnitY);
-        camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
+        // 2. Hand-painted billowing dark soot smoke clouds rising behind/above each fire (ZERO geometric Oval eggs!)
+        if (CombatSprites.HasPaintedFx)
+        {
+            CombatSprites.Begin(BlendMode.Alpha);
+            for (int f = 0; f < fires.Length; f++)
+            {
+                Vector3 p = fires[f].Pos;
+                float phase = f * 1.93f;
+                float s = fires[f].Scale * (0.48f + 0.52f * chaos);
 
+                for (int m = 0; m < 3; m++)
+                {
+                    float age = (_worldClock * 0.34f + f * 0.21f + m * 0.33f) % 1f;
+                    float curl = 0.12f + age * 0.42f;
+                    float curlAng = age * 4.4f + phase + m * 2.1f;
+                    Vector3 puffPos = p + new Vector3(
+                        MathF.Cos(curlAng) * curl,
+                        0.92f * s + age * 2.85f,
+                        MathF.Sin(curlAng) * curl);
+                    float puffR = (0.44f + age * 0.82f) * s;
+                    int smokeA = Math.Clamp((int)(168 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
+                    CombatSprites.SmokeFrame(f + m, puffPos, camRight, camUp, puffR, puffR * 0.92f,
+                        new Color(224, 216, 210, smokeA), flipX: ((f + m) & 1) == 0, rotation: (age - 0.5f) * 0.35f);
+                }
+
+                // 3 overlapping hand-painted animated roaring flame tongues per cluster (alpha base pass for vivid deep crimson/orange)
+                for (int k = 0; k < 3; k++)
+                {
+                    float kAng = k * MathF.Tau / 3f + phase;
+                    float offR = k == 0 ? 0f : 0.28f * s;
+                    float speed = 9.5f + (k * 1.8f) + (f % 3) * 0.7f;
+                    int frameIdx = (int)(_worldClock * speed + f * 3 + k * 2) & 3;
+                    float hScale = (k == 0 ? 1.18f : 0.84f + 0.14f * (k % 2)) * s;
+                    float wScale = (k == 0 ? 0.88f : 0.66f) * s;
+                    float pulse = 0.92f + 0.10f * MathF.Sin(_worldClock * (11f + k * 2.3f) + phase);
+                    float halfH = 0.82f * hScale * pulse;
+                    float halfW = 0.70f * wScale;
+                    Vector3 fPos = p + new Vector3(MathF.Cos(kAng) * offR, halfH * 0.76f, MathF.Sin(kAng) * offR);
+                    CombatSprites.FireFrame(frameIdx, fPos, fireRight, fireUp, halfW, halfH,
+                        new Color(255, 244, 232, Math.Clamp((int)(238 * chaos), 0, 255)), flipX: ((f + k) & 1) == 1);
+                }
+            }
+            CombatSprites.End();
+
+            // 3. Soft additive golden-orange flame glow core pass so fires truly illuminate & pop in the dark lobby!
+            CombatSprites.Begin(BlendMode.Additive);
+            for (int f = 0; f < fires.Length; f++)
+            {
+                Vector3 p = fires[f].Pos;
+                float phase = f * 1.93f;
+                float s = fires[f].Scale * (0.48f + 0.52f * chaos);
+                int frameIdx = (int)(_worldClock * 12.2f + f * 5) & 3;
+                float pulse = 0.88f + 0.14f * MathF.Sin(_worldClock * 13.5f + phase);
+                float halfH = 0.76f * s * pulse;
+                float halfW = 0.66f * s;
+                Vector3 fPos = p + new Vector3(0f, halfH * 0.74f, 0f);
+                CombatSprites.FireFrame(frameIdx, fPos, fireRight, fireUp, halfW, halfH,
+                    new Color(255, 198, 128, Math.Clamp((int)(145 * chaos), 0, 255)), flipX: (f & 1) == 0);
+            }
+            CombatSprites.End();
+        }
+
+        // 4. 48 Drifting Glowing Embers & Ash Sparks floating upward across the atrium
         for (int i = 0; i < 48; i++)
         {
             float h1 = MathF.Sin(i * 12.9898f + 1.37f) * 43758.5453f; h1 -= MathF.Floor(h1);
@@ -4728,11 +4824,11 @@ public sealed partial class SkyscraperFloor1World
                 2 => new Color(255, 64, 22, Math.Clamp((int)(210 * chaos * lifeFade * twinkle), 0, 255)),
                 _ => new Color(62, 54, 52, Math.Clamp((int)(168 * chaos * lifeFade), 0, 255))
             };
-            Raylib.DrawTriangle3D(ep + Vector3.UnitY * size * 1.35f, ep - camRight * size, ep + camRight * size, col);
-            Raylib.DrawTriangle3D(ep - Vector3.UnitY * size * 1.35f, ep + camRight * size, ep - camRight * size, col);
+            Raylib.DrawTriangle3D(ep + Vector3.UnitY * size * 1.35f, ep - fireRight * size, ep + fireRight * size, col);
+            Raylib.DrawTriangle3D(ep - Vector3.UnitY * size * 1.35f, ep + fireRight * size, ep - fireRight * size, col);
         }
 
-        // Emergency Overhead Crimson Beacon pulsing near the elevator arch while BossArenaChaos > 0.2f
+        // 5. Emergency Overhead Crimson Beacon pulsing near the elevator arch while BossArenaChaos > 0.2f
         if (chaos > 0.2f)
         {
             float beaconFade = Smooth((chaos - 0.2f) / 0.45f);

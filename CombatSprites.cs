@@ -8,7 +8,26 @@ internal static class CombatSprites
     // Left half is the gas jet in bore coordinates. Right half is a radial bloom,
     // also used as the cross section of a tapered streak.
     private static Texture2D flash, smoke;
+    private static Texture2D fxFire, fxExplosion, fxSmokePuff;
+    private static bool fxLoaded;
     private static Shader viewShader;
+
+    private static Texture2D TryLoadFxTexture(string fileName)
+    {
+        string p = Path.Combine(AppContext.BaseDirectory, "assets", "ui", fileName);
+        if (!File.Exists(p))
+            p = Path.Combine(Directory.GetCurrentDirectory(), "assets", "ui", fileName);
+        if (!File.Exists(p)) return default;
+        var tex = Raylib.LoadTexture(p);
+        if (tex.Id != 0)
+        {
+            Raylib.SetTextureFilter(tex, TextureFilter.Bilinear);
+            Raylib.SetTextureWrap(tex, TextureWrap.Clamp);
+        }
+        return tex;
+    }
+
+    internal static bool HasPaintedFx => fxLoaded && fxFire.Id != 0 && fxExplosion.Id != 0 && fxSmokePuff.Id != 0;
 
     internal static void Load()
     {
@@ -59,6 +78,10 @@ internal static class CombatSprites
             float density = Math.Clamp((n-.30f)*2.5f,0,1) * edge*edge * MathF.Exp(-1.5f*(u*u+v*v));
             return new Color(218+(int)(28*n), 217+(int)(29*n), 215+(int)(30*n), Alpha(density));
         });
+        fxFire = TryLoadFxTexture("fx_fire_flames.png");
+        fxExplosion = TryLoadFxTexture("fx_explosion_burst.png");
+        fxSmokePuff = TryLoadFxTexture("fx_smoke_puff.png");
+        fxLoaded = fxFire.Id != 0 && fxExplosion.Id != 0 && fxSmokePuff.Id != 0;
     }
 
     private static float Gaussian(float x) => MathF.Exp(-x*x);
@@ -106,6 +129,10 @@ internal static class CombatSprites
 
     internal static void Unload()
     {
+        if (fxFire.Id != 0) Raylib.UnloadTexture(fxFire);
+        if (fxExplosion.Id != 0) Raylib.UnloadTexture(fxExplosion);
+        if (fxSmokePuff.Id != 0) Raylib.UnloadTexture(fxSmokePuff);
+        fxFire = default; fxExplosion = default; fxSmokePuff = default; fxLoaded = false;
         Raylib.UnloadShader(viewShader);
         Raylib.UnloadTexture(smoke);
         Raylib.UnloadTexture(flash);
@@ -179,4 +206,55 @@ internal static class CombatSprites
         side=Vector3.Normalize(side)*radius;
         Quad(flash,.5f,1,tail-side*.55f,head-side,head+side,tail+side*.55f,color);
     }
+
+    private static void QuadUV(Texture2D tex, float u0, float v0, float u1, float v1, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color tint)
+    {
+        if (tex.Id == 0) return;
+        Rlgl.SetTexture(tex.Id);
+        Rlgl.Begin((int)DrawMode.Quads);
+        Rlgl.Color4ub(tint.R, tint.G, tint.B, tint.A);
+        Rlgl.TexCoord2f(u0, v1); Rlgl.Vertex3f(a.X, a.Y, a.Z);
+        Rlgl.TexCoord2f(u1, v1); Rlgl.Vertex3f(b.X, b.Y, b.Z);
+        Rlgl.TexCoord2f(u1, v0); Rlgl.Vertex3f(c.X, c.Y, c.Z);
+        Rlgl.TexCoord2f(u0, v0); Rlgl.Vertex3f(d.X, d.Y, d.Z);
+        Rlgl.End();
+        Rlgl.SetTexture(0);
+    }
+
+    private static void Sheet2x2(Texture2D tex, int frame, Vector3 center, Vector3 right, Vector3 up, float halfW, float halfH, float rotation, Color tint, bool flipX)
+    {
+        int idx = ((frame % 4) + 4) % 4;
+        int col = idx & 1;
+        int row = idx >> 1;
+        const float pad = 0.008f;
+        float u0 = col * 0.5f + pad;
+        float u1 = (col + 1) * 0.5f - pad;
+        float v0 = row * 0.5f + pad;
+        float v1 = (row + 1) * 0.5f - pad;
+        if (flipX) (u0, u1) = (u1, u0);
+
+        Vector3 x, y;
+        if (MathF.Abs(rotation) > 1e-4f)
+        {
+            var (s, c) = MathF.SinCos(rotation);
+            x = (right * c + up * s) * halfW;
+            y = (up * c - right * s) * halfH;
+        }
+        else
+        {
+            x = right * halfW;
+            y = up * halfH;
+        }
+        // Bottom-left (a), bottom-right (b), top-right (c), top-left (d)
+        QuadUV(tex, u0, v0, u1, v1, center - x - y, center + x - y, center + x + y, center - x + y, tint);
+    }
+
+    internal static void FireFrame(int frame, Vector3 center, Vector3 right, Vector3 up, float halfW, float halfH, Color tint, bool flipX = false, float rotation = 0f)
+        => Sheet2x2(fxFire, frame, center, right, up, halfW, halfH, rotation, tint, flipX);
+
+    internal static void ExplosionFrame(int frame, Vector3 center, Vector3 right, Vector3 up, float radius, float rotation, Color tint, bool flipX = false)
+        => Sheet2x2(fxExplosion, frame, center, right, up, radius, radius, rotation, tint, flipX);
+
+    internal static void SmokeFrame(int frame, Vector3 center, Vector3 right, Vector3 up, float halfW, float halfH, Color tint, bool flipX = false, float rotation = 0f)
+        => Sheet2x2(fxSmokePuff, frame, center, right, up, halfW, halfH, rotation, tint, flipX);
 }

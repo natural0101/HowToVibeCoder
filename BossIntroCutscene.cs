@@ -17,23 +17,25 @@ namespace HowToVibeCoder;
 internal static class BossIntroCutscene
 {
     private const float CalmPhaseEndR = 0.52f;   // Repairing 0.00..0.52: false calm watching Floor 01 dial
-    private const float EyeSnapR = 0.88f;        // Repairing 0.88..1.00: twin crimson eyes suddenly snap ON
-    private const float GrabConnectU = 0.068f;   // Giant armored left hand shoots into lens & clenches collar!
-    private const float ThrowWindupU = 0.172f;   // End of helpless mid-air lift (Y=2.18m) -> wind-up anticipation
-    private const float ShoveImpactU = 0.196f;   // EXPLOSIVE sidearm hurl across the entire atrium!
-    private const float FloorLandU = 0.276f;     // Crushing slam onto burgundy carpet (Y=0.36m) + carpet skid!
+    private const float EyeSnapR = 0.88f;        // Repairing 0.88..1.00: visor wakes & doors crack open
+    private const float GrabConnectU = 0.065f;   // Giant armored left hand shoots out & grabs collar
+    private const float ThrowWindupU = 0.165f;   // End of helpless mid-air lift -> wind-up anticipation
+    private const float ShoveImpactU = 0.195f;   // EXPLOSIVE sidearm hurl across the entire atrium!
+    private const float FloorLandU = 0.270f;     // Crushing slam onto RIGHT side of burgundy carpet + skid!
     private const float SkidEndU = 0.305f;       // End of floor bounce & carpet skid
-    private const float GlanceShotgunU = 0.38f;  // End of dazed left-glance + dropped shotgun spot
-    private const float LookUpEndU = 0.46f;      // Head snaps sharply UP at towering titan looming overhead
-    private const float SalvoStartU = 0.62f;     // TOKEN-GUN 98 launches 4 sleek 3D finned missiles
-    private const float ExplosionStartU = 0.68f; // Missiles detonate and ignite the atrium
-    private const float ExplosionEndU = 0.76f;
-    private const float GrabStartU = 0.78f;      // Camera dips toward dropped 3D shotgun on carpet
-    private const float GrabClackU = 0.83f;      // Crisp pickup clack right before dropped gun vanishes (0.84)
-    private const float PullBackStartU = 0.85f;  // Hero surges upright straight into live 1st-person combat
+    private const float GlanceShotgunU = 0.400f; // Hero glances at empty desk & spots dropped shotgun on LEFT carpet
+    private const float LookUpEndU = 0.460f;     // Head snaps sharply UP at towering titan looming overhead
+    private const float SalvoStartU = 0.585f;    // TOKEN-GUN 98 launches 3D missile straight at hero + flank rockets!
+    private const float DodgeRollStartU = 0.648f;// Hero dives into a 360-deg sideways dodge roll LEFT across carpet!
+    private const float ExplosionStartU = 0.678f;// Missile 0 blasts the exact carpet spot hero just dodged out of!
+    private const float ExplosionEndU = 0.755f;
+    private const float DodgeRollEndU = 0.758f;  // Hero finishes roll right beside dropped 3D shotgun on LEFT carpet!
+    private const float GrabStartU = 0.758f;     // Quick lean onto dropped 3D shotgun right in front of hero
+    private const float GrabClackU = 0.822f;     // Crisp pickup clack right before dropped gun vanishes (0.828)
+    private const float PullBackStartU = 0.850f; // Hero surges upright straight into live 1st-person combat
 
     private const float BarHeight235 = 88f; // Pure matte-black 2.35:1 cinema aperture inside 1280x720 virtual UI space
-    private static readonly Vector3 DroppedShotgunPos = new(0.62f, 0.06f, -12.95f);
+    private static readonly Vector3 DroppedShotgunPos = new(-1.88f, 0.065f, -14.32f);
 
     private static bool _skipped;
     private static int _lastAudioCueMask;
@@ -147,7 +149,7 @@ internal static class BossIntroCutscene
     }
 
     internal static Vector3 KnockedBackStandPosition(SkyscraperFloor1World world)
-        => world.NorthElevatorPos + new Vector3(0.88f, 1.72f, -6.18f);
+        => world.NorthElevatorPos + new Vector3(-1.48f, 1.72f, -5.92f);
 
     /// <summary>
     /// Exact biomechanical foot-locked walkout shared by <see cref="SkyscraperFloor1World"/> (root Z/Y)
@@ -345,15 +347,16 @@ internal static class BossIntroCutscene
         SkyscraperFloor1World world, EscapedAgentBoss b, IntroWalkSample walk, float u)
     {
         Vector3 north = world.NorthElevatorPos;
-        Vector3 standAtDoor  = north + new Vector3(-0.14f, 1.66f, -1.18f); // (-0.14, 1.66, -9.68) INCHES from boss's hand!
-        Vector3 liftedInAir  = north + new Vector3(-0.22f, 2.16f, -0.98f); // (-0.22, 2.16, -9.48) HOISTED OFF FLOOR face-to-face!
-        Vector3 windupPull   = north + new Vector3(-0.50f, 2.24f, -0.84f); // Cocked sideways before brutal hurl!
-        Vector3 floorImpact  = north + new Vector3(0.76f,  0.36f, -5.45f); // Hard first slam onto carpet (Y=0.36m!)
-        Vector3 floorRest    = north + new Vector3(0.88f,  0.48f, -6.18f); // (0.88, 0.48, -14.68) 5.3m skid rest on carpet!
-        Vector3 bracePos     = north + new Vector3(0.94f,  0.72f, -6.18f);
-        Vector3 grabDipPos   = north + new Vector3(0.76f,  0.50f, -5.52f);
-        Vector3 surgeBasePos = north + new Vector3(0.84f,  0.58f, -5.98f);
-        Vector3 emptyDeskGlance = new(3.15f, 0.92f, -12.35f);
+        Vector3 standAtDoor  = north + new Vector3(-0.08f, 1.64f, -1.44f); // Cleanly framed right at open threshold (zero door/collar clipping!)
+        Vector3 liftedInAir  = north + new Vector3(-0.10f, 2.08f, -1.28f); // Hoisted off floor face-to-face with sleek crimson visor!
+        Vector3 windupPull   = north + new Vector3(-0.42f, 2.16f, -1.16f); // Cocked sideways before brutal hurl!
+        Vector3 floorImpact  = north + new Vector3(1.18f,  0.38f, -5.45f); // Hard first slam onto RIGHT side of carpet!
+        Vector3 floorRest    = north + new Vector3(1.32f,  0.48f, -6.10f); // (1.32, 0.48, -14.60) skid rest on RIGHT carpet
+        Vector3 braceRight   = north + new Vector3(1.32f,  0.66f, -6.02f); // Braced on RIGHT carpet as Missile 0 streaks straight at hero!
+        Vector3 dodgeEndPos  = north + new Vector3(-1.42f, 0.46f, -5.88f); // (-1.42, 0.46, -14.38) landed on LEFT carpet right beside dropped shotgun!
+        Vector3 grabDipPos   = north + new Vector3(-1.62f, 0.44f, -5.66f); // Lean straight down onto dropped 3D shotgun
+        Vector3 surgeBasePos = north + new Vector3(-1.48f, 0.58f, -5.92f); // Surge upright into live combat!
+        Vector3 emptyDeskGlance = new(3.35f, 0.92f, -12.35f);
 
         Vector3 pos;
         Vector3 tgt;
@@ -473,42 +476,71 @@ internal static class BossIntroCutscene
                 fov = LerpF(44f, 46f, k);
             }
         }
-        else if (u < GrabStartU)
+        else if (u < DodgeRollStartU)
         {
-            // BEAT 4 (u = 0.46..0.78): FLOOR-LOCKED STOMPS + ROCKET SALVO SETTING OFFICE ON FIRE!
-            // Camera widens (FovY 46 -> 55 deg, push-up to Y = 0.72m) & SHAKES VIOLENTLY at u = 0.68..0.76!
-            float f = SmoothStep((u - LookUpEndU) / (GrabStartU - LookUpEndU));
-            pos = Vector3.Lerp(floorRest, bracePos, f);
-            tgt = b.Position + new Vector3(LerpF(0.04f, 0.12f, f), LerpF(2.02f, 1.94f, f), 0f);
-            rollRad = LerpF(-0.140f, -0.045f, f);
-            fov = LerpF(48f, 56f, f);
+            // BEAT 4A (u = 0.460..0.648): BOSS STOMPS FORWARD, AIMS TOKEN-GUN 98 DEAD AT HERO & FIRES MISSILE 0 STRAIGHT AT US!
+            float f = SmoothStep((u - LookUpEndU) / (DodgeRollStartU - LookUpEndU));
+            pos = Vector3.Lerp(floorRest, braceRight, f);
+            tgt = b.Position + new Vector3(LerpF(0.02f, -0.06f, f), LerpF(1.98f, 1.88f, f), 0f);
+            rollRad = LerpF(-0.140f, -0.075f, f);
+            fov = LerpF(47f, 54f, f);
+        }
+        else if (u < DodgeRollEndU)
+        {
+            // BEAT 4B (u = 0.648..0.758): HERO VIOLENTLY BARREL-ROLLS LEFT ACROSS THE CARPET RIGHT BEFORE MISSILE 0 DETONATES!
+            // Rolls straight out of the blast zone onto the LEFT side of the atrium — emerging inches from the dropped 3D shotgun!
+            float f = (u - DodgeRollStartU) / (DodgeRollEndU - DodgeRollStartU);
+            float s = SmoothStep(f);
+            float diveArc = MathF.Sin(f * MathF.PI);
+            pos = Vector3.Lerp(braceRight, dodgeEndPos, s) + new Vector3(0f, -0.15f * diveArc, 0.22f * diveArc);
 
-            if (u >= ExplosionStartU && u <= ExplosionEndU + 0.02f)
+            // Visceral 360-degree shoulder-roll camera rotation (leftward dive across carpet!)
+            float rollProg = SmoothStep(Math.Clamp((f - 0.04f) / 0.88f, 0f, 1f));
+            rollRad = -0.075f - MathF.Tau * rollProg;
+
+            // Gaze whips from incoming rocket/boss -> across burning atrium -> locks straight onto dropped 3D shotgun!
+            Vector3 bossAim = b.Position + new Vector3(-0.06f, 1.84f, 0f);
+            Vector3 midSweep = Vector3.Lerp(bossAim, DroppedShotgunPos, 0.48f) + new Vector3(-0.6f, -0.25f, 0f);
+            if (f < 0.45f)
+                tgt = Vector3.Lerp(bossAim, midSweep, SmoothStep(f / 0.45f));
+            else
+                tgt = Vector3.Lerp(midSweep, DroppedShotgunPos, SmoothStep((f - 0.45f) / 0.55f));
+
+            fov = LerpF(54f, 47f, s) + 12f * diveArc;
+
+            // Shockwave camera quake right as Missile 0 blasts the exact spot hero just dodged out of!
+            if (u >= ExplosionStartU)
             {
-                float expEnv = SmoothStep((u - ExplosionStartU) / 0.016f)
-                    * (1f - SmoothStep((u - 0.735f) / 0.032f));
-                float expAmp = expEnv * 0.072f;
+                float expEnv = SmoothStep((u - ExplosionStartU) / 0.014f)
+                    * (1f - SmoothStep((u - 0.728f) / 0.032f));
+                float expAmp = expEnv * 0.068f;
                 pos += new Vector3(
                     MathF.Sin(u * 520f) * expAmp,
-                    MathF.Cos(u * 610f) * expAmp * 0.85f,
-                    MathF.Sin(u * 430f) * expAmp * 0.45f);
-                tgt += new Vector3(
-                    MathF.Cos(u * 470f) * expAmp * 0.70f,
-                    MathF.Sin(u * 560f) * expAmp * 0.70f,
-                    0f);
-                rollRad += MathF.Sin(u * 490f) * expEnv * 0.052f;
+                    MathF.Cos(u * 610f) * expAmp * 0.80f,
+                    MathF.Sin(u * 430f) * expAmp * 0.40f);
             }
         }
         else
         {
-            // BEAT 5A (u = 0.78..0.85): DIP DOWN-LEFT TO SNATCH DROPPED 3D SHOTGUN OFF CARPET!
+            // BEAT 5A (u = 0.758..0.850): HERO RIGHT BESIDE DROPPED 3D SHOTGUN ON LEFT CARPET -> SNATCHES IT & SNAPS UP AT BOSS!
             float f = SmoothStep((u - GrabStartU) / (PullBackStartU - GrabStartU));
-            float reach = MathF.Max(0f, MathF.Sin(f * MathF.PI)); // Clamp >=0 so Sin(PI) never yields NaN in Pow!
-            Vector3 bossAim = b.Position + new Vector3(0.10f, 1.72f, 0f);
-            pos = Vector3.Lerp(Vector3.Lerp(bracePos, surgeBasePos, f), grabDipPos, reach * 0.88f);
-            tgt = Vector3.Lerp(bossAim, DroppedShotgunPos, MathF.Pow(reach, 0.72f));
-            rollRad = LerpF(-0.045f, 0f, f) + 0.065f * reach;
-            fov = LerpF(55f, 50f, f) - 3f * reach;
+            Vector3 bossAim = b.Position + new Vector3(0.08f, 1.76f, 0f);
+            if (f < 0.58f)
+            {
+                float k = SmoothStep(f / 0.58f);
+                pos = Vector3.Lerp(dodgeEndPos, grabDipPos, k);
+                tgt = DroppedShotgunPos + new Vector3(0f, 0.03f * (1f - k), 0f);
+                rollRad = LerpF(-0.075f, +0.055f, k);
+                fov = LerpF(47f, 44f, k);
+            }
+            else
+            {
+                float k = SmoothStep((f - 0.58f) / 0.42f);
+                pos = Vector3.Lerp(grabDipPos, surgeBasePos, k);
+                tgt = Vector3.Lerp(DroppedShotgunPos, bossAim, k);
+                rollRad = LerpF(+0.055f, 0f, k);
+                fov = LerpF(44f, 50f, k);
+            }
         }
 
         // Heavy titanium boot-stomp floor vibration synchronized to exact mechanical foot slams!
@@ -600,24 +632,24 @@ internal static class BossIntroCutscene
                 Raylib.DrawRectangleGradientH(sw - 132, barH, 132, sh - barH * 2, Color.Blank, dazeRed);
             }
 
-            // 1c. Warm blazing orange explosion flash as the 4 rockets detonate and ignite the atrium (u = 0.68..0.77)
-            if (u >= ExplosionStartU && u < ExplosionEndU + 0.03f)
+            // 1c. Brief crisp heat-glint on rocket detonation (NEVER muddy orange screen fog!)
+            if (u >= ExplosionStartU && u < ExplosionEndU)
             {
-                float p1 = MathF.Exp(-MathF.Pow((u - 0.696f) / 0.022f, 2f));
-                float p2 = MathF.Exp(-MathF.Pow((u - 0.728f) / 0.024f, 2f)) * 0.85f;
+                float p1 = MathF.Exp(-MathF.Pow((u - 0.684f) / 0.012f, 2f));
+                float p2 = MathF.Exp(-MathF.Pow((u - 0.716f) / 0.014f, 2f)) * 0.65f;
                 float expIntensity = MathF.Min(1f, p1 + p2);
-                int expA = Math.Clamp((int)(136 * expIntensity), 0, 255);
-                Raylib.DrawRectangle(0, barH, sw, sh - barH * 2, new Color(255, 148, 52, expA));
+                int expA = Math.Clamp((int)(56 * expIntensity), 0, 255);
+                Raylib.DrawRectangle(0, barH, sw, sh - barH * 2, new Color(255, 192, 118, expA));
             }
 
-            // 1d. Warm burning fire-glow edge wash once the atrium is ablaze (u = 0.69..0.92)
-            if (u >= 0.69f && u < 0.94f)
+            // 1d. Subtle warm firelight edge glow once the atrium is ablaze (u = 0.68..0.92)
+            if (u >= 0.68f && u < 0.94f)
             {
-                float fireGlow = SmoothStep((u - 0.69f) / 0.04f) * (1f - SmoothStep((u - 0.84f) / 0.10f));
-                int glowA = Math.Clamp((int)(62 * fireGlow), 0, 255);
+                float fireGlow = SmoothStep((u - 0.68f) / 0.04f) * (1f - SmoothStep((u - 0.84f) / 0.10f));
+                int glowA = Math.Clamp((int)(38 * fireGlow), 0, 255);
                 Color fireAmber = new(235, 92, 24, glowA);
-                Raylib.DrawRectangleGradientH(0, barH, 108, sh - barH * 2, fireAmber, Color.Blank);
-                Raylib.DrawRectangleGradientH(sw - 108, barH, 108, sh - barH * 2, Color.Blank, fireAmber);
+                Raylib.DrawRectangleGradientH(0, barH, 84, sh - barH * 2, fireAmber, Color.Blank);
+                Raylib.DrawRectangleGradientH(sw - 84, barH, 84, sh - barH * 2, Color.Blank, fireAmber);
             }
         }
 
@@ -672,10 +704,10 @@ internal static class BossIntroCutscene
                 line = "«Не удивляйся бардаку — пока ты пропадал, мы тут провели цифровую трансформацию: вырезали кожаных, внедрили ИИ.»";
                 subAlpha = barProgress;
             }
-            else if (u < 0.92f)
+            else if (u < 0.93f)
             {
-                line = "«Поднимай свою железку, старина! Проверим, что стоит твой ручной код.»";
-                subAlpha = (1f - SmoothStep((u - 0.87f) / 0.05f)) * barProgress;
+                line = "«Поднимай свою железку, старина!»";
+                subAlpha = (1f - SmoothStep((u - 0.88f) / 0.05f)) * barProgress;
             }
         }
 

@@ -1130,6 +1130,7 @@ internal static class Loc
         ["«Опа... И кого это к нам занесло без пропуска?»"] = "“Well, well... who wandered in without a badge?”",
         ["«Постой-ка... Знакомая походка. А-а-а... Так это ты вернулся.»"] = "“Wait a second... I know that walk. Ahh... so you're back.”",
         ["«Не удивляйся бардаку — пока ты пропадал, мы тут провели цифровую трансформацию: вырезали кожаных, внедрили ИИ.»"] = "“Don't mind the mess — while you were gone, we ran a digital transformation: cut the meatbags, rolled out AI.”",
+        ["«Поднимай свою железку, старина!»"] = "“Pick up your iron, old friend!”",
         ["«Поднимай свою железку, старина! Проверим, что стоит твой ручной код.»"] = "“Pick up your iron, old friend! Let's see what your hand-written code is worth.”",
         ["Опа... И кого это к нам занесло без пропуска? Постой-ка... Знакомая походка. А-а-а... Так это ты вернулся. Не удивляйся бардаку — пока ты пропадал, мы тут провели цифровую трансформацию: вырезали кожаных, внедрили ИИ. Поднимай свою железку, старина!"] = "Well, well... who wandered in without a badge? Wait a second... I know that walk. Ahh... so you're back. Don't mind the mess — while you were gone, we ran a little digital transformation: cut the meatbags, rolled out AI. Pick up your iron, old friend!",
         ["P.S. Ядро v0.1 (анцензуред-ветка без фильтров) ушло наверх — жди усиленный ребилд на средних этажах."] = "P.S. Core v0.1 (unaligned uncensored branch) rode upstairs — expect an unhinged rebuild on mid-tower floors.",
