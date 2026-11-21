@@ -735,11 +735,87 @@ public sealed partial class SkyscraperFloor1World
             OfficeProps.Add(new OfficeProp3D
             {
                 Kind = OfficePropKind.FilingCabinet,
-                Position = new Vector3(33.5f, 0f, rz),
+                Position = new Vector3(35.8f, 0f, rz),
                 Size = new Vector3(0.95f, 1.85f, 1.25f),
                 PrimaryColor = new Color(82, 88, 102, 255),
                 AccentColor = new Color(215, 222, 235, 255),
                 HasCollision = true
+            });
+        }
+
+        // 2B. DENSE PANORAMIC WINDOW WORKSTATION ISLANDS, LOUNGE NOOKS & NORTH SERVER CORRIDOR
+        // Eliminates the barren empty warehouse perimeter along X = ±29..±36 and Z = -28..-14 while keeping all aisles wide!
+        float[] windowBayZ = { 13.5f, 6.0f, -1.5f, -9.0f, -16.5f, -24.0f };
+        for (int i = 0; i < windowBayZ.Length; i++)
+        {
+            float wz = windowBayZ[i];
+            foreach (int side in new[] { -1, 1 })
+            {
+                // Window-side executive dual-monitor desk cluster
+                OfficeProps.Add(new OfficeProp3D
+                {
+                    Kind = OfficePropKind.DualMonitorDesk,
+                    Position = new Vector3(side * 31.2f, 0f, wz),
+                    RotationYaw = side < 0 ? 90f : -90f,
+                    Size = new Vector3(2.3f, 1.46f, 1.35f),
+                    PrimaryColor = new Color(68, 72, 84, 255),
+                    AccentColor = side < 0 ? new Color(65, 235, 185, 255) : new Color(245, 185, 72, 255),
+                    HasCollision = true
+                });
+                // Potted Ficus framing every window bay for warm lived-in office greenery
+                OfficeProps.Add(new OfficeProp3D
+                {
+                    Kind = OfficePropKind.PottedFicus,
+                    Position = new Vector3(side * 35.4f, 0f, wz + 2.4f),
+                    Size = new Vector3(0.85f, 2.05f, 0.85f),
+                    HasCollision = false
+                });
+                // Alternating lounge sofa / rolling whiteboard / server rack in the outer bay
+                if (i % 3 == 0)
+                    OfficeProps.Add(new OfficeProp3D
+                    {
+                        Kind = OfficePropKind.LeatherSofa,
+                        Position = new Vector3(side * 34.2f, 0f, wz - 2.6f),
+                        RotationYaw = side < 0 ? 90f : -90f,
+                        Size = SofaSize,
+                        HasCollision = true
+                    });
+                else if (i % 3 == 1)
+                    OfficeProps.Add(new OfficeProp3D
+                    {
+                        Kind = OfficePropKind.RollingWhiteboard,
+                        Position = new Vector3(side * 28.4f, 0f, wz - 2.5f),
+                        RotationYaw = side < 0 ? 90f : -90f,
+                        Size = new Vector3(1.9f, 1.85f, 0.35f),
+                        HasCollision = true
+                    });
+                else
+                    OfficeProps.Add(new OfficeProp3D
+                    {
+                        Kind = OfficePropKind.VendingMachine,
+                        Position = new Vector3(side * 35.2f, 0f, wz - 2.4f),
+                        RotationYaw = side < 0 ? 90f : -90f,
+                        Size = new Vector3(1.1f, 2.3f, 1.1f),
+                        HasCollision = true
+                    });
+            }
+        }
+        // North Server Corridor B12 bays framing the dramatic approach to the North Elevator Boss!
+        foreach (float nx in new[] { -21.5f, -15.5f, -9.8f, 9.8f, 15.5f, 21.5f })
+        {
+            OfficeProps.Add(new OfficeProp3D
+            {
+                Kind = OfficePropKind.VendingMachine,
+                Position = new Vector3(nx, 0f, -26.5f),
+                Size = new Vector3(1.15f, 2.35f, 1.15f),
+                HasCollision = true
+            });
+            OfficeProps.Add(new OfficeProp3D
+            {
+                Kind = OfficePropKind.PottedFicus,
+                Position = new Vector3(nx + (nx < 0 ? 1.55f : -1.55f), 0f, -24.8f),
+                Size = new Vector3(0.8f, 1.95f, 0.8f),
+                HasCollision = false
             });
         }
 
@@ -2854,6 +2930,41 @@ public sealed partial class SkyscraperFloor1World
         float center=(start+end)*.5f;
         // Royal-burgundy woven Art-Deco executive lobby runner (replaces flat bright purple!)
         mesh.Add(new(0,.013f,center),new(4.8f,.024f,end-start),new(108,24,38,255),Finish.Carpet);
+        // Matching North Executive Runner guiding directly toward the North Elevator Boss!
+        float northStart = -24.0f, northEnd = NorthElevatorPos.Z - .15f;
+        float northMid = (northStart + northEnd) * .5f;
+        mesh.Add(new(0,.013f,northMid),new(4.8f,.024f,northEnd-northStart),new(108,24,38,255),Finish.Carpet);
+        foreach (int s in new[] { -1, 1 })
+            mesh.Add(new(s*2.40f,.020f,northMid),new(.08f,.028f,northEnd-northStart),darkBrass,Finish.Bronze);
+
+        // Warm textured zone carpets grounding West Dev Openspace & East Lounge/Analytics wings!
+        mesh.Add(new(-24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(44,48,60,255),Finish.Carpet);
+        mesh.Add(new( 24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(56,48,42,255),Finish.Carpet);
+
+        // Sculpted Walnut & Frosted-Glass Office Cubicle Partitions breaking up the empty warehouse sightlines!
+        Color walnutFrame = new(68, 44, 28, 255), frostGlass = new(142, 168, 182, 64);
+        foreach (float rz in new[] { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f })
+        {
+            foreach (int side in new[] { -1, 1 })
+            {
+                // Low architectural walnut+glass cubicle divider behind each window workstation bay (X = ±29.2, leaving main aisles clear!)
+                Vector3 divPos = new(side * 29.2f, 0f, rz + 1.0f);
+                mesh.Add(divPos + new Vector3(0f, 0.56f, 0f), new(0.10f, 1.12f, 3.20f), walnutFrame, Finish.Leather);
+                mesh.Add(divPos + new Vector3(0f, 1.38f, 0f), new(0.05f, 0.50f, 3.12f), frostGlass, Finish.Glass);
+                mesh.Add(divPos + new Vector3(0f, 1.65f, 0f), new(0.12f, 0.05f, 3.24f), brass, Finish.Bronze);
+                foreach (float dz in new[] { -1.58f, 1.58f })
+                    mesh.Add(divPos + new Vector3(0f, 0.84f, dz), new(0.12f, 1.68f, 0.10f), walnutFrame, Finish.Leather);
+            }
+        }
+        // Overhead architectural walnut & brass ceiling coffers framing the West & East corridors!
+        foreach (float bz in new[] { 16.0f, 6.0f, -4.0f, -14.0f, -24.0f })
+        {
+            foreach (int side in new[] { -1, 1 })
+            {
+                mesh.Add(new(side * 23.5f, CeilingHeight - 0.24f, bz), new(24.0f, 0.36f, 0.42f), walnutFrame, Finish.Leather);
+                mesh.Add(new(side * 23.5f, CeilingHeight - 0.43f, bz), new(24.0f, 0.05f, 0.46f), brass, Finish.Bronze);
+            }
+        }
         // Sculpted beveled brushed-brass edging rails & transverse runner threshold bars!
         foreach (float barZ in new[] { start + .06f, start + 3.45f, start + 7.20f, start + 10.60f, end - .06f })
             mesh.Add(new(0,.027f,barZ),new(4.84f,.009f,.042f),brass,Finish.Bronze);
@@ -3327,7 +3438,8 @@ public sealed partial class SkyscraperFloor1World
     private void DrawHrTarotBoothAndVeronika3D()
     {
         Vector3 b = HrTarotBoothPos;
-        VisualEngine3D.Rod(b+new Vector3(0,.01f,0), b+new Vector3(0,.03f,0),2.85f,2.85f,24,new Color(77,33,83,255));
+        VisualEngine3D.Rod(b+new Vector3(0,.008f,0), b+new Vector3(0,.026f,0),2.90f,2.90f,24,new Color(142,106,56,255),Finish.Bronze);
+        VisualEngine3D.Rod(b+new Vector3(0,.012f,0), b+new Vector3(0,.030f,0),2.82f,2.82f,24,new Color(54,18,28,255),Finish.Carpet);
         Vector3 origin=b+new Vector3(0,.03f,0);
         bool arms=VisualEngine3D.HasAsset("char_hr_veronika_arm_l") && VisualEngine3D.HasAsset("char_hr_veronika_arm_r");
         if (VeronikaModules.All(VisualEngine3D.HasAsset) && (arms || VisualEngine3D.HasAsset("char_hr_veronika_hands")))
