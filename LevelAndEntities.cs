@@ -293,7 +293,7 @@ public sealed partial class SkyscraperFloor1World
     public const float ElevatorCoreHalfD = 4.5f;
 
     // Key Functional Landmarks (White Shark Layout: HR Reception Desk centered directly opposite the Elevator!)
-    public readonly Vector3 HrTarotBoothPos = new(0.0f, 0f, 13.0f);
+    public readonly Vector3 HrTarotBoothPos = new(0.0f, 0f, 14.48f);
     public readonly Vector3 ArsenalShopPos = new(-6.1f, 0f, 14.7f);
     public readonly Vector3 CentralMacBookPos = new(3.6f, 0f, 10.2f);
     public readonly Vector3 NorthElevatorPos = new(0.0f, 0f, -8.5f);
@@ -327,15 +327,17 @@ public sealed partial class SkyscraperFloor1World
     public readonly List<GalleyDeskSlot> GalleyDesks = new(4);
     public readonly List<OfficeProp3D> OfficeProps = new(110);
     internal static readonly Vector2[] PendantLocations = [
-        new(0,12.9f),new(3.6f,10.2f),new(-3.9f,9.7f),new(4,13),new(8.9f,13.4f),
-        new(-7.6f,3.7f),new(8.75f,12),new(-14.5f,5.5f),new(-20.7f,-8.5f),new(14.8f,3.5f),new(22,-10.5f),
-        // Warm pendant pools illuminating West & East openspace team pods & scrum nooks!
-        new(-14.5f,12.0f),new(-20.7f,12.0f),new(-17.6f,8.7f),new(-26.9f,5.5f),
-        new(-14.5f,-1.5f),new(-26.9f,-8.5f),new(14.8f,10.5f),new(18.4f,-6.8f)];
+        new(0,13.1f),new(3.6f,10.2f),new(-3.9f,9.7f),new(4,13),new(8.9f,13.4f),
+        new(-7.6f,3.7f),new(8.75f,12),new(-15.5f,5.0f),new(-21.7f,5.0f),new(14.8f,3.5f),new(23.0f,-10.5f),
+        // Warm pendant & linear bench pools illuminating West & East openspace 4-seat corporate islands & scrum plazas!
+        new(-15.5f,11.5f),new(-21.7f,11.5f),new(-18.65f,8.35f),new(-26.9f,5.0f),
+        new(-15.5f,-2.0f),new(-21.7f,-2.0f),new(-15.5f,-9.0f),new(-21.7f,-9.0f),
+        new(-26.9f,-9.0f),new(-18.65f,-5.0f),new(15.8f,10.0f),new(23.0f,10.0f),
+        new(23.0f,3.0f),new(15.8f,-4.0f),new(23.0f,-4.0f),new(19.45f,-7.0f)];
     private static readonly Vector3 LoungeTable = new(-3.9f,0,9.7f), BreakTable = new(4,0,13);
     private static readonly Vector3[] OpenspaceScrumTables = [
-        new(-17.6f,0,8.7f), new(-23.8f,0,1.8f), new(-17.6f,0,-5.0f),
-        new(18.4f,0,7.0f),  new(18.4f,0,-7.0f)
+        new(-18.65f,0,8.35f), new(-24.85f,0,1.8f), new(-18.65f,0,-5.0f),
+        new(19.45f,0,7.0f),   new(19.45f,0,-7.0f)
     ];
     private static readonly Vector3 ArenaTable=new(3.1f,0,-12.3f);
     private Vector3 CartPosition => RackPos+new Vector3(1.13f,0,-.66f);
@@ -676,53 +678,64 @@ public sealed partial class SkyscraperFloor1World
         OfficeProps.Add(new() {Kind=OfficePropKind.LeatherSofa,Position=new(-3.9f,0,11.2f),Size=SofaSize,HasCollision=true});
         foreach (Vector3 feet in new Vector3[]{new(-5.5f,0,8.35f),new(-6.05f,0,11.55f)})
             OfficeProps.Add(new() {Kind=OfficePropKind.PottedFicus,Position=feet,Size=new(.55f,1.8f,.55f)});
-        OfficeProps.Add(new() {Kind=OfficePropKind.RollingWhiteboard,Position=new(4.55f,0,15.3f),RotationYaw=171,Size=new(1.9f,1.8f,.55f),HasCollision=true});
+        OfficeProps.Add(new() {Kind=OfficePropKind.RollingWhiteboard,Position=new(12.8f,0,14.6f),RotationYaw=-125,Size=new(1.9f,1.8f,.55f),HasCollision=true});
         PlaceDispenser(0); // Preserve station indices used by saved drink counts and cooldowns.
         OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=new(4.97f,0,13.28f),Size=new(.4f,.5f,.4f)});
-        // 1. LEFT FORK (WEST LIVING OPENSPACE: ASYMMETRIC TEAM PODS, SCRUM NOOKS, GREENERY & CLUTTER)
+        // 1. LEFT FORK (WEST LIVING OPENSPACE: CONNECTED 4-SEAT 2x2 CORPORATE BENCH ISLANDS, SCRUM PLAZAS & GREENERY)
+        void AddBenchDesk(float cx, float rz, float yaw, int seed)
+        {
+            OfficeProps.Add(new OfficeProp3D
+            {
+                Kind = OfficePropKind.DualMonitorDesk,
+                Position = new Vector3(cx, 0f, rz),
+                RotationYaw = yaw,
+                Size = new Vector3(2.3f, 1.46f, 1.35f),
+                PrimaryColor = new Color(68, 74, 88, 255),
+                AccentColor = (seed % 2 == 0) ? new Color(0, 235, 255, 255) : new Color(65, 250, 145, 255),
+                HasCollision = true
+            });
+            if (seed % 2 == 0)
+            {
+                OfficeProps.Add(new OfficeProp3D
+                {
+                    Kind = OfficePropKind.TrashBin,
+                    Position = new Vector3(cx + (yaw == 0f ? 1.05f : -1.05f), 0f, rz + (yaw == 0f ? 0.28f : -0.28f)),
+                    Size = new Vector3(0.34f, 0.44f, 0.34f),
+                    PrimaryColor = new Color(52, 58, 70, 255),
+                    AccentColor = new Color(240, 240, 248, 255),
+                    HasCollision = false
+                });
+            }
+        }
         float[] westRowsZ = { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f };
         for (int r = 0; r < westRowsZ.Length; r++)
         {
             float rz = westRowsZ[r];
             for (int c = 0; c < 3; c++)
             {
-                if(r<2 && c<2) continue; // These four workstations are the playable Galley desks.
-                // Organic stagger on deeper rows breaks the stamped factory-grid silhouette!
-                float staggerX = (r >= 2) ? (((r * 3 + c) % 3) - 1) * 0.55f : 0f;
-                float cx = -14.5f - c * 6.2f + staggerX;
-
-                OfficeProps.Add(new OfficeProp3D
+                float cx = -14.5f - c * 6.2f;
+                bool isGalley = r < 2 && c < 2;
+                // Keep playable GalleyDesks in GalleyDesks list; populate companion desks to form 4-seat (2x2) bench islands!
+                if (isGalley)
                 {
-                    Kind = OfficePropKind.DualMonitorDesk,
-                    Position = new Vector3(cx, 0f, rz),
-                    Size = new Vector3(2.3f, 1.46f, 1.35f),
-                    PrimaryColor = new Color(68, 74, 88, 255),
-                    AccentColor = ((r + c) % 2 == 0) ? new Color(0, 235, 255, 255) : new Color(65, 250, 145, 255),
-                    HasCollision = true
-                });
-
-                // Trash bin tucked organically on alternating sides
-                if ((r + c) % 2 == 0)
-                {
-                    OfficeProps.Add(new OfficeProp3D
-                    {
-                        Kind = OfficePropKind.TrashBin,
-                        Position = new Vector3(cx + ((r % 2 == 0) ? 1.28f : -1.28f), 0f, rz + 0.25f),
-                        Size = new Vector3(0.34f, 0.44f, 0.34f),
-                        PrimaryColor = new Color(52, 58, 70, 255),
-                        AccentColor = new Color(240, 240, 248, 255),
-                        HasCollision = false
-                    });
+                    AddBenchDesk(cx - 2.09f, rz, 0f, r * 5 + c + 1);           // Side companion
+                    AddBenchDesk(cx, rz - 1.07f, 180f, r * 5 + c + 2);         // Back-to-back twin behind GalleyDesk
+                    AddBenchDesk(cx - 2.09f, rz - 1.07f, 180f, r * 5 + c + 3); // Diagonal twin completing 2x2 island
+                    continue;
                 }
+                AddBenchDesk(cx, rz, 0f, r * 3 + c);
+                // Side companion completing 2x2 corporate bench rows (avoiding RoomDoors[2] alcove at (-17.8, -13.55))
+                if (c < 2 && !(r == 4 && c == 0))
+                    AddBenchDesk(cx - 2.09f, rz, 0f, r * 3 + c + 7);
             }
         }
 
-        // Lived-in West & East Openspace corner ficuses, angled scrum boards & filing pedestals
-        // framing the Galley & team pods so no giant barren warehouse gaps remain!
+        // Lived-in West & East Openspace corner ficuses, angled scrum boards & filing credenzas
+        // framing the Galley & connected 4-seat bench islands without obstructing aisles or sightlines!
         foreach (var (px, pz) in new (float, float)[] {
-            (-11.8f, 15.6f), (-17.5f, 15.5f), (-23.8f, 14.8f), (-11.8f, 4.4f),
-            (-23.8f, 5.2f), (-17.8f, -1.8f), (-23.6f, -8.8f), (-11.9f, -14.2f),
-            (11.9f, 14.4f), (18.4f, 13.8f), (11.9f, 4.2f), (18.6f, -0.4f), (12.2f, -14.4f)
+            (-11.8f, 15.6f), (-18.65f, 15.4f), (-24.8f, 14.8f), (-11.8f, 2.8f),
+            (-24.9f, 5.5f), (-18.65f, -1.8f), (-24.9f, -8.5f), (-11.9f, -14.2f),
+            (11.9f, 14.4f), (19.45f, 13.8f), (11.9f, 4.2f), (19.45f, -0.4f), (12.2f, -14.4f)
         })
         {
             OfficeProps.Add(new OfficeProp3D
@@ -734,8 +747,8 @@ public sealed partial class SkyscraperFloor1World
             });
         }
         foreach (var (wx, wz, wyaw) in new (float, float, float)[] {
-            (-18.2f, 15.2f, 22f), (-24.6f, 8.8f, -34f), (-17.8f, -12.4f, 148f),
-            (18.6f, 14.2f, -24f), (25.2f, 0.2f, 36f)
+            (-18.65f, 15.2f, 18f), (-25.0f, 8.8f, -30f), (-18.65f, -12.4f, 148f),
+            (19.45f, 14.2f, -20f), (26.2f, 0.2f, 34f)
         })
         {
             OfficeProps.Add(new OfficeProp3D
@@ -748,8 +761,8 @@ public sealed partial class SkyscraperFloor1World
             });
         }
         foreach (var (fx, fz, fyaw) in new (float, float, float)[] {
-            (-11.6f, 14.1f, 90f), (-23.6f, 11.8f, 180f), (-11.7f, -4.4f, 90f),
-            (11.8f, 12.6f, -90f), (25.2f, 7.2f, -90f)
+            (-11.6f, 14.1f, 90f), (-24.85f, 12.0f, 180f), (-11.7f, -4.4f, 90f),
+            (11.8f, 12.6f, -90f), (26.2f, 7.2f, -90f)
         })
         {
             OfficeProps.Add(new OfficeProp3D
@@ -762,25 +775,19 @@ public sealed partial class SkyscraperFloor1World
             });
         }
 
-        // 2. RIGHT FORK (EAST SERVER & ARCHIVE WING: STAGGERED TEAM PODS, ARCHIVES & LOUNGES)
+        // 2. RIGHT FORK (EAST SERVER & ARCHIVE WING: CONNECTED 4-SEAT BENCH ISLANDS, ARCHIVES & LOUNGES)
         float[] eastRowsZ = { 10.5f, 3.5f, -3.5f, -10.5f, -17.5f, -24.5f };
         for (int r = 0; r < eastRowsZ.Length; r++)
         {
             float rz = eastRowsZ[r];
             for (int c = 0; c < 2; c++)
             {
-                float staggerX = ((r + c) % 2 == 0) ? 0.45f : -0.40f;
-                float cx = 14.8f + c * 7.2f + staggerX;
-
-                OfficeProps.Add(new OfficeProp3D
-                {
-                    Kind = OfficePropKind.DualMonitorDesk,
-                    Position = new Vector3(cx, 0f, rz),
-                    Size = new Vector3(2.3f, 1.46f, 1.35f),
-                    PrimaryColor = new Color(72, 68, 86, 255),
-                    AccentColor = new Color(255, 185, 55, 255),
-                    HasCollision = true
-                });
+                float cx = 14.8f + c * 7.2f;
+                AddBenchDesk(cx, rz, 0f, r * 3 + c + 11);
+                // Side companion completing 2x2 bench island (clear of Pillar 7 at (18.5,2.0) & RoomDoors[3] at (17.8,-13.55))
+                bool blockedEastCompanion = (c == 0 && (r == 1 || r == 3 || r == 4));
+                if (!blockedEastCompanion)
+                    AddBenchDesk(cx + 2.09f, rz, 0f, r * 3 + c + 19);
             }
 
             // Tall Metal Filing Cabinets along East Wall
@@ -997,19 +1004,21 @@ public sealed partial class SkyscraperFloor1World
                 HasCollision = false
             });
         }
-        // Shared back-to-back team pods across the open wings (forming cozy 2-desk startup islands
-        // instead of solitary desks marooned in empty space!).
+        // Shared back-to-back team pods across the open wings (completing 4-seat 2x2 bench islands!)
         var wingDesks=OfficeProps.Where(p=>p.Kind==OfficePropKind.DualMonitorDesk).ToArray();
         foreach(var desk in wingDesks)
         {
             if(MathF.Abs(desk.Position.X) > 29.5f || desk.RotationYaw != 0f) continue;
-            // Pair alternating & core openspace clusters back-to-back while keeping Galley & aisles open!
-            if(desk.Position.Z is > 11.2f or < -23.5f) continue;
+            if(desk.Position.Z is > 12.2f or < -23.5f) continue;
+            // Skip desks that already have an opposite back-to-back twin (e.g., Galley islands!)
+            Vector3 oppPos = desk.Position - new Vector3(0f, 0f, 1.07f);
+            if(wingDesks.Any(d => MathF.Abs(d.Position.X - oppPos.X) < 0.25f && MathF.Abs(d.Position.Z - oppPos.Z) < 0.25f))
+                continue;
             var opposite=desk;
-            opposite.Position.Z-=1.07f;
+            opposite.Position=oppPos;
             opposite.RotationYaw=180;
             OfficeProps.Add(opposite);
-            var bin=opposite.Position+new Vector3(-1.08f,0,.17f);
+            var bin=opposite.Position+new Vector3(-1.05f,0,-.22f);
             OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=bin,Size=new(.34f,.44f,.34f)});
         }
         FurnishAtriumBays();
@@ -1107,8 +1116,10 @@ public sealed partial class SkyscraperFloor1World
             }
         }
 
-        Add(HrTarotBoothPos,3.30f,1.08f,2.10f);
-        Add(HrTarotBoothPos+new Vector3(-2.15f,0,.35f),1.45f,1.31f,.60f);
+        Add(HrTarotBoothPos,3.20f,1.08f,1.68f);
+        Add(HrTarotBoothPos+new Vector3(-1.62f,0,-.16f),1.56f,1.32f,.64f);
+        Add(HrTarotBoothPos+new Vector3(1.44f,0,-.16f),1.24f,.98f,.64f);
+        Add(ContractBoardFeet,.78f,1.58f,.40f);
         Add(ArsenalShopPos,4.50f,1.12f,1.90f);
         foreach (var d in GalleyDesks) Workstation(d.DeskPosition);
         foreach (var cover in AmbushCovers)
@@ -2943,7 +2954,11 @@ public sealed partial class SkyscraperFloor1World
 
         VisualEngine3D.DrawArchitecture(BuildTowerArchitecture);
 
-        // 4. 6 Architectural Pillars with Neon Trims & Corporate Poster Boards
+        // 4. Prestige Art-Deco Honed Travertine Limestone, Dark Walnut Wainscoting, Vertical Pilasters & Brass Sconce Columns
+        Color limestone = new(224, 214, 198, 255);
+        Color walnut = new(56, 36, 24, 255);
+        Color brass = new(166, 130, 74, 255);
+        Color darkBronze = new(78, 58, 36, 255);
         for (int i = 0; i < Pillars.Count; i++)
         {
             var p = Pillars[i];
@@ -2951,14 +2966,36 @@ public sealed partial class SkyscraperFloor1World
             float w = p.HalfWidth * 2f;
             float d = p.HalfDepth * 2f;
 
-            // Concrete/marble core
-            VisualEngine3D.Box(colPos, w, CeilingHeight, d, new Color(157, 164, 184, 255), Finish.Plaster);
+            // Warm honed travertine/limestone ashlar column shaft
+            VisualEngine3D.Box(colPos, w, CeilingHeight, d, limestone, Finish.Plaster);
+            // Dark oiled-walnut lower wainscoting + stepped brushed-brass plinth, chair-rail & Art-Deco capital
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 0.58f, 0f), w + 0.06f, 1.16f, d + 0.06f, walnut, Finish.Leather);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 0.08f, 0f), w + 0.12f, 0.16f, d + 0.12f, brass, Finish.Bronze);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 1.18f, 0f), w + 0.11f, 0.075f, d + 0.11f, brass, Finish.Bronze);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 1.25f, 0f), w + 0.07f, 0.045f, d + 0.07f, walnut, Finish.Leather);
+            // 4 vertical dark-walnut & brass corner architectural pilasters breaking up flat column faces
+            foreach (int sx in new[] { -1, 1 })
+            foreach (int sz in new[] { -1, 1 })
+            {
+                Vector3 corner = p.Center + new Vector3(sx * (p.HalfWidth + 0.01f), 0f, sz * (p.HalfDepth + 0.01f));
+                VisualEngine3D.Box(corner + Vector3.UnitY * 5.6f, 0.13f, CeilingHeight, 0.13f, darkBronze, Finish.Bronze);
+                VisualEngine3D.Box(corner + Vector3.UnitY * 2.98f, 0.075f, 3.45f, 0.075f, brass, Finish.Bronze);
+            }
+            // Mid-height Art-Deco frieze collar (aligning with interior wall cornice at Y=4.6..4.85m) & ceiling crown
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.64f, 0f), w + 0.08f, 0.09f, d + 0.08f, walnut, Finish.Leather);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.78f, 0f), w + 0.14f, 0.14f, d + 0.14f, brass, Finish.Bronze);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, CeilingHeight - 0.20f, 0f), w + 0.16f, 0.22f, d + 0.16f, brass, Finish.Bronze);
 
-
-            // Glowing base & upper neon bands
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 0.18f, 0f), w + 0.10f, 0.32f, d + 0.10f, new Color(26, 28, 36, 255));
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 2.65f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.80f, 0f), w + 0.08f, 0.10f, d + 0.08f, p.AccentColor);
+            // Warm Art-Deco frosted-glass & brass wall sconces on core atrium/corridor columns (matching elevator lobby!)
+            if (i < 6)
+            {
+                int faceX = -Math.Sign(p.Center.X);
+                Vector3 sconce = p.Center + new Vector3(faceX * (p.HalfWidth + 0.055f), 2.92f, 0f);
+                VisualEngine3D.Box(sconce, 0.055f, 0.52f, 0.20f, darkBronze, Finish.Bronze);
+                VisualEngine3D.Box(sconce + new Vector3(faceX * 0.025f, 0f, 0f), 0.045f, 0.36f, 0.12f, new Color(255, 224, 168, 255), Finish.Lamp);
+                foreach (float sy in new[] { -0.21f, 0.21f })
+                    VisualEngine3D.Box(sconce + new Vector3(faceX * 0.02f, sy, 0f), 0.07f, 0.04f, 0.22f, brass, Finish.Bronze);
+            }
 
             if(i<4)
             {
@@ -2978,11 +3015,22 @@ public sealed partial class SkyscraperFloor1World
         BuildLift(mesh);
         BuildInteriorRooms(mesh);
         BuildEntryRooms(mesh);
-        mesh.Add(new(-5.05f,.015f,6.9f),new(4.35f,.025f,4.1f),new(139,101,78,255),Finish.Carpet);
+        // Warm bordered lounge rug under the atrium leather sofas + café hospitality rug under the espresso break corner
+        void BorderedRug(float cx, float cz, float rw, float rd, Color fill, Color trim)
+        {
+            mesh.Add(new(cx, .016f, cz), new(rw, .018f, rd), fill, Finish.Carpet);
+            foreach (int s in new[] { -1, 1 })
+            {
+                mesh.Add(new(cx, .022f, cz + s * (rd * .5f - .06f)), new(rw, .012f, .07f), trim, Finish.Bronze);
+                mesh.Add(new(cx + s * (rw * .5f - .06f), .022f, cz), new(.07f, .012f, rd), trim, Finish.Bronze);
+            }
+        }
         Color brass=new(189,145,76,255), darkBrass=new(112,84,44,255);
-        float start=SouthElevatorDoorPos.Z+.15f, end=ArsenalShopPos.Z-.75f;
+        BorderedRug(-5.05f, 6.9f, 4.35f, 4.1f, new(126, 92, 70, 255), darkBrass);
+        BorderedRug(3.75f, 12.80f, 2.75f, 2.65f, new(56, 46, 42, 255), darkBrass);
+        float start=SouthElevatorDoorPos.Z+.15f, end=15.36f;
         float center=(start+end)*.5f;
-        // Royal-burgundy woven Art-Deco executive lobby runner (replaces flat bright purple!)
+        // Royal-burgundy woven Art-Deco executive lobby runner extending cleanly flush to Veronika's reception wall!
         mesh.Add(new(0,.013f,center),new(4.8f,.024f,end-start),new(108,24,38,255),Finish.Carpet);
         // Matching North Executive Runner guiding directly toward the North Elevator Boss!
         float northStart = -24.0f, northEnd = NorthElevatorPos.Z - .15f;
@@ -2991,18 +3039,84 @@ public sealed partial class SkyscraperFloor1World
         foreach (int s in new[] { -1, 1 })
             mesh.Add(new(s*2.40f,.020f,northMid),new(.08f,.028f,northEnd-northStart),darkBrass,Finish.Bronze);
 
-        // Warm textured zone carpets grounding West Dev Openspace & East Lounge/Analytics wings!
-        mesh.Add(new(-24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(44,48,60,255),Finish.Carpet);
-        mesh.Add(new( 24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(56,48,42,255),Finish.Carpet);
-        // Cozy woven accent rugs breaking up the openspace into distinct human-scaled team neighborhoods!
-        mesh.Add(new(-17.6f,.016f, 8.7f),new(4.6f,.016f,4.2f),new(112,56,48,255),Finish.Carpet);
-        mesh.Add(new(-23.8f,.016f, 1.8f),new(4.4f,.016f,4.0f),new(54,84,82,255),Finish.Carpet);
-        mesh.Add(new(-17.6f,.016f,-5.0f),new(4.8f,.016f,4.2f),new(96,74,50,255),Finish.Carpet);
-        mesh.Add(new( 18.4f,.016f, 7.0f),new(4.6f,.016f,4.2f),new(108,68,46,255),Finish.Carpet);
-        mesh.Add(new( 18.4f,.016f,-7.0f),new(4.6f,.016f,4.2f),new(68,78,94,255),Finish.Carpet);
+        // Class-A commercial modular carpet tiles grounding West Dev Openspace & East Analytics/Archive wings
+        mesh.Add(new(-24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(54,57,66,255),Finish.Carpet);
+        mesh.Add(new( 24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(62,56,50,255),Finish.Carpet);
+        // Subtle corporate woven aisle runners separating the openspace bench rows (replaces barren uniform slab!)
+        foreach (float ax in new[] { -18.65f, -24.85f, 19.45f })
+            mesh.Add(new(ax, .014f, -4.5f), new(1.75f, .014f, 38.0f), new(68, 64, 62, 255), Finish.Carpet);
+        // Refined corporate bordered area rugs under every openspace scrum table (replaces flat salmon decal!)
+        BorderedRug(-18.65f,  8.35f, 3.4f, 3.2f, new(66, 36, 42, 255), darkBrass);
+        BorderedRug(-24.85f,  1.80f, 3.2f, 3.2f, new(44, 56, 66, 255), darkBrass);
+        BorderedRug(-18.65f, -5.00f, 3.4f, 3.2f, new(58, 52, 46, 255), darkBrass);
+        BorderedRug( 19.45f,  7.00f, 3.4f, 3.2f, new(68, 42, 38, 255), darkBrass);
+        BorderedRug( 19.45f, -7.00f, 3.4f, 3.2f, new(46, 54, 68, 255), darkBrass);
 
-        // Sculpted Walnut & Frosted-Glass Office Cubicle Partitions breaking up the empty warehouse sightlines!
-        Color walnutFrame = new(68, 44, 28, 255), frostGlass = new(142, 168, 182, 64);
+        // Connected 4-seat (2x2) Corporate Bench Center Spines, Frosted Privacy Screens & Suspended Linear Office Lights!
+        Color walnutFrame = new(68, 44, 28, 255), frostGlass = new(168, 192, 202, 54);
+        Color feltSpine = new(62, 66, 74, 255), warmLamp = new(226, 182, 126, 255);
+        void BuildBenchIslandHardware(float midX, float midZ, float spanW)
+        {
+            // Shared walnut & acoustic-felt center spine + brass cap + low frosted-glass divider
+            mesh.Add(new(midX, 0.96f, midZ), new(spanW, 0.84f, 0.11f), feltSpine, Finish.Carpet);
+            mesh.Add(new(midX, 0.56f, midZ), new(spanW + 0.06f, 0.08f, 0.14f), walnutFrame, Finish.Leather);
+            mesh.Add(new(midX, 1.38f, midZ), new(spanW + 0.06f, 0.05f, 0.14f), brass, Finish.Bronze);
+            mesh.Add(new(midX, 1.535f, midZ), new(spanW - 0.12f, 0.27f, 0.04f), frostGlass, Finish.Glass);
+            mesh.Add(new(midX, 1.685f, midZ), new(spanW + 0.06f, 0.032f, 0.07f), brass, Finish.Bronze);
+            foreach (int endS in new[] { -1, 1 })
+            {
+                float ex = midX + endS * (spanW * 0.5f + 0.03f);
+                mesh.Add(new(ex, 0.835f, midZ), new(0.08f, 1.67f, 0.20f), walnutFrame, Finish.Leather);
+                mesh.Add(new(ex, 1.685f, midZ), new(0.105f, 0.036f, 0.23f), brass, Finish.Bronze);
+            }
+            // Warm suspended linear walnut & brass architectural office light bar directly over the bench island!
+            float lightY = 3.95f;
+            float lightW = MathF.Max(1.9f, spanW - 0.35f);
+            mesh.Add(new(midX, lightY, midZ), new(lightW, 0.12f, 0.22f), walnutFrame, Finish.Leather);
+            mesh.Add(new(midX, lightY - 0.062f, midZ), new(lightW - 0.12f, 0.025f, 0.14f), warmLamp, Finish.Fluorescent);
+            mesh.Add(new(midX, lightY + 0.065f, midZ), new(lightW + 0.04f, 0.025f, 0.24f), brass, Finish.Bronze);
+            foreach (int rodS in new[] { -1, 1 })
+                mesh.Add(new(midX + rodS * (lightW * 0.38f), (lightY + CeilingHeight) * 0.5f, midZ),
+                    new(0.025f, CeilingHeight - lightY, 0.025f), darkBrass, Finish.Bronze);
+        }
+        // West 4-seat (2x2) & 2-seat bench islands
+        foreach (float rz in new[] { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f })
+        {
+            float spineZ = rz - 0.535f;
+            if (rz != -15.5f) BuildBenchIslandHardware(-15.545f, spineZ, 4.18f);
+            else BuildBenchIslandHardware(-14.50f, spineZ, 2.08f);
+            BuildBenchIslandHardware(-21.745f, spineZ, 4.18f);
+            BuildBenchIslandHardware(-26.90f, spineZ, 2.08f);
+        }
+        // East 4-seat (2x2) & 2-seat bench islands
+        foreach (float rz in new[] { 10.5f, 3.5f, -3.5f, -10.5f, -17.5f })
+        {
+            float spineZ = rz - 0.535f;
+            bool singleInner = rz is 3.5f or -10.5f or -17.5f;
+            BuildBenchIslandHardware(singleInner ? 14.80f : 15.845f, spineZ, singleInner ? 2.08f : 4.18f);
+            BuildBenchIslandHardware(23.045f, spineZ, 4.18f);
+        }
+
+        // Built-in Walnut Corporate Bookshelves & Archival Credenzas along the openspace faces of the X=±9.6 partition walls!
+        Color[] shelfBinders = [new(146, 52, 46, 255), new(46, 76, 108, 255), new(168, 128, 56, 255), new(54, 96, 72, 255), new(188, 174, 146, 255)];
+        foreach (int side in new[] { -1, 1 })
+        foreach (var (zMid, len) in new (float, float)[] { (-3.0f, 4.4f), (9.85f, 3.4f) })
+        {
+            float bx = side * 9.94f;
+            mesh.Add(new(bx, 0.56f, zMid), new(0.42f, 1.12f, len), walnutFrame, Finish.Leather);
+            mesh.Add(new(bx, 0.05f, zMid), new(0.46f, 0.10f, len + 0.04f), darkBrass, Finish.Bronze);
+            mesh.Add(new(bx, 1.15f, zMid), new(0.48f, 0.06f, len + 0.06f), new(38, 36, 40, 255), Finish.BlackMarble);
+            int books = (int)(len * 6f);
+            for (int b = 0; b < books; b++)
+            {
+                if (b % 7 == 3) continue; // Natural gaps between binder clusters
+                float bz = zMid - len * 0.44f + b * (len * 0.88f / books);
+                float bh = 0.24f + (b % 3) * 0.04f;
+                mesh.Add(new(bx + side * 0.04f, 1.18f + bh * 0.5f, bz), new(0.24f, bh, 0.075f), shelfBinders[(b + (side > 0 ? 2 : 0)) % shelfBinders.Length]);
+            }
+        }
+
+        // Sculpted Walnut & Frosted-Glass Office Cubicle Partitions framing window bays!
         foreach (float rz in new[] { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f })
         {
             foreach (int side in new[] { -1, 1 })
@@ -3026,21 +3140,21 @@ public sealed partial class SkyscraperFloor1World
             }
         }
         // Sculpted beveled brushed-brass edging rails & transverse runner threshold bars!
-        foreach (float barZ in new[] { start + .06f, start + 3.45f, start + 7.20f, start + 10.60f, end - .06f })
+        foreach (float barZ in new[] { start + .06f, start + 3.45f, start + 7.20f, start + 10.60f, 12.95f, end - .04f })
             mesh.Add(new(0,.027f,barZ),new(4.84f,.009f,.042f),brass,Finish.Bronze);
         foreach (int side in new[] { -1,1 })
         {
             mesh.Add(new(side*2.42f,.018f,center),new(.095f,.030f,end-start+.06f),darkBrass,Finish.Bronze);
             foreach (float edge in new[] { 2.24f,2.38f })
                 mesh.Add(new(side*edge,.029f,center),new(.026f,.009f,end-start),brass,Finish.Bronze);
-            Color route=side<0 ? new(255,195,83,255) : new(72,225,202,255);
-            mesh.Add(new(side*6.35f,.018f,3.3f),new(9.5f,.024f,.065f),route,Finish.Lamp);
-            mesh.Add(new(side*11.1f,.018f,-10),new(.065f,.024f,26.65f),route,Finish.Lamp);
-            foreach (int z in new[] { -19,-5,8,19 })
+            // Subtle inlaid brushed-brass architectural floor zoning strips (replaces glowing Tron neon floor lasers!)
+            mesh.Add(new(side*6.35f,.015f,3.3f),new(9.5f,.012f,.055f),darkBrass,Finish.Bronze);
+            mesh.Add(new(side*11.1f,.015f,-10),new(.055f,.012f,26.65f),darkBrass,Finish.Bronze);
+            foreach (int z in new[] { -19, 17 })
             {
-                mesh.Add(new(side*17,.035f,z),new(4.4f,.07f,.24f),new(47,48,49,255));
-                for (int i=-4;i<=4;i++)
-                    mesh.Add(new(side*17+i*.43f,.072f,z),new(.16f,.009f,.19f),brass);
+                mesh.Add(new(side*17,.016f,z),new(3.6f,.016f,.18f),new(54,50,46,255));
+                for (int i=-3;i<=3;i++)
+                    mesh.Add(new(side*17+i*.46f,.026f,z),new(.14f,.006f,.13f),darkBrass,Finish.Bronze);
             }
         }
         BuildOfficeWiring(mesh);
@@ -3094,9 +3208,13 @@ public sealed partial class SkyscraperFloor1World
             void Panel(float across,float y,float width,float height,float depth,Color ink,Finish finish)
                 => VisualEngine3D.Box(feet+(side?Vector3.UnitZ:Vector3.UnitX)*across+Vector3.UnitY*y,
                     side?depth:width,height,side?width:depth,ink,finish);
-            Color brass=new(157,119,73,255);
+            Color brass=new(157,119,73,255), darkBronze=new(68,52,34,255);
+            // Understated Art-Deco brushed-bronze security badge plaques with subtle status jewel (replaces huge neon-mint slabs!)
             foreach(float jamb in new[]{-1.86f,1.86f})
-                Panel(jamb,2.25f,.055f,.32f,.29f,Systems.WingsUnlocked?new(65,210,133,255):new(244,108,51,255),Finish.Lamp);
+            {
+                Panel(jamb,2.24f,.048f,.20f,.14f,darkBronze,Finish.Bronze);
+                Panel(jamb,2.24f,.028f,.055f,.055f,Systems.WingsUnlocked?new(86,188,128,255):new(232,126,54,255),Finish.Lamp);
+            }
             if(slide>=.99f) continue;
             float bottom=slide*3.1f;
             Panel(0,(3.2f+bottom)/2,3.76f,3.2f-bottom,.19f,new(56,77,82,185),Finish.Glass);
@@ -3129,29 +3247,42 @@ public sealed partial class SkyscraperFloor1World
 
     private void BuildEntryRooms(VisualEngine3D.ArchitectureBuilder mesh)
     {
-        Color metal=new(48,61,68,255), warm=new(255,218,160,255);
+        Color metal=new(48,54,60,255), warm=new(255,222,168,255);
+        Color walnut=new(60,38,26,255), brass=new(168,132,74,255), frost=new(156,184,192,68);
         foreach(var d in RoomDoors)
         {
             void Part(float x,float y,float z,float w,float h,float depth,Color color,Finish finish=Finish.Paint) =>
                 mesh.Add(d+new Vector3(x,y,z),new(w,h,depth),color,finish);
-            Part(0,1.45f,-2.1f,3.9f,2.9f,.14f,new(40,50,56,255),Finish.Slate);
-            Part(0,2.91f,-1.04f,3.9f,.12f,2.22f,metal);
+            Part(0,1.45f,-2.1f,3.9f,2.9f,.14f,new(46,42,40,255),Finish.Slate);
+            Part(0,2.91f,-1.04f,3.96f,.14f,2.26f,walnut,Finish.Leather);
+            Part(0,2.98f,-1.04f,4.02f,.045f,2.32f,brass,Finish.Bronze);
             Part(0,2.82f,-1.64f,3.18f,.03f,.10f,warm,Finish.Lamp);
             Part(0,.74f,-1.72f,2.9f,.07f,.56f,new(140,101,73,255));
             foreach(int leg in new[]{-1,1})
                 Part(leg*1.32f,.36f,-1.72f,.06f,.72f,.48f,metal);
             Part(0,1.08f,-1.78f,.8f,.46f,.07f,metal);
-            Part(0,2.68f,0,3.94f,.48f,.2f,metal);
+            Part(0,2.68f,0,3.94f,.48f,.2f,walnut,Finish.Leather);
+            Part(0,2.45f,0,3.96f,.04f,.23f,brass,Finish.Bronze);
             foreach(int side in new[]{-1,1})
             {
-                Part(side*1.89f,1.44f,-1.05f,.12f,2.88f,2.1f,metal);
-                Part(side*1.45f,1.23f,0,.84f,2.46f,.054f,new(112,159,166,112),Finish.Glass);
-                Part(side*1.02f,1.23f,0,.055f,2.46f,.14f,metal);
+                // Executive walnut wainscot + frosted clerestory side glass + brass mullions (replaces dark grey container box!)
+                Part(side*1.89f,.58f,-1.05f,.13f,1.16f,2.1f,walnut,Finish.Leather);
+                Part(side*1.89f,.06f,-1.05f,.16f,.12f,2.14f,brass,Finish.Bronze);
+                Part(side*1.89f,1.18f,-1.05f,.16f,.055f,2.14f,brass,Finish.Bronze);
+                Part(side*1.89f,1.88f,-1.05f,.065f,1.34f,2.04f,frost,Finish.Glass);
+                Part(side*1.89f,2.70f,-1.05f,.14f,.34f,2.12f,walnut,Finish.Leather);
+                foreach(float mz in new[]{-2.06f,-1.05f,-.04f})
+                    Part(side*1.89f,1.44f,mz,.14f,2.88f,.07f,brass,Finish.Bronze);
+                Part(side*1.45f,1.23f,0,.84f,2.46f,.054f,new(124,168,176,92),Finish.Glass);
+                Part(side*1.02f,1.23f,0,.055f,2.46f,.14f,brass,Finish.Bronze);
             }
         }
-        // Equipment cabinet shares the east atrium partition with its service hatch.
+        // Built-in dark-walnut & honed black-marble HVAC/hospitality credenza console (replaces random black server rack near coffee bar!)
         var cabinet=VentMouth(0)+new Vector3(0,.64f,-.44f);
-        mesh.Add(cabinet,new(1.2f,1.28f,.88f),metal,Finish.Rack);
+        mesh.Add(cabinet,new(1.20f,1.22f,.88f),walnut,Finish.Leather);
+        mesh.Add(cabinet+new Vector3(0,-.58f,0),new(1.24f,.10f,.92f),brass,Finish.Bronze);
+        mesh.Add(cabinet+new Vector3(0,.63f,0),new(1.28f,.07f,.94f),new(34,32,36,255),Finish.BlackMarble);
+        mesh.Add(cabinet+new Vector3(0,.58f,0),new(1.24f,.04f,.91f),brass,Finish.Bronze);
     }
 
     private void DrawEntryHardware()
@@ -3180,16 +3311,20 @@ public sealed partial class SkyscraperFloor1World
         for(int i=0;i<VentTime.Length;i++)
         {
             var p=VentMouth(i);
-            VisualEngine3D.Box(p+new Vector3(0,.25f,.012f),.95f,.50f,.042f,steel);
-            VisualEngine3D.Box(p+new Vector3(0,.25f,.041f),.84f,.40f,.035f,new(22,58,48,255));
+            bool lobbyGrille = i == 0;
+            Color frameCol = lobbyGrille ? new(94, 72, 42, 255) : steel;
+            Finish frameFin = lobbyGrille ? Finish.Bronze : Finish.Paint;
+            VisualEngine3D.Box(p+new Vector3(0,.25f,lobbyGrille ? .004f : .012f),.92f,.48f,lobbyGrille ? .020f : .042f,frameCol,frameFin);
+            VisualEngine3D.Box(p+new Vector3(0,.25f,lobbyGrille ? .012f : .041f),.84f,.40f,lobbyGrille ? .016f : .035f,lobbyGrille ? new(22,18,16,255) : new(22,58,48,255));
             float angle=Math.Clamp(Math.Min((.83f-VentTime[i])/.14f,VentTime[i]/.22f),0,1)*1.38f;
-            var hinge=p+new Vector3(0,.46f,.07f);
+            var hinge=p+new Vector3(0,.46f,lobbyGrille ? .022f : .07f);
             for(int j=0;j<6;j++)
             {
                 float drop=.035f+j*.064f;
                 var slat=hinge+new Vector3(0,-drop*MathF.Cos(angle),drop*MathF.Sin(angle));
-                VisualEngine3D.HingedLouver(slat,-angle*180/MathF.PI);
-                VisualEngine3D.Box(hinge+new Vector3(0,-drop-.025f,-.008f),.76f,.008f,.01f,new(79,219,142,255),Finish.Lamp);
+                VisualEngine3D.HingedLouver(slat,-angle*180/MathF.PI,lobbyGrille);
+                if(!lobbyGrille)
+                    VisualEngine3D.Box(hinge+new Vector3(0,-drop-.025f,-.008f),.76f,.008f,.01f,new(79,219,142,255),Finish.Lamp);
             }
         }
     }
@@ -3369,9 +3504,9 @@ public sealed partial class SkyscraperFloor1World
         for (int z=-36;z<=36;z+=6)
         {
             mesh.Add(new(x,CeilingHeight-.02f,z),new(2.54f,.065f,1.34f),trim);
-            bool working = ((x/6+6)*7+(z/6+6)*3)%11==2;
+            bool working = ((x/6+6)*7+(z/6+6)*3)%3!=0;
             mesh.Add(new(x,CeilingHeight-.061f,z),new(2.4f,.032f,1.2f),
-                working ? new Color(148,179,201,255) : new Color(53,62,78,255),
+                working ? new Color(218,172,114,255) : new Color(68,72,82,255),
                 working ? Finish.Fluorescent : Finish.Paint);
         }
         foreach (var duct in OfficeProps)
@@ -3498,9 +3633,68 @@ public sealed partial class SkyscraperFloor1World
     private void DrawHrTarotBoothAndVeronika3D()
     {
         Vector3 b = HrTarotBoothPos;
-        VisualEngine3D.Rod(b+new Vector3(0,.008f,0), b+new Vector3(0,.026f,0),2.90f,2.90f,24,new Color(142,106,56,255),Finish.Bronze);
-        VisualEngine3D.Rod(b+new Vector3(0,.012f,0), b+new Vector3(0,.030f,0),2.82f,2.82f,24,new Color(54,18,28,255),Finish.Carpet);
-        Vector3 origin=b+new Vector3(0,.03f,0);
+        Color walnut = new(54, 34, 22, 255), darkWalnut = new(38, 24, 16, 255);
+        Color brass = new(166, 130, 74, 255), darkBronze = new(78, 58, 36, 255);
+        Color marble = new(32, 30, 34, 255), warmGlow = new(255, 224, 168, 255);
+
+        // Unified Prestige 1990s Art-Deco Executive Reception Counter (Left Executive Wing + Center Tarot Sanctuary + Right Integrated Vitrine!)
+        // Left Executive Wing (X = +0.82..+2.06, Z = b.Z-0.48..b.Z+0.16) + side return to fluted wall
+        Vector3 leftWing = b + new Vector3(1.44f, 0f, -0.16f);
+        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.46f, 0f), 1.24f, 0.86f, 0.62f, walnut, Finish.Leather);
+        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.045f, 0f), 1.28f, 0.09f, 0.66f, brass, Finish.Bronze);
+        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.905f, 0f), 1.28f, 0.045f, 0.66f, brass, Finish.Bronze);
+        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.955f, 0f), 1.32f, 0.06f, 0.70f, marble, Finish.BlackMarble);
+        for (int f = -2; f <= 2; f++)
+            VisualEngine3D.Box(leftWing + new Vector3(f * 0.22f, 0.48f, -0.32f), 0.028f, 0.74f, 0.032f, brass, Finish.Bronze);
+        // Left walnut privacy return linking reception counter flush to fluted backdrop wall (Z = 15.38)
+        VisualEngine3D.Box(new Vector3(b.X + 2.00f, 0.46f, 14.92f), 0.14f, 0.92f, 0.96f, darkWalnut, Finish.Leather);
+        VisualEngine3D.Box(new Vector3(b.X + 2.00f, 0.95f, 14.92f), 0.18f, 0.06f, 0.98f, marble, Finish.BlackMarble);
+        // Classic green-shade brass banker's lamp & leather guest register on Left Executive Wing
+        Vector3 lampBase = leftWing + new Vector3(0.32f, 0.985f, -0.02f);
+        VisualEngine3D.Rod(lampBase, lampBase + Vector3.UnitY * 0.03f, 0.09f, 0.075f, 14, brass, Finish.Bronze);
+        VisualEngine3D.Rod(lampBase + Vector3.UnitY * 0.02f, lampBase + Vector3.UnitY * 0.30f, 0.015f, 0.013f, 10, brass, Finish.Bronze);
+        VisualEngine3D.Box(lampBase + Vector3.UnitY * 0.31f, 0.22f, 0.085f, 0.12f, new Color(28, 96, 62, 255));
+        VisualEngine3D.Orb(lampBase + Vector3.UnitY * 0.27f, 0.038f, warmGlow, Finish.Lamp);
+        VisualEngine3D.OrientedBox(leftWing + new Vector3(-0.22f, 0.995f, -0.04f), new Vector3(0.34f, 0.025f, 0.25f), 0.12f, new Color(92, 28, 36, 255));
+        VisualEngine3D.Sheet(leftWing + new Vector3(-0.22f, 1.012f, -0.04f), 0.12f, 0f, Finish.PitchDeck);
+
+        // Stepped walnut & brass cheek collars smoothly connecting Veronika's central tarot drum flush to both desk wings
+        foreach (int side in new[] { -1, 1 })
+        {
+            Vector3 collar = b + new Vector3(side * 0.84f, 0f, -0.18f);
+            VisualEngine3D.Box(collar + new Vector3(0f, 0.45f, 0f), 0.16f, 0.86f, 0.64f, darkWalnut, Finish.Leather);
+            VisualEngine3D.Box(collar + new Vector3(0f, 0.905f, 0f), 0.19f, 0.045f, 0.68f, brass, Finish.Bronze);
+            VisualEngine3D.Box(collar + new Vector3(0f, 0.045f, 0f), 0.19f, 0.09f, 0.68f, brass, Finish.Bronze);
+        }
+
+        // Curved vertical brushed-brass Art-Deco flutes, base kickplate & upper trim collar uniting the central velvet drum with both wings!
+        for (int k = -4; k <= 4; k++)
+        {
+            float ang = k * 15.5f * MathF.PI / 180f;
+            float rx = MathF.Sin(ang) * 0.845f;
+            float rz = -MathF.Cos(ang) * 0.768f;
+            VisualEngine3D.FaceBox(b + new Vector3(rx, 0.485f, rz), 0.028f, 0.76f, 0.030f, -k * 15.5f, brass, Finish.Bronze);
+        }
+        for (int seg = -6; seg <= 6; seg++)
+        {
+            float ang = seg * 11.5f * MathF.PI / 180f;
+            float rx = MathF.Sin(ang) * 0.855f;
+            float rz = -MathF.Cos(ang) * 0.776f;
+            VisualEngine3D.FaceBox(b + new Vector3(rx, 0.068f, rz), 0.185f, 0.092f, 0.036f, -seg * 11.5f, brass, Finish.Bronze);
+            VisualEngine3D.FaceBox(b + new Vector3(rx, 0.895f, rz), 0.185f, 0.038f, 0.036f, -seg * 11.5f, brass, Finish.Bronze);
+        }
+
+        // Symmetrical Art-Deco frosted-glass & brass wall sconces flanking the ARCANA emblem on the fluted backdrop wall
+        foreach (int side in new[] { -1, 1 })
+        {
+            Vector3 sconce = new(side * 1.78f, 2.75f, 15.34f);
+            VisualEngine3D.Box(sconce, 0.22f, 0.56f, 0.06f, darkBronze, Finish.Bronze);
+            VisualEngine3D.Box(sconce + new Vector3(0f, 0f, -0.03f), 0.13f, 0.40f, 0.05f, warmGlow, Finish.Lamp);
+            foreach (float sy in new[] { -0.23f, 0.23f })
+                VisualEngine3D.Box(sconce + new Vector3(0f, sy, -0.02f), 0.24f, 0.04f, 0.08f, brass, Finish.Bronze);
+        }
+
+        Vector3 origin=b+new Vector3(0,.025f,0);
         bool arms=VisualEngine3D.HasAsset("char_hr_veronika_arm_l") && VisualEngine3D.HasAsset("char_hr_veronika_arm_r");
         if (VeronikaModules.All(VisualEngine3D.HasAsset) && (arms || VisualEngine3D.HasAsset("char_hr_veronika_hands")))
         {
@@ -3539,7 +3733,7 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Asset("prop_hr_reception_desk",b);
             VisualEngine3D.Asset("char_hr_veronika",origin,180);
         }
-        DrawWeaponRack(b+new Vector3(-2.15f,0,.35f),true);
+        DrawWeaponRack(b+new Vector3(-1.62f,0,-.16f),true);
         // The dynamic box retains the inscription's upright UVs; the batched wall uses world UVs.
         VisualEngine3D.Box(new(0,3.25f,15.28f),1.88f,1.53f,.025f,Color.White,Finish.Tarot);
     }
@@ -3557,10 +3751,21 @@ public sealed partial class SkyscraperFloor1World
         float spacing=compact ? .49f : .83f;
         if(compact)
         {
-            VisualEngine3D.Box(origin+new Vector3(0,.46f,0),1.45f,.92f,.60f,new(64,42,36,255));
-            foreach(float side in new[]{-.70f,.70f})
-                VisualEngine3D.Rod(origin+new Vector3(side,.92f,.28f),origin+new Vector3(side,1.31f,.28f),
-                    .016f,.016f,8,new(141,111,73,255),Finish.Bronze);
+            // Integrated Right Reception Wing Weapon Vitrine — exact matching walnut, brass flutes & black-marble counter rim!
+            Color walnut = new(54, 34, 22, 255), brass = new(166, 130, 74, 255), marble = new(32, 30, 34, 255);
+            VisualEngine3D.Box(origin+new Vector3(0,.46f,0),1.54f,.86f,.62f,walnut,Finish.Leather);
+            VisualEngine3D.Box(origin+new Vector3(0,.045f,0),1.58f,.09f,.66f,brass,Finish.Bronze);
+            VisualEngine3D.Box(origin+new Vector3(0,.905f,0),1.58f,.045f,.66f,brass,Finish.Bronze);
+            VisualEngine3D.Box(origin+new Vector3(0,.945f,0),1.60f,.04f,.68f,marble,Finish.BlackMarble);
+            for(int f=-3;f<=3;f++)
+                VisualEngine3D.Box(origin+new Vector3(f*.21f,.48f,-.32f),.028f,.74f,.032f,brass,Finish.Bronze);
+            // 4 sleek brushed-brass museum vitrine corner stanchions + top brass rail framing the clear glass case
+            foreach(float sx in new[]{-.74f,.74f})
+            foreach(float sz in new[]{-.29f,.29f})
+                VisualEngine3D.Rod(origin+new Vector3(sx,.95f,sz),origin+new Vector3(sx,1.32f,sz),
+                    .015f,.015f,14,brass,Finish.Bronze);
+            VisualEngine3D.Box(origin+new Vector3(0,1.32f,-.29f),1.50f,.022f,.022f,brass,Finish.Bronze);
+            VisualEngine3D.Box(origin+new Vector3(0,1.32f,.29f),1.50f,.022f,.022f,brass,Finish.Bronze);
         }
         int slot=0;
         for(int i=0;i<FloorSystems.WeaponOrder.Length;i++)
@@ -3581,6 +3786,28 @@ public sealed partial class SkyscraperFloor1World
             Vector3 centerOffset=Vector3.Transform((bounds.Min+bounds.Max)*(.5f*size),rotation);
             VisualEngine3D.AssetOriented(model,top+Vector3.UnitY*lift-centerOffset,yaw,pitch,-8,size);
         }
+        // Prestige collector showcase inside the compact reception vitrine when player already owns all weapons (never an empty glass box!)
+        if(compact && slot==0)
+        {
+            Color velvet = new(96, 22, 36, 255), brassTrim = new(176, 138, 78, 255);
+            int[] exhibitIndices = [3, 4]; // Micro-Uzi & Sawed-Off collector showcase
+            for(int e=0; e<exhibitIndices.Length; e++)
+            {
+                int wi = exhibitIndices[e];
+                float ex = (e == 0 ? -.37f : .37f);
+                Vector3 baseTop = origin + new Vector3(ex, .965f, 0f);
+                VisualEngine3D.Box(baseTop, .56f, .036f, .38f, brassTrim, Finish.Bronze);
+                VisualEngine3D.Box(baseTop + Vector3.UnitY * .030f, .52f, .042f, .34f, velvet, Finish.Fabric);
+                foreach(float cx in new[]{-.16f, .16f})
+                    VisualEngine3D.Rod(baseTop + new Vector3(cx, .045f, 0f), baseTop + new Vector3(cx, .155f, 0f), .012f, .010f, 10, brassTrim, Finish.Bronze);
+                string model = FloorSystems.WeaponModels[wi];
+                var bounds = VisualEngine3D.ModelBounds(model);
+                float size = .88f, yaw = e == 0 ? 78f : 102f, pitch = -14f;
+                var rotation = Quaternion.CreateFromYawPitchRoll(yaw*MathF.PI/180, pitch*MathF.PI/180, -6*MathF.PI/180);
+                Vector3 centerOffset = Vector3.Transform((bounds.Min+bounds.Max)*(.5f*size), rotation);
+                VisualEngine3D.AssetOriented(model, baseTop + Vector3.UnitY * .20f - centerOffset, yaw, pitch, -6, size);
+            }
+        }
         if(compact) VisualEngine3D.DisplayLid(origin+new Vector3(0,1.31f,.28f),_rackOpen);
     }
 
@@ -3599,6 +3826,13 @@ public sealed partial class SkyscraperFloor1World
         float chairYaw = ((h % 2 == 0) ? 1f : -1f) * (14f + (h * 13 % 34)) * MathF.PI / 180f;
         float chairPull = 0.05f + (h % 5) * 0.042f;
         VisualEngine3D.Workstation(feet, occupied ? Vector2.Zero : new(chairYaw, chairPull), reversed ? 0 : 180);
+        // Full-height rich dark oiled-walnut side-panel cladding + crisp thin brass edge cap & plinth (replaces bright orange half-boards!)
+        foreach (int sx in new[] { -1, 1 })
+        {
+            VisualEngine3D.Box(feet + new Vector3(sx * 1.032f, 0.54f, 0f), 0.045f, 0.98f, 0.91f, new Color(58, 36, 24, 255), Finish.Leather);
+            VisualEngine3D.Box(feet + new Vector3(sx * 1.036f, 1.042f, 0f), 0.056f, 0.026f, 0.93f, new Color(164, 128, 72, 255), Finish.Bronze);
+            VisualEngine3D.Box(feet + new Vector3(sx * 1.036f, 0.032f, 0f), 0.056f, 0.064f, 0.93f, new Color(112, 84, 46, 255), Finish.Bronze);
+        }
         Vector3 top = feet + Vector3.UnitY * (.792f * WorkstationScale);
         float side = reversed ? -1f : 1f;
         float lampSide = (h % 3 == 0) ? -1f : 1f;
@@ -3714,8 +3948,12 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Asset("prop_pendant_lamp",new(lamp.X,CeilingHeight,lamp.Y));
         VisualEngine3D.Asset("prop_server_cart",CartPosition,-139);
         foreach(var rack in SideRacks) VisualEngine3D.Asset("prop_server_rack",rack,180);
-        // Solid reception backing between the outer brass ribs and central tarot sign.
-        VisualEngine3D.Asset("prop_poster_frame",new(1.99f,1.86f,15.355f),180);
+        // Hospitality coffee cups & serving tray atop the built-in walnut credenza at VentMouth(0)
+        Vector3 credTop = VentMouth(0) + new Vector3(0f, 1.29f, -.44f);
+        VisualEngine3D.Box(credTop + new Vector3(-.20f, .012f, .02f), .42f, .022f, .28f, new Color(152, 118, 66, 255), Finish.Bronze);
+        DrawCoffee(credTop + new Vector3(-.30f, .024f, .02f));
+        DrawCoffee(credTop + new Vector3(-.10f, .024f, -.01f));
+        VisualEngine3D.Sheet(credTop + new Vector3(.26f, .006f, .02f), -.18f, 0f, Finish.PitchDeck);
         VisualEngine3D.Box(LoungeTable+new Vector3(0,.365f,0),1.44f,.07f,.68f,new(131,87,54,255));
         foreach(float x in new[]{-.46f,.46f})
             VisualEngine3D.Box(LoungeTable+new Vector3(x,.165f,0),.11f,.33f,.54f,new(51,53,56,255));
@@ -3725,9 +3963,10 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.MountedWhiteboard(PrintBoardOrigin,-90);
         foreach(var table in new[]{BreakTable,ShaftCafeTable})
         {
-            VisualEngine3D.Rod(table,table+Vector3.UnitY*.05f,.33f,.32f,16,new(57,56,53,255));
-            VisualEngine3D.Rod(table,table+Vector3.UnitY*.84f,.059f,.052f,12,new(150,113,73,255));
-            VisualEngine3D.Rod(table+Vector3.UnitY*.835f,table+Vector3.UnitY*.88f,.55f,.55f,20,new(157,109,73,255));
+            VisualEngine3D.Rod(table,table+Vector3.UnitY*.055f,.34f,.30f,20,new(72,54,34,255),Finish.Bronze);
+            VisualEngine3D.Rod(table+Vector3.UnitY*.04f,table+Vector3.UnitY*.84f,.058f,.048f,16,new(166,130,74,255),Finish.Bronze);
+            VisualEngine3D.Rod(table+Vector3.UnitY*.825f,table+Vector3.UnitY*.855f,.565f,.565f,24,new(166,130,74,255),Finish.Bronze);
+            VisualEngine3D.Rod(table+Vector3.UnitY*.845f,table+Vector3.UnitY*.882f,.552f,.552f,24,new(40,37,42,255),Finish.BlackMarble);
         }
         // Cozy round startup scrum & coffee tables breaking up empty openspace bays!
         for(int si=0;si<OpenspaceScrumTables.Length;si++)
@@ -4667,7 +4906,7 @@ public sealed partial class SkyscraperFloor1World
         LootElevatorKey(c);
     }
 
-    internal Vector3 ContractBoardFeet => HrTarotBoothPos+new Vector3(-3.35f,0,1.45f);
+    internal Vector3 ContractBoardFeet => HrTarotBoothPos+new Vector3(-3.16f,0,-0.10f);
 
     private void DrawStations()
     {
@@ -4693,10 +4932,33 @@ public sealed partial class SkyscraperFloor1World
             Box(CoffeePos+Vector3.UnitY*1.35f,.74f,.09f,.63f,brass);
             DrawCoffee(CoffeePos+new Vector3(0,.91f,.18f));
         }
-        Vector3 board=ContractBoardFeet+Vector3.UnitY*1.35f;
-        Box(board,.73f,.48f,.09f,steel);
-        Box(board+Vector3.UnitZ*.055f,.62f,.34f,.025f,new(202,185,146,255));
-        for(int i=0;i<3;i++) Box(board+new Vector3(-.07f,.08f-.08f*i,.074f),.35f,.016f,.01f,steel);
+        // Grounded Art-Deco Walnut & Brushed-Brass Standing Contract Directory Lectern (facing -Z toward the player!)
+        Vector3 cf = ContractBoardFeet;
+        Color walnutFrame = new(54, 34, 22, 255), darkBronze = new(74, 56, 36, 255);
+        VisualEngine3D.Box(cf + new Vector3(0f, 0.03f, 0f), 0.78f, 0.06f, 0.42f, darkBronze, Finish.Bronze);
+        VisualEngine3D.Box(cf + new Vector3(0f, 0.075f, 0f), 0.72f, 0.03f, 0.36f, brass, Finish.Bronze);
+        foreach (int lx in new[] { -1, 1 })
+        {
+            VisualEngine3D.Rod(cf + new Vector3(lx * 0.28f, 0.06f, 0f), cf + new Vector3(lx * 0.28f, 1.10f, 0f), 0.022f, 0.018f, 12, darkBronze, Finish.Bronze);
+            VisualEngine3D.Box(cf + new Vector3(lx * 0.28f, 0.54f, 0f), 0.055f, 0.045f, 0.055f, brass, Finish.Bronze);
+        }
+        VisualEngine3D.Box(cf + new Vector3(0f, 0.54f, 0f), 0.56f, 0.035f, 0.035f, brass, Finish.Bronze);
+        Vector3 board = cf + Vector3.UnitY * 1.34f;
+        VisualEngine3D.Box(board, 0.80f, 0.54f, 0.08f, walnutFrame, Finish.Leather);
+        VisualEngine3D.Box(board + new Vector3(0f, 0.285f, 0f), 0.84f, 0.04f, 0.11f, brass, Finish.Bronze);
+        VisualEngine3D.Box(board + new Vector3(0f, -0.285f, 0f), 0.84f, 0.04f, 0.11f, brass, Finish.Bronze);
+        // Warm parchment contract dossier facing -Z (toward the lobby!) with header bar, printed lines & crimson wax seal
+        VisualEngine3D.Box(board + new Vector3(0f, 0f, -0.048f), 0.66f, 0.40f, 0.018f, new Color(224, 210, 178, 255));
+        VisualEngine3D.Box(board + new Vector3(0f, 0.135f, -0.060f), 0.54f, 0.032f, 0.008f, new Color(118, 28, 38, 255));
+        for (int i = 0; i < 4; i++)
+            VisualEngine3D.Box(board + new Vector3(-0.04f, 0.06f - 0.058f * i, -0.060f), 0.46f - (i % 2) * 0.08f, 0.014f, 0.006f, new Color(56, 48, 42, 255));
+        VisualEngine3D.Orb(board + new Vector3(0.22f, -0.11f, -0.064f), 0.032f, new Color(156, 30, 38, 255));
+        // Finished rear brushed-brass corporate plaque so the lectern looks refined from 360° angles
+        VisualEngine3D.Box(board + new Vector3(0f, 0f, 0.044f), 0.56f, 0.34f, 0.012f, darkBronze, Finish.Bronze);
+        VisualEngine3D.Box(board + new Vector3(0f, 0f, 0.052f), 0.44f, 0.22f, 0.008f, walnutFrame, Finish.Leather);
+        // Tiny warm brass gallery picture-light illuminating the contract board
+        VisualEngine3D.Box(board + new Vector3(0f, 0.34f, -0.09f), 0.34f, 0.032f, 0.055f, brass, Finish.Bronze);
+        VisualEngine3D.Box(board + new Vector3(0f, 0.322f, -0.09f), 0.28f, 0.014f, 0.035f, new Color(255, 226, 168, 255), Finish.Lamp);
         if(!VisualEngine3D.CastingShadows && Systems.RackHeat>0)
         {
             for(int i=0;i<14;i++)

@@ -1467,7 +1467,7 @@ public static partial class Program
 
     private static void OpenKeycardRow()
     {
-        _playerPos=_world.HrTarotBoothPos+new Vector3(0,1.72f,2);
+        _playerPos=_world.HrTarotBoothPos+new Vector3(0,1.72f,-2.2f);
         LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.6f);
         PressTestKey(KeyboardKey.E);
         if(floorPanel!=FloorPanel.Upgrades || sidegrades) throw new InvalidDataException("Expected Veronika's arsenal");
@@ -1612,7 +1612,7 @@ public static partial class Program
         capture("12_bare_start_frogs.png");
         AutomationEvent forward=new() {Type=2}; forward.Params[0]=(int)KeyboardKey.W;
         Raylib.PlayAutomationEvent(forward);
-        for(int frame=0;frame<22;frame++)
+        for(int frame=0;frame<36;frame++)
         {
             UpdateFrame(1f/60,ref exit);
             Raylib.PollInputEvents();
@@ -1738,7 +1738,7 @@ public static partial class Program
         Check(_weapons.CurrentWeapon==WeaponType.BareHands && _weapons.SelectedHotbarSlot==-1 &&
             _world.CarriedCoder==intern && _hudStatusBanner.Contains("Отнеси вайбкодера"),"draw blocked during escort");
         Check(_world.OnboardingWaypoint(_playerPos)?.Position==_world.HrTarotBoothPos,"HR delivery waypoint");
-        Approach(_world.HrTarotBoothPos+Vector3.UnitY*1.6f,2); Key(KeyboardKey.E);
+        Approach(_world.HrTarotBoothPos+Vector3.UnitY*1.6f,-2.2f); Key(KeyboardKey.E);
         Check(!Floor.WingsUnlocked && _world.TotalCodersSoldToHr==1,"first sale preserves quarantine");
         for(int sale=2;sale<=3;sale++)
         {
@@ -2285,7 +2285,7 @@ public static partial class Program
         LookAtTarget(intern.Position+Vector3.UnitY*.45f);
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);
         Floor.PocketFrogs.Add("frog_hopper");
-        _playerPos=_world.HrTarotBoothPos+new Vector3(0,1.72f,2);
+        _playerPos=_world.HrTarotBoothPos+new Vector3(0,1.72f,-2.2f);
         LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.6f);
         if(_world.FocusPrompt(BuildPlayerCamera())!="Сдать кадра HR Веронике") throw new InvalidDataException("HR candidate priority");
         _world.Interact(BuildPlayerCamera(),TrySpendCash,GrantCash);

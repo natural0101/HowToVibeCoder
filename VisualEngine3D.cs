@@ -157,7 +157,7 @@ internal static unsafe partial class VisualEngine3D
         uniform vec4 colDiffuse, colSpecular;
         uniform vec3 eye, laptop, tarot, northBeacon, southBeacon;
         uniform float power, clock, flashStrength, cabinPower;
-        uniform vec2 pendants[19];
+        uniform vec2 pendants[27];
         uniform float rackLoad;
         uniform vec3 muzzle;
         uniform int firstPerson;
@@ -263,10 +263,10 @@ internal static unsafe partial class VisualEngine3D
             vec3 v=normalize(eye-pos), flatN=normalize(cross(dFdx(pos),dFdy(pos)));
             if(dot(flatN,v)<0.) flatN=-flatN;
             vec3 n=flatN;
-            if((finish==21 || finish==17) && dot(norm,norm)>.01) {
+            if(dot(norm,norm)>.01) {
                 n=normalize(norm);
                 if(dot(n,flatN)<0.) n=-n;
-            } else if(dot(n,norm)<0.) n=-n;
+            }
             vec2 st=uv;
             if(slotReels>0. && colSpecular.a>.60 && colSpecular.a<.64 && uv.x<.75)
                 st.y=fract(st.y+slotReels*(1.+floor(uv.x*4.)));
@@ -446,12 +446,12 @@ internal static unsafe partial class VisualEngine3D
                 floorBrass = cabochon * (1. - smoothstep(.04, .18, length(fwidth(slabUV))));
                 base = mix(stoneCol, vec3(.76,.58,.30), floorBrass);
             }
-            // Royal-Burgundy Woven Art-Deco Jacquard Hotel-Lobby Runner with gold key-border & velvet trellis!
+            // Royal-Burgundy Woven Art-Deco Jacquard Hotel-Lobby Runner & Commercial Modular Openspace Carpet Tiles!
             if(finish==18) {
                 float weave = .90 + .07 * cos(pos.z * 145.) * cos(pos.x * 118.) + .05 * (fbm(pos.xz * 26.) - .5);
                 vec3 wool = base * weave;
-                // Woven Art-Deco antique-gold border & diamond medallion lattice on the central lobby runner
-                if(abs(pos.x) < 2.38 && pos.z > .55 && pos.z < 14.1) {
+                // Woven Art-Deco antique-gold border & diamond medallion lattice on South & North lobby runners
+                if(abs(pos.x) < 2.38 && ((pos.z > .55 && pos.z < 15.36) || (pos.z < -8.60 && pos.z > -24.0))) {
                     float ax = abs(pos.x);
                     float borderBand = (smoothstep(1.88,1.90,ax) * (1.-smoothstep(1.94,1.96,ax)))
                                      + (smoothstep(2.08,2.10,ax) * (1.-smoothstep(2.14,2.16,ax)));
@@ -462,6 +462,17 @@ internal static unsafe partial class VisualEngine3D
                     float trellis = (1. - smoothstep(.018, .042, abs(dia.x + dia.y - .46))) * (1. - smoothstep(1.74, 1.84, ax));
                     float goldMask = clamp(borderBand * .92 + keyMotif * .72 + trellis * .28, 0., 1.);
                     wool = mix(wool, vec3(.66,.49,.23) * (.88 + .12 * weave), goldMask);
+                } else if(abs(pos.x) > 9.5) {
+                    // Authentic 60x60cm Class-A commercial corporate modular carpet tiles with subtle alternating rib direction
+                    vec2 tileUV = pos.xz * 1.666;
+                    vec2 tileId = floor(tileUV);
+                    vec2 tf = fract(tileUV) - .5;
+                    float alt = mod(tileId.x + tileId.y, 2.);
+                    float rib = cos((alt > .5 ? pos.x : pos.z) * 165.) * .045;
+                    float toneVar = .94 + .10 * hash(tileId) + (alt > .5 ? .04 : -.04);
+                    vec2 seamD = .5 - abs(tf);
+                    float seam = 1. - smoothstep(.008, .024, min(seamD.x, seamD.y));
+                    wool = mix(base * (weave + rib) * toneVar, base * .62, seam * .45);
                 }
                 base = wool;
             }
@@ -487,24 +498,24 @@ internal static unsafe partial class VisualEngine3D
             bool weapon=firstPerson==1 && finish==17 && weaponFinish.y>0.;
             if(weapon) gloss=mix(96.,18.,weaponFinish.y);
             float ao=mix(1.,mix(.68,1.,smoothstep(0.,.42,pos.y)),1.-abs(n.y));
-            vec3 light=mix(vec3(.16,.12,.10),vec3(.18,.25,.36),.5+.5*n.y)*ao;
+            vec3 light=mix(vec3(.18,.15,.12),vec3(.22,.24,.29),.5+.5*n.y)*ao;
             light+=vec3(1.48,1.02,.64)*max(0.,dot(n,key))*shadow;
             if(firstPerson==0 && pos.y<9.) {
                 float pool=0.;
-                for(int i=0;i<19;i++) {
+                for(int i=0;i<27;i++) {
                     vec2 offset=pos.xz-pendants[i];
-                    pool=max(pool,1.-smoothstep(.18,1.,dot(offset,offset*vec2(.075,.13))));
+                    pool=max(pool,1.-smoothstep(.16,1.,dot(offset,offset*vec2(.062,.095))));
                 }
-                light+=vec3(.92,.55,.25)*pool*(.29+.71*max(0.,n.y));
+                light+=vec3(.96,.64,.34)*pool*(.34+.66*max(0.,n.y));
             }
             if(firstPerson==0) light+=point(puddleLight,vec3(.08,1.12,1.55)*puddlePower,n,v,gloss);
             light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
-            light+=point(tarot,vec3(1.6,.85,.38)*(.94+.06*sin(clock*8.)),n,v,gloss);
-            light+=point(tarot+vec3(.55,-.30,.18),vec3(.42,.18,.82),n,v,gloss);
-            float beacon=.82+.28*sin(clock*3.2);
-            light+=point(northBeacon,vec3(1.4,.12,.15)*beacon,n,v,gloss);
-            light+=point(northBeacon+vec3(0.,-.5,2.35),vec3(2.1,.09,.06)*cabinPower,n,v,gloss);
-            light+=point(southBeacon,vec3(1.4,.12,.15)*beacon,n,v,gloss);
+            light+=point(tarot,vec3(1.45,.88,.44)*(.95+.05*sin(clock*8.)),n,v,gloss);
+            light+=point(tarot+vec3(.45,-.30,.15),vec3(.18,.11,.28),n,v,gloss);
+            float beacon=.84+.20*sin(clock*3.2);
+            light+=point(northBeacon,vec3(.78,.24,.14)*beacon,n,v,gloss);
+            light+=point(northBeacon+vec3(0.,-.5,2.35),vec3(1.85,.12,.08)*cabinPower,n,v,gloss);
+            light+=point(southBeacon,vec3(.78,.24,.14)*beacon,n,v,gloss);
             if(firstPerson==1) light=max(light,vec3(.68,.64,.66));
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
@@ -584,8 +595,8 @@ internal static unsafe partial class VisualEngine3D
         box = ModelFor(Raylib.GenMeshCube(1,1,1));
         bevel = ModelFor(RoundedBox());
         plane = ModelFor(Raylib.GenMeshPlane(1,1,1,1));
-        tube = ModelFor(Raylib.GenMeshCylinder(1,1,10));
-        sphere = ModelFor(Raylib.GenMeshSphere(1,6,9));
+        tube = ModelFor(Raylib.GenMeshCylinder(1,1,28));
+        sphere = ModelFor(Raylib.GenMeshSphere(1,14,22));
         foreach (Finish f in Enum.GetValues<Finish>())
             maps[(int)f] = MakeTexture(f);
         string directory = Path.Combine(AppContext.BaseDirectory, "assets", "models");
@@ -962,15 +973,16 @@ internal static unsafe partial class VisualEngine3D
     internal static void DrawCloud(Vector3 origin,float time,float remaining,float radius,bool steam)
     {
         Rlgl.DisableDepthMask();
-        for(int i=0;i<42;i++)
+        int count = steam ? 24 : 42;
+        for(int i=0;i<count;i++)
         {
-            float t=(time*(steam ? .48f : .29f)+i*.317f)%1;
-            float a=i*2.39996f+t*.8f+.22f*MathF.Sin(i*3.1f+2*t);
-            float spread=radius*(steam ? .57f : .76f)*t;
-            var p=origin+new Vector3(MathF.Cos(a)*spread,(steam ? .32f+2*t : .32f+.54f*t)+.22f*MathF.Sin(a),MathF.Sin(a)*spread);
-            float r=.18f+(steam ? .7f : 1.05f)*t;
-            int alpha=(int)((steam ? 103 : 145)*MathF.Sin(MathF.PI*t)*Math.Min(1,remaining));
-            Oval(p,new(r,r*(steam ? 1.2f : .72f),r),new(223,229,232,alpha),Finish.Cloud);
+            float t=(time*(steam ? .52f : .29f)+i*.317f)%1;
+            float a=i*2.39996f+t*.9f+.22f*MathF.Sin(i*3.1f+2*t);
+            float spread=radius*(steam ? .22f : .76f)*t;
+            var p=origin+new Vector3(MathF.Cos(a)*spread,(steam ? .98f+1.05f*t : .32f+.54f*t)+(steam ? .08f : .22f)*MathF.Sin(a),MathF.Sin(a)*spread);
+            float r=steam ? (.07f+.28f*t) : (.18f+1.05f*t);
+            int alpha=(int)((steam ? 42 : 145)*MathF.Sin(MathF.PI*t)*Math.Min(1,remaining));
+            Oval(p,new(r,r*(steam ? 1.35f : .72f),r),steam ? new(238,232,222,alpha) : new(223,229,232,alpha),Finish.Cloud);
         }
         Rlgl.EnableDepthMask();
     }
@@ -1037,7 +1049,7 @@ internal static unsafe partial class VisualEngine3D
     {
         // Both lounge rugs sit just above the structural floor.
         if(Math.Abs(p.X+5.05f)<2.175f && Math.Abs(p.Z-6.9f)<2.05f) p.Y+=.028f;
-        else if(Math.Abs(p.X)<2.4f && p.Z is >.65f and <13.95f) p.Y+=.026f;
+        else if(Math.Abs(p.X)<2.4f && p.Z is >.65f and <15.36f) p.Y+=.026f;
         var rotation=Quaternion.CreateFromAxisAngle(Vector3.UnitY,yaw);
         Vector3 At(float x,float y,float z)=>p+Vector3.Transform(new(x,y,z),rotation);
         void Part(Vector3 center,Vector3 size,Color color,Finish finish=Finish.Paint) =>
@@ -1084,9 +1096,9 @@ internal static unsafe partial class VisualEngine3D
     internal static void DisplayLid(Vector3 hinge,float opening)
     {
         float angle=(8+62*opening)*MathF.PI/180;
-        Vector3 center=hinge+new Vector3(0,MathF.Sin(angle),-MathF.Cos(angle))*.29f;
+        Vector3 center=hinge+new Vector3(0,MathF.Sin(angle),-MathF.Cos(angle))*.30f;
         Rlgl.DisableDepthMask();
-        Draw(bevel,center,new(1.46f,.018f,.58f),new(166,201,211,68),Finish.Glass,Vector3.UnitX,angle*180/MathF.PI);
+        Draw(bevel,center,new(1.52f,.014f,.60f),new(210,228,236,20),Finish.Glass,Vector3.UnitX,angle*180/MathF.PI);
         Rlgl.EnableDepthMask();
     }
 
@@ -1121,8 +1133,8 @@ internal static unsafe partial class VisualEngine3D
         Rlgl.EnableDepthMask();
     }
 
-    internal static void HingedLouver(Vector3 center,float degrees) =>
-        Draw(box,center,new(.82f,.048f,.024f),new(122,137,141,255),Finish.Paint,Vector3.UnitX,degrees);
+    internal static void HingedLouver(Vector3 center,float degrees,bool bronze=false) =>
+        Draw(box,center,new(.82f,.048f,.020f),bronze ? new(118,88,48,255) : new(122,137,141,255),bronze ? Finish.Bronze : Finish.Paint,Vector3.UnitX,degrees);
 
     public static void OrientedBox(Vector3 p, Vector3 size, float yaw, Color color) =>
         Draw(bevel,p,size,color,Finish.Paint,Vector3.UnitY,yaw*180/MathF.PI);
@@ -1394,9 +1406,12 @@ internal static unsafe partial class VisualEngine3D
                 float l=grain+quilt*41;
                 return Rgb(76+l,32+l*.62f,36+l*.48f);
             case Finish.Plaster:
-                float concrete=grain*.85f+3*MathF.Sin(y*.023f+x*.017f);
-                if(y<3 || x<2) concrete-=33;
-                return Rgb(201+concrete,204+concrete,210+concrete);
+                // Warm honed travertine / limestone ashlar architectural stone paneling with subtle veins & reveal joints
+                float tvein = 6f*MathF.Sin(y*.032f + 2.4f*MathF.Sin(x*.018f)) + 3.5f*MathF.Cos(x*.025f - y*.014f);
+                float trav = grain*.75f + tvein;
+                bool joint = y<4 || (y>=254 && y<=257) || x<3 || (x>=255 && x<=257);
+                if(joint) trav -= 38f;
+                return Rgb(222+trav,213+trav*.96f,197+trav*.88f);
             case Finish.Tarot:
                 float dx=x-256,dy=y-204,r=MathF.Sqrt(dx*dx+dy*dy);
                 bool gilded=Math.Abs(r-106)<3 || Math.Abs(r-83)<2 || (r>114 && r<188 && MathF.Cos(32*MathF.Atan2(dy,dx))>.91f);
