@@ -701,11 +701,12 @@ public static partial class Program
                 float u = 1f - Math.Clamp(b.StateTimer / 2.4f, 0f, 1f);
                 if (u >= 0.01f && (cutsceneCueMask & 2) == 0) { cutsceneCueMask |= 2; Cue("boss_siren.wav", 0.65f, "sfx"); }
                 if (u >= 0.19f && (cutsceneCueMask & 4) == 0) { cutsceneCueMask |= 4; Cue("comic_panel_slam.wav", 0.95f, "sfx"); }
+                if (u >= 0.240f && (cutsceneCueMask & 512) == 0) { cutsceneCueMask |= 512; Cue("comic_boom.wav", 0.82f, "sfx"); }
                 if (u >= 0.27f && (cutsceneCueMask & 8) == 0) { cutsceneCueMask |= 8; Cue("boot_land.wav", 0.88f, "sfx"); }
                 if (u >= 0.29f && (cutsceneCueMask & 16) == 0) { cutsceneCueMask |= 16; Cue("vo/vo_boss_reveal.wav", 1.00f, "vo", maxDuration: 8.6, fadeOut: 0.30); }
                 if (u >= 0.585f && (cutsceneCueMask & 32) == 0) { cutsceneCueMask |= 32; Cue("comic_whip_snap.wav", 0.90f, "sfx"); }
-                if (u >= 0.678f && (cutsceneCueMask & 64) == 0) { cutsceneCueMask |= 64; Cue("comic_boom.wav", 0.95f, "sfx"); }
-                if (u >= 0.725f && (cutsceneCueMask & 128) == 0) { cutsceneCueMask |= 128; Cue("comic_boom.wav", 0.90f, "sfx"); }
+                if (u >= 0.671f && (cutsceneCueMask & 64) == 0) { cutsceneCueMask |= 64; Cue("comic_boom.wav", 1.00f, "sfx"); }
+                if (u >= 0.684f && (cutsceneCueMask & 128) == 0) { cutsceneCueMask |= 128; Cue("comic_boom.wav", 0.92f, "sfx"); }
                 if (u >= 0.822f && (cutsceneCueMask & 256) == 0) { cutsceneCueMask |= 256; Cue("action_clack.wav", 0.92f, "sfx"); }
             }
             EmitCurrentFrame();
@@ -737,11 +738,12 @@ public static partial class Program
         LookAtTarget(boss.Position + Vector3.UnitY * 1.75f);
         Cue("vo/vo_boss_mock_0.wav", 0.98f, "vo", maxDuration: 4.8, fadeOut: 0.25);
 
-        // Strafe left-to-right shredding the shield with Uzi bursts
-        Glide(_playerPos, new Vector3(-2.15f, 1.72f, -14.85f),
+        // Strafe wide across the newly blasted-open North Wing arena (Z=-21..-19.5) shredding the shield through the smoking breach!
+        Glide(_playerPos, new Vector3(+3.10f, 1.72f, -19.80f),
             boss.Position + Vector3.UnitY * 1.75f, boss.Position + Vector3.UnitY * 1.75f, 3.0f, walkBob: true,
             onFrame: (i, u) =>
             {
+                boss.Position = Vector3.Lerp(new Vector3(0.0f, 0.0f, -10.65f), new Vector3(0.0f, 0.0f, -13.40f), u);
                 LookAtTarget(boss.Position + Vector3.UnitY * 1.72f);
                 if (i >= 10 && i <= 75 && i % 5 == 0)
                 {
@@ -753,13 +755,13 @@ public static partial class Program
                 if (u > 0.68f && boss.ShieldHp > 0f) boss.ShieldHp = 0f;
             });
 
-        // Swap to Sawed-Off Shotgun, dodge incoming node_modules cube, blast exposed core -> DEFEAT!
+        // Swap to Sawed-Off Shotgun, push through the blasted Z=-15.8 rubble breach, dodge incoming node_modules cube & blast core -> DEFEAT!
         _weapons.SelectSlot(4);
         boss.ShieldHp = 0f;
         boss.ShieldDelay = 8f;
         boss.State = ElevatorBossState.ThrowingNodeModules;
         _world.SpawnNodeModulesCube(boss.Position + new Vector3(1.6f, 1.75f, -0.8f), _playerPos + new Vector3(2.4f, 0.2f, -2.5f));
-        Glide(_playerPos, new Vector3(1.65f, 1.72f, -14.45f),
+        Glide(_playerPos, new Vector3(-1.85f, 1.72f, -17.65f),
             boss.Position + Vector3.UnitY * 1.72f, boss.Position + Vector3.UnitY * 1.72f, 3.8f, walkBob: true,
             onFrame: (i, u) =>
             {

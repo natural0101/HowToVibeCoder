@@ -1104,8 +1104,10 @@ internal static unsafe partial class VisualEngine3D
              world.SouthElevatorDoorPos+new Vector3(0,3.7f,1),world.IsMacBookTrapActive ? 1.4f : .42f);
     }
 
+    // Legacy two-handed horizontal belt tension uniform; the one-handed leather whip-belt
+    // extends along +Z and must never be stretched horizontally across X during inspect.
     public static void SetBeltTension(float amount) =>
-        Raylib.SetShaderValue(shader,beltTensionLoc,amount,ShaderUniformDataType.Float);
+        Raylib.SetShaderValue(shader,beltTensionLoc,0f,ShaderUniformDataType.Float);
 
     internal static void DrawCloud(Vector3 origin,float time,float remaining,float radius,bool steam)
     {

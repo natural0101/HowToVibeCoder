@@ -331,10 +331,10 @@ public class WeaponAndCombatView
         float lift = InspectLift(t)*weight;
         if (lift == 0) return Matrix4x4.Identity;
         float turn = Ease((t-.37f)/.31f);
-        Vector3 pivot = slot==1 ? new(0,-.15f,.60f) : new(.18f,-.15f,.62f);
+        Vector3 pivot = new(.18f,-.15f,.62f);
         (Vector3 travel, Vector3 degrees) = slot switch
         {
-            1 => (new Vector3(0,.095f,.045f), new Vector3(-19,8,-8+12*turn)),
+            1 => (new Vector3(-.115f,.072f,-.015f), new Vector3(-16,-24+34*turn,10-28*turn)),
             2 => (new Vector3(-.105f,.062f,-.04f), new Vector3(-6,-12,-18*turn)),
             // The receiver already has a -16 degree resting yaw.
             3 => (new Vector3(-.135f,.085f,.065f), new Vector3(-9,-22+70*turn,12-23*turn)),
@@ -1253,73 +1253,120 @@ public class WeaponAndCombatView
     {
         float p = BeltSwingPhase; // 1.0 -> 0.0 during swing
         float t = 1f - p;         // 0.0 -> 1.0 progress
-
-        // Multi-phase whip animation:
-        // Phase A (0..0.28): Wind-up to upper-right
-        // Phase B (0.28..0.68): Fast diagonal lash across screen + leather strap extension forward in +Z
-        // Phase C (0.68..1.0): Recover to idle stance
-        Vector3 swingHandOffset = Vector3.Zero;
-        float whipExtension = 0f;
         float lashSide = (BeltSwingCombo == 0) ? 1f : -1f;
+
+        // One-handed leather whip-belt (плётка) 3-phase animation:
+        // Phase A (0.00..0.24): Quick right-arm cock/raise (alternating forehand / backhand)
+        // Phase B (0.24..0.62): Explosive diagonal one-handed whip lash across crosshair with wrist snap
+        // Phase C (0.62..1.00): Supple damped leather follow-through back to lower-right ready stance
+        Vector3 swingHandOffset = Vector3.Zero;
+        float swingPitch = 0f, swingYaw = 0f, swingRoll = 0f;
 
         if (p > 0.001f)
         {
-            if (t < 0.28f)
+            if (t < 0.24f)
             {
-                float k = t / 0.28f;
-                swingHandOffset = new Vector3(0.16f * k * lashSide, 0.14f * k, -0.08f * k);
-                whipExtension = -0.15f * k;
+                float k = Ease(t / 0.24f);
+                if (lashSide > 0f)
+                {
+                    swingHandOffset = new Vector3(0.11f * k, 0.16f * k, -0.085f * k);
+                    swingPitch = -0.44f * k;
+                    swingYaw   =  0.34f * k;
+                    swingRoll  = -0.34f * k;
+                }
+                else
+                {
+                    swingHandOffset = new Vector3(-0.15f * k, 0.07f * k, -0.06f * k);
+                    swingPitch = -0.30f * k;
+                    swingYaw   = -0.46f * k;
+                    swingRoll  =  0.48f * k;
+                }
             }
-            else if (t < 0.68f)
+            else if (t < 0.62f)
             {
-                float k = (t - 0.28f) / 0.40f;
-                swingHandOffset = new Vector3(
-                    Lerp(0.16f * lashSide, -0.34f * lashSide, k),
-                    Lerp(0.14f, -0.18f, k),
-                    MathF.Sin(k * MathF.PI) * 0.34f);
-                whipExtension = MathF.Sin(k * MathF.PI) * 0.72f;
+                float raw = (t - 0.24f) / 0.38f;
+                float k = 1f - MathF.Pow(1f - raw, 2.5f); // front-loaded whip snap acceleration
+                float lunge = MathF.Sin(raw * MathF.PI);
+                if (lashSide > 0f)
+                {
+                    swingHandOffset = new Vector3(
+                        Lerp(0.11f, -0.25f, k),
+                        Lerp(0.16f, -0.10f, k),
+                        Lerp(-0.085f, 0.03f, k) + 0.25f * lunge);
+                    swingPitch = Lerp(-0.44f, 0.56f, k) + 0.18f * lunge;
+                    swingYaw   = Lerp(0.34f, -0.78f, k);
+                    swingRoll  = Lerp(-0.34f, 0.46f, k);
+                }
+                else
+                {
+                    swingHandOffset = new Vector3(
+                        Lerp(-0.15f, 0.17f, k),
+                        Lerp(0.07f, -0.08f, k),
+                        Lerp(-0.06f, 0.02f, k) + 0.24f * lunge);
+                    swingPitch = Lerp(-0.30f, 0.48f, k) + 0.16f * lunge;
+                    swingYaw   = Lerp(-0.46f, 0.42f, k);
+                    swingRoll  = Lerp(0.48f, -0.36f, k);
+                }
             }
             else
             {
-                float k = (t - 0.68f) / 0.32f;
-                swingHandOffset = new Vector3(
-                    Lerp(-0.34f * lashSide, 0f, k),
-                    Lerp(-0.18f, 0f, k),
-                    Lerp(0.08f, 0f, k));
-                whipExtension = (1f - k) * 0.18f;
+                float raw = (t - 0.62f) / 0.38f;
+                float env = 1f - Ease(raw);
+                float settle = MathF.Sin(raw * MathF.PI * 1.5f) * (1f - raw);
+                if (lashSide > 0f)
+                {
+                    swingHandOffset = new Vector3(-0.25f * env, -0.10f * env + 0.018f * settle, 0.03f * env);
+                    swingPitch = 0.56f * env - 0.12f * settle;
+                    swingYaw   = -0.78f * env + 0.09f * settle;
+                    swingRoll  = 0.46f * env - 0.10f * settle;
+                }
+                else
+                {
+                    swingHandOffset = new Vector3(0.17f * env, -0.08f * env + 0.018f * settle, 0.02f * env);
+                    swingPitch = 0.48f * env - 0.12f * settle;
+                    swingYaw   = 0.42f * env - 0.09f * settle;
+                    swingRoll  = -0.36f * env + 0.10f * settle;
+                }
             }
         }
 
-        // Rigid 3/4 combat stance for the Belt + Hands assembly cleanly visible in foreground above hotbar
-        Vector3 assembly = baseOffset + swingHandOffset + new Vector3(0.012f, -0.010f, 0.015f);
-        Vector3 beltPos = new Vector3(.18f,-.155f,.592f) + assembly;
-        Vector3 pivotCenter = beltPos + new Vector3(-0.18f, 0f, 0f);
-        Matrix4x4 pose = Matrix4x4.CreateTranslation(-pivotCenter)
-            * Matrix4x4.CreateRotationZ(-0.14f)
-            * Matrix4x4.CreateRotationY(0.19f)
-            * Matrix4x4.CreateRotationX(0.06f + whipExtension * .35f)
-            * Matrix4x4.CreateTranslation(pivotCenter) * ToolStance(pivotCenter) * GetInspectTransform(1,InspectPhase);
-        float tension=InspectLift(InspectPhase);
-        Vector3 spread=Vector3.UnitX*(.014f*tension);
-        VisualEngine3D.ArmAssembly(false, assembly-spread, "fps_hands_belt", pose);
-        VisualEngine3D.ArmAssembly(true, assembly+spread, "fps_hands_belt", pose);
-        Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
-        VisualEngine3D.SetBeltTension(tension);
-        VisualEngine3D.Asset("weapon_belt_90s", beltPos, 0, 1, tint, assemblyTransform: pose,skin:Inventory.EquippedSkins[(int)CurrentWeapon]);
-        VisualEngine3D.SetBeltTension(0);
+        // Subtle alive gravity pendulum bob & look-lag sway so the hanging leather whip feels supple
+        float idleWeight = 1f - Math.Clamp(p * 3f, 0f, 1f);
+        float now = (float)Raylib.GetTime();
+        Vector3 lookLag = _lookLagSpring.Value;
+        float pendRoll  = (MathF.Sin(now * 2.15f) * 0.030f + MathF.Sin(now * 3.65f) * 0.010f - Math.Clamp(lookLag.X * 1.35f, -0.16f, 0.16f)) * idleWeight;
+        float pendPitch = (MathF.Sin(now * 1.65f + 0.7f) * 0.020f + Math.Clamp(lookLag.Y * 0.85f, -0.11f, 0.11f)) * idleWeight;
+        float pendYaw   = (-Math.Clamp(lookLag.X * 0.55f, -0.09f, 0.09f)) * idleWeight;
+        Vector3 idleBob = new Vector3(MathF.Sin(now * 2.15f) * 0.0045f, MathF.Cos(now * 1.65f) * 0.0040f, 0f) * idleWeight;
 
-        // During whip snap, draw 3D golden-crimson slash ribbons right in the ViewModel for visceral screen-space feedback
-        if (p > 0.18f)
+        // Natural lower-right one-handed FPS melee stance (right hand ONLY; heavy gold buckle cleanly visible above [E] prompts & hotbar)
+        Vector3 rightAssembly = baseOffset + swingHandOffset + idleBob + new Vector3(0.068f, 0.060f, -0.025f);
+        Vector3 handleBase = new Vector3(.18f, -.15f, .62f) + rightAssembly;
+        Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
+            * Matrix4x4.CreateRotationX(-0.24f + swingPitch + pendPitch)
+            * Matrix4x4.CreateRotationY(-0.30f + swingYaw + pendYaw)
+            * Matrix4x4.CreateRotationZ(-0.05f + swingRoll + pendRoll)
+            * Matrix4x4.CreateTranslation(handleBase)
+            * ToolStance(handleBase)
+            * GetInspectTransform(1, InspectPhase);
+
+        VisualEngine3D.ArmAssembly(true, rightAssembly, "fps_hands_solder", rightPose);
+        Color tint = SkinTintPrimary.A > 0 ? Raylib.ColorLerp(Color.White, SkinTintPrimary, 0.45f) : Color.White;
+        VisualEngine3D.SetBeltTension(0f);
+        VisualEngine3D.Asset("weapon_belt_90s", handleBase, 0, 1, tint, assemblyTransform: rightPose, skin: Inventory.EquippedSkins[(int)CurrentWeapon]);
+
+        // During explosive whip snap (Phase B into early C), draw golden-crimson arc ribbon anchored cleanly to the real gold buckle tip!
+        if (p > 0.001f && t >= 0.24f && t <= 0.74f)
         {
-            byte slashAlpha = (byte)(240 * p);
-            // Match strap(.68) in build_weapon_belt, including the assembly swing.
-            Vector3 buckleCenter = Vector3.Transform(
-                beltPos + new Vector3(.09f-.58f*.68f, -.032f*4*.68f*.32f, 0), pose);
-            Vector3 vStart = new Vector3(0.32f * lashSide, 0.22f, 0.72f);
-            Vector3 vMid = buckleCenter;
-            Vector3 vEnd = new Vector3(-0.36f * lashSide, -0.18f, 0.78f);
-            VisualEngine3D.Rod(vStart, vMid, 0.014f * p, 0.024f * p, 6, new Color(255, 65, 45, (int)slashAlpha));
-            VisualEngine3D.Rod(vMid, vEnd, 0.024f * p, 0.010f * p, 6, new Color(255, 215, 55, (int)slashAlpha));
+            float arcT = (t - 0.24f) / 0.50f;
+            float alphaEnv = MathF.Sin(Math.Clamp(arcT, 0f, 1f) * MathF.PI);
+            byte slashAlpha = (byte)Math.Clamp((int)(235f * alphaEnv), 0, 255);
+            // Exact local-space tip of the heavy 90s gold brass buckle roller in weapon_belt_90s.glb
+            Vector3 buckleTip = Vector3.Transform(handleBase + new Vector3(-0.0313f, -0.2298f, 0.4902f), rightPose);
+            Vector3 midTrail = buckleTip + new Vector3(0.18f * lashSide, 0.11f, -0.09f);
+            Vector3 tailTrail = buckleTip + new Vector3(0.36f * lashSide, 0.20f, -0.18f);
+            VisualEngine3D.Rod(buckleTip, midTrail, 0.019f * alphaEnv, 0.013f * alphaEnv, 6, new Color(255, 212, 68, (int)slashAlpha));
+            VisualEngine3D.Rod(midTrail, tailTrail, 0.013f * alphaEnv, 0.004f * alphaEnv, 6, new Color(245, 62, 42, (int)(slashAlpha * 0.78f)));
         }
     }
 

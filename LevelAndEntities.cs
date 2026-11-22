@@ -402,8 +402,25 @@ public sealed partial class SkyscraperFloor1World
     public float WarningBeaconPhase = 0f;
 
     // Burning Chaos Boss Arena & Cutscene Set-Piece State
+    internal static readonly Vector3 BossArenaWallCenter = new(0f, 2.1f, -15.8f);
+    internal static readonly Vector3 BossArenaWallSize = new(8.2f, 4.2f, 0.24f);
+    internal static readonly BoundingBox BossArenaWallBox = new(
+        BossArenaWallCenter - BossArenaWallSize * 0.5f,
+        BossArenaWallCenter + BossArenaWallSize * 0.5f);
+    private static readonly BoundingBox ArenaTableBox = new(
+        ArenaTable - new Vector3(0.75f, 0f, 0.40f),
+        ArenaTable + new Vector3(0.75f, 0.80f, 0.40f));
+
     public float BossArenaChaos = 0f;
     public float CutsceneRocketTime = -1f;
+    public bool BossArenaWallDestroyed =>
+        BossArenaChaos >= 0.35f ||
+        (ElevatorBoss.IsActive && ElevatorBoss.State != ElevatorBossState.Repairing && ElevatorBoss.State != ElevatorBossState.IntroSpeech) ||
+        ElevatorBoss.IsDefeated;
+    internal bool BossArenaWallGlassShattered =>
+        BossArenaWallDestroyed ||
+        (ElevatorBoss.IsActive && ElevatorBoss.State == ElevatorBossState.IntroSpeech &&
+         (IntroSeconds - ElevatorBoss.StateTimer) / IntroSeconds >= 0.240f);
     public bool CutsceneShowDroppedGun = false;
     public Vector3 CutsceneDroppedGunPos;
     public float CutsceneDroppedGunYaw = 0f;
@@ -1149,7 +1166,7 @@ public sealed partial class SkyscraperFloor1World
             Add(p+new Vector3(0,0,facing*.74f*WorkstationScale),.54f*WorkstationScale,.52f*WorkstationScale,.50f*WorkstationScale);
         }
         Add(DeployPos,.83f,1.14f,.61f);
-        Add(ArenaTable,1.5f,.80f,.8f);
+        // ArenaTable is tested dynamically while !BossArenaWallDestroyed so the opening rocket salvo blasts it out of the arena!
         Add(LoungeTable,1.44f,.40f,.68f);
         Add(BreakTable,1.1f,.88f,.88f);
         foreach(var scrum in OpenspaceScrumTables) Add(scrum,1.15f,.86f,1.15f);
@@ -1217,6 +1234,13 @@ public sealed partial class SkyscraperFloor1World
             Vector3 size = box.Max-box.Min;
             pos = PushOutOfBoxXZ(pos,(box.Max+box.Min)/2,size.X/2,size.Z/2,playerRadius);
         }
+        if (!BossArenaWallDestroyed)
+        {
+            if (feet < BossArenaWallBox.Max.Y - .001f)
+                pos = PushOutOfBoxXZ(pos, BossArenaWallCenter, BossArenaWallSize.X * 0.5f, BossArenaWallSize.Z * 0.5f, playerRadius);
+            if (feet < ArenaTableBox.Max.Y - .001f)
+                pos = PushOutOfBoxXZ(pos, ArenaTable, 0.75f, 0.40f, playerRadius);
+        }
         if(feet<4)
             for(int side=-1;side<=1;side+=2)
                 for(int leaf=-1;leaf<=1;leaf+=2)
@@ -1246,6 +1270,10 @@ public sealed partial class SkyscraperFloor1World
             if (b.Max.Y <= previousFeet+.001f && pos.X > b.Min.X-radius && pos.X < b.Max.X+radius &&
                 pos.Z > b.Min.Z-radius && pos.Z < b.Max.Z+radius)
                 height = Math.Max(height,b.Max.Y);
+        if (!BossArenaWallDestroyed && ArenaTableBox.Max.Y <= previousFeet + .001f &&
+            pos.X > ArenaTableBox.Min.X - radius && pos.X < ArenaTableBox.Max.X + radius &&
+            pos.Z > ArenaTableBox.Min.Z - radius && pos.Z < ArenaTableBox.Max.Z + radius)
+            height = Math.Max(height, ArenaTableBox.Max.Y);
         return height;
     }
 
@@ -1270,6 +1298,13 @@ public sealed partial class SkyscraperFloor1World
         {
             var hit = Raylib.GetRayCollisionBox(ray,box);
             if (hit.Hit && hit.Distance >= 0) range = Math.Min(range,hit.Distance);
+        }
+        if (!BossArenaWallDestroyed)
+        {
+            var wallHit = Raylib.GetRayCollisionBox(ray, BossArenaWallBox);
+            if (wallHit.Hit && wallHit.Distance >= 0) range = Math.Min(range, wallHit.Distance);
+            var tableHit = Raylib.GetRayCollisionBox(ray, ArenaTableBox);
+            if (tableHit.Hit && tableHit.Distance >= 0) range = Math.Min(range, tableHit.Distance);
         }
         for(int side=-1;side<=1;side+=2)
             for(int leaf=-1;leaf<=1;leaf+=2)
@@ -2128,17 +2163,18 @@ public sealed partial class SkyscraperFloor1World
                 b.Position = NorthElevatorPos + new Vector3(0f, walk.OffsetY, walk.OffsetZ);
                 CutsceneRocketTime = u >= 0.585f ? (u - 0.585f) / 0.12f : -1f;
                 if (CutsceneRocketTime < 0f) Array.Clear(_cutsceneMissileFired);
-                BossArenaChaos = Smooth((u - 0.678f) / 0.13f);
+                // Ramps across 0.35 right as Wall-Breach Missile 1 slams into the Z=-15.8 partition (~CutsceneRocketTime 0.76f / u=0.676f)!
+                BossArenaChaos = Smooth((u - 0.664f) / 0.030f);
                 CutsceneShowDroppedGun = u >= 0.22f && u < 0.828f;
                 if (CutsceneShowDroppedGun)
                 {
-                    float slide = Smooth((u - 0.22f) / 0.14f);
-                    // Shotgun skids cleanly across carpet onto the LEFT side — exact destination of hero's dodge roll!
+                    float slide = Smooth((u - 0.22f) / 0.16f);
+                    // Shotgun flies out during the violent shove throw and skids cleanly ONTO the crimson North Wing runner (clear of X=-2.40 brass rail!)
                     CutsceneDroppedGunPos = Vector3.Lerp(
-                        NorthElevatorPos + new Vector3(-0.35f, 0.036f, -3.55f),
-                        NorthElevatorPos + new Vector3(-1.88f, 0.036f, -5.82f),
+                        NorthElevatorPos + new Vector3(-0.45f, 0.056f, -8.35f),
+                        NorthElevatorPos + new Vector3(-1.72f, 0.056f, -11.85f),
                         slide);
-                    CutsceneDroppedGunYaw = -42f + 158f * slide;
+                    CutsceneDroppedGunYaw = -42f + 166f * slide;
                 }
                 if (b.StateTimer <= 0f)
                 {
@@ -2158,18 +2194,43 @@ public sealed partial class SkyscraperFloor1World
             case ElevatorBossState.ChargingPlayer:
             {
                 float runSpeed = b.Phase == 3 ? 13f : 9.2f;
-                b.Position += b.ChargeDirection * runSpeed * dt;
+                Vector3 nextPos = b.Position + b.ChargeDirection * runSpeed * dt;
                 b.StridePhase += runSpeed * dt * 2.02f;
                 b.WheelSpinPhase += dt * 18f;
 
-                // Check if boss crashed into any Pillar or Wall!
+                // Expanded Boss Fight Arena Bounds: Z = -8.5..-25.0, X = -9.5..+9.5 (respecting pillars & North Wing furniture!)
                 bool crashedWall = false;
-                if (MathF.Abs(b.Position.X) > HalfWidth - 1.4f || b.Position.Z < -HalfDepth + 1.5f || b.Position.Z > 8.5f)
+                if (b.Position.Z < -4.0f)
                 {
-                    b.Position.X = Math.Clamp(b.Position.X, -HalfWidth + 1.5f, HalfWidth - 1.5f);
-                    b.Position.Z = Math.Clamp(b.Position.Z, -HalfDepth + 1.6f, 8.5f);
+                    float minX = -9.4f, maxX = 9.4f;
+                    float minZ = BossArenaWallDestroyed ? -25.0f : -14.8f;
+                    float maxZ = MathF.Abs(nextPos.X) < 5.3f ? -9.35f : -8.5f;
+                    if (nextPos.X < minX || nextPos.X > maxX || nextPos.Z < minZ || nextPos.Z > maxZ)
+                    {
+                        Vector3 clamped = new(Math.Clamp(nextPos.X, minX, maxX), nextPos.Y, Math.Clamp(nextPos.Z, minZ, maxZ));
+                        Vector2 push = new(clamped.X - nextPos.X, clamped.Z - nextPos.Z);
+                        if (push.X * b.ChargeDirection.X + push.Y * b.ChargeDirection.Z < -0.005f)
+                            crashedWall = true;
+                        nextPos = clamped;
+                    }
+                }
+                else if (MathF.Abs(nextPos.X) > HalfWidth - 1.4f || nextPos.Z < -HalfDepth + 1.5f || nextPos.Z > 8.5f)
+                {
+                    nextPos.X = Math.Clamp(nextPos.X, -HalfWidth + 1.5f, HalfWidth - 1.5f);
+                    nextPos.Z = Math.Clamp(nextPos.Z, -HalfDepth + 1.6f, 8.5f);
                     crashedWall = true;
                 }
+
+                // Respect Pillars, North Wing cabinets/sofas, Elevator Core & intact walls without clipping
+                Vector3 resolved = ResolvePlayerCollision(nextPos, 0.78f);
+                Vector2 colPush = new(resolved.X - nextPos.X, resolved.Z - nextPos.Z);
+                if (colPush.LengthSquared() > 0.0025f)
+                {
+                    if (colPush.X * b.ChargeDirection.X + colPush.Y * b.ChargeDirection.Z < -0.02f)
+                        crashedWall = true;
+                    nextPos = resolved;
+                }
+                b.Position = nextPos;
 
                 for (int p = 0; p < Pillars.Count; p++)
                 {
@@ -2980,6 +3041,7 @@ public sealed partial class SkyscraperFloor1World
         DrawGalleyWorkstations3D();
         DrawCentralMacBookTrapAndCovers3D();
         DrawLivingOffice();
+        DrawBossArenaPartition3D(glassPass: false);
         DrawElevatorDoors(false);
         foreach(var ally in Teammates)
         if(ally.Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
@@ -3026,6 +3088,7 @@ public sealed partial class SkyscraperFloor1World
         DrawBossCutsceneMissileMeshes3D();
         VisualEngine3D.DrawArchitecture(BuildTowerArchitecture, glass:true);
         Rlgl.DisableDepthMask();
+        DrawBossArenaPartition3D(glassPass: true);
         DrawElevatorDoors(true);
         DrawSunDust(camera);
         Rlgl.EnableDepthMask();
@@ -3416,7 +3479,7 @@ public sealed partial class SkyscraperFloor1World
             yield return (new(side*19.525f,2.1f,-15.8f),new(.95f,4.2f,.24f));
             yield return (new(side*14.8f,2.1f,20),new(10.4f,4.2f,.24f));
         }
-        yield return (new(0,2.1f,-15.8f),new(8.2f,4.2f,.24f));
+        // Central North Partition Bay (0, 2.1, -15.8) 8.2x4.2x0.24 is rendered & collided dynamically so Boss opening rockets blow it apart!
     }
 
     private void BuildEntryRooms(VisualEngine3D.ArchitectureBuilder mesh)
@@ -4293,12 +4356,24 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.Sheet(new(-5.47f,.014f,-2.72f),.31f,0,Finish.JiraSheet);
         VisualEngine3D.Sheet(new(-5.65f,.012f,-2.55f),-.17f,0,Finish.NdaSheet);
         DrawPizza(BreakTable+Vector3.UnitY*.88f,-18);
-        VisualEngine3D.Box(ArenaTable+Vector3.UnitY*.74f,1.5f,.07f,.8f,new(126,88,61,255));
-        foreach(float x in new[]{-.62f,.62f})
-            VisualEngine3D.Box(ArenaTable+new Vector3(x,.36f,0),.09f,.72f,.63f,new(62,63,66,255));
-        foreach(int ch in new[]{-1,1})
-            VisualEngine3D.Asset("prop_office_chair", ArenaTable+new Vector3(ch*.38f,0,.60f), 180+ch*10f, .92f);
-        DrawPizza(ArenaTable+Vector3.UnitY*.78f,7);
+        if (!BossArenaWallDestroyed)
+        {
+            VisualEngine3D.Box(ArenaTable+Vector3.UnitY*.74f,1.5f,.07f,.8f,new(126,88,61,255));
+            foreach(float x in new[]{-.62f,.62f})
+                VisualEngine3D.Box(ArenaTable+new Vector3(x,.36f,0),.09f,.72f,.63f,new(62,63,66,255));
+            foreach(int ch in new[]{-1,1})
+                VisualEngine3D.Asset("prop_office_chair", ArenaTable+new Vector3(ch*.38f,0,.60f), 180+ch*10f, .92f);
+            DrawPizza(ArenaTable+Vector3.UnitY*.78f,7);
+        }
+        else
+        {
+            // Blasted & overturned out of the central combat lane onto the far right edge!
+            Vector3 wreck = new(4.85f, 0f, -12.85f);
+            VisualEngine3D.OrientedBox(wreck + new Vector3(0f, 0.36f, 0f), new(1.42f, 0.72f, 0.08f), 0.52f, new(62, 44, 34, 255));
+            VisualEngine3D.OrientedBox(wreck + new Vector3(-0.32f, 0.14f, 0.24f), new(0.68f, 0.08f, 0.56f), -0.40f, new(44, 46, 50, 255));
+            VisualEngine3D.Rod(wreck + new Vector3(0.45f, 0.05f, -0.18f), wreck + new Vector3(0.88f, 0.26f, -0.45f), 0.028f, 0.024f, 6, new(52, 54, 58, 255), Finish.Armor);
+            VisualEngine3D.Asset("prop_office_chair", wreck + new Vector3(0.75f, 0f, 0.72f), 118f, .92f);
+        }
         DrawCoffee(BreakTable+new Vector3(.34f,.88f,.08f));
         for(int i=0;i<5;i++)
             VisualEngine3D.Oval(new(4.97f+.075f*MathF.Cos(i*2),.40f+.024f*i,13.28f+.072f*MathF.Sin(i*2)),
@@ -4688,12 +4763,12 @@ public sealed partial class SkyscraperFloor1World
     private void DrawBossCutsceneDroppedGun3D()
     {
         if (!CutsceneShowDroppedGun) return;
-        // Soft contact shadow + warm firelight highlight pool on burgundy carpet so shotgun wood & steel read crisp!
-        Vector3 floorPos = new(CutsceneDroppedGunPos.X, 0.004f, CutsceneDroppedGunPos.Z);
-        Raylib.DrawCylinder(floorPos, 0.34f, 0.40f, 0.004f, 18, new Color(14, 7, 9, 145));
+        // Soft contact shadow + subtle warm firelight highlight pool on burgundy carpet (never a giant flat beige pancake!)
+        Vector3 floorPos = new(CutsceneDroppedGunPos.X, 0.026f, CutsceneDroppedGunPos.Z);
+        Raylib.DrawCylinder(floorPos, 0.24f, 0.28f, 0.003f, 18, new Color(14, 7, 9, 125));
         float glint = 0.50f + 0.50f * MathF.Sin(_worldClock * 6.5f);
-        Raylib.DrawCylinder(new Vector3(CutsceneDroppedGunPos.X, 0.007f, CutsceneDroppedGunPos.Z),
-            0.46f, 0.52f, 0.003f, 20, new Color(255, 198, 118, Math.Clamp((int)(42 + 24 * glint), 0, 255)));
+        Raylib.DrawCylinder(new Vector3(CutsceneDroppedGunPos.X, 0.028f, CutsceneDroppedGunPos.Z),
+            0.30f, 0.34f, 0.002f, 20, new Color(255, 198, 118, Math.Clamp((int)(20 + 14 * glint), 0, 255)));
 
         if (VisualEngine3D.HasAsset("weapon_shotgun_90s"))
         {
@@ -4701,23 +4776,39 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.AssetOriented("weapon_shotgun_90s", CutsceneDroppedGunPos, CutsceneDroppedGunYaw, -12f, 72f, 1.02f);
         }
 
-        Raylib.DrawCircle3D(new Vector3(CutsceneDroppedGunPos.X, 0.012f, CutsceneDroppedGunPos.Z),
-            0.36f + 0.045f * glint, Vector3.UnitX, 90f,
-            new Color(246, 196, 108, Math.Clamp((int)(48 + 44 * glint), 0, 255)));
+        Raylib.DrawCircle3D(new Vector3(CutsceneDroppedGunPos.X, 0.032f, CutsceneDroppedGunPos.Z),
+            0.28f + 0.035f * glint, Vector3.UnitX, 90f,
+            new Color(246, 196, 108, Math.Clamp((int)(36 + 34 * glint), 0, 255)));
     }
 
-    private const float CutsceneMissileStagger = 0.22f;
-    private const float CutsceneMissileFlightDur = 0.78f;
-    private const float CutsceneMissileExplosionDur = 0.76f;
+    private const float CutsceneMissileExplosionDur = 0.82f;
+
+    private static float GetCutsceneMissileStagger(int idx) => idx switch
+    {
+        0 => 0.00f, // Hero kill-shot launches first so hero must dive into barrel roll!
+        1 => 0.14f, // Right wall-breach rocket hits Z=-15.8 FIRST (t=0.72) to blow arena wide open live!
+        2 => 0.25f, // Left wall-breach rocket finishes obliterating Z=-15.8 partition (t=0.80)
+        _ => 0.38f  // Deep North Wing rocket punches through the newly opened breach (t=1.18)
+    };
+
+    private static float GetCutsceneMissileFlightDur(int idx) => idx switch
+    {
+        0 => 0.80f, // Long flight to hero's thrown carpet spot (Z=-19.50) -> impacts at t=0.80 (u=0.681)
+        1 => 0.58f, // Short lethal punch straight into right half of Z=-15.8 wall -> impacts at t=0.72 (u=0.671)!
+        2 => 0.55f, // Short lethal punch straight into left half of Z=-15.8 wall -> impacts at t=0.80 (u=0.681)!
+        _ => 0.80f  // Deep punch straight through the newly blown opening into North Wing (Z=-22.00)!
+    };
 
     private Vector3 GetCutsceneMissileTarget(int idx) => idx switch
     {
-        // All 4 targets fan cleanly FORWARD & outward from right-arm cannon (+X side) — ZERO sideways chest crossing!
-        // Missile 0 streaks DIRECTLY at the hero's pre-dodge carpet spot -> hero barrel-rolls LEFT right before detonation!
-        0 => NorthElevatorPos + new Vector3(+1.32f, 0.16f, -6.00f),
-        1 => NorthElevatorPos + new Vector3(+4.40f, 0.18f, -4.40f),
-        2 => NorthElevatorPos + new Vector3(+0.35f, 0.18f, -9.20f),
-        _ => NorthElevatorPos + new Vector3(+5.40f, 0.18f, -7.80f)
+        // All 4 targets fan cleanly FORWARD (-Z) from TOKEN-GUN 98 right-arm cannon — ZERO chest clipping!
+        // Missile 0 streaks DIRECTLY at hero's pre-dodge carpet spot (Z=-19.50) -> hero barrel-rolls LEFT!
+        0 => NorthElevatorPos + new Vector3(+1.65f, 0.16f, -11.00f),
+        // Missile 1 & 2 SLAM directly into the Z=-15.8 North Partition Wall, blowing the Boss Arena wide open!
+        1 => NorthElevatorPos + new Vector3(+2.30f, 1.18f, -7.25f),
+        2 => NorthElevatorPos + new Vector3(-2.15f, 1.25f, -7.25f),
+        // Missile 3 streaks straight through the blasted breach deep into the expanded North Wing!
+        _ => NorthElevatorPos + new Vector3(+3.60f, 0.20f, -13.50f)
     };
 
     private Vector3 ResolveCutsceneMissileOrigin(int idx)
@@ -4744,23 +4835,258 @@ public sealed partial class SkyscraperFloor1World
         side = side.LengthSquared() > 1e-5f ? Vector3.Normalize(side) : Vector3.UnitX;
 
         float env = MathF.Sin(u * MathF.PI);
-        // Missile 0 flies on a terrifying flat-dive trajectory straight at hero; flank missiles arc cleanly outward (+X)
-        float arcLift = idx == 0 ? 0.22f * env : (0.50f + 0.16f * (idx % 2)) * env;
-        float curve = idx == 0 ? 0.03f * env : (idx == 2 ? 0.08f : 0.22f) * env;
+        // Missile 0 flies on a terrifying flat-dive trajectory straight at hero; wall-breach missiles arc cleanly forward!
+        float arcLift = idx == 0 ? 0.34f * env : idx is 1 or 2 ? (0.36f + 0.12f * (idx - 1)) * env : 0.62f * env;
+        float curve = idx == 0 ? 0.04f * env : idx == 1 ? 0.22f * env : idx == 2 ? -0.18f * env : 0.24f * env;
         return Vector3.Lerp(start, end, u) + Vector3.UnitY * arcLift + side * curve;
     }
 
-    /// <summary>Draws solid depth-tested Blender 3D missiles (prop_token_missile.glb) launched straight from TOKEN-GUN 98.</summary>
+    /// <summary>
+    /// Renders the destructible central North Partition Wall (0, 2.1, -15.8; 8.2x4.2x0.24m).
+    /// Before boss breach: seamless Art-Deco slate/brass/glass bay (with center glass cracked once hero crashes through).
+    /// After boss rockets hit: jagged blasted wall stumps, twisted steel rebar, broken overhead soffit, smoking rubble & glass shards!
+    /// </summary>
+    private void DrawBossArenaPartition3D(bool glassPass)
+    {
+        Vector3 c = BossArenaWallCenter;
+        Vector3 s = BossArenaWallSize;
+        Color stone = new(36, 40, 49, 255);
+        Color charStone = new(26, 27, 32, 255);
+        Color charBlack = new(16, 15, 17, 255);
+        Color brass = new(184, 144, 82, 255);
+        Color darkBrass = new(118, 90, 50, 255);
+        Color rebar = new(62, 54, 48, 255);
+        Color glass = new(128, 164, 174, 103);
+
+        if (!BossArenaWallDestroyed)
+        {
+            const float h = 1.18f;
+            bool centerGlassShattered = BossArenaWallGlassShattered;
+            if (!glassPass)
+            {
+                if (!centerGlassShattered)
+                {
+                    // Exact Art-Deco match to BuildInteriorRooms: dark slate wainscot + horizontal brass rails + 6 vertical mullions
+                    VisualEngine3D.Box(new(c.X, h * 0.5f, c.Z), s.X, h, s.Z, stone, Finish.Slate);
+                    foreach (float y in new[] { .08f, h, s.Y - .09f })
+                        VisualEngine3D.Box(new(c.X, y, c.Z), s.X + .035f, .065f, s.Z + .035f, brass, Finish.Bronze);
+                    const int count = 5;
+                    for (int i = 0; i <= count; i++)
+                    {
+                        float x = -s.X * 0.5f + i * (s.X / count);
+                        VisualEngine3D.Box(new(x, c.Y, c.Z), .065f, s.Y, .265f, brass, Finish.Bronze);
+                    }
+                }
+                else
+                {
+                    // Hero slammed backward through the center (-1.35..+1.35), knocking a jagged V-breach in the wainscot & snapping center glass!
+                    // Both massive Art-Deco flanking partition walls (-4.10..-1.35 and +1.35..+4.10) STILL STAND until Missiles 1 & 2 blow them apart!
+                    VisualEngine3D.Box(new(-2.725f, h * 0.5f, c.Z), 2.75f, h, s.Z, stone, Finish.Slate);
+                    VisualEngine3D.Box(new(+2.725f, h * 0.5f, c.Z), 2.75f, h, s.Z, stone, Finish.Slate);
+                    // Jagged cracked lower sill across the center impact gap (Y <= 0.44m so full towering Boss & missiles read unobstructed!)
+                    VisualEngine3D.Box(new(-1.12f, 0.36f, c.Z), 0.46f, 0.72f, s.Z, charStone, Finish.Slate);
+                    VisualEngine3D.Box(new(+1.10f, 0.32f, c.Z), 0.48f, 0.64f, s.Z, charStone, Finish.Slate);
+                    VisualEngine3D.Box(new(0.00f, 0.16f, c.Z), 1.82f, 0.32f, s.Z, charBlack, Finish.Slate);
+                    // Top transom rail + flanking brass baseboards/chair rails
+                    VisualEngine3D.Box(new(c.X, s.Y - .09f, c.Z), s.X + .035f, .065f, s.Z + .035f, brass, Finish.Bronze);
+                    foreach (float y in new[] { .08f, h })
+                    {
+                        VisualEngine3D.Box(new(-2.725f, y, c.Z), 2.78f, .065f, s.Z + .035f, brass, Finish.Bronze);
+                        VisualEngine3D.Box(new(+2.725f, y, c.Z), 2.78f, .065f, s.Z + .035f, brass, Finish.Bronze);
+                    }
+                    // Outer 4 mullions intact; inner 2 bent backward (-Z) at the smashed opening
+                    foreach (float x in new[] { -4.10f, -2.46f, +2.46f, +4.10f })
+                        VisualEngine3D.Box(new(x, c.Y, c.Z), .065f, s.Y, .265f, brass, Finish.Bronze);
+                    VisualEngine3D.Rod(new(-1.35f, 0.72f, c.Z), new(-1.62f, 1.38f, c.Z - 0.32f), .024f, .018f, 6, darkBrass, Finish.Bronze);
+                    VisualEngine3D.Rod(new(+1.35f, 0.64f, c.Z), new(+1.68f, 1.44f, c.Z - 0.36f), .024f, .018f, 6, darkBrass, Finish.Bronze);
+                }
+            }
+            else
+            {
+                if (!centerGlassShattered)
+                {
+                    VisualEngine3D.Box(new(c.X, (h + s.Y) * 0.5f, c.Z), s.X, s.Y - h, s.Z, glass, Finish.Glass);
+                }
+                else
+                {
+                    // Outer glass bays intact while center 3.6m span (-1.80..+1.80) is blown wide open (only 4 subtle corner shards, zero fence pickets!)
+                    VisualEngine3D.Box(new(-2.95f, (h + s.Y) * 0.5f, c.Z), 2.30f, s.Y - h, s.Z, glass, Finish.Glass);
+                    VisualEngine3D.Box(new(+2.95f, (h + s.Y) * 0.5f, c.Z), 2.30f, s.Y - h, s.Z, glass, Finish.Glass);
+                    // 4 subtle asymmetric clinging corner glass shards
+                    VisualEngine3D.Box(new(-1.66f, 1.42f, c.Z), 0.28f, 0.44f, 0.04f, glass, Finish.Glass);
+                    VisualEngine3D.Box(new(+1.64f, 1.36f, c.Z), 0.32f, 0.34f, 0.04f, glass, Finish.Glass);
+                    VisualEngine3D.Box(new(-1.62f, 3.88f, c.Z), 0.34f, 0.40f, 0.04f, glass, Finish.Glass);
+                    VisualEngine3D.Box(new(+1.66f, 3.92f, c.Z), 0.26f, 0.32f, 0.04f, glass, Finish.Glass);
+                    // Shattered floor glass shards from hero crashing through
+                    for (int sh = 0; sh < 12; sh++)
+                    {
+                        float sx = -1.65f + (sh * 0.31f % 3.30f);
+                        float sz = c.Z - 0.55f - (sh * 0.24f % 2.15f);
+                        VisualEngine3D.Box(new(sx, 0.022f, sz), 0.14f + (sh % 3) * 0.06f, 0.018f, 0.12f + (sh % 2) * 0.07f, glass, Finish.Glass);
+                    }
+                    // Active spray of glittering glass shards right as hero crashes through (u = 0.240..0.345)
+                    if (ElevatorBoss.IsActive && ElevatorBoss.State == ElevatorBossState.IntroSpeech)
+                    {
+                        float u = Math.Clamp((IntroSeconds - ElevatorBoss.StateTimer) / IntroSeconds, 0f, 1f);
+                        if (u >= 0.240f && u <= 0.355f)
+                        {
+                            float gt = (u - 0.240f) / 0.115f;
+                            for (int k = 0; k < 14; k++)
+                            {
+                                float h1 = MathF.Sin(k * 17.3f + 2.1f) * 43758.5453f; h1 -= MathF.Floor(h1);
+                                float h2 = MathF.Sin(k * 41.7f + 5.3f) * 24634.6345f; h2 -= MathF.Floor(h2);
+                                float px = (h1 - 0.5f) * (1.8f + gt * 2.6f);
+                                float py = MathF.Max(0.05f, 1.55f + h2 * 1.15f + gt * (0.8f - h1 * 0.6f) - 2.9f * gt * gt);
+                                float pz = c.Z - 0.25f - gt * (2.6f + h2 * 3.4f);
+                                VisualEngine3D.Box(new(px, py, pz), 0.14f, 0.08f, 0.04f, new Color(172, 218, 228, Math.Clamp((int)(190 * (1f - gt * 0.65f)), 0, 255)), Finish.Glass);
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        // =========================================================================
+        // POST-BREACH: VISCERAL BLASTED-OUT WALL STUMPS, TWISTED REBAR, BROKEN SOFFIT & RUBBLE!
+        // =========================================================================
+        if (!glassPass)
+        {
+            // 1. LEFT JAGGED WALL STUMP (X = -4.10 .. -3.10, asymmetric fractured tiers + charred edges)
+            VisualEngine3D.Box(new(-3.88f, 1.28f, c.Z), 0.46f, 2.56f, 0.26f, stone, Finish.Slate);
+            VisualEngine3D.Box(new(-3.52f, 0.84f, c.Z), 0.40f, 1.68f, 0.25f, charStone, Finish.Slate);
+            VisualEngine3D.Box(new(-3.22f, 0.41f, c.Z), 0.30f, 0.82f, 0.24f, charBlack, Finish.Slate);
+            // Scorched blast char edge strips + broken brass baseboard & chair rail
+            VisualEngine3D.Box(new(-3.64f, 2.12f, c.Z), 0.08f, 0.88f, 0.28f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(-3.31f, 1.24f, c.Z), 0.08f, 0.84f, 0.28f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(-3.62f, 0.08f, c.Z), 1.02f, 0.07f, 0.29f, darkBrass, Finish.Bronze);
+            VisualEngine3D.Box(new(-3.76f, 1.18f, c.Z), 0.72f, 0.065f, 0.285f, darkBrass, Finish.Bronze);
+            VisualEngine3D.Box(new(-4.08f, 2.10f, c.Z), 0.07f, 4.20f, 0.27f, brass, Finish.Bronze);
+            // Bent snapped brass mullion thrust backward by rocket shockwave
+            VisualEngine3D.Rod(new(-3.62f, 1.62f, c.Z), new(-2.86f, 2.18f, c.Z - 0.56f), 0.028f, 0.022f, 6, darkBrass, Finish.Bronze);
+            // Twisted protruding steel rebar rods from left jagged concrete face
+            VisualEngine3D.Rod(new(-3.65f, 2.28f, c.Z), new(-2.98f, 2.48f, c.Z - 0.24f), 0.015f, 0.011f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(-3.45f, 1.54f, c.Z), new(-2.72f, 1.42f, c.Z - 0.36f), 0.014f, 0.010f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(-3.35f, 1.12f, c.Z), new(-2.68f, 1.28f, c.Z + 0.18f), 0.013f, 0.010f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(-3.16f, 0.64f, c.Z), new(-2.58f, 0.50f, c.Z - 0.28f), 0.014f, 0.009f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(-3.82f, 2.52f, c.Z), new(-3.35f, 2.95f, c.Z - 0.22f), 0.013f, 0.010f, 6, rebar, Finish.Armor);
+
+            // 2. RIGHT JAGGED WALL STUMP (X = +3.10 .. +4.10, taller asymmetric profile + charred edges)
+            VisualEngine3D.Box(new(+3.86f, 1.42f, c.Z), 0.50f, 2.84f, 0.26f, stone, Finish.Slate);
+            VisualEngine3D.Box(new(+3.48f, 0.96f, c.Z), 0.42f, 1.92f, 0.25f, charStone, Finish.Slate);
+            VisualEngine3D.Box(new(+3.16f, 0.46f, c.Z), 0.32f, 0.92f, 0.24f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(+3.60f, 2.38f, c.Z), 0.08f, 0.94f, 0.28f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(+3.26f, 1.44f, c.Z), 0.08f, 0.96f, 0.28f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(+3.58f, 0.08f, c.Z), 1.06f, 0.07f, 0.29f, darkBrass, Finish.Bronze);
+            VisualEngine3D.Box(new(+3.72f, 1.18f, c.Z), 0.78f, 0.065f, 0.285f, darkBrass, Finish.Bronze);
+            VisualEngine3D.Box(new(+4.08f, 2.10f, c.Z), 0.07f, 4.20f, 0.27f, brass, Finish.Bronze);
+            // Bent snapped brass mullion thrust backward
+            VisualEngine3D.Rod(new(+3.56f, 1.88f, c.Z), new(+2.78f, 2.48f, c.Z - 0.62f), 0.028f, 0.022f, 6, darkBrass, Finish.Bronze);
+            // Twisted protruding steel rebar rods from right concrete stump
+            VisualEngine3D.Rod(new(+3.62f, 2.55f, c.Z), new(+2.92f, 2.74f, c.Z - 0.28f), 0.015f, 0.011f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+3.40f, 1.76f, c.Z), new(+2.66f, 1.62f, c.Z - 0.34f), 0.014f, 0.010f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+3.30f, 1.22f, c.Z), new(+2.64f, 1.38f, c.Z + 0.20f), 0.013f, 0.010f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+3.08f, 0.72f, c.Z), new(+2.48f, 0.56f, c.Z - 0.32f), 0.014f, 0.009f, 6, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+3.76f, 2.80f, c.Z), new(+3.22f, 3.16f, c.Z - 0.18f), 0.013f, 0.010f, 6, rebar, Finish.Armor);
+
+            // 3. HEAVY BROKEN OVERHEAD HEADER BEAM / FRACTURED SOFFIT (Y = 3.45..4.20m — clear above player & 2.95m boss!)
+            VisualEngine3D.Box(new(-2.82f, 3.84f, c.Z), 2.58f, 0.72f, 0.28f, stone, Finish.Slate);
+            VisualEngine3D.Box(new(+2.82f, 3.81f, c.Z), 2.58f, 0.78f, 0.28f, stone, Finish.Slate);
+            VisualEngine3D.Box(new(0.00f, 4.01f, c.Z), 3.16f, 0.38f, 0.28f, charStone, Finish.Slate);
+            // Jagged hanging concrete teeth + scorched black underside along shattered arch
+            VisualEngine3D.Box(new(-1.32f, 3.74f, c.Z), 0.62f, 0.32f, 0.26f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(-0.42f, 3.84f, c.Z), 0.58f, 0.22f, 0.26f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(+0.58f, 3.80f, c.Z), 0.66f, 0.26f, 0.26f, charBlack, Finish.Slate);
+            VisualEngine3D.Box(new(+1.42f, 3.71f, c.Z), 0.56f, 0.36f, 0.26f, charBlack, Finish.Slate);
+            // Sagging bent overhead brass cornice trim dangling across the breach
+            VisualEngine3D.Rod(new(-4.05f, 4.10f, c.Z), new(-1.45f, 3.56f, c.Z - 0.16f), 0.032f, 0.028f, 6, darkBrass, Finish.Bronze);
+            VisualEngine3D.Rod(new(-1.45f, 3.56f, c.Z - 0.16f), new(+0.95f, 3.44f, c.Z - 0.28f), 0.028f, 0.024f, 6, darkBrass, Finish.Bronze);
+            VisualEngine3D.Rod(new(+1.65f, 3.52f, c.Z - 0.12f), new(+4.05f, 4.10f, c.Z), 0.028f, 0.032f, 6, darkBrass, Finish.Bronze);
+            // Hanging exposed rebar rods curling down from shattered overhead soffit (all >= 3.22m high!)
+            VisualEngine3D.Rod(new(-2.10f, 3.52f, c.Z), new(-1.72f, 3.26f, c.Z - 0.26f), 0.013f, 0.009f, 5, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(-0.92f, 3.68f, c.Z), new(-0.68f, 3.34f, c.Z - 0.32f), 0.013f, 0.009f, 5, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+0.18f, 3.82f, c.Z), new(+0.42f, 3.44f, c.Z - 0.22f), 0.012f, 0.008f, 5, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+1.15f, 3.66f, c.Z), new(+0.88f, 3.28f, c.Z + 0.20f), 0.013f, 0.009f, 5, rebar, Finish.Armor);
+            VisualEngine3D.Rod(new(+2.25f, 3.48f, c.Z), new(+1.92f, 3.24f, c.Z - 0.28f), 0.013f, 0.009f, 5, rebar, Finish.Armor);
+
+            // 4. NON-BLOCKING LOW RUBBLE PILES, BROKEN BLACK-MARBLE/SLATE SLABS & TWISTED BRASS (Z = -14.2 .. -19.5)
+            // Chunkier rubble mounds piled snugly around left & right stumps
+            ReadOnlySpan<(Vector3 Pos, Vector3 Size, float Yaw, bool Charred)> stumpRubble =
+            [
+                (new(-3.65f, 0.14f, -15.32f), new(0.78f, 0.28f, 0.54f),  0.28f, false),
+                (new(-3.18f, 0.10f, -16.22f), new(0.72f, 0.20f, 0.48f), -0.42f, true),
+                (new(-2.68f, 0.07f, -15.65f), new(0.56f, 0.14f, 0.44f),  0.64f, false),
+                (new(-3.82f, 0.11f, -16.68f), new(0.66f, 0.22f, 0.52f), -0.18f, true),
+                (new(+3.62f, 0.15f, -15.28f), new(0.82f, 0.30f, 0.56f), -0.34f, false),
+                (new(+3.12f, 0.11f, -16.28f), new(0.70f, 0.22f, 0.50f),  0.48f, true),
+                (new(+2.62f, 0.07f, -15.72f), new(0.58f, 0.14f, 0.42f), -0.62f, false),
+                (new(+3.85f, 0.10f, -16.75f), new(0.64f, 0.20f, 0.48f),  0.22f, true)
+            ];
+            for (int r = 0; r < stumpRubble.Length; r++)
+                VisualEngine3D.OrientedBox(stumpRubble[r].Pos, stumpRubble[r].Size, stumpRubble[r].Yaw,
+                    stumpRubble[r].Charred ? charBlack : charStone);
+
+            // Organic clustered rubble fragments across Z = -14.2 .. -19.5 (varied jagged proportions & warm-stone/slate/charcoal tones — zero uniform square bricks!)
+            Color warmStone = new(82, 74, 68, 255);
+            ReadOnlySpan<(Vector3 Pos, Vector3 Size, float Yaw, int Tone)> floorSlabs =
+            [
+                (new(-2.15f, 0.044f, -14.78f), new(0.54f, 0.068f, 0.22f),  0.42f, 0),
+                (new(-1.82f, 0.028f, -14.58f), new(0.22f, 0.036f, 0.18f), -0.75f, 3),
+                (new(+2.28f, 0.046f, -14.95f), new(0.62f, 0.074f, 0.24f),  0.24f, 2),
+                (new(+1.88f, 0.030f, -15.18f), new(0.26f, 0.040f, 0.16f), -0.62f, 1),
+                (new(-1.25f, 0.034f, -15.62f), new(0.38f, 0.048f, 0.17f), -0.88f, 1),
+                (new(+1.48f, 0.038f, -15.95f), new(0.46f, 0.056f, 0.20f),  0.71f, 3),
+                (new(-2.42f, 0.050f, -16.75f), new(0.66f, 0.082f, 0.28f), -0.35f, 2),
+                (new(-2.05f, 0.030f, -16.92f), new(0.24f, 0.042f, 0.19f),  0.84f, 0),
+                (new(-0.62f, 0.030f, -16.65f), new(0.32f, 0.038f, 0.15f),  0.54f, 1),
+                (new(+2.18f, 0.046f, -17.05f), new(0.58f, 0.070f, 0.23f), -0.44f, 0),
+                (new(+1.80f, 0.028f, -17.32f), new(0.24f, 0.038f, 0.16f),  0.95f, 3),
+                (new(-1.72f, 0.036f, -17.92f), new(0.44f, 0.052f, 0.19f),  0.92f, 2),
+                (new(+0.85f, 0.030f, -18.22f), new(0.30f, 0.038f, 0.15f), -0.68f, 1),
+                (new(+2.72f, 0.044f, -18.42f), new(0.52f, 0.068f, 0.25f),  0.33f, 0),
+                (new(-2.82f, 0.046f, -18.65f), new(0.48f, 0.072f, 0.22f), -0.26f, 1),
+                (new(-1.05f, 0.028f, -19.18f), new(0.28f, 0.036f, 0.16f),  0.48f, 3)
+            ];
+            for (int f = 0; f < floorSlabs.Length; f++)
+            {
+                Color col = floorSlabs[f].Tone switch { 0 => stone, 1 => charStone, 2 => charBlack, _ => warmStone };
+                VisualEngine3D.OrientedBox(floorSlabs[f].Pos, floorSlabs[f].Size, floorSlabs[f].Yaw, col);
+            }
+
+            // Twisted fallen brass trim bars on floor around the breach
+            VisualEngine3D.Rod(new(-2.45f, 0.04f, -16.15f), new(-1.25f, 0.04f, -17.05f), 0.024f, 0.022f, 6, darkBrass, Finish.Bronze);
+            VisualEngine3D.Rod(new(+1.68f, 0.04f, -15.35f), new(+2.82f, 0.05f, -16.45f), 0.024f, 0.022f, 6, brass, Finish.Bronze);
+            VisualEngine3D.Rod(new(-0.75f, 0.04f, -17.45f), new(+0.52f, 0.04f, -18.02f), 0.022f, 0.020f, 6, darkBrass, Finish.Bronze);
+            VisualEngine3D.Rod(new(+0.85f, 0.04f, -14.78f), new(+1.95f, 0.04f, -14.42f), 0.022f, 0.020f, 6, darkBrass, Finish.Bronze);
+        }
+        else
+        {
+            // Jagged clinging glass corners on the outer edges of the blasted stumps
+            VisualEngine3D.Box(new(-3.88f, 2.74f, c.Z), 0.32f, 0.42f, 0.05f, glass, Finish.Glass);
+            VisualEngine3D.Box(new(+3.86f, 2.98f, c.Z), 0.34f, 0.46f, 0.05f, glass, Finish.Glass);
+            // Sparkling shattered teal glass shards sprawled across Z = -14.3 .. -19.4
+            for (int g = 0; g < 18; g++)
+            {
+                float h1 = MathF.Sin(g * 19.7f + 1.3f) * 43758.5453f; h1 -= MathF.Floor(h1);
+                float h2 = MathF.Sin(g * 53.1f + 3.7f) * 24634.6345f; h2 -= MathF.Floor(h2);
+                float gx = -3.45f + h1 * 6.90f;
+                float gz = -14.30f - h2 * 5.10f;
+                VisualEngine3D.Box(new(gx, 0.024f, gz), 0.14f + (g % 3) * 0.07f, 0.016f, 0.11f + (g % 4) * 0.05f, glass, Finish.Glass);
+            }
+        }
+    }
+
+    /// <summary>Draws solid depth-tested Blender 3D missiles (prop_token_missile.glb) + live wall-breach flying concrete/rebar burst!</summary>
     private void DrawBossCutsceneMissileMeshes3D()
     {
-        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 2.25f) return;
+        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 2.35f) return;
 
         for (int i = 0; i < 4; i++)
         {
-            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
+            float localT = CutsceneRocketTime - GetCutsceneMissileStagger(i);
             if (localT < 0f) continue;
 
-            float ti = localT / CutsceneMissileFlightDur;
+            float ti = localT / GetCutsceneMissileFlightDur(i);
             if (ti >= 1.0f) continue;
 
             Vector3 origin = ResolveCutsceneMissileOrigin(i);
@@ -4787,12 +5113,57 @@ public sealed partial class SkyscraperFloor1World
                 VisualEngine3D.Rod(pos - dir * 0.32f, pos + dir * 0.24f, 0.055f, 0.012f, 10, new Color(196, 28, 30, 255), Finish.Armor);
             }
         }
+
+        // LIVE WALL-BREACH FLYING CONCRETE, BRASS & GLASS DEBRIS BURST RIGHT AT (0, 1.5, -15.8) (t = 0.70 .. 1.65)!
+        if (CutsceneRocketTime >= 0.70f && CutsceneRocketTime <= 1.68f)
+        {
+            float bt = CutsceneRocketTime - 0.70f;
+            float fade = 1f - Smooth((bt - 0.72f) / 0.26f);
+            if (fade > 0.02f)
+            {
+                Color stone = new(42, 46, 56, 255), charred = new(20, 19, 22, 255);
+                Color brass = new(176, 136, 76, 255), glassShard = new(158, 206, 218, 220);
+                for (int d = 0; d < 24; d++)
+                {
+                    float h1 = MathF.Sin(d * 12.9898f + 3.17f) * 43758.5453f; h1 -= MathF.Floor(h1);
+                    float h2 = MathF.Sin(d * 78.233f + 7.41f) * 24634.6345f; h2 -= MathF.Floor(h2);
+                    float h3 = MathF.Sin(d * 39.346f + 1.93f) * 19191.1919f; h3 -= MathF.Floor(h3);
+
+                    float startX = -3.1f + h1 * 6.2f;
+                    float startY = 0.45f + h2 * 2.45f;
+                    float vx = (h1 - 0.5f) * 7.8f + (startX >= 0 ? 1.1f : -1.1f);
+                    float vy = 2.6f + h3 * 5.2f;
+                    // Most debris blasts violently NORTH (-Z) toward the expanded wing; some kicks back (+Z)
+                    float vz = (d % 4 == 0 ? +1f : -1f) * (3.2f + h2 * 7.4f);
+
+                    float px = startX + vx * bt;
+                    float py = MathF.Max(0.06f, startY + vy * bt - 9.8f * bt * bt * 0.5f);
+                    float pz = BossArenaWallCenter.Z + vz * bt;
+                    float spin = bt * (6.5f + h3 * 9.0f) * ((d & 1) == 0 ? 1f : -1f);
+
+                    if (d % 5 == 0)
+                    {
+                        Vector3 axis = new(MathF.Cos(spin), MathF.Sin(spin * 0.7f), MathF.Sin(spin));
+                        VisualEngine3D.Rod(new Vector3(px, py, pz) - axis * 0.28f, new Vector3(px, py, pz) + axis * 0.28f,
+                            0.022f * fade, 0.018f * fade, 5, brass, Finish.Bronze);
+                    }
+                    else
+                    {
+                        Vector3 chunk = (d % 3 == 0)
+                            ? new Vector3(0.24f, 0.06f, 0.18f) * (0.75f + 0.45f * h3) * fade
+                            : new Vector3(0.32f, 0.18f, 0.22f) * (0.70f + 0.55f * h2) * fade;
+                        Color col = (d % 3 == 0) ? glassShard : (d % 2 == 0 ? stone : charred);
+                        VisualEngine3D.OrientedBox(new(px, py, pz), chunk, spin, col);
+                    }
+                }
+            }
+        }
     }
 
-    /// <summary>Draws painted billboard rocket thruster flames, curling smoke contrails, and 4-stage painted explosions.</summary>
+    /// <summary>Draws painted billboard rocket thruster flames, curling smoke contrails, 4-stage painted explosions & wall-breach fireball burst.</summary>
     private void DrawBossCutsceneRocketFx3D(Camera3D camera)
     {
-        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 2.25f) return;
+        if (CutsceneRocketTime < 0f || CutsceneRocketTime > 2.35f) return;
 
         Vector3 lookDir = camera.Target - camera.Position;
         lookDir = lookDir.LengthSquared() > 1e-6f ? Vector3.Normalize(lookDir) : -Vector3.UnitZ;
@@ -4802,16 +5173,17 @@ public sealed partial class SkyscraperFloor1World
 
         bool hasFx = CombatSprites.HasPaintedFx;
 
-        // 1. Alpha-blended curling smoke contrails + explosion dark smoke plumes
+        // 1. Alpha-blended curling smoke contrails + explosion dark smoke plumes + wall-breach billowing dust wall
         if (hasFx) CombatSprites.Begin(BlendMode.Alpha);
         for (int i = 0; i < 4; i++)
         {
-            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
+            float localT = CutsceneRocketTime - GetCutsceneMissileStagger(i);
             if (localT < 0f) continue;
 
+            float flightDur = GetCutsceneMissileFlightDur(i);
             Vector3 origin = ResolveCutsceneMissileOrigin(i);
             Vector3 target = GetCutsceneMissileTarget(i);
-            float ti = localT / CutsceneMissileFlightDur;
+            float ti = localT / flightDur;
 
             if (ti < 1.0f)
             {
@@ -4838,7 +5210,7 @@ public sealed partial class SkyscraperFloor1World
             }
             else
             {
-                float expElapsed = localT - CutsceneMissileFlightDur;
+                float expElapsed = localT - flightDur;
                 if (expElapsed > CutsceneMissileExplosionDur) continue;
                 float e = expElapsed / CutsceneMissileExplosionDur;
                 float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.1f), 3f);
@@ -4846,20 +5218,36 @@ public sealed partial class SkyscraperFloor1World
                 // Billowing painted charcoal smoke column rising above blast
                 if (hasFx)
                 {
+                    float wallBoost = i is 1 or 2 ? 1.45f : 1.0f;
                     for (int sm = 0; sm < 4; sm++)
                     {
                         float ang = i * 1.4f + sm * MathF.Tau / 4f + e * 0.9f;
-                        float spread = 0.32f + grow * 0.92f;
+                        float spread = (0.32f + grow * 0.92f) * wallBoost;
                         Vector3 smokePos = target + new Vector3(
                             MathF.Cos(ang) * spread,
                             0.62f + e * (1.75f + 0.35f * sm),
                             MathF.Sin(ang) * spread);
-                        float smokeR = 0.65f + grow * 0.98f;
+                        float smokeR = (0.65f + grow * 0.98f) * wallBoost;
                         int smA = Math.Clamp((int)(215 * (1f - e * 0.72f)), 0, 255);
                         CombatSprites.SmokeFrame(sm + i, smokePos, camRight, camUp, smokeR, smokeR * 0.95f,
                             new Color(220, 212, 205, smA), flipX: (sm & 1) == 0, rotation: sm * 0.35f);
                     }
                 }
+            }
+        }
+        // Central wall-shatter dust & smoke billowing cloud across the full 8.2m Z=-15.8 breach (t = 0.72..1.65)
+        if (hasFx && CutsceneRocketTime >= 0.72f && CutsceneRocketTime <= 1.68f)
+        {
+            float we = (CutsceneRocketTime - 0.72f) / 0.96f;
+            float wGrow = 1f - MathF.Pow(1f - MathF.Min(1f, we * 2.2f), 3f);
+            for (int cIdx = 0; cIdx < 5; cIdx++)
+            {
+                float bx = -2.6f + cIdx * 1.3f;
+                Vector3 bPos = new(bx, 1.15f + we * (1.65f + 0.25f * (cIdx % 2)), BossArenaWallCenter.Z - 0.35f - we * 1.1f);
+                float bR = 0.95f + wGrow * 1.45f;
+                int bA = Math.Clamp((int)(210 * (1f - we * 0.78f)), 0, 255);
+                CombatSprites.SmokeFrame(cIdx + 2, bPos, camRight, camUp, bR, bR * 0.92f,
+                    new Color(204, 196, 192, bA), flipX: (cIdx & 1) == 1, rotation: cIdx * 0.4f + we * 0.5f);
             }
         }
         if (hasFx) CombatSprites.End();
@@ -4868,12 +5256,13 @@ public sealed partial class SkyscraperFloor1World
         if (hasFx) CombatSprites.Begin(BlendMode.Additive);
         for (int i = 0; i < 4; i++)
         {
-            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
+            float localT = CutsceneRocketTime - GetCutsceneMissileStagger(i);
             if (localT < 0f) continue;
 
+            float flightDur = GetCutsceneMissileFlightDur(i);
             Vector3 origin = ResolveCutsceneMissileOrigin(i);
             Vector3 target = GetCutsceneMissileTarget(i);
-            float ti = localT / CutsceneMissileFlightDur;
+            float ti = localT / flightDur;
 
             // Brief painted muzzle ignition flash at TOKEN-GUN 98 barrel tip right as each rocket launches
             if (localT < 0.16f && hasFx)
@@ -4906,7 +5295,7 @@ public sealed partial class SkyscraperFloor1World
             }
             else
             {
-                float expElapsed = localT - CutsceneMissileFlightDur;
+                float expElapsed = localT - flightDur;
                 if (expElapsed > CutsceneMissileExplosionDur) continue;
                 float e = expElapsed / CutsceneMissileExplosionDur;
                 float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.4f), 3f);
@@ -4916,34 +5305,46 @@ public sealed partial class SkyscraperFloor1World
                 {
                     // Progress smoothly through all 4 hand-painted explosion stages: 0 (flash) -> 1 (blast) -> 2 (fireball) -> 3 (ember ring)
                     int stage = Math.Clamp((int)(e * 4f), 0, 3);
-                    float blastR = (i == 0 ? 1.15f : 1.02f) + grow * (i == 0 ? 1.55f : 1.38f);
-                    Vector3 center = target + Vector3.UnitY * (0.68f + e * 0.65f);
+                    float wallScale = i is 1 or 2 ? 1.48f : (i == 0 ? 1.15f : 1.05f);
+                    float blastR = wallScale + grow * (i is 1 or 2 ? 2.15f : 1.55f);
+                    Vector3 center = target + Vector3.UnitY * (i is 1 or 2 ? (0.45f + e * 0.72f) : (0.68f + e * 0.65f));
                     int alpha = Math.Clamp((int)(250 * fade), 0, 255);
                     CombatSprites.ExplosionFrame(stage, center, camRight, camUp, blastR, i * 0.8f + e * 0.45f,
                         new Color(255, 240, 224, alpha), flipX: (i & 1) == 1);
 
                     // Secondary hot inner core bloom during early impact frames
-                    if (e < 0.45f)
+                    if (e < 0.48f)
                     {
-                        float cf = 1f - e / 0.45f;
-                        CombatSprites.ExplosionFrame(0, target + Vector3.UnitY * 0.52f, camRight, camUp, blastR * 0.68f, -e * 3f + i,
-                            new Color(255, 248, 220, Math.Clamp((int)(240 * cf), 0, 255)));
+                        float cf = 1f - e / 0.48f;
+                        CombatSprites.ExplosionFrame(0, target + Vector3.UnitY * 0.52f, camRight, camUp, blastR * 0.72f, -e * 3f + i,
+                            new Color(255, 248, 220, Math.Clamp((int)(245 * cf), 0, 255)));
                     }
                 }
             }
+        }
+        // Center wall-collapse fiery fireball bloom right at (0, 1.55, -15.8) so the entire partition visually vaporizes!
+        if (hasFx && CutsceneRocketTime >= 0.72f && CutsceneRocketTime <= 1.54f)
+        {
+            float we = (CutsceneRocketTime - 0.72f) / 0.82f;
+            float wGrow = 1f - MathF.Pow(1f - MathF.Min(1f, we * 2.5f), 3f);
+            float wFade = 1f - Smooth((we - 0.28f) / 0.72f);
+            int wStage = Math.Clamp((int)(we * 4f), 0, 3);
+            float wR = 1.65f + wGrow * 2.35f;
+            CombatSprites.ExplosionFrame(wStage, new Vector3(0f, 1.65f + we * 0.55f, BossArenaWallCenter.Z),
+                camRight, camUp, wR, we * 0.6f, new Color(255, 236, 206, Math.Clamp((int)(248 * wFade), 0, 255)));
         }
         if (hasFx) CombatSprites.End();
 
         // 3. Expanding carpet scorch shockwave ring & sharp flying sparks
         for (int i = 0; i < 4; i++)
         {
-            float localT = CutsceneRocketTime - i * CutsceneMissileStagger;
-            float expElapsed = localT - CutsceneMissileFlightDur;
+            float localT = CutsceneRocketTime - GetCutsceneMissileStagger(i);
+            float expElapsed = localT - GetCutsceneMissileFlightDur(i);
             if (expElapsed < 0f || expElapsed > CutsceneMissileExplosionDur) continue;
             float e = expElapsed / CutsceneMissileExplosionDur;
             Vector3 target = GetCutsceneMissileTarget(i);
 
-            float ringR = 0.40f + e * 3.10f;
+            float ringR = 0.40f + e * (i is 1 or 2 ? 4.40f : 3.20f);
             Raylib.DrawCircle3D(new Vector3(target.X, 0.06f, target.Z), ringR, Vector3.UnitX, 90f,
                 new Color(255, 118, 42, Math.Clamp((int)(195 * (1f - e)), 0, 255)));
 
@@ -4964,18 +5365,20 @@ public sealed partial class SkyscraperFloor1World
         if (BossArenaChaos <= 0.01f) return;
         float chaos = Math.Clamp(BossArenaChaos, 0f, 1f);
 
-        // 9 burning fire zones: 4 rocket blast craters (including hero's dodged spot!) + 5 perimeter pillar flames
+        // 11 burning fire zones spanning the newly blasted Z=-15.8 wall breach AND the expanded North Wing (Z=-8.5..-24.5)!
         ReadOnlySpan<(Vector3 Pos, float Scale)> fires =
         [
-            (NorthElevatorPos + new Vector3(+1.32f, 0f, -6.00f), 0.78f), // Exact crater hero dodged out of!
-            (NorthElevatorPos + new Vector3(-4.60f, 0f, -3.30f), 1.18f),
-            (NorthElevatorPos + new Vector3(+4.80f, 0f, -3.50f), 1.20f),
-            (NorthElevatorPos + new Vector3(-5.80f, 0f, -7.80f), 1.10f),
-            (NorthElevatorPos + new Vector3(+5.50f, 0f, -7.50f), 1.12f),
-            (new Vector3(-6.75f, 0f, -14.40f), 0.98f),
-            (new Vector3(+6.75f, 0f, -14.40f), 1.00f),
-            (NorthElevatorPos + new Vector3(-6.30f, 0f, -0.90f), 0.92f),
-            (NorthElevatorPos + new Vector3(+6.30f, 0f, -0.90f), 0.94f)
+            (NorthElevatorPos + new Vector3(+1.65f, 0f, -11.00f), 0.86f), // Exact crater hero barrel-rolled out of (Z=-19.50)!
+            (new Vector3(-3.35f, 0f, -15.85f), 1.18f),                     // Blasted left wall stump crater!
+            (new Vector3(+3.35f, 0f, -15.85f), 1.22f),                     // Blasted right wall stump crater!
+            (NorthElevatorPos + new Vector3(+3.60f, 0f, -13.50f), 1.05f), // Missile 3 deep North Wing crater (Z=-22.00)!
+            (new Vector3(-5.50f, 0f, -21.20f), 1.08f),                     // Expanded North-West arena flank flame
+            (new Vector3(+5.65f, 0f, -18.60f), 1.02f),                     // Expanded North-East arena flank flame
+            (NorthElevatorPos + new Vector3(-4.80f, 0f, -3.50f), 1.12f),
+            (NorthElevatorPos + new Vector3(+4.90f, 0f, -3.60f), 1.15f),
+            (new Vector3(-6.65f, 0f, -14.40f), 0.96f),
+            (new Vector3(+6.65f, 0f, -14.40f), 0.98f),
+            (NorthElevatorPos + new Vector3(-6.20f, 0f, -1.00f), 0.90f)
         ];
 
         Vector3 lookDir = camera.Target - camera.Position;
@@ -5056,6 +5459,20 @@ public sealed partial class SkyscraperFloor1World
                         new Color(255, 244, 232, Math.Clamp((int)(238 * chaos), 0, 255)), flipX: ((f + k) & 1) == 1);
                 }
             }
+            // Wispy dark smoke curling from the fractured overhead header beam (Y=3.45..4.10, Z=-15.8)
+            if (BossArenaWallDestroyed)
+            {
+                for (int w = 0; w < 5; w++)
+                {
+                    float age = (_worldClock * 0.28f + w * 0.23f) % 1f;
+                    float wx = -2.6f + w * 1.3f + MathF.Sin(_worldClock * 1.4f + w * 2.1f) * 0.18f;
+                    Vector3 wPos = new(wx, 3.45f + age * 0.85f, BossArenaWallCenter.Z - 0.12f - age * 0.35f);
+                    float wR = 0.36f + age * 0.42f;
+                    int wA = Math.Clamp((int)(96 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
+                    CombatSprites.SmokeFrame(w + 1, wPos, camRight, camUp, wR, wR * 0.85f,
+                        new Color(188, 182, 178, wA), flipX: (w & 1) == 0, rotation: age * 0.4f);
+                }
+            }
             CombatSprites.End();
 
             // 3. Soft additive golden-orange flame glow core pass so fires truly illuminate & pop in the dark lobby!
@@ -5076,8 +5493,8 @@ public sealed partial class SkyscraperFloor1World
             CombatSprites.End();
         }
 
-        // 4. 48 Drifting Glowing Embers & Ash Sparks floating upward across the atrium
-        for (int i = 0; i < 48; i++)
+        // 4. 56 Drifting Glowing Embers & Ash Sparks floating upward across the ENTIRE expanded Boss Arena (Z = -8.5 .. -24.5)
+        for (int i = 0; i < 56; i++)
         {
             float h1 = MathF.Sin(i * 12.9898f + 1.37f) * 43758.5453f; h1 -= MathF.Floor(h1);
             float h2 = MathF.Sin(i * 78.233f + 4.19f) * 24634.6345f; h2 -= MathF.Floor(h2);
@@ -5087,7 +5504,7 @@ public sealed partial class SkyscraperFloor1World
             float cycle = (_worldClock * speed + h1 * 1.7f + h2) % 1f;
             float y = 0.2f + cycle * 4.0f;
             float x = -9f + h1 * 18f + MathF.Sin(_worldClock * (1.8f + h3) + i * 1.9f) * 0.55f;
-            float z = -15f + h2 * 8f + MathF.Cos(_worldClock * (1.5f + h1) + i * 2.3f) * 0.45f;
+            float z = -24.5f + h2 * 16.0f + MathF.Cos(_worldClock * (1.5f + h1) + i * 2.3f) * 0.45f;
             Vector3 ep = new(x, y, z);
 
             float lifeFade = MathF.Sin(cycle * MathF.PI);
@@ -5979,6 +6396,16 @@ public sealed partial class SkyscraperFloor1World
                 new(box.Max.X+margin,box.Max.Y,box.Max.Z+margin));
             var hit=Raylib.GetRayCollisionBox(ray,expanded);
             if(hit.Hit && hit.Distance<=length) return false;
+        }
+        if (!BossArenaWallDestroyed)
+        {
+            foreach (var box in new[] { BossArenaWallBox, ArenaTableBox })
+            {
+                var expanded = new BoundingBox(new(box.Min.X - margin, 0, box.Min.Z - margin),
+                    new(box.Max.X + margin, box.Max.Y, box.Max.Z + margin));
+                var hit = Raylib.GetRayCollisionBox(ray, expanded);
+                if (hit.Hit && hit.Distance <= length) return false;
+            }
         }
         return true;
     }
