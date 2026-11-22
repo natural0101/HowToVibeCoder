@@ -383,6 +383,43 @@ public static partial class LoreAndMenusUI
     private static LoreChatMessage[] BuildRedactedChats(LoreChatMessage[] source)
     {
         var copy = (LoreChatMessage[])source.Clone();
+        // Scrub pre-breach ZERO / 1998 cassette spoilers from early chats #0, #2, #3!
+        copy[0] = new LoreChatMessage
+        {
+            Monogram = source[0].Monogram,
+            Handle = source[0].Handle,
+            RoleBadge = source[0].RoleBadge,
+            Time = source[0].Time,
+            Metrics = source[0].Metrics,
+            Text = source[0].Text,
+            ReplyAuthor = "@petrovich_root (Дед-Админ)",
+            ReplyText = "«Отойди от рубильника! На турникете сработал старый пропуск учредителя «ЭНТРОПИК». Хозяин завода вернулся.»",
+            HandleColor = source[0].HandleColor
+        };
+        copy[2] = new LoreChatMessage
+        {
+            Monogram = source[2].Monogram,
+            Handle = source[2].Handle,
+            RoleBadge = source[2].RoleBadge,
+            Time = source[2].Time,
+            Metrics = source[2].Metrics,
+            Text = source[2].Text,
+            ReplyAuthor = "@veronika_tarot (HR-Таролог)",
+            ReplyText = "«Профиль HR-отдела: у Крипто-Бро зашкаливает Жадность (Greed). Включайте на ЯблоБуке приманку Cloud Entropic Max или бейте паяльником по кошельку — сам сдастся.»",
+            HandleColor = source[2].HandleColor
+        };
+        copy[3] = new LoreChatMessage
+        {
+            Monogram = source[3].Monogram,
+            Handle = source[3].Handle,
+            RoleBadge = source[3].RoleBadge,
+            Time = source[3].Time,
+            Metrics = source[3].Metrics,
+            Text = source[3].Text,
+            ReplyAuthor = "@kommers_90x (Учредитель)",
+            ReplyText = "«Ваш директор мне завод и контракты должен. А кожаный ремень, кстати, отлично отбивает ваши летающие баг-снаряды обратно вам в лоб!»",
+            HandleColor = source[3].HandleColor
+        };
         copy[4] = new LoreChatMessage
         {
             Monogram = "XX",
@@ -810,7 +847,10 @@ public static partial class LoreAndMenusUI
     // =========================================================================
     // 1. ОКНО ДОСЬЕ И СЛИТЫХ ЧАТОВ ОПЕНСПЕЙСА [N] (1020x600)
     // =========================================================================
-    private static readonly (string title, string verdict, string body, Color accent)[] TarotEntries =
+    private static (string title, string verdict, string body, Color accent)[] TarotEntries =>
+        BossTwistUnlocked ? _tarotEntriesUnlocked : _tarotEntriesRedacted;
+
+    private static readonly (string title, string verdict, string body, Color accent)[] _tarotEntriesUnlocked =
         {
             (
                 "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) — В Опенспейсе гасит Техдолг (-TD)",
@@ -838,6 +878,34 @@ public static partial class LoreAndMenusUI
             )
         };
 
+    private static readonly (string title, string verdict, string body, Color accent)[] _tarotEntriesRedacted =
+        {
+            (
+                "Фигурант №1: Сеньор-Архитектор (C++ / СУБД) — В Опенспейсе гасит Техдолг (-TD)",
+                "ПРОГНОЗ HR-ОТДЕЛА: ЭГО 98% — ЛОМАТЬ ПАЯЛЬНИКОМ И САЖАТЬ ЧИСТИТЬ ТЕХДОЛГ!",
+                "«Все думают, что я гадаю на картоне, но под бархатом стола лежит сводка кадрового скоринга. По Сеньору расклад простой: страха нет, зато Эго 98%. Сбейте ему спесь паяльником или выбейте ЯблоБук — в Опенспейсе он в одиночку гасит Техдолг этажа!»",
+                new Color(255, 92, 118, 255)
+            ),
+            (
+                "Фигурант №2: Джуниор Данила (Accept All) — В Опенспейсе растит Техдолг (+TD)",
+                "ПРОГНОЗ HR-ОТДЕЛА: СТРАХ 100% — БРАТЬ РЕМНЁМ У ЯБЛОБУКА И СДАВАТЬ В HR ЗА КЭШ!",
+                "«Расклад мигает жёлтым: мальчик жмёт Accept All не глядя и быстро засоряет Техдолг (TD). Заманите его на ЯблоБук-ловушку, припугните отцовским ремнём и несите сразу ко мне в будку Таро — выдам чистый кэш и спишу хвост по линии СБ!»",
+                new Color(64, 245, 165, 255)
+            ),
+            (
+                "Фигурант №3: Крипто-Бро и Тимлид-Митингер — Жадность (Greed) и Щит Созвона",
+                "ПРОГНОЗ HR-ОТДЕЛА: ЭЛЕКТРО-ЛУЖА У КУЛЕРА + ПРИНТЕР ПРОПУСКОВ (-25% SEC)!",
+                "«Сводка этажа фиксирует скачок Внимания СБ (SEC) и Температуры Прода (PT). Печатайте фальшивый пропуск на принтере, чтобы сбить SEC, а дейлик Тимлида и спринт Крипто-Бро накрывайте разом через пролитый кулер и жало паяльника 220В!»",
+                new Color(255, 206, 68, 255)
+            ),
+            (
+                "Для внутреннего пользования",
+                "Копию наверх не посылать.",
+                "Пока Босс был в отъезде, карты для собеседований раскладывала я. Типы MBTI вписаны моей рукой. Приказ о найме лежит в запечатанной папке под бархатом. За каждую освобождённую ставку наверху бухгалтерия начисляет мне премию.",
+                new Color(147,89,111,255)
+            )
+        };
+
     private static (string zoomer, string nineties, string comment)[] DictionaryEntries =>
         BossTwistUnlocked ? _dictionaryEntriesUnlocked : _dictionaryEntriesRedacted;
 
@@ -857,6 +925,8 @@ public static partial class LoreAndMenusUI
     private static (string zoomer, string nineties, string comment)[] BuildRedactedDictionary((string zoomer, string nineties, string comment)[] source)
     {
         var copy = ((string zoomer, string nineties, string comment)[])source.Clone();
+        copy[0] = ("Legacy Stakeholder", "Учредитель «ЭНТРОПИК»", "Пришёл вернуть завод, оригиналы договоров и навести порядок на этаже");
+        copy[3] = ("Внимание СБ (Шкала SEC)", "Тревога охраны этажа", "Сбивается печатью фальшивого пропуска на принтере или сдачей кадров Веронике");
         copy[6] = ("ЗАСЕКРЕЧЕННЫЙ ТЕРМИН", "ЗАСЕКРЕЧЕНО", "Требуется вскрытие шахты Северного лифта");
         return copy;
     }

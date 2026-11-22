@@ -240,10 +240,26 @@ public static partial class LoreAndMenusUI
     };
     private static string ExhibitModel => ActiveLoreTab switch
     {
-        0 => SelectedArchiveEntry==6 ? AgentModel : SelectedArchiveEntry == 5 ? SolderModel : CoderModel,
+        0 => SelectedArchiveEntry switch
+        {
+            1 => "prop_server_rack",
+            4 => BossTwistUnlocked ? CoderModel : "prop_elevator_panel_broken",
+            5 => BossTwistUnlocked ? SolderModel : "prop_elevator_panel_broken",
+            6 => AgentModel,
+            _ => CoderModel
+        },
         1 => TarotModel,
         2 => VibeCoderCollection.All[SelectedArchiveEntry].Id=="ai_agent_v01" ? AgentModel : VibeCoderCollection.All[SelectedArchiveEntry].IsFrog ? "prop_bug_frog" : CoderModel,
         _ => SelectedArchiveEntry is 2 or 5 ? SolderModel : PartnerModel
+    };
+
+    private static VibeCoderSpecies? ChatExhibitSpecies(int entry) => entry switch
+    {
+        0 => VibeCoderCollection.All.FirstOrDefault(s => s.Id == "div"),
+        2 => VibeCoderCollection.All.FirstOrDefault(s => s.Id == "leverage"),
+        3 => VibeCoderCollection.All.FirstOrDefault(s => s.Id == "call"),
+        4 => VibeCoderCollection.All.FirstOrDefault(s => s.Id == "refactor"),
+        _ => null
     };
 
     private static void DrawSelector()
@@ -524,7 +540,10 @@ public static partial class LoreAndMenusUI
         Raylib.BeginTextureMode(_exhibitTexture);
         Raylib.ClearBackground(Color.Blank);
         Raylib.BeginMode3D(dossierCam);
-        VisualEngine3D.DrawArchiveModel(model, scale, yaw, tool, dossierCam.Position,ActiveLoreTab==2 ? VibeCoderCollection.All[SelectedArchiveEntry] : null, ActiveLoreTab==2 && Catches(SelectedArchiveEntry)==0);
+        VibeCoderSpecies? exhibitSpecies = ActiveLoreTab == 2
+            ? VibeCoderCollection.All[SelectedArchiveEntry]
+            : ActiveLoreTab == 0 ? ChatExhibitSpecies(SelectedArchiveEntry) : null;
+        VisualEngine3D.DrawArchiveModel(model, scale, yaw, tool, dossierCam.Position, exhibitSpecies, ActiveLoreTab==2 && Catches(SelectedArchiveEntry)==0);
         Raylib.EndMode3D();
         Raylib.EndTextureMode();
     }
@@ -702,6 +721,18 @@ internal static unsafe partial class VisualEngine3D
             Matrix4x4.CreateRotationX(-1.22f) * Matrix4x4.CreateRotationZ(-.48f) : Matrix4x4.Identity;
         transform *= Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationY(yaw * MathF.PI / 180)
                    * Matrix4x4.CreateTranslation(0, tool ? .55f : 0, 0);
+        if (!shop && asset is "prop_server_rack" or "prop_elevator_panel_broken")
+        {
+            var b = ModelBounds(asset);
+            Vector3 ext = b.Max - b.Min;
+            float maxH = asset == "prop_server_rack" ? 1.56f : 1.05f;
+            float fit = MathF.Min(1.22f / MathF.Max(0.05f, MathF.Max(ext.X, ext.Z)), maxH / MathF.Max(0.05f, ext.Y));
+            float yLift = asset == "prop_server_rack" ? 0.02f : 0.34f;
+            transform = Matrix4x4.CreateTranslation(-(b.Min.X + b.Max.X) * 0.5f, -b.Min.Y, -(b.Min.Z + b.Max.Z) * 0.5f)
+                * Matrix4x4.CreateScale(fit)
+                * Matrix4x4.CreateRotationY(yaw * MathF.PI / 180f)
+                * Matrix4x4.CreateTranslation(0f, yLift, 0f);
+        }
         if(shop)
         {
             if(asset is "pager" or "signet")
