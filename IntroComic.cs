@@ -276,9 +276,9 @@ internal sealed class IntroComic : IDisposable
                 Color ivory = new(238, 226, 200, a);
                 Color muted = new(184, 170, 148, dim);
 
-                string eyebrow = Loc.T("МОСКВА-СИТИ · 2026", "MOSCOW-CITY · 2026");
-                string title = Loc.T("СЕССИЯ #01", "SESSION #01");
-                string subtitle = Loc.T("БЛЮЗ ПЕРВОГО ЭТАЖА", "FLOOR ONE BLUES");
+                string eyebrow = Loc.T("МОСКВА-СИТИ, 2026", "MOSCOW-CITY, 2026");
+                string title = Loc.T("ЭТАЖ 01", "FLOOR 01");
+                string subtitle = Loc.T("БАШНЯ «ЭНТРОПИК»", "ENTROPIC TOWER");
                 string hint = Loc.T("[ПРОБЕЛ] ДАЛЕЕ   [ESC] ПРОПУСТИТЬ", "[SPACE] CONTINUE   [ESC] SKIP");
 
                 var fEye = GameFonts.Get(Typeface.InterfaceBold, 15);

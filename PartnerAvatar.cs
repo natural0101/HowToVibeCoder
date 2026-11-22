@@ -3,7 +3,7 @@ using Raylib_cs;
 
 namespace HowToVibeCoder;
 
-internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponType Weapon,float Swing=0,bool Crouched=false,bool Sprinting=false)
+internal sealed record PlayerPose(Vector3 Eye, float Yaw, float Pitch, WeaponType Weapon,float Swing=0,bool Crouched=false,bool Sprinting=false,int Appearance=0)
 {
     public Vector3 Forward => new(MathF.Sin(Yaw)*MathF.Cos(Pitch), MathF.Sin(Pitch), MathF.Cos(Yaw)*MathF.Cos(Pitch));
     public Camera3D Camera => new() { Position=Eye, Target=Eye+Forward, Up=Vector3.UnitY, FovY=76 };
@@ -17,9 +17,13 @@ internal sealed class PartnerAvatar(int slot=0)
     internal int Hp=100;
     internal bool Carrying,Downed;
     internal float FlipOffTimer;
-    internal Color Blazer => Slot switch { 1=>new(35,75,142,255), 2=>new(31,110,74,255), _=>new(181,34,46,255) };
+    internal CharacterAppearance Appearance = new();
+    private int _lastPackedAppearance = -1;
+    private Color SlotBlazerFallback => Slot switch { 1=>new(35,75,142,255), 2=>new(31,110,74,255), _=>new(181,34,46,255) };
+    private bool UseSlotFallback => Slot > 0 && Pose.Appearance == 0 && Appearance.Pack() == 0;
+    internal Color Blazer => UseSlotFallback ? SlotBlazerFallback : Appearance.OutfitColor;
     internal string Label => Loc.Tr(Slot==0 ? "Хозяин" : $"Гость {Slot}")
-        +(FlipOffTimer>0 ? Loc.Tr(" · ФАК!") : Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
+        +(FlipOffTimer>0 ? Loc.Tr(" — ФАК!") : Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
     public PlayerPose Pose = new(new(2,1.72f,10),MathF.PI,0,WeaponType.MicroUzi);
     public Vector3 Feet => new(Pose.Eye.X,0,Pose.Eye.Z);
     public readonly WeaponAndCombatView Effects = new();
@@ -30,6 +34,11 @@ internal sealed class PartnerAvatar(int slot=0)
         stride += Math.Min(.4f,Vector3.Distance(Pose.Eye,pose.Eye))*5;
         Pose=pose;
         Effects.BeltSwingPhase=pose.Swing;
+        if (pose.Appearance != _lastPackedAppearance)
+        {
+            _lastPackedAppearance = pose.Appearance;
+            Appearance = CharacterAppearance.Unpack(pose.Appearance);
+        }
     }
 
     public void Attack(SkyscraperFloor1World world, Action<int,string> grant, bool authoritative)
@@ -120,26 +129,73 @@ internal sealed class PartnerAvatar(int slot=0)
         float yaw=Pose.Yaw;
         Vector3 f=new(MathF.Sin(yaw),0,MathF.Cos(yaw)), r=new(f.Z,0,-f.X);
         float recoilPhase = flash>0 ? MathF.Sin((flash/.12f)*MathF.PI) : 0f;
+        bool bareOrNet = Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet;
         // Tactical firing crouch stance when actively shooting (bent knees / lower center of gravity)
         float height=Pose.Eye.Y<1.4f ? .75f : (flash>0 ? .91f : 1f);
         Vector3 P(float x,float y,float z) => Feet+r*x+Vector3.UnitY*(y*height)+f*z;
         Color dark=new(38,42,55,255), metal=new(89,99,113,255);
         void Tube(Vector3 a,Vector3 b,float ra,float rb,Color c) => VisualEngine3D.Rod(a,b,ra,rb,10,c);
-        float step = MathF.Abs(MathF.Sin(stride))*.024f;
-        float combatLean = Pose.Weapon == WeaponType.MicroUzi ? (flash>0 ? .115f : .075f) : .025f;
-        float leanTilt = combatLean + .032f*MathF.Sin(stride*2f) - .045f*recoilPhase;
+        float step = bareOrNet ? 0f : MathF.Abs(MathF.Sin(stride))*.024f;
+        float combatLean = bareOrNet ? 0f : (Pose.Weapon == WeaponType.MicroUzi ? (flash>0 ? .115f : .075f) : .025f);
+        float leanTilt = bareOrNet ? 0f : (combatLean + .032f*MathF.Sin(stride*2f) - .045f*recoilPhase);
         VisualEngine3D.DrawCharacterDirectionalShadow(Feet,1.70f*height,.32f);
         // The authored SMG is a separate material group in the character asset.
         bool smg = Pose.Weapon == WeaponType.MicroUzi;
-        VisualEngine3D.Asset("char_partner_90s",Feet+Vector3.UnitY*step,yaw*180/MathF.PI,
-            tilt:leanTilt,stretch:new Vector3(1,height,1), hideProp:true,tint:Blazer);
+        Vector3 basePos = Feet + Vector3.UnitY * step;
+        Vector3 stretch = new(1f, height, 1f);
+        VisualEngine3D.DrawPartnerCharacter(basePos, yaw * 180f / MathF.PI, leanTilt, stretch, Appearance, UseSlotFallback ? SlotBlazerFallback : null);
+
+        // Anchor 3D eyes, eyewear, and meme hats to the exact measured char_partner_90s head frame (+Z forward, +Y up)
+        Matrix4x4 charTransform = Matrix4x4.CreateRotationX(leanTilt)
+            * Matrix4x4.CreateScale(stretch)
+            * Matrix4x4.CreateRotationY(yaw)
+            * Matrix4x4.CreateTranslation(basePos);
+
+        if (!VisualEngine3D.CastingShadows)
+        {
+            // Expressive 3D eyes (sclera + colored iris + pupil + glint) for bare eyes (0..3) and behind clear accountant frames (6)
+            if (!Appearance.HasEyewear || Appearance.EyeIndex == 6)
+            {
+                Color sclera = Appearance.EyeIndex == 3 ? new Color(246, 202, 198, 255) : new Color(242, 238, 228, 255);
+                Color iris = Appearance.EyeIrisColor;
+                Color pupil = new(18, 16, 20, 255);
+                Color glint = new(252, 248, 240, 255);
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    float ex = side * 0.0276f;
+                    VisualEngine3D.Orb(Vector3.Transform(new(ex, 1.564f, 0.0792f), charTransform), 0.0095f, sclera, Finish.Paint);
+                    VisualEngine3D.Orb(Vector3.Transform(new(ex, 1.564f, 0.0836f), charTransform), 0.0066f, iris, Finish.Paint);
+                    VisualEngine3D.Orb(Vector3.Transform(new(ex, 1.564f, 0.0870f), charTransform), 0.0034f, pupil, Finish.Paint);
+                    VisualEngine3D.Orb(Vector3.Transform(new(ex + 0.0020f, 1.5664f, 0.0885f), charTransform), 0.0014f, glint, Finish.Lamp);
+                }
+            }
+        }
+
+        if (Appearance.EyewearAsset is string eyeAsset && VisualEngine3D.HasAsset(eyeAsset))
+        {
+            Vector3 eyeAnchorWorld = Vector3.Transform(new Vector3(0f, 1.568f, 0.098f), charTransform);
+            Matrix4x4 eyeTransform = Matrix4x4.CreateRotationX(leanTilt)
+                * Matrix4x4.CreateRotationY(yaw)
+                * Matrix4x4.CreateTranslation(eyeAnchorWorld);
+            VisualEngine3D.Asset(eyeAsset, Vector3.Zero, assemblyTransform: eyeTransform);
+        }
+
+        if (Appearance.HatAsset is string hatAsset && VisualEngine3D.HasAsset(hatAsset))
+        {
+            Vector3 hatAnchorWorld = Vector3.Transform(new Vector3(0f, 1.635f, -0.007f), charTransform);
+            Matrix4x4 hatTransform = Matrix4x4.CreateRotationX(leanTilt)
+                * Matrix4x4.CreateRotationY(yaw)
+                * Matrix4x4.CreateTranslation(hatAnchorWorld);
+            VisualEngine3D.Asset(hatAsset, Vector3.Zero, assemblyTransform: hatTransform);
+        }
+
         float kick=.048f*recoilPhase;
         float climb=.016f*recoilPhase;
         float lash=MathF.Sin(Pose.Swing*MathF.PI)*.6f;
         // Raised 3D middle-finger salute when teammate triggers [V]!
         if (FlipOffTimer > 0)
         {
-            Color skin = new(218, 174, 148, 255);
+            Color skin = Appearance.SkinColor;
             Vector3 fist = P(-.18f, 1.46f, .34f) + Vector3.UnitY * step;
             Tube(P(-.22f, 1.26f, .16f) + Vector3.UnitY * step, fist, .042f, .036f, Blazer);
             VisualEngine3D.Oval(fist, new(.045f, .045f, .045f), skin, Finish.Anatomy);
@@ -176,6 +232,20 @@ internal sealed class PartnerAvatar(int slot=0)
         }
         switch(Pose.Weapon)
         {
+            case WeaponType.BareHands:
+                break;
+            case WeaponType.CaptureNet:
+            {
+                var grip = Feet + Vector3.Transform(new Vector3(-.095f, 1.25f * height, .26f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw));
+                if (VisualEngine3D.HasAsset("weapon_net_90s")) VisualEngine3D.Asset("weapon_net_90s", grip, yaw * 180f / MathF.PI);
+                else
+                {
+                    var tip = grip + new Vector3(MathF.Sin(yaw), .23f, MathF.Cos(yaw)) * .62f;
+                    VisualEngine3D.Rod(grip, tip, .014f, .012f, 8, new(154, 103, 68, 255));
+                    Raylib.DrawCircle3D(tip, .16f, Vector3.UnitX, 90, Color.LightGray);
+                }
+                break;
+            }
             case WeaponType.Belt:
                 Tube(P(-.10f,1.26f,.32f),P(-.13f,1.16f,.56f),.027f,.021f,new(115,66,41,255));
                 Tube(P(-.13f,1.16f,.56f),P(-.17f,.87f+lash,.69f+kick+lash),.021f,.012f,dark);

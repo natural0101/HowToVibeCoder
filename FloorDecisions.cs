@@ -100,15 +100,15 @@ public static partial class Program
         void Print(string s, float x, float y, int size, Color c, Typeface f = Typeface.Interface) =>
             DossierPrint.Text(s, x, y, size, c, f);
 
-        // Subtle 1998 jazz-noir episode session header
+        // Clean floor dossier header (zero middle dots)
         string sessionHeader = Loc.T(
-            "«ЭНТРОПИК»     СЕССИЯ #01 · БЛЮЗ ПЕРВОГО ЭТАЖА",
-            "ENTROPIC     SESSION #01 · FLOOR ONE BLUES");
+            "ЭТАЖ 01 — БАШНЯ «ЭНТРОПИК»",
+            "FLOOR 01 — ENTROPIC TOWER");
         Print(sessionHeader, 178, 92, 15, muted, Typeface.InterfaceBold);
 
         // Tilted wet-ink crimson rubber stamp completely clear of the top-right steel paperclip
         string stamp = pursuit
-            ? Loc.T("ТРЕВОГА · ШАХТА", "ALERT · SHAFT")
+            ? Loc.T("ТРЕВОГА В ШАХТЕ", "SHAFT ALERT")
             : Loc.T("ЭКЗЕМПЛЯР 01", "COPY 01");
         float stampWidth = GameFonts.Measure(GameFonts.Get(Typeface.InterfaceBold, 17), stamp, 17).X + 26;
         Rlgl.PushMatrix();
@@ -121,7 +121,7 @@ public static partial class Program
 
         // Main dossier title (fits cleanly within manila sheet margins)
         string title = pursuit
-            ? Loc.T("ЭКСТРЕННЫЙ ПРОРЫВ · ПРЕСЛЕДОВАНИЕ НА 2-Й ЭТАЖ", "EMERGENCY BREAKOUT · FLOOR 2 PURSUIT")
+            ? Loc.T("ЭКСТРЕННЫЙ ПРОРЫВ НА 2-Й ЭТАЖ", "EMERGENCY BREAKOUT TO FLOOR 2")
             : Loc.T("АКТ УТИЛИЗАЦИИ ИИ-АГЕНТА", "AI AGENT DECOMMISSIONING ACT");
         int titleSize = pursuit ? 28 : 40;
         while (titleSize > 22 && GameFonts.Measure(GameFonts.Get(Typeface.SerifBold, titleSize), title, titleSize).X > 855f)

@@ -18,7 +18,7 @@ public static partial class Program
     private static ref VibeCoderEntity? guestCarried => ref escorts[actorSlot];
     private static ref VibeCoderEntity? peerEscort => ref escorts[0];
     private static PartnerAvatar Avatar(int slot) => _world.Partners[slot]??=new PartnerAvatar(slot);
-    private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon,_weapons.BeltSwingPhase,_isCrouching,_sprinting);
+    private static PlayerPose LocalPose => new(BuildPlayerCamera().Position,_playerYaw,_playerPitch,_weapons.CurrentWeapon,_weapons.BeltSwingPhase,_isCrouching,_sprinting,CharacterAppearance.Current.Pack());
     private static void StartHosting(bool newShift = false)
     {
         bool online = Net.StartHost(CoopNetworkSystem.DefaultPort);

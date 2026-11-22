@@ -664,7 +664,7 @@ public sealed partial class SkyscraperFloor1World
             HalfWidth = 1.05f,
             HalfDepth = 1.05f,
             PosterTitle = "СЕВЕРНЫЙ ХОЛЛ",
-            PosterSubtitle = "СЕВЕРНЫЙ ЛИФТ · КАРАНТИН СБ",
+            PosterSubtitle = "СЕВЕРНЫЙ ЛИФТ — КАРАНТИН СБ",
             AccentColor = new Color(255, 85, 125, 255)
         });
         Pillars.Add(new PillarObstacle
@@ -1551,7 +1551,7 @@ public sealed partial class SkyscraperFloor1World
     // ELEVATOR BOSS SUMMONING & AI
     // =========================================================================
     internal const string EscapePursuitBossLine = "Думаешь, уедешь?! Я уже ползу по тросам шахты на второй этаж!";
-    internal const string EscapePursuitShleifLine = "Красавчик, проскочил! Держись — он полез следом по шахте. Если выживешь, с меня перец с говядиной... правда, пока без говядины.";
+    internal const string EscapePursuitShleifLine = "Красавчик, проскочил! Держись — он полез следом по шахте. Жми наверх, на втором встречу по рации!";
     internal const string EscapeElevatorButtonPrompt = "ЭКСТРЕННО ЗАКРЫТЬ ЛИФТ — УЙТИ НА 2-Й ЭТАЖ!";
 
     internal bool IsPlayerInsideNorthElevatorCabin(Vector3 pos) =>
@@ -3447,24 +3447,7 @@ public sealed partial class SkyscraperFloor1World
         DrawBossArenaPartition3D(glassPass: false);
         DrawElevatorDoors(false);
         foreach(var ally in Teammates)
-        if(ally.Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet)
-        {
-            float yaw=ally.Pose.Yaw, height=ally.Pose.Eye.Y<1.4f ? .75f : 1;
-            VisualEngine3D.DrawCharacterDirectionalShadow(ally.Feet,1.7f*height,.32f);
-            VisualEngine3D.Asset("char_partner_90s",ally.Feet,yaw*180/MathF.PI,stretch:new Vector3(1,height,1),hideProp:true,tint:ally.Blazer);
-            if(ally.Pose.Weapon==WeaponType.CaptureNet)
-            {
-                var grip=ally.Feet+Vector3.Transform(new Vector3(-.095f,1.25f*height,.26f),Quaternion.CreateFromAxisAngle(Vector3.UnitY,yaw));
-                if(VisualEngine3D.HasAsset("weapon_net_90s")) VisualEngine3D.Asset("weapon_net_90s",grip,yaw*180/MathF.PI);
-                else
-                {
-                    var tip=grip+new Vector3(MathF.Sin(yaw),.23f,MathF.Cos(yaw))*.62f;
-                    VisualEngine3D.Rod(grip,tip,.014f,.012f,8,new(154,103,68,255));
-                    Raylib.DrawCircle3D(tip,.16f,Vector3.UnitX,90,Color.LightGray);
-                }
-            }
-        }
-        else ally.Draw();
+            ally.Draw();
 
         // Draw all active Vibe Coders & SaaS Guru Mini-Boss
         for (int i = 0; i < ActiveCoders.Count; i++)

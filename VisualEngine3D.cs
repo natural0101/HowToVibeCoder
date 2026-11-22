@@ -16,11 +16,17 @@ internal static unsafe partial class VisualEngine3D
     private static readonly Dictionary<(string Asset, bool Right), Vector3> sleeveEnds = new();
     private static int sleeveAxisLoc,sleevePullLoc,wristLoc,handSocketLoc,gripLoc;
     private static readonly HashSet<int> blazerMeshes=new();
+    private static readonly HashSet<int> partnerLapelMeshes = new();
+    private static readonly HashSet<int> partnerSkinMeshes = new();
+    private static readonly HashSet<int> partnerIrisMeshes = new();
+    private static readonly HashSet<int> partnerGlassMeshes = new();
+    private static readonly HashSet<int> partnerHeadFrameMeshes = new();
     private static readonly HashSet<int> partnerPropMeshes = new();
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static readonly Dictionary<(string Asset,int Mesh),int> handSurfaces=new();
     private static int reelLoc,skinLoc, handSurfaceLoc, weaponFinishLoc;
+    private static int fpsSkinTintLoc, clipHeadFrameLoc, wardrobeStageLoc;
     private static int firstPersonLoc, muzzleLoc, flashLoc;
     private static int eyeLoc, finishLoc, taperLoc, laptopLoc, tarotLoc, northLoc, southLoc, powerLoc, cabinPowerLoc;
     private static Finish? activeFinish;
@@ -162,6 +168,8 @@ internal static unsafe partial class VisualEngine3D
         uniform vec3 muzzle;
         uniform int firstPerson;
         uniform int finish,handSurface,emptyJug;
+        uniform vec3 fpsSkinTint;
+        uniform int clipHeadFrame, wardrobeStage;
         uniform float slotReels;
         uniform vec2 weaponFinish;
         /*SKIN*/
@@ -260,6 +268,7 @@ internal static unsafe partial class VisualEngine3D
                 float opacity=exp(-d*d)*smoothstep(0.,.07,h)*(1.-smoothstep(.18,1.,h));
                 color=vec4(.70,.77,.85,.48*opacity); return;
             }
+            if(clipHeadFrame==1 && skinPos.y>1.50) discard;
             vec3 v=normalize(eye-pos), flatN=normalize(cross(dFdx(pos),dFdy(pos)));
             if(dot(flatN,v)<0.) flatN=-flatN;
             vec3 n=flatN;
@@ -508,6 +517,17 @@ internal static unsafe partial class VisualEngine3D
                         float falloff=1.-smoothstep(.45,2.45,length(portrait));
                         float wrap=clamp(dot(n,normalize(portrait))*.85+.15,0.,1.);
                         value+=pigment*falloff*(vec3(.06,.04,.08)+vec3(.48,.36,.28)*wrap);
+                        if(wardrobeStage==1 && length(pos.xz-vec2(0.,10.35))<1.35) {
+                            // Warm Moscow-City Tailor Atelier 3-point portrait rig for the 3D Character Wardrobe
+                            vec3 wKey=normalize(vec3(.55,1.95,12.75)-pos);
+                            vec3 wFill=normalize(vec3(-1.35,1.55,11.65)-pos);
+                            vec3 wRim=normalize(vec3(-.25,2.15,8.65)-pos);
+                            float kw=clamp(dot(n,wKey)*.72+.28,0.,1.);
+                            float fw=clamp(dot(n,wFill)*.65+.35,0.,1.);
+                            float rw=pow(1.-abs(dot(n,v)),2.2)*clamp(dot(n,wRim)*.55+.45,0.,1.);
+                            value=pigment*(vec3(.26,.23,.22)+sky*.12+kw*vec3(.88,.76,.62)+fw*vec3(.34,.36,.42));
+                            value+=vec3(.56,.42,.24)*rw;
+                        }
                         float weave=sin(uv.x*480.)*cos(uv.y*380.)*(1.-smoothstep(.2,1.,fwidth(uv.x)*480.));
                         value*=1.+.035*weave;
                         value+=vec3(.09,.14,.18)*pow(1.-abs(dot(n,v)),3.);
@@ -517,14 +537,14 @@ internal static unsafe partial class VisualEngine3D
                 if(firstPerson==1) {
                     value=pigment*(vec3(.42,.46,.52)+sky*.19+bounce*.14+sun*vec3(.58,.50,.40));
                     if(handSurface==1) {
-                        pigment=tex.rgb*tint.rgb;
+                        pigment=tex.rgb*tint.rgb*fpsSkinTint;
 
                         float wrap=max(0.,dot(n,key)*.65+.35);
                         value=pigment*(vec3(.36,.31,.29)+sky*.14+wrap*vec3(.52,.46,.42));
                         value*=vec3(.96,.92,.90);
                         value+=vec3(.085,.032,.019)*pow(1.-abs(dot(n,v)),2.)*wrap;
                         value+=vec3(.045,.032,.024)*pow(max(0.,dot(n,normalize(key+v))),19.);
-                    } else if(handSurface==3) {
+                    } else if(handSurface==3 || handSurface==4) {
                         vec3 wool=mix(base,pigment,.28);
                         value=wool*(vec3(.34,.36,.42)+sky*.15+bounce*.12+sun*vec3(.56,.48,.40));
                         vec2 thread=uv*vec2(235.,540.);
@@ -647,6 +667,10 @@ internal static unsafe partial class VisualEngine3D
                 light+=point(vec3(-5.85,2.25,-4.80),vec3(.66,.56,.44),n,v,gloss);
             }
             if(firstPerson==0) light+=point(puddleLight,vec3(.08,1.12,1.55)*puddlePower,n,v,gloss);
+            if(firstPerson==0 && wardrobeStage==1 && length(pos.xz-vec2(0.,10.35))<1.35) {
+                light+=point(vec3(.55,2.05,12.75),vec3(1.15,.98,.80),n,v,gloss);
+                light+=point(vec3(-1.35,1.65,11.65),vec3(.42,.44,.52),n,v,gloss);
+            }
             light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
             light+=point(tarot,vec3(1.45,.88,.44)*(.95+.05*sin(clock*8.)),n,v,gloss);
             light+=point(tarot+vec3(.45,-.30,.15),vec3(.18,.11,.28),n,v,gloss);
@@ -730,6 +754,10 @@ internal static unsafe partial class VisualEngine3D
         boothColorLoc=Loc("boothColor");
         emptyJugLoc=Loc("emptyJug");
         reelLoc=Loc("slotReels"); skinLoc=Loc("weaponSkin"); handSurfaceLoc=Loc("handSurface"); weaponFinishLoc=Loc("weaponFinish");
+        fpsSkinTintLoc=Loc("fpsSkinTint"); clipHeadFrameLoc=Loc("clipHeadFrame"); wardrobeStageLoc=Loc("wardrobeStage");
+        Raylib.SetShaderValue(shader, fpsSkinTintLoc, Vector3.One, ShaderUniformDataType.Vec3);
+        Raylib.SetShaderValue(shader, clipHeadFrameLoc, 0, ShaderUniformDataType.Int);
+        Raylib.SetShaderValue(shader, wardrobeStageLoc, 0, ShaderUniformDataType.Int);
         firstPersonLoc = Loc("firstPerson");
         muzzleLoc = Loc("muzzle");
         flashLoc = Loc("flashStrength");
@@ -814,7 +842,12 @@ internal static unsafe partial class VisualEngine3D
                 foreach (var part in mesh.GetProperty("primitives").EnumerateArray())
                 {
                     string material = materials[part.GetProperty("material").GetInt32()].GetProperty("name").GetString();
-                    if(material is "crimson" or "lapel") blazerMeshes.Add(index);
+                    if (material == "crimson") blazerMeshes.Add(index);
+                    else if (material == "lapel") partnerLapelMeshes.Add(index);
+                    else if (material == "skin") partnerSkinMeshes.Add(index);
+                    else if (material == "iris") partnerIrisMeshes.Add(index);
+                    else if (material == "glass") partnerGlassMeshes.Add(index);
+                    else if (material is "onyx" or "gold") partnerHeadFrameMeshes.Add(index);
                     if (material is "GunMetal" or "Gold90s" or "PolymerGrip") partnerPropMeshes.Add(index);
                     index++;
                 }
@@ -824,7 +857,7 @@ internal static unsafe partial class VisualEngine3D
             foreach(var prim in mesh.GetProperty("primitives").EnumerateArray())
             {
                 string material=json.RootElement.GetProperty("materials")[prim.GetProperty("material").GetInt32()].GetProperty("name").GetString();
-                handSurfaces[(asset,primitiveIndex++)]=material=="fps_skin" ? 1 : material is "steel" or "gold" ? 2 : material=="crimson" ? 3 : 0;
+                handSurfaces[(asset,primitiveIndex++)]=material=="fps_skin" ? 1 : material is "steel" or "gold" ? 2 : material=="crimson" ? 3 : material=="lapel" ? 4 : material=="nail" ? 5 : material=="skin" ? 6 : 0;
             }
             if (asset != "fps_hands_cs2")
             {
@@ -886,11 +919,46 @@ internal static unsafe partial class VisualEngine3D
             Raylib.SetShaderValue(shader,handSocketLoc,socket,ShaderUniformDataType.Vec3);
             Raylib.SetShaderValue(shader,gripLoc,grip,ShaderUniformDataType.Float);
         }
+        var appearance = CharacterAppearance.Current;
+        Vector3 skinTint = appearance.FpsSkinTint;
+        Raylib.SetShaderValue(shader, fpsSkinTintLoc, skinTint, ShaderUniformDataType.Vec3);
+        Color? sleeveCol = appearance.FpsSleeveMaterialColor(isLapel: false);
+        Color? lapelCol = appearance.FpsSleeveMaterialColor(isLapel: true);
         for (int i=range.Start; i<range.Start+range.Count; i++)
         {
-            Raylib.SetShaderValue(shader,handSurfaceLoc,handSurfaces[(handAsset,i)],ShaderUniformDataType.Int);
-            Raylib.DrawMesh(model.Meshes[i],model.Materials[model.MeshMaterial[i]],Matrix4x4.Transpose(transform));
+            int surfaceId = handSurfaces[(handAsset,i)];
+            var material = model.Materials[model.MeshMaterial[i]];
+            var originalColor = material.Maps[0].Color;
+            bool colorModified = false;
+            if (surfaceId == 3 && sleeveCol.HasValue)
+            {
+                material.Maps[0].Color = sleeveCol.Value;
+                colorModified = true;
+            }
+            else if (surfaceId == 4 && lapelCol.HasValue)
+            {
+                material.Maps[0].Color = lapelCol.Value;
+                colorModified = true;
+            }
+            else if (surfaceId == 5 && appearance.SkinIndex != 0)
+            {
+                material.Maps[0].Color = new Color(
+                    (byte)Math.Clamp((int)MathF.Round(originalColor.R * (0.45f + 0.55f * skinTint.X)), 0, 255),
+                    (byte)Math.Clamp((int)MathF.Round(originalColor.G * (0.45f + 0.55f * skinTint.Y)), 0, 255),
+                    (byte)Math.Clamp((int)MathF.Round(originalColor.B * (0.45f + 0.55f * skinTint.Z)), 0, 255),
+                    originalColor.A);
+                colorModified = true;
+            }
+            else if (surfaceId == 6 && appearance.SkinIndex != 0)
+            {
+                material.Maps[0].Color = appearance.PartnerSkinMaterialColor;
+                colorModified = true;
+            }
+            Raylib.SetShaderValue(shader,handSurfaceLoc,surfaceId,ShaderUniformDataType.Int);
+            Raylib.DrawMesh(model.Meshes[i],material,Matrix4x4.Transpose(transform));
+            if (colorModified) material.Maps[0].Color = originalColor;
         }
+        Raylib.SetShaderValue(shader, fpsSkinTintLoc, Vector3.One, ShaderUniformDataType.Vec3);
         Raylib.SetShaderValue(shader,handSurfaceLoc,0,ShaderUniformDataType.Int);
         if(grip!=0) Raylib.SetShaderValue(shader,gripLoc,0f,ShaderUniformDataType.Float);
         if(pull) Raylib.SetShaderValue(shader,sleevePullLoc,Vector3.Zero,ShaderUniformDataType.Vec3);
@@ -1019,7 +1087,7 @@ internal static unsafe partial class VisualEngine3D
                     var material=model.Materials[model.MeshMaterial[i]];
                     var original=material.Maps[0].Color;
                     if(name=="prop_bug_frog") material.Maps[0].Color=FrogPigment(model.MeshMaterial[i],original,tint ?? Color.White);
-                    else if(tint.HasValue && blazerMeshes.Contains(i)) material.Maps[0].Color=tint.Value;
+                    else if(tint.HasValue && (blazerMeshes.Contains(i) || partnerLapelMeshes.Contains(i))) material.Maps[0].Color=tint.Value;
                     Raylib.DrawMesh(model.Meshes[i],material,Matrix4x4.Transpose(transform));
                     material.Maps[0].Color=original;
                 }
@@ -1028,6 +1096,49 @@ internal static unsafe partial class VisualEngine3D
         }
         DrawPaintedModel(model,name,position,yaw,(stretch ?? Vector3.One)*scale,tint ?? Color.White);
         CapturedAssets?.Add(name);
+    }
+
+    internal static void SetWardrobeStage(bool active)
+    {
+        if (!CastingShadows) Raylib.SetShaderValue(shader, wardrobeStageLoc, active ? 1 : 0, ShaderUniformDataType.Int);
+    }
+
+    internal static void DrawPartnerCharacter(Vector3 position, float yawDeg, float tilt, Vector3 stretch, CharacterAppearance appearance, Color? blazerOverride = null)
+    {
+        Model model = imports["char_partner_90s"];
+        var transform = Matrix4x4.CreateRotationX(tilt)
+            * Matrix4x4.CreateScale(stretch)
+            * Matrix4x4.CreateRotationY(yawDeg * MathF.PI / 180f)
+            * Matrix4x4.CreateTranslation(position);
+        if (CastingShadows)
+        {
+            DrawDepth(model, transform, hideProp: true);
+            return;
+        }
+        Surface(Finish.Anatomy, 0);
+        Color blazerCol = blazerOverride ?? appearance.OutfitColor;
+        Color lapelCol = blazerOverride.HasValue
+            ? new Color((byte)(blazerCol.R * 0.72f), (byte)(blazerCol.G * 0.72f), (byte)(blazerCol.B * 0.72f), (byte)255)
+            : appearance.LapelColor;
+        Color? skinCol = appearance.SkinIndex == 0 ? null : appearance.PartnerSkinMaterialColor;
+        Color irisCol = appearance.EyeIrisColor;
+        Matrix4x4 pose = Matrix4x4.Transpose(transform);
+        for (int i = 0; i < model.MeshCount; i++)
+        {
+            if (partnerPropMeshes.Contains(i) || partnerGlassMeshes.Contains(i)) continue;
+            var material = model.Materials[model.MeshMaterial[i]];
+            var original = material.Maps[0].Color;
+            bool clipHead = partnerHeadFrameMeshes.Contains(i);
+            if (clipHead) Raylib.SetShaderValue(shader, clipHeadFrameLoc, 1, ShaderUniformDataType.Int);
+            if (blazerMeshes.Contains(i)) material.Maps[0].Color = blazerCol;
+            else if (partnerLapelMeshes.Contains(i)) material.Maps[0].Color = lapelCol;
+            else if (skinCol.HasValue && partnerSkinMeshes.Contains(i)) material.Maps[0].Color = skinCol.Value;
+            else if (partnerIrisMeshes.Contains(i)) material.Maps[0].Color = irisCol;
+            Raylib.DrawMesh(model.Meshes[i], material, pose);
+            material.Maps[0].Color = original;
+            if (clipHead) Raylib.SetShaderValue(shader, clipHeadFrameLoc, 0, ShaderUniformDataType.Int);
+        }
+        CapturedAssets?.Add("char_partner_90s");
     }
 
     internal static void MountedWhiteboard(Vector3 origin,float yaw)
@@ -1550,7 +1661,7 @@ internal static unsafe partial class VisualEngine3D
             DrawCentered(Loc.T("ЭНТРОПИК", "ENTROPIC"), Typeface.SerifBold, 158, 1106, 54, ivory, 10f);
             Raylib.ImageDrawRectangle(ref img, 540, 260, 110, 4, bronze);
             Raylib.ImageDrawRectangle(ref img, 1562, 260, 110, 4, bronze);
-            DrawCentered(Loc.T("БАШНЯ · ЛОББИ", "TOWER · LOBBY"), Typeface.InterfaceBold, 82, 1106, 218, brass, 5f);
+            DrawCentered(Loc.T("БАШНЯ   ЛОББИ", "TOWER   LOBBY"), Typeface.InterfaceBold, 82, 1106, 218, brass, 5f);
         }
         if(f==Finish.Tarot) Inscription("A R C A N A",48,436,new Color(244,209,146,255));
         if(f is Finish.JiraSheet or Finish.NdaSheet or Finish.PitchDeck)
@@ -1769,7 +1880,8 @@ internal static unsafe partial class VisualEngine3D
     {
         foreach(Model m in imports.Values) Raylib.UnloadModel(m);
         imports.Clear();
-        partnerPropMeshes.Clear(); blazerMeshes.Clear();
+        partnerPropMeshes.Clear(); blazerMeshes.Clear(); partnerLapelMeshes.Clear();
+        partnerSkinMeshes.Clear(); partnerIrisMeshes.Clear(); partnerGlassMeshes.Clear(); partnerHeadFrameMeshes.Clear();
         armGroups.Clear();
         armWrists.Clear();
         sleeveEnds.Clear();

@@ -469,8 +469,8 @@ public sealed class ElevatorRepairMinigame
         _shakeAmount = 4.4f;
         _hitFlashTimer = 0.24f;
 
-        _statusRu = "ЛЕНТА СОРВАНА · ПАЯЙ КОНТУР 0.1!";
-        _statusEn = "TAPE RIPPED · SOLDER CIRCUIT 0.1!";
+        _statusRu = "ЛЕНТА СОРВАНА — ПАЯЙ КОНТУР 0.1!";
+        _statusEn = "TAPE RIPPED — SOLDER CIRCUIT 0.1!";
         _statusTimer = 1.25f;
 
         // Arm the final 380V calibration sweep with fair lead-in from the right
@@ -530,8 +530,8 @@ public sealed class ElevatorRepairMinigame
         }
         else
         {
-            _statusRu = $"КОНТАКТ {_solderedCount} / {PadCount} СПАЯН · ТОК ПОШЁЛ";
-            _statusEn = $"JOINT {_solderedCount} / {PadCount} SOLDERED · POWER UP";
+            _statusRu = $"КОНТАКТ {_solderedCount} / {PadCount} СПАЯН — ТОК ПОШЁЛ";
+            _statusEn = $"JOINT {_solderedCount} / {PadCount} SOLDERED — POWER UP";
             _statusTimer = 1.15f;
 
             var nextTiming = PadTiming[_solderedCount];
@@ -546,8 +546,8 @@ public sealed class ElevatorRepairMinigame
         _missRecoveryTimer = MissRecoveryDuration;
         _missFlashTimer = 0.32f;
         _shakeAmount = 5.2f;
-        _statusRu = "ИСКРА МИМО · ЛОВИ ЗОЛОТУЮ ЗОНУ";
-        _statusEn = "MISSED · HIT THE GOLDEN ZONE";
+        _statusRu = "ИСКРА МИМО — ЛОВИ ЗОЛОТУЮ ЗОНУ";
+        _statusEn = "MISSED — HIT THE GOLDEN ZONE";
         _statusTimer = 0.95f;
 
         Vector2 padPos = PadPositions[padIndex];
@@ -656,7 +656,7 @@ public sealed class ElevatorRepairMinigame
     private void DrawNameplateAndStatus(Vector2 o, Font uiFont, Font titleFont)
     {
         Rectangle plate = OffsetRect(NameplateRect, o);
-        string titleText = Loc.T("ЩИТ ЛИФТА №1 · 1998", "ELEVATOR BOX #1 · 1998");
+        string titleText = Loc.T("ЩИТ ЛИФТА №1 (1998)", "ELEVATOR BOX #1 (1998)");
         DrawEngravedFittedText(titleFont, titleText, plate, 22, 16, EngravedBronzeInk, EngravedHighlight);
 
         Rectangle statusSlot = OffsetRect(StatusBezelRect, o);
@@ -682,7 +682,7 @@ public sealed class ElevatorRepairMinigame
         Color statusInk;
         if (_phase == Phase.Overload)
         {
-            statusLine = Loc.T("ПЕРЕГРУЗКА 380В · КОНТУР 0.1!", "380V OVERLOAD · CIRCUIT 0.1!");
+            statusLine = Loc.T("ПЕРЕГРУЗКА 380В — КОНТУР 0.1!", "380V OVERLOAD — CIRCUIT 0.1!");
             statusInk = new Color(255, 118, 98, 255);
         }
         else if (_statusTimer > 0f && !string.IsNullOrEmpty(_statusRu))
@@ -698,8 +698,8 @@ public sealed class ElevatorRepairMinigame
         }
         else
         {
-            statusLine = Loc.T($"КОНТАКТЫ: {_solderedCount} / {PadCount} · СПАЯЙ ЦЕПЬ ЗАПУСКА",
-                               $"JOINTS: {_solderedCount} / {PadCount} · SOLDER START CIRCUIT");
+            statusLine = Loc.T($"КОНТАКТЫ: {_solderedCount} / {PadCount} — СПАЯЙ ЦЕПЬ ЗАПУСКА",
+                               $"JOINTS: {_solderedCount} / {PadCount} — SOLDER START CIRCUIT");
             statusInk = new Color(238, 222, 186, 248);
         }
 
@@ -1190,19 +1190,19 @@ public sealed class ElevatorRepairMinigame
 
         if (_phase == Phase.Overload)
         {
-            legend = Loc.T("ЗАМЫКАНИЕ ШАХТЫ · КОНТУР 0.1 ПРОБИТ!", "SHAFT SURGE · CIRCUIT 0.1 BREACHED!");
+            legend = Loc.T("ЗАМЫКАНИЕ ШАХТЫ — КОНТУР 0.1 ПРОБИТ!", "SHAFT SURGE — CIRCUIT 0.1 BREACHED!");
             ink = new Color(255, 132, 110, 255);
         }
         else if (IsWaitingForTapeRip())
         {
-            legend = Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — СОРВАТЬ ЛЕНТУ     ·     [ESC] — ЗАКРЫТЬ ЩИТ",
-                           "[LMB] / [SPACE] / [E] — RIP OFF TAPE     ·     [ESC] — CLOSE BOX");
+            legend = Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — СОРВАТЬ ЛЕНТУ      [ESC] — ЗАКРЫТЬ ЩИТ",
+                           "[LMB] / [SPACE] / [E] — RIP OFF TAPE      [ESC] — CLOSE BOX");
             ink = new Color(246, 206, 134, 238);
         }
         else
         {
-            legend = Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — ПАЯТЬ КОНТАКТ     ·     [ESC] — ЗАКРЫТЬ ЩИТ",
-                           "[LMB] / [SPACE] / [E] — SOLDER JOINT     ·     [ESC] — CLOSE BOX");
+            legend = Loc.T("[ЛКМ] / [ПРОБЕЛ] / [E] — ПАЯТЬ КОНТАКТ      [ESC] — ЗАКРЫТЬ ЩИТ",
+                           "[LMB] / [SPACE] / [E] — SOLDER JOINT      [ESC] — CLOSE BOX");
             ink = new Color(214, 204, 182, 232);
         }
 

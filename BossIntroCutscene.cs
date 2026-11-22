@@ -682,7 +682,7 @@ internal static class BossIntroCutscene
             float r = RepairProgress(b);
             if (r >= 0.08f && r < 0.62f)
             {
-                speaker = "ШЛЕЙФ · РАЦИЯ";
+                speaker = "ШЛЕЙФ — РАЦИЯ";
                 line = "«Лифт пошёл... стоп, стоп, нагрузка зашкалила! Отойди от дверей, слышишь?! НЕ ОТКРЫВАЙ—»";
                 float fadeIn = SmoothStep((r - 0.08f) / 0.06f);
                 float radioCut = r > 0.54f

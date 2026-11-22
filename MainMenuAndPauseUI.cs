@@ -52,6 +52,12 @@ public static class MainMenuAndPauseUI
     public static bool IsSaveMode { get; set; } = false; // false = ЗАГРУЗИТЬ ИГРУ, true = СОХРАНИТЬ ИГРУ
     public static bool IsModsPanelOpen { get; set; } = false;
     public static bool IsSettingsPanelOpen { get; set; } = false;
+    public static bool IsCharacterWardrobeOpen { get; set; } = false;
+    internal static float WardrobeYawOffset { get; set; } = 0f;
+    private static int _wardrobeFocusRow = 0; // 0=Skin, 1=Outfit, 2=Eyes, 3=Hat
+    private static bool _wardrobeDragging = false;
+    private static float _wardrobeLastDragX = 0f;
+    private static float _wardrobeSpinVelocity = 0f;
     internal static DisplaySettings Display { get; private set; }=new();
     internal static bool InteractiveDisplay { get; private set; }
     private static string displayPath=Path.Combine(SavesDirectory,"display_settings.json");
@@ -83,7 +89,7 @@ public static class MainMenuAndPauseUI
     }
 
     public static bool IsMenuBlockingGameplay =>
-        IsInMainMenu || IsPaused || IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen || LoreAndMenusUI.IsAnyModalOpen;
+        IsInMainMenu || IsPaused || IsSaveLoadPanelOpen || IsModsPanelOpen || IsSettingsPanelOpen || IsCharacterWardrobeOpen || LoreAndMenusUI.IsAnyModalOpen;
 
     // Пути к сохранениям и модам
     public static string SavesDirectory => Path.Combine(AppContext.BaseDirectory, "saves");
@@ -116,7 +122,7 @@ public static class MainMenuAndPauseUI
     {
         RefreshSaveSlotsCache();
         IsSaveMode=false; IsSaveLoadPanelOpen=true;
-        IsModsPanelOpen=IsSettingsPanelOpen=false;
+        IsModsPanelOpen=IsSettingsPanelOpen=IsCharacterWardrobeOpen=false;
         coopFocus=0; addressEdited=false; selectAddress=true;
         Coop.Discover();
     }
@@ -442,6 +448,7 @@ public static class MainMenuAndPauseUI
         IsSaveLoadPanelOpen = false;
         IsModsPanelOpen = false;
         IsSettingsPanelOpen = false;
+        IsCharacterWardrobeOpen = false;
         LoreAndMenusUI.IsLoreOpen = false;
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
@@ -456,6 +463,7 @@ public static class MainMenuAndPauseUI
         IsSaveLoadPanelOpen = false;
         IsModsPanelOpen = false;
         IsSettingsPanelOpen = false;
+        IsCharacterWardrobeOpen = false;
         LoreAndMenusUI.IsLoreOpen = false;
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
@@ -470,6 +478,7 @@ public static class MainMenuAndPauseUI
         IsSaveLoadPanelOpen = false;
         IsModsPanelOpen = false;
         IsSettingsPanelOpen = false;
+        IsCharacterWardrobeOpen = false;
         LoreAndMenusUI.IsLoreOpen = false;
         LoreAndMenusUI.IsSettingsOpen = false;
         LoreAndMenusUI.IsCaseOpen = false;
@@ -529,6 +538,12 @@ public static class MainMenuAndPauseUI
 
         if (IsInMainMenu)
         {
+            if (IsCharacterWardrobeOpen)
+            {
+                if (Raylib.IsCursorHidden()) Raylib.EnableCursor();
+                UpdateCharacterWardrobeInput(dt);
+                return;
+            }
             if (_playModeOpen)
             {
                 if (Raylib.IsCursorHidden()) Raylib.EnableCursor();
@@ -685,7 +700,14 @@ public static class MainMenuAndPauseUI
                 break;
 
             case 2: // ПЕРСОНАЖ
-                _infoPage = "Персонаж";
+                IsCharacterWardrobeOpen = true;
+                IsSaveLoadPanelOpen = false;
+                IsModsPanelOpen = false;
+                IsSettingsPanelOpen = false;
+                _wardrobeFocusRow = 0;
+                _wardrobeDragging = false;
+                _wardrobeSpinVelocity = 0f;
+                WardrobeYawOffset = 0f;
                 break;
 
             case 3: // НАСТРОЙКИ
@@ -1112,6 +1134,11 @@ public static class MainMenuAndPauseUI
 
     public static void DrawMainMenu(Font font, int screenW, int screenH)
     {
+        if (IsCharacterWardrobeOpen)
+        {
+            DrawCharacterWardrobe(font, screenW, screenH);
+            return;
+        }
         int fadeEnd = (int)MathF.Round(screenW * .64f);
         const int slices = 64;
         static Color Scrim(float t)
@@ -1361,6 +1388,307 @@ public static class MainMenuAndPauseUI
                 "Switches all UI, subtitles, and studio voice acting (RU / EN)"),SettingsRect(32,196,622,32),17,new Color(208,192,166,230));
         }
         NativeButton("Назад",SettingsRect(0,550,166,38));
+    }
+
+    // =========================================================================
+    // LIVE 3D CHARACTER WARDROBE (АТЕЛЬЕ ПЕРСОНАЖА)
+    // =========================================================================
+    private static readonly Rectangle WardrobeCard = new(720, 54, 520, 612);
+    private const float WardrobeInnerX = 752f;
+    private const float WardrobeInnerW = 456f;
+
+    private static Rectangle WardrobeSkinSwatch(int i) =>
+        new(WardrobeInnerX + i * (64f + 14.4f), 156f, 64f, 44f);
+
+    private static Rectangle WardrobeOutfitSwatch(int i) =>
+        new(WardrobeInnerX + (i % 4) * (104f + 13.3f), 246f + (i / 4) * 50f, 104f, 40f);
+
+    private static Rectangle WardrobeSelectorLeft(float y) => new(WardrobeInnerX, y, 46f, 46f);
+    private static Rectangle WardrobeSelectorCenter(float y) => new(WardrobeInnerX + 52f, y, 352f, 46f);
+    private static Rectangle WardrobeSelectorRight(float y) => new(WardrobeInnerX + 410f, y, 46f, 46f);
+    private static Rectangle WardrobeRandomBtn => new(WardrobeInnerX, 568f, 220f, 50f);
+    private static Rectangle WardrobeDoneBtn => new(WardrobeInnerX + 236f, 568f, 220f, 50f);
+
+    private static void CloseCharacterWardrobe()
+    {
+        CharacterAppearance.Current.SaveToDisk();
+        IsCharacterWardrobeOpen = false;
+        _wardrobeDragging = false;
+        _wardrobeSpinVelocity = 0f;
+        PlayUiSound();
+    }
+
+    private static void CycleWardrobeRow(int row, int delta)
+    {
+        var app = CharacterAppearance.Current;
+        switch (row)
+        {
+            case 0: app.SkinIndex = (app.SkinIndex + delta + CharacterAppearance.SkinCount) % CharacterAppearance.SkinCount; break;
+            case 1: app.OutfitIndex = (app.OutfitIndex + delta + CharacterAppearance.OutfitCount) % CharacterAppearance.OutfitCount; break;
+            case 2: app.EyeIndex = (app.EyeIndex + delta + CharacterAppearance.EyeCount) % CharacterAppearance.EyeCount; break;
+            case 3: app.HatIndex = (app.HatIndex + delta + CharacterAppearance.HatCount) % CharacterAppearance.HatCount; break;
+        }
+        PlayUiSound();
+    }
+
+    private static void UpdateCharacterWardrobeInput(float dt)
+    {
+        Vector2 mp = UiViewport.Pointer;
+        var app = CharacterAppearance.Current;
+
+        if (Raylib.IsKeyPressed(KeyboardKey.Escape) || Clicked(WardrobeDoneBtn) ||
+            Raylib.IsKeyPressed(KeyboardKey.Enter) || Raylib.IsKeyPressed(KeyboardKey.KpEnter))
+        {
+            CloseCharacterWardrobe();
+            return;
+        }
+
+        if (Raylib.IsKeyPressed(KeyboardKey.R) || Clicked(WardrobeRandomBtn))
+        {
+            app.Randomize();
+            PlayUiSound();
+            return;
+        }
+
+        // Smooth 360° turntable rotation: [A]/[D] keys OR dragging directly on the open 3D left stage!
+        if (Raylib.IsKeyDown(KeyboardKey.A)) WardrobeYawOffset -= 2.2f * dt;
+        if (Raylib.IsKeyDown(KeyboardKey.D)) WardrobeYawOffset += 2.2f * dt;
+
+        bool onStage = mp.X < WardrobeCard.X - 16f;
+        if (Raylib.IsMouseButtonPressed(MouseButton.Left) && onStage)
+        {
+            _wardrobeDragging = true;
+            _wardrobeLastDragX = mp.X;
+            _wardrobeSpinVelocity = 0f;
+        }
+        if (!Raylib.IsMouseButtonDown(MouseButton.Left))
+            _wardrobeDragging = false;
+
+        if (_wardrobeDragging)
+        {
+            float dx = mp.X - _wardrobeLastDragX;
+            _wardrobeLastDragX = mp.X;
+            float deltaYaw = dx * 0.0115f;
+            WardrobeYawOffset += deltaYaw;
+            if (dt > 0.0001f) _wardrobeSpinVelocity = Math.Clamp(deltaYaw / dt, -8f, 8f);
+        }
+        else if (MathF.Abs(_wardrobeSpinVelocity) > 0.01f)
+        {
+            WardrobeYawOffset += _wardrobeSpinVelocity * dt;
+            _wardrobeSpinVelocity *= MathF.Exp(-6.5f * dt);
+        }
+
+        // Keyboard category & value navigation
+        if (Raylib.IsKeyPressed(KeyboardKey.Down) || Raylib.IsKeyPressed(KeyboardKey.S))
+        {
+            _wardrobeFocusRow = (_wardrobeFocusRow + 1) % 4;
+            PlayUiSound();
+        }
+        else if (Raylib.IsKeyPressed(KeyboardKey.Up) || Raylib.IsKeyPressed(KeyboardKey.W))
+        {
+            _wardrobeFocusRow = (_wardrobeFocusRow + 3) % 4;
+            PlayUiSound();
+        }
+        if (Raylib.IsKeyPressed(KeyboardKey.Left)) CycleWardrobeRow(_wardrobeFocusRow, -1);
+        else if (Raylib.IsKeyPressed(KeyboardKey.Right)) CycleWardrobeRow(_wardrobeFocusRow, 1);
+
+        // Skin tone swatches (6)
+        for (int i = 0; i < CharacterAppearance.SkinCount; i++)
+        {
+            if (Clicked(WardrobeSkinSwatch(i)))
+            {
+                _wardrobeFocusRow = 0;
+                app.SkinIndex = i;
+                PlayUiSound();
+                return;
+            }
+        }
+
+        // Blazer fabric swatches (8)
+        for (int i = 0; i < CharacterAppearance.OutfitCount; i++)
+        {
+            if (Clicked(WardrobeOutfitSwatch(i)))
+            {
+                _wardrobeFocusRow = 1;
+                app.OutfitIndex = i;
+                PlayUiSound();
+                return;
+            }
+        }
+
+        // Eyes & Eyewear < > selector
+        if (Clicked(WardrobeSelectorLeft(384f))) { _wardrobeFocusRow = 2; CycleWardrobeRow(2, -1); return; }
+        if (Clicked(WardrobeSelectorRight(384f)) || Clicked(WardrobeSelectorCenter(384f))) { _wardrobeFocusRow = 2; CycleWardrobeRow(2, 1); return; }
+
+        // Meme Hats < > selector
+        if (Clicked(WardrobeSelectorLeft(478f))) { _wardrobeFocusRow = 3; CycleWardrobeRow(3, -1); return; }
+        if (Clicked(WardrobeSelectorRight(478f)) || Clicked(WardrobeSelectorCenter(478f))) { _wardrobeFocusRow = 3; CycleWardrobeRow(3, 1); return; }
+    }
+
+    private static void DrawWardrobeChevron(Rectangle r, bool right, bool active)
+    {
+        bool hover = Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
+        bool lit = active || hover;
+        Raylib.DrawRectangleRounded(new(r.X + 2, r.Y + 3, r.Width, r.Height), 0.16f, 6, new Color(6, 4, 2, 135));
+        Raylib.DrawRectangleRounded(r, 0.16f, 6, lit ? LoreAndMenusUI.ThemeKraftCard : new Color(36, 26, 20, 245));
+        Raylib.DrawRectangleRoundedLinesEx(r, 0.16f, 6, lit ? 1.8f : 1.1f, lit ? LoreAndMenusUI.ThemeBrassBright : LoreAndMenusUI.ThemeBrassDim);
+        Color ink = lit ? LoreAndMenusUI.ThemeSepiaInk : DossierPrint.Ivory;
+        float cx = r.X + r.Width * 0.5f;
+        float cy = r.Y + r.Height * 0.5f;
+        float dx = right ? 5f : -5f;
+        Raylib.DrawLineEx(new(cx - dx, cy - 8f), new(cx + dx, cy), 2.6f, ink);
+        Raylib.DrawLineEx(new(cx + dx, cy), new(cx - dx, cy + 8f), 2.6f, ink);
+    }
+
+    private static void DrawWardrobeSelector(Font font, float y, string label, string value, int index, int count, Color? dotColor, bool focused)
+    {
+        var labelFont = GameFonts.Get(focused ? Typeface.InterfaceBold : Typeface.Interface, 16);
+        Color labelCol = focused ? LoreAndMenusUI.ThemeBrassBright : new Color(214, 198, 172, 236);
+        GameFonts.Draw(labelFont, label, new(WardrobeInnerX, y - 28f), 16, labelCol, shadowed: false);
+
+        string counter = $"{index + 1} / {count}";
+        var countFont = GameFonts.Get(Typeface.Interface, 14);
+        float cw = GameFonts.Measure(countFont, counter, 14).X;
+        GameFonts.Draw(countFont, counter, new(WardrobeInnerX + WardrobeInnerW - cw, y - 26f), 14, new Color(176, 158, 132, 215), shadowed: false);
+
+        DrawWardrobeChevron(WardrobeSelectorLeft(y), right: false, active: false);
+        DrawWardrobeChevron(WardrobeSelectorRight(y), right: true, active: false);
+
+        Rectangle center = WardrobeSelectorCenter(y);
+        bool hover = Raylib.CheckCollisionPointRec(UiViewport.Pointer, center);
+        Raylib.DrawRectangleRounded(new(center.X + 2, center.Y + 3, center.Width, center.Height), 0.14f, 6, new Color(6, 4, 2, 130));
+        Raylib.DrawRectangleRounded(center, 0.14f, 6, hover ? new Color(46, 34, 26, 246) : new Color(28, 20, 15, 246));
+        Raylib.DrawRectangleRoundedLinesEx(center, 0.14f, 6, focused ? 1.8f : 1.1f, focused ? LoreAndMenusUI.ThemeBrassBright : LoreAndMenusUI.ThemeBrassDim);
+
+        if (dotColor.HasValue)
+        {
+            Vector2 dc = new(center.X + 22f, center.Y + center.Height * 0.5f);
+            Raylib.DrawCircleV(dc, 8.5f, new Color(238, 232, 220, 235));
+            Raylib.DrawCircleV(dc, 6.2f, dotColor.Value);
+            Raylib.DrawCircleV(dc, 2.6f, new Color(18, 16, 20, 255));
+            Rectangle textArea = new(center.X + 38f, center.Y + 2f, center.Width - 48f, center.Height - 4f);
+            Center(GameFonts.Get(Typeface.InterfaceBold, 18), value, textArea, 18, DossierPrint.Ivory);
+        }
+        else
+        {
+            Rectangle textArea = new(center.X + 12f, center.Y + 2f, center.Width - 24f, center.Height - 4f);
+            Center(GameFonts.Get(Typeface.InterfaceBold, 18), value, textArea, 18, DossierPrint.Ivory);
+        }
+    }
+
+    private static void DrawCharacterWardrobe(Font font, int screenW, int screenH)
+    {
+        var app = CharacterAppearance.Current;
+
+        // Open 3D left stage — zero dimming over the character! Only clean unboxed editorial header & turntable cue.
+        string stageSub = Loc.T("МОСКВА-СИТИ, 2026", "MOSCOW-CITY, 2026");
+        string stageTitle = Loc.T("ПЕРСОНАЖ", "CHARACTER");
+        var fStageSub = GameFonts.Get(Typeface.InterfaceBold, 14);
+        var fStageTitle = GameFonts.Get(Typeface.SerifBold, 34);
+        GameFonts.Draw(fStageSub, stageSub, new(49, 38), 14, new Color(14, 10, 8, 220), shadowed: false);
+        GameFonts.Draw(fStageSub, stageSub, new(48, 36), 14, new Color(246, 214, 146, 255), shadowed: false);
+        GameFonts.Draw(fStageTitle, stageTitle, new(46, 58), 34, new Color(14, 10, 8, 220), shadowed: false);
+        GameFonts.Draw(fStageTitle, stageTitle, new(44, 56), 34, DossierPrint.Ivory, shadowed: false);
+
+        string rotateHint = Loc.T("[A] [D] Поворот — или тяни мышью", "[A] [D] Rotate — or drag with mouse");
+        var hintFont = GameFonts.Get(Typeface.Interface, 15);
+        float hintW = GameFonts.Measure(hintFont, rotateHint, 15).X;
+        Rectangle hintPill = new(44, 636, hintW + 28f, 34f);
+        Raylib.DrawRectangleRounded(hintPill, 0.24f, 8, new Color(16, 12, 10, 192));
+        Raylib.DrawRectangleRoundedLinesEx(hintPill, 0.24f, 8, 1f, new Color(184, 146, 86, 118));
+        GameFonts.Draw(hintFont, rotateHint, new(hintPill.X + 14f, hintPill.Y + 9f), 15, DossierPrint.Ivory, shadowed: false);
+
+        // Right half: Handcrafted Walnut & Brushed-Brass Tailor Atelier Card
+        LoreAndMenusUI.DrawBrassWalnutFrame(WardrobeCard);
+        GameFonts.Draw(GameFonts.Get(Typeface.SerifBold, 28), Loc.T("Ателье персонажа", "Character Atelier"),
+            new(WardrobeInnerX, 74f), 28, LoreAndMenusUI.ThemeBrassBright, shadowed: false);
+        Raylib.DrawLine((int)WardrobeInnerX, 114, (int)(WardrobeInnerX + WardrobeInnerW), 114, LoreAndMenusUI.ThemeBrassDim);
+
+        // 1. Skin Tone Swatches (6)
+        {
+            bool focused = _wardrobeFocusRow == 0;
+            GameFonts.Draw(GameFonts.Get(focused ? Typeface.InterfaceBold : Typeface.Interface, 16),
+                Loc.T("Цвет кожи", "Skin Tone"), new(WardrobeInnerX, 128f), 16,
+                focused ? LoreAndMenusUI.ThemeBrassBright : new Color(214, 198, 172, 236), shadowed: false);
+            string activeSkin = CharacterAppearance.Skins[app.SkinIndex].DisplayName;
+            var nameFont = GameFonts.Get(Typeface.InterfaceBold, 15);
+            float nw = GameFonts.Measure(nameFont, activeSkin, 15).X;
+            GameFonts.Draw(nameFont, activeSkin, new(WardrobeInnerX + WardrobeInnerW - nw, 129f), 15, LoreAndMenusUI.ThemeBrassBright, shadowed: false);
+
+            for (int i = 0; i < CharacterAppearance.SkinCount; i++)
+            {
+                Rectangle r = WardrobeSkinSwatch(i);
+                bool selected = i == app.SkinIndex;
+                bool hover = Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
+                Raylib.DrawRectangleRounded(new(r.X + 2, r.Y + 3, r.Width, r.Height), 0.34f, 8, new Color(6, 4, 2, 145));
+                Raylib.DrawRectangleRounded(r, 0.34f, 8, CharacterAppearance.Skins[i].Swatch);
+                Raylib.DrawRectangleGradientV((int)r.X + 4, (int)r.Y + 2, (int)r.Width - 8, (int)(r.Height * 0.45f),
+                    new Color(255, 250, 240, 42), Color.Blank);
+                if (selected)
+                {
+                    Raylib.DrawRectangleRoundedLinesEx(new(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), 0.36f, 8, 2.6f, LoreAndMenusUI.ThemeBrassBright);
+                    Raylib.DrawRectangleRoundedLinesEx(r, 0.34f, 8, 1.4f, new Color(24, 18, 14, 220));
+                }
+                else
+                {
+                    Raylib.DrawRectangleRoundedLinesEx(r, 0.34f, 8, hover ? 1.8f : 1.1f, hover ? LoreAndMenusUI.ThemeBrassBright : LoreAndMenusUI.ThemeBrassDim);
+                }
+            }
+        }
+
+        // 2. Blazer / Outfit Swatches (8 in 2x4 Tailor Fabric Book Grid)
+        {
+            bool focused = _wardrobeFocusRow == 1;
+            GameFonts.Draw(GameFonts.Get(focused ? Typeface.InterfaceBold : Typeface.Interface, 16),
+                Loc.T("Пиджак", "Blazer"), new(WardrobeInnerX, 218f), 16,
+                focused ? LoreAndMenusUI.ThemeBrassBright : new Color(214, 198, 172, 236), shadowed: false);
+            string activeOutfit = CharacterAppearance.Outfits[app.OutfitIndex].DisplayName;
+            var nameFont = GameFonts.Get(Typeface.InterfaceBold, 15);
+            float nw = GameFonts.Measure(nameFont, activeOutfit, 15).X;
+            GameFonts.Draw(nameFont, activeOutfit, new(WardrobeInnerX + WardrobeInnerW - nw, 219f), 15, LoreAndMenusUI.ThemeBrassBright, shadowed: false);
+
+            for (int i = 0; i < CharacterAppearance.OutfitCount; i++)
+            {
+                Rectangle r = WardrobeOutfitSwatch(i);
+                bool selected = i == app.OutfitIndex;
+                bool hover = Raylib.CheckCollisionPointRec(UiViewport.Pointer, r);
+                Color swatch = CharacterAppearance.Outfits[i].Swatch;
+                Raylib.DrawRectangleRounded(new(r.X + 2, r.Y + 3, r.Width, r.Height), 0.18f, 6, new Color(6, 4, 2, 145));
+                Raylib.DrawRectangleRounded(r, 0.18f, 6, swatch);
+                Raylib.DrawRectangleGradientV((int)r.X + 3, (int)r.Y + 2, (int)r.Width - 6, (int)(r.Height * 0.48f),
+                    new Color(255, 248, 232, 34), Color.Blank);
+                if (selected)
+                {
+                    Raylib.DrawRectangleRoundedLinesEx(new(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), 0.22f, 6, 2.6f, LoreAndMenusUI.ThemeBrassBright);
+                    Raylib.DrawRectangleRoundedLinesEx(r, 0.18f, 6, 1.4f, new Color(20, 14, 10, 220));
+                }
+                else
+                {
+                    Raylib.DrawRectangleRoundedLinesEx(r, 0.18f, 6, hover ? 1.8f : 1.1f, hover ? LoreAndMenusUI.ThemeBrassBright : LoreAndMenusUI.ThemeBrassDim);
+                }
+            }
+        }
+
+        // 3. Eyes & 3D Glasses Selector
+        DrawWardrobeSelector(font, 384f,
+            Loc.T("Глаза и очки", "Eyes & Eyewear"),
+            CharacterAppearance.Eyes[app.EyeIndex].DisplayName,
+            app.EyeIndex, CharacterAppearance.EyeCount,
+            app.EyeIndex < 4 ? CharacterAppearance.Eyes[app.EyeIndex].Swatch : null,
+            focused: _wardrobeFocusRow == 2);
+
+        // 4. 3D Meme Hats Selector
+        DrawWardrobeSelector(font, 478f,
+            Loc.T("Шляпа", "Hat"),
+            CharacterAppearance.Hats[app.HatIndex].DisplayName,
+            app.HatIndex, CharacterAppearance.HatCount,
+            null,
+            focused: _wardrobeFocusRow == 3);
+
+        // Bottom Action Row: [R] Случайный + Готово
+        Raylib.DrawLine((int)WardrobeInnerX, 546, (int)(WardrobeInnerX + WardrobeInnerW), 546, LoreAndMenusUI.ThemeBrassDim);
+        NativeButton(Loc.T("[R] Случайный", "[R] Randomize"), WardrobeRandomBtn, selected: false);
+        NativeButton(Loc.T("Готово", "Done"), WardrobeDoneBtn, selected: true);
     }
 
     private static void DrawStatusToast(Font font, int screenW, string message)

@@ -366,6 +366,8 @@ public static partial class Program
         }
 
         bool interactive=!fixtureSeed.HasValue && !captureComic;
+        CharacterAppearance.SuppressDiskPersistence = !interactive;
+        CharacterAppearance.LoadFromDisk();
         string displayPath=interactive ? Path.Combine(MainMenuAndPauseUI.SavesDirectory,"display_settings.json")
             : Path.Combine(Path.GetTempPath(),"vibecoder-display-"+Guid.NewGuid().ToString("N")+".json");
         MainMenuAndPauseUI.LoadDisplay(displayPath,interactive);
@@ -1205,7 +1207,7 @@ public static partial class Program
                 if(distance<14) _world.Scatter(cam.Position+aim*distance,aim,2.1f,4.2f);
             }
             if (Net.Ready)
-                Net.Send(new("fire",new PlayerPose(cam.Position,MathF.Atan2(aim.X,aim.Z),MathF.Asin(aim.Y),gun)));
+                Net.Send(new("fire",new PlayerPose(cam.Position,MathF.Atan2(aim.X,aim.Z),MathF.Asin(aim.Y),gun,Appearance:CharacterAppearance.Current.Pack())));
             if (Net.Guest)
             {
                 float range=gun switch { WeaponType.SawedOff=>12.5f, WeaponType.ChatGun=>28, WeaponType.MicroUzi=>26,
@@ -1299,24 +1301,60 @@ public static partial class Program
 
         if (MainMenuAndPauseUI.IsInMainMenu)
         {
-            // Track the west-facing curtain wall without ticking gameplay.
-            float shotTime = _menuTime % 28f;
-            float travel = .5f - .5f*MathF.Cos(MathF.Min(shotTime,18f)*MathF.PI/18f);
-            Camera3D menuCam = new()
+            Camera3D menuCam;
+            bool wardrobeOpen = MainMenuAndPauseUI.IsCharacterWardrobeOpen;
+            if (wardrobeOpen)
             {
-                Position = Vector3.Lerp(new(-21.4f,1.45f,6.9f),new(-23.1f,2.1f,9.3f),travel),
-                Target = Vector3.Lerp(new(-32f,2.30f,2.9f),new(-35f,2.9f,-1.8f),travel),
-                Up = Vector3.UnitY, FovY = 48
-            };
-            if (shotTime >= 20f)
-            {
-                // From the mezzanine, track parallel to the curtain wall.
-                float track = (shotTime-20f)*.36f;
-                menuCam.Position = new(7f+track,8.2f,-34.5f);
-                menuCam.Target = new(-9f+track,5.5f,-66f);
+                if (_menuFloor.Partner != null)
+                {
+                    _menuFloor.Partner.Move(new PlayerPose(
+                        new Vector3(0.0f, 1.72f, 10.35f),
+                        0.16f + MainMenuAndPauseUI.WardrobeYawOffset,
+                        0f,
+                        WeaponType.BareHands,
+                        Appearance: CharacterAppearance.Current.Pack()));
+                }
+                // Tailor Atelier 3D live stage framing the character cleanly in the open left half (X = 0..700)
+                menuCam = new()
+                {
+                    Position = new Vector3(0.88f, 1.24f, 13.26f),
+                    Target = new Vector3(0.88f, 0.96f, 10.35f),
+                    Up = Vector3.UnitY,
+                    FovY = 44f
+                };
             }
+            else
+            {
+                if (_menuFloor.Partner != null)
+                {
+                    _menuFloor.Partner.Move(new PlayerPose(
+                        new Vector3(-26.2f, 1.72f, 5.5f),
+                        1.26f,
+                        0f,
+                        WeaponType.MicroUzi,
+                        Appearance: CharacterAppearance.Current.Pack()));
+                }
+                // Track the west-facing curtain wall without ticking gameplay.
+                float shotTime = _menuTime % 28f;
+                float travel = .5f - .5f*MathF.Cos(MathF.Min(shotTime,18f)*MathF.PI/18f);
+                menuCam = new()
+                {
+                    Position = Vector3.Lerp(new(-21.4f,1.45f,6.9f),new(-23.1f,2.1f,9.3f),travel),
+                    Target = Vector3.Lerp(new(-32f,2.30f,2.9f),new(-35f,2.9f,-1.8f),travel),
+                    Up = Vector3.UnitY, FovY = 48
+                };
+                if (shotTime >= 20f)
+                {
+                    // From the mezzanine, track parallel to the curtain wall.
+                    float track = (shotTime-20f)*.36f;
+                    menuCam.Position = new(7f+track,8.2f,-34.5f);
+                    menuCam.Target = new(-9f+track,5.5f,-66f);
+                }
+            }
+            VisualEngine3D.SetWardrobeStage(wardrobeOpen);
             BeginLitWorld(_menuFloor,menuCam);
             Raylib.EndMode3D();
+            VisualEngine3D.SetWardrobeStage(false);
             VisualEngine3D.Composite();
             MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
             LoreAndMenusUI.Draw(_uiFont);
@@ -1400,7 +1438,7 @@ public static partial class Program
         }
         if(Floor.HasRadio || Floor.WingsUnlocked)
         {
-            ShadowText(_uiFont, "[X] Рация · Шлейф", 36, leftStackY, 14, new Color(224, 198, 148, 232));
+            ShadowText(_uiFont, "[X] Рация — Шлейф", 36, leftStackY, 14, new Color(224, 198, 148, 232));
             leftStackY -= 21;
         }
 
@@ -3304,6 +3342,29 @@ public static partial class Program
         _world.ActivateMacBookTrap(SubscriptionBaitTier.CursorPro, _ => true, out _);
         CaptureShot("00_main_menu_classic.png");
         CaptureShot("46_clean_main_menu_5buttons.png");
+        // Live 3D Character Wardrobe verification + dedicated screenshot (76_character_wardrobe_3d.png)
+        {
+            var probe = new CharacterAppearance { SkinIndex = 3, OutfitIndex = 5, EyeIndex = 7, HatIndex = 8 };
+            var unpacked = CharacterAppearance.Unpack(probe.Pack());
+            if (unpacked.SkinIndex != 3 || unpacked.OutfitIndex != 5 || unpacked.EyeIndex != 7 || unpacked.HatIndex != 8)
+                throw new InvalidDataException("CharacterAppearance pack/unpack mismatch");
+            if (new CharacterAppearance().Pack() != 0)
+                throw new InvalidDataException("Default CharacterAppearance must pack to 0");
+
+            MainMenuAndPauseUI.IsCharacterWardrobeOpen = true;
+            MainMenuAndPauseUI.WardrobeYawOffset = 0.08f;
+            CharacterAppearance.Current.SkinIndex = 1;   // Загорелая
+            CharacterAppearance.Current.OutfitIndex = 4; // Белый «Сочи-98»
+            CharacterAppearance.Current.EyeIndex = 7;    // Пиксельные (мем)
+            CharacterAppearance.Current.HatIndex = 3;    // Корона Бургер-Босса
+            CaptureShot("76_character_wardrobe_3d.png");
+            PressTestKey(KeyboardKey.Escape);
+            if (MainMenuAndPauseUI.IsCharacterWardrobeOpen)
+                throw new InvalidDataException("Escape failed to close Character Wardrobe");
+            CharacterAppearance.Current.CopyFrom(new CharacterAppearance());
+            MainMenuAndPauseUI.WardrobeYawOffset = 0f;
+            Console.WriteLine("[AUTOTEST] PASS 3D Character Wardrobe: pack/unpack, live 3D stage, Escape close");
+        }
         CheckDisplayAndStart(displayPath);
         // Switch into active 3D gameplay
         MainMenuAndPauseUI.IsInMainMenu = false;

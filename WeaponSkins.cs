@@ -198,10 +198,10 @@ public static partial class Program
             Raylib.DrawTexturePro(preview,new(0,0,preview.Width,-preview.Height),
                 new(center.X,center.Y-3*MathF.Sin(age*4),size.X,size.Y),size/2,3*MathF.Sin(age*3),Color.White);
             string headline=tier switch {
-                3=>Loc.T("ДЖЕКПОТ 777 · ОЛИГАРХ-ДРОП!","JACKPOT 777 · OLIGARCH DROP!"),
-                2=>Loc.T("ЭПИК · ЧИСТЫЙ ФЛЕКС!","EPIC · PURE FLEX!"),
-                1=>Loc.T("РЕДКИЙ ЛУТ · ГОДНОТА!","RARE LOOT · CLEAN ROLL!"),
-                _=>Loc.T("НОВЫЙ СКИН · ПОЙДЁТ!","NEW SKIN · NICE ROLL!")};
+                3=>Loc.T("ДЖЕКПОТ 777 — ОЛИГАРХ-ДРОП!","JACKPOT 777 — OLIGARCH DROP!"),
+                2=>Loc.T("ЭПИК — ЧИСТЫЙ ФЛЕКС!","EPIC — PURE FLEX!"),
+                1=>Loc.T("РЕДКИЙ ЛУТ — ГОДНОТА!","RARE LOOT — CLEAN ROLL!"),
+                _=>Loc.T("НОВЫЙ СКИН — ПОЙДЁТ!","NEW SKIN — NICE ROLL!")};
             float pulse=tier>=2 ? 1+.04f*MathF.Sin(age*8) : 1;
             ShopText(headline,637,420,(int)MathF.Round(24*pulse),ink,false,width:525);
             ShopText(WeaponSkins.Names[skin],635,450,32,shopCream,false,width:521);
