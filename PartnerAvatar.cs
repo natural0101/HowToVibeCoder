@@ -19,7 +19,7 @@ internal sealed class PartnerAvatar(int slot=0)
     internal float FlipOffTimer;
     internal Color Blazer => Slot switch { 1=>new(35,75,142,255), 2=>new(31,110,74,255), _=>new(181,34,46,255) };
     internal string Label => Loc.Tr(Slot==0 ? "Хозяин" : $"Гость {Slot}")
-        +(FlipOffTimer>0 ? Loc.Tr(" [ФАК!]") : Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
+        +(FlipOffTimer>0 ? Loc.Tr(" · ФАК!") : Downed ? Loc.Tr(" (сбит с ног)") : Carrying ? Loc.Tr(" (с кандидатом)") : "");
     public PlayerPose Pose = new(new(2,1.72f,10),MathF.PI,0,WeaponType.MicroUzi);
     public Vector3 Feet => new(Pose.Eye.X,0,Pose.Eye.Z);
     public readonly WeaponAndCombatView Effects = new();

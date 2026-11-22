@@ -142,7 +142,7 @@ public static partial class Program
         while(timer.Elapsed.TotalSeconds<35)
         {
             double now=timer.Elapsed.TotalSeconds;
-            if(!guest && _world.ElevatorBoss.State is ElevatorBossState.Repairing or ElevatorBossState.IntroSpeech)
+            if(!guest && _world.ElevatorBoss.State is ElevatorBossState.Repairing or ElevatorBossState.IntroSpeech or ElevatorBossState.Dying)
                 TickFloor((float)Math.Min(.15,now-previousTime));
             previousTime=now;
             Net.Pump(LocalPose,CaptureForSlot);

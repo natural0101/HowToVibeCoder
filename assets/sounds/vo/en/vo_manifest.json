@@ -305,67 +305,67 @@
   },
   "vo_comic_1": {
     "character": "narrator",
-    "duration": 10.982,
-    "rms": 0.1546,
+    "duration": 10.735,
+    "rms": 0.1301,
     "sr": 24000,
-    "bytes": 527176,
-    "text": "2026. Entropic Tower. You came back for your factory and your stake, and found a floor of smoothie-drinking kids on autocomplete. Week one almost looked respectable."
+    "bytes": 515300,
+    "text": "2026. Entropic Tower. You came back to claim your factory stake — instead of a workshop, it's a glass office full of vibe coders. Week one almost looked respectable."
   },
   "vo_comic_2": {
     "character": "narrator",
-    "duration": 7.863,
-    "rms": 0.1666,
+    "duration": 7.675,
+    "rms": 0.1723,
     "sr": 24000,
-    "bytes": 377460,
-    "text": "Then rack B12 caught fire in the server room. The kids in headphones didn't even look up: their screen stayed green, so prod must be fine."
+    "bytes": 368444,
+    "text": "Then rack B12 caught fire in the server room. The kids in headphones didn't even turn around: their laptop screen stayed green, so it must be fine."
   },
   "vo_comic_3": {
     "character": "narrator",
-    "duration": 9.467,
-    "rms": 0.1483,
+    "duration": 8.026,
+    "rms": 0.1684,
     "sr": 24000,
-    "bytes": 454454,
-    "text": "While smoke filled the floor, HR Veronika calmly dealt her Tarot: \"Zero cash in the vault, executives vanished. Want your stake back? Recover the losses by hand.\""
+    "bytes": 385304,
+    "text": "Smoke filled the floor while HR Veronika calmly laid out her Tarot: \"Vault's empty, management vanished. Want your money back? Collect it yourself.\""
   },
   "vo_comic_4": {
     "character": "narrator",
-    "duration": 11.604,
-    "rms": 0.1559,
+    "duration": 8.552,
+    "rms": 0.1529,
     "sr": 24000,
-    "bytes": 557052,
-    "text": "The North Elevator to the upper floors is chained shut, the junction box is sparking, and smoke creeps under the doors. Someone upstairs really doesn't want visitors. Time to unbuckle the belt."
+    "bytes": 410550,
+    "text": "The elevator upstairs is wrapped in chains, the panel is sparking, and smoke seeps under the doors. Someone up there really isn't expecting company."
   },
   "vo_comic_5": {
     "character": "narrator",
-    "duration": 7.519,
-    "rms": 0.1464,
+    "duration": 8.743,
+    "rms": 0.1456,
     "sr": 24000,
-    "bytes": 360938,
-    "text": "Out of the fried racks poured wind-up Jaba-frogs — living brass-keyed bugs. At least the old Bug-Tracker by the desk still pays cash for them."
+    "bytes": 419694,
+    "text": "Wind-up Jaba-frogs poured out of the burning racks. Nasty little pests — but the old Bug-Tracker by reception still pays hard cash for every single one."
   },
   "vo_comic_6": {
     "character": "narrator",
-    "duration": 9.327,
-    "rms": 0.1573,
+    "duration": 7.867,
+    "rms": 0.1671,
     "sr": 24000,
-    "bytes": 447722,
-    "text": "The coders themselves scattered into the corners. Shouting doesn't work, but leave an open laptop with a free subscription and they swarm straight to the light."
+    "bytes": 377656,
+    "text": "The coders themselves scattered into the corners. Shouting won't move them, but drop a laptop with free Wi-Fi on the carpet — they crawl right over."
   },
   "vo_comic_7": {
     "character": "narrator",
-    "duration": 11.248,
-    "rms": 0.1492,
+    "duration": 10.621,
+    "rms": 0.1514,
     "sr": 24000,
-    "bytes": 539946,
-    "text": "For every coder you bring in, Veronika pulls her vintage slot lever. Stock runs from a net and soldering iron to serious 90s hardware. The bigger the catch, the faster you buy your way upstairs."
+    "bytes": 509862,
+    "text": "For every coder you haul in, Veronika pulls her slot lever. Under the counter: everything from a net and soldering iron to 90s iron. Fill the register faster, get upstairs faster."
   },
   "vo_comic_8": {
     "character": "narrator",
-    "duration": 8.648,
-    "rms": 0.155,
+    "duration": 6.276,
+    "rms": 0.1548,
     "sr": 24000,
-    "bytes": 415152,
-    "text": "Accounts at zero. Quarantine locked. Just your father's leather belt. Floor One of Entropic Tower. Time to restore order the old-fashioned way."
+    "bytes": 301302,
+    "text": "No cash. Wings sealed off. Just your father's leather belt. Floor One of Entropic Tower. Time to settle this."
   },
   "vo_boss_defeat_twist": {
     "character": "robot",

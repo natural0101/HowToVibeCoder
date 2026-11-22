@@ -412,7 +412,7 @@ public static partial class Program
         while(timer.Elapsed.TotalSeconds<20)
         {
             Net.Pump(LocalPose,CaptureForSlot);
-            if(guest && Floor.JobId<0 && Floor.Seated==0 && _world.Frogs.Count>0)
+            if(guest && Floor.JobId<0 && Floor.Seated==0 && (_world.Frogs.Count>0 || sent==3))
             {
                 if(sent<3 && _playerCash==0 && Floor.PocketFrogs.Count==sent)
                 {

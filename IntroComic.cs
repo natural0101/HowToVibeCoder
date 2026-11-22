@@ -12,22 +12,22 @@ internal sealed class IntroComic : IDisposable
     private static readonly Color BrassTrim = new(182, 144, 78, 220);
     private static readonly (string Ru, string En)[] Captions =
     [
-        ("2026. Башня «Энтропик». Ты вернулся за своим заводом и долей,\nа нашёл этаж молодых спецов на смузи и автодополнении.\nПервая неделя выглядела почти прилично.",
-         "2026. Entropic Tower. You came back for your factory and your stake,\nand found a floor of smoothie-drinking kids on autocomplete.\nWeek one almost looked respectable."),
-        ("Потом в серверной полыхнула стойка B12.\nРебята в наушниках даже голову не повернули:\nу них на экране всё зелёное — значит, прод живой.",
-         "Then rack B12 caught fire in the server room.\nThe kids in headphones didn't even look up:\ntheir screen stayed green, so prod must be fine."),
-        ("Пока этаж задыхался от дыма, HR Вероника спокойно раскинула Таро:\n«Денег в кассе ноль, руководство пропало.\nХочешь вернуть своё — выбивай убытки руками.»",
-         "While smoke filled the floor, HR Veronika calmly dealt her Tarot:\n\"Zero cash in the vault, executives vanished.\nWant your stake back? Recover the losses by hand.\""),
-        ("Северный лифт на верхние этажи наглухо обмотан цепями,\nщиток искрит, а из-под створок тянет гарью.\nКто-то наверху очень не хочет гостей. Пора доставать ремень.",
-         "The North Elevator to the upper floors is chained shut,\nthe junction box is sparking, and smoke creeps under the doors.\nSomeone upstairs really doesn't want visitors. Time to unbuckle the belt."),
-        ("Из прогоревших стоек полезли заводные Джаба-жабы —\nживые баги с латунным заводом.\nНо старый Баг-трекер у стойки всё ещё платит за них наличкой.",
-         "Out of the fried racks poured wind-up Jaba-frogs —\nliving brass-keyed bugs.\nAt least the old Bug-Tracker by the desk still pays cash for them."),
-        ("Сами программисты разбежались по углам.\nНа крики им плевать, зато на открытый ноутбук\nс халявной подпиской они слетаются как мотыльки.",
-         "The coders themselves scattered into the corners.\nShouting doesn't work, but leave an open laptop\nwith a free subscription and they swarm straight to the light."),
-        ("За каждого сданного кадра Вероника крутит свой аппарат.\nВ кассе — от сачка и паяльника до серьёзных аргументов 90-х.\nЧем жирнее спец, тем быстрее откроется дорога наверх.",
-         "For every coder you bring in, Veronika pulls her vintage slot lever.\nStock runs from a net and soldering iron to serious 90s hardware.\nThe bigger the catch, the faster you buy your way upstairs."),
-        ("На счетах пусто. Карантин заперт. В руках — только отцовский ремень.\nПервый этаж башни «Энтропик».\nНаводим порядок по-старому.",
-         "Accounts at zero. Quarantine locked. Just your father's leather belt.\nFloor One of Entropic Tower.\nTime to restore order the old-fashioned way.")
+        ("2026 год. Башня «Энтропик». Ты приехал забрать свою долю в заводе —\nа вместо цеха здесь стеклянный офис с вайбкодерами.\nПервую неделю всё даже выглядело прилично.",
+         "2026. Entropic Tower. You came back to claim your factory stake —\ninstead of a workshop, it's a glass office full of vibe coders.\nWeek one almost looked respectable."),
+        ("Потом в серверной загорелась стойка B12.\nРебята в наушниках даже не обернулись:\nна ноутбуках горит зелёный, значит — всё работает.",
+         "Then rack B12 caught fire in the server room.\nThe kids in headphones didn't even turn around:\ntheir laptop screen stayed green, so it must be fine."),
+        ("Этаж затянуло дымом, а HR Вероника спокойно разложила Таро:\n«В кассе ноль, начальство исчезло.\nХочешь вернуть деньги — выбивай сам.»",
+         "Smoke filled the floor while HR Veronika calmly laid out her Tarot:\n\"Vault's empty, management vanished.\nWant your money back? Collect it yourself.\""),
+        ("Лифт на верхние этажи обмотан цепями,\nщиток искрит, из-под дверей тянет гарью.\nКто-то наверху очень не ждёт гостей.",
+         "The elevator upstairs is wrapped in chains,\nthe panel is sparking, and smoke seeps under the doors.\nSomeone up there really isn't expecting company."),
+        ("Из горящей серверной повалили заводные Джаба-жабы.\nМелкая дрянь — но старый Баг-трекер у ресепшена\nдо сих пор даёт за них живые наличные.",
+         "Wind-up Jaba-frogs poured out of the burning racks.\nNasty little pests — but the old Bug-Tracker by reception\nstill pays hard cash for every single one."),
+        ("А сами программисты разбежались по углам.\nНа крики не выходят, но положи на пол ноутбук\nс бесплатным Wi-Fi — сползутся сами.",
+         "The coders themselves scattered into the corners.\nShouting won't move them, but drop a laptop\nwith free Wi-Fi on the carpet — they crawl right over."),
+        ("За каждого сданного кадра Вероника запускает свой автомат.\nПод прилавком — всё, от сачка и паяльника до стволов из девяностых.\nБыстрее соберёшь кассу — быстрее попадёшь наверх.",
+         "For every coder you haul in, Veronika pulls her slot lever.\nUnder the counter: everything from a net and soldering iron to 90s iron.\nFill the register faster, get upstairs faster."),
+        ("Денег нет. Крылья перекрыты. Из оружия — только отцовский ремень.\nПервый этаж башни «Энтропик».\nПора разбираться.",
+         "No cash. Wings sealed off. Just your father's leather belt.\nFloor One of Entropic Tower.\nTime to settle this.")
     ];
 
     private readonly Texture2D[] art = new Texture2D[8];

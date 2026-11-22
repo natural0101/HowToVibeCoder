@@ -211,8 +211,10 @@ public static partial class Program
         boss.BroadcastTime=.01f; Tick(.02f); Check(_world.CurrentTape.Contains("телефонных"),"Petrovich tapes");
         boss.BroadcastTime=.01f; Tick(.02f); Check(_world.CurrentTape.Contains("выйти"),"escape revelation");
         wallet=_playerCash;
-        for(int i=0;i<5 && boss.IsActive;i++) Core();
-        Check(boss.IsDefeated && Floor.FinalePending && _world.IsFloor2Unlocked && Floor.DiscoveredSpecies["ai_agent_v01"]==1 && _playerCash==wallet+350,"shutdown and discovery only once");
+        for(int i=0;i<5 && boss.IsActive && boss.State!=ElevatorBossState.Dying;i++) Core();
+        Check(boss.State==ElevatorBossState.Dying && !boss.IsDefeated,"meltdown sequence precedes defeat");
+        for(int i=0;i<24 && boss.State==ElevatorBossState.Dying;i++) Tick(.1f);
+        Check(boss.IsDefeated && _world.BossWreckageActive && Floor.FinalePending && _world.IsFloor2Unlocked && Floor.DiscoveredSpecies["ai_agent_v01"]==1 && _playerCash==wallet+350,"shutdown and discovery only once");
         Floor.Tick(.9f,_world,null); Frame();
         Check(floorPanel==FloorPanel.BossFinale && LoreAndMenusUI.UnlockedChats==6,"disposition awaits signature");
         capture("17_boss_finale.png");

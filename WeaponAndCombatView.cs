@@ -334,7 +334,7 @@ public class WeaponAndCombatView
         Vector3 pivot = new(.18f,-.15f,.62f);
         (Vector3 travel, Vector3 degrees) = slot switch
         {
-            1 => (new Vector3(-.115f,.072f,-.015f), new Vector3(-16,-24+34*turn,10-28*turn)),
+            1 => (new Vector3(-.075f,.045f,-.020f), new Vector3(-8,-18+42*turn,6-16*turn)),
             2 => (new Vector3(-.105f,.062f,-.04f), new Vector3(-6,-12,-18*turn)),
             // The receiver already has a -16 degree resting yaw.
             3 => (new Vector3(-.135f,.085f,.065f), new Vector3(-9,-22+70*turn,12-23*turn)),
@@ -463,6 +463,11 @@ public class WeaponAndCombatView
             _pendingClimb+=new Vector3(uzi ? -3.6f : -8.6f,0,(NextFloat()-.5f)*(uzi ? 1.6f : 3.2f))*strength;
             _climbDelay=FlashDuration;
             if (uzi) _bolt.Impulse(82);
+            Program.TriggerCrosshairBloom(uzi ? 0.45f : 1.35f);
+        }
+        else if (CurrentWeapon is WeaponType.Belt or WeaponType.SolderingIron)
+        {
+            Program.TriggerCrosshairBloom(0.75f);
         }
         Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
         Vector3 up = Vector3.Normalize(Vector3.Cross(right, forward));
@@ -1255,97 +1260,97 @@ public class WeaponAndCombatView
         float t = 1f - p;         // 0.0 -> 1.0 progress
         float lashSide = (BeltSwingCombo == 0) ? 1f : -1f;
 
-        // One-handed leather whip-belt (плётка) 3-phase animation:
-        // Phase A (0.00..0.24): Quick right-arm cock/raise (alternating forehand / backhand)
-        // Phase B (0.24..0.62): Explosive diagonal one-handed whip lash across crosshair with wrist snap
-        // Phase C (0.62..1.00): Supple damped leather follow-through back to lower-right ready stance
+        // Fierce one-handed coiled-belt whip snap animation (from upright coiled right-fist stance):
+        // Phase A (0.00..0.22): Crisp cock up-right (raising the upright coiled fist to charge the lash)
+        // Phase B (0.22..0.58): Explosive diagonal whip snap forward across crosshair with wrist flick
+        // Phase C (0.58..1.00): Crisp damped settle back to upright coiled stance with subtle gravity pendulum
         Vector3 swingHandOffset = Vector3.Zero;
         float swingPitch = 0f, swingYaw = 0f, swingRoll = 0f;
 
         if (p > 0.001f)
         {
-            if (t < 0.24f)
+            if (t < 0.22f)
             {
-                float k = Ease(t / 0.24f);
+                float k = Ease(t / 0.22f);
                 if (lashSide > 0f)
                 {
-                    swingHandOffset = new Vector3(0.11f * k, 0.16f * k, -0.085f * k);
-                    swingPitch = -0.44f * k;
-                    swingYaw   =  0.34f * k;
-                    swingRoll  = -0.34f * k;
+                    swingHandOffset = new Vector3(0.085f * k, 0.115f * k, -0.065f * k);
+                    swingPitch = -0.34f * k;
+                    swingYaw   =  0.28f * k;
+                    swingRoll  = -0.26f * k;
                 }
                 else
                 {
-                    swingHandOffset = new Vector3(-0.15f * k, 0.07f * k, -0.06f * k);
-                    swingPitch = -0.30f * k;
-                    swingYaw   = -0.46f * k;
-                    swingRoll  =  0.48f * k;
+                    swingHandOffset = new Vector3(-0.115f * k, 0.075f * k, -0.055f * k);
+                    swingPitch = -0.26f * k;
+                    swingYaw   = -0.38f * k;
+                    swingRoll  =  0.34f * k;
                 }
             }
-            else if (t < 0.62f)
+            else if (t < 0.58f)
             {
-                float raw = (t - 0.24f) / 0.38f;
-                float k = 1f - MathF.Pow(1f - raw, 2.5f); // front-loaded whip snap acceleration
+                float raw = (t - 0.22f) / 0.36f;
+                float k = 1f - MathF.Pow(1f - raw, 2.6f); // front-loaded explosive whip acceleration
                 float lunge = MathF.Sin(raw * MathF.PI);
                 if (lashSide > 0f)
                 {
                     swingHandOffset = new Vector3(
-                        Lerp(0.11f, -0.25f, k),
-                        Lerp(0.16f, -0.10f, k),
-                        Lerp(-0.085f, 0.03f, k) + 0.25f * lunge);
-                    swingPitch = Lerp(-0.44f, 0.56f, k) + 0.18f * lunge;
-                    swingYaw   = Lerp(0.34f, -0.78f, k);
-                    swingRoll  = Lerp(-0.34f, 0.46f, k);
+                        Lerp(0.085f, -0.22f, k),
+                        Lerp(0.115f, -0.10f, k),
+                        Lerp(-0.065f, 0.04f, k) + 0.22f * lunge);
+                    swingPitch = Lerp(-0.34f, 0.72f, k) + 0.22f * lunge;
+                    swingYaw   = Lerp(0.28f, -0.74f, k);
+                    swingRoll  = Lerp(-0.26f, 0.48f, k);
                 }
                 else
                 {
                     swingHandOffset = new Vector3(
-                        Lerp(-0.15f, 0.17f, k),
-                        Lerp(0.07f, -0.08f, k),
-                        Lerp(-0.06f, 0.02f, k) + 0.24f * lunge);
-                    swingPitch = Lerp(-0.30f, 0.48f, k) + 0.16f * lunge;
-                    swingYaw   = Lerp(-0.46f, 0.42f, k);
-                    swingRoll  = Lerp(0.48f, -0.36f, k);
+                        Lerp(-0.115f, 0.14f, k),
+                        Lerp(0.075f, -0.08f, k),
+                        Lerp(-0.055f, 0.03f, k) + 0.20f * lunge);
+                    swingPitch = Lerp(-0.26f, 0.64f, k) + 0.20f * lunge;
+                    swingYaw   = Lerp(-0.38f, 0.44f, k);
+                    swingRoll  = Lerp(0.34f, -0.34f, k);
                 }
             }
             else
             {
-                float raw = (t - 0.62f) / 0.38f;
+                float raw = (t - 0.58f) / 0.42f;
                 float env = 1f - Ease(raw);
                 float settle = MathF.Sin(raw * MathF.PI * 1.5f) * (1f - raw);
                 if (lashSide > 0f)
                 {
-                    swingHandOffset = new Vector3(-0.25f * env, -0.10f * env + 0.018f * settle, 0.03f * env);
-                    swingPitch = 0.56f * env - 0.12f * settle;
-                    swingYaw   = -0.78f * env + 0.09f * settle;
-                    swingRoll  = 0.46f * env - 0.10f * settle;
+                    swingHandOffset = new Vector3(-0.22f * env, -0.10f * env + 0.014f * settle, 0.04f * env);
+                    swingPitch = 0.72f * env - 0.10f * settle;
+                    swingYaw   = -0.74f * env + 0.08f * settle;
+                    swingRoll  = 0.48f * env - 0.09f * settle;
                 }
                 else
                 {
-                    swingHandOffset = new Vector3(0.17f * env, -0.08f * env + 0.018f * settle, 0.02f * env);
-                    swingPitch = 0.48f * env - 0.12f * settle;
-                    swingYaw   = 0.42f * env - 0.09f * settle;
-                    swingRoll  = -0.36f * env + 0.10f * settle;
+                    swingHandOffset = new Vector3(0.14f * env, -0.08f * env + 0.014f * settle, 0.03f * env);
+                    swingPitch = 0.64f * env - 0.10f * settle;
+                    swingYaw   = 0.44f * env - 0.08f * settle;
+                    swingRoll  = -0.34f * env + 0.09f * settle;
                 }
             }
         }
 
-        // Subtle alive gravity pendulum bob & look-lag sway so the hanging leather whip feels supple
+        // Subtle natural breathing & heavy brass-buckle gravity pendulum sway
         float idleWeight = 1f - Math.Clamp(p * 3f, 0f, 1f);
         float now = (float)Raylib.GetTime();
         Vector3 lookLag = _lookLagSpring.Value;
-        float pendRoll  = (MathF.Sin(now * 2.15f) * 0.030f + MathF.Sin(now * 3.65f) * 0.010f - Math.Clamp(lookLag.X * 1.35f, -0.16f, 0.16f)) * idleWeight;
-        float pendPitch = (MathF.Sin(now * 1.65f + 0.7f) * 0.020f + Math.Clamp(lookLag.Y * 0.85f, -0.11f, 0.11f)) * idleWeight;
-        float pendYaw   = (-Math.Clamp(lookLag.X * 0.55f, -0.09f, 0.09f)) * idleWeight;
-        Vector3 idleBob = new Vector3(MathF.Sin(now * 2.15f) * 0.0045f, MathF.Cos(now * 1.65f) * 0.0040f, 0f) * idleWeight;
+        float pendRoll  = (MathF.Sin(now * 2.05f) * 0.022f + MathF.Sin(now * 3.45f) * 0.008f - Math.Clamp(lookLag.X * 1.15f, -0.13f, 0.13f)) * idleWeight;
+        float pendPitch = (MathF.Sin(now * 1.55f + 0.7f) * 0.015f + Math.Clamp(lookLag.Y * 0.70f, -0.09f, 0.09f)) * idleWeight;
+        float pendYaw   = (-Math.Clamp(lookLag.X * 0.45f, -0.07f, 0.07f)) * idleWeight;
+        Vector3 idleBob = new Vector3(MathF.Sin(now * 2.05f) * 0.0032f, MathF.Cos(now * 1.55f) * 0.0036f, 0f) * idleWeight;
 
-        // Natural lower-right one-handed FPS melee stance (right hand ONLY; heavy gold buckle cleanly visible above [E] prompts & hotbar)
-        Vector3 rightAssembly = baseOffset + swingHandOffset + idleBob + new Vector3(0.068f, 0.060f, -0.025f);
+        // Upright coiled right-fist stance in lower-right third (100% clear of crosshair, [E] prompt, and bottom hotbar)
+        Vector3 rightAssembly = baseOffset + swingHandOffset + idleBob + new Vector3(0.025f, 0.165f, -0.055f);
         Vector3 handleBase = new Vector3(.18f, -.15f, .62f) + rightAssembly;
         Matrix4x4 rightPose = Matrix4x4.CreateTranslation(-handleBase)
-            * Matrix4x4.CreateRotationX(-0.24f + swingPitch + pendPitch)
-            * Matrix4x4.CreateRotationY(-0.30f + swingYaw + pendYaw)
-            * Matrix4x4.CreateRotationZ(-0.05f + swingRoll + pendRoll)
+            * Matrix4x4.CreateRotationX(-1.18f + swingPitch + pendPitch)
+            * Matrix4x4.CreateRotationY(0.48f + swingYaw + pendYaw)
+            * Matrix4x4.CreateRotationZ(-0.22f + swingRoll + pendRoll)
             * Matrix4x4.CreateTranslation(handleBase)
             * ToolStance(handleBase)
             * GetInspectTransform(1, InspectPhase);
@@ -1355,14 +1360,14 @@ public class WeaponAndCombatView
         VisualEngine3D.SetBeltTension(0f);
         VisualEngine3D.Asset("weapon_belt_90s", handleBase, 0, 1, tint, assemblyTransform: rightPose, skin: Inventory.EquippedSkins[(int)CurrentWeapon]);
 
-        // During explosive whip snap (Phase B into early C), draw golden-crimson arc ribbon anchored cleanly to the real gold buckle tip!
-        if (p > 0.001f && t >= 0.24f && t <= 0.74f)
+        // During explosive whip snap (Phase B into early C), draw golden-crimson arc ribbon anchored to the antique brass buckle bottom
+        if (p > 0.001f && t >= 0.22f && t <= 0.72f)
         {
-            float arcT = (t - 0.24f) / 0.50f;
+            float arcT = (t - 0.22f) / 0.50f;
             float alphaEnv = MathF.Sin(Math.Clamp(arcT, 0f, 1f) * MathF.PI);
             byte slashAlpha = (byte)Math.Clamp((int)(235f * alphaEnv), 0, 255);
-            // Exact local-space tip of the heavy 90s gold brass buckle roller in weapon_belt_90s.glb
-            Vector3 buckleTip = Vector3.Transform(handleBase + new Vector3(-0.0313f, -0.2298f, 0.4902f), rightPose);
+            // Exact glTF local-space bottom of the vintage antique-brass buckle in weapon_belt_90s.glb
+            Vector3 buckleTip = Vector3.Transform(handleBase + new Vector3(0.0201f, -0.0887f, -0.1831f), rightPose);
             Vector3 midTrail = buckleTip + new Vector3(0.18f * lashSide, 0.11f, -0.09f);
             Vector3 tailTrail = buckleTip + new Vector3(0.36f * lashSide, 0.20f, -0.18f);
             VisualEngine3D.Rod(buckleTip, midTrail, 0.019f * alphaEnv, 0.013f * alphaEnv, 6, new Color(255, 212, 68, (int)slashAlpha));

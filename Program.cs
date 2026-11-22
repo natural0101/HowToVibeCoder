@@ -26,6 +26,105 @@ public static partial class Program
     private static float _playerVelY, _coyoteTimer, _jumpBufferTimer;
     private static float _eyeHeight = 1.72f, _dashTime, _dashCooldown, _regenDelay, _fovKick;
     private static float _recoilPitch, _recoilYaw, _shake, _crosshairGap = 4, _playerHitAnimTimer;
+    private static float _combatHitstopTimer;
+    private struct DirectionalHitArc
+    {
+        public Vector3 SourcePos;
+        public int Damage;
+        public float Age;
+        public float Duration;
+    }
+    private static readonly DirectionalHitArc[] _hitArcs = new DirectionalHitArc[4];
+    private static int _hitArcCursor;
+    private const float HitArcDuration = 0.65f;
+    private static float _hitmarkerAge, _hitmarkerDuration;
+    private static bool _hitmarkerCrit, _hitmarkerKill;
+    private static float _prevWeaponHitmarkerTimer;
+
+    public static void TriggerHitstop(float seconds)
+    {
+        float clamped = Math.Clamp(seconds, 0f, 0.08f);
+        if (clamped > _combatHitstopTimer) _combatHitstopTimer = clamped;
+    }
+
+    public static void TriggerDirectionalHitIndicator(Vector3 attackerWorldPos, int dmg)
+    {
+        for (int i = 0; i < _hitArcs.Length; i++)
+        {
+            if (_hitArcs[i].Duration > 0f && _hitArcs[i].Age < _hitArcs[i].Duration &&
+                Vector3.DistanceSquared(_hitArcs[i].SourcePos, attackerWorldPos) < 2.25f)
+            {
+                _hitArcs[i] = new DirectionalHitArc
+                {
+                    SourcePos = attackerWorldPos,
+                    Damage = Math.Max(dmg, _hitArcs[i].Damage),
+                    Age = 0f,
+                    Duration = HitArcDuration
+                };
+                return;
+            }
+        }
+        _hitArcs[_hitArcCursor] = new DirectionalHitArc
+        {
+            SourcePos = attackerWorldPos,
+            Damage = dmg,
+            Age = 0f,
+            Duration = HitArcDuration
+        };
+        _hitArcCursor = (_hitArcCursor + 1) % _hitArcs.Length;
+    }
+
+    public static void TriggerHitmarker(bool crit, bool kill)
+    {
+        if (_hitmarkerDuration > 0f && _hitmarkerAge < _hitmarkerDuration * 0.55f && _hitmarkerKill && !kill)
+            return;
+        _hitmarkerAge = 0f;
+        _hitmarkerCrit = crit;
+        _hitmarkerKill = kill;
+        _hitmarkerDuration = kill ? 0.30f : crit ? 0.24f : 0.19f;
+        _crosshairGap = MathF.Min(20f, _crosshairGap + (kill ? 4.2f : crit ? 3.0f : 1.6f));
+    }
+
+    public static void TriggerCrosshairBloom(float amount)
+    {
+        if (amount > 0f)
+            _crosshairGap = MathF.Min(22f, _crosshairGap + amount);
+    }
+
+    private static void ResetCombatFeedback()
+    {
+        _combatHitstopTimer = 0f;
+        _hitmarkerAge = _hitmarkerDuration = _prevWeaponHitmarkerTimer = 0f;
+        _hitmarkerCrit = _hitmarkerKill = false;
+        Array.Clear(_hitArcs);
+        _hitArcCursor = 0;
+        ResetBossBarTelemetry();
+    }
+
+    private static void TickCombatFeedback(float dt)
+    {
+        if (dt <= 0f) return;
+        for (int i = 0; i < _hitArcs.Length; i++)
+        {
+            if (_hitArcs[i].Duration <= 0f) continue;
+            _hitArcs[i].Age += dt;
+            if (_hitArcs[i].Age >= _hitArcs[i].Duration)
+                _hitArcs[i].Duration = 0f;
+        }
+        if (_hitmarkerDuration > 0f)
+        {
+            _hitmarkerAge += dt;
+            if (_hitmarkerAge >= _hitmarkerDuration)
+                _hitmarkerDuration = 0f;
+        }
+        if (_weapons != null)
+        {
+            if (_weapons.HitmarkerTimer > _prevWeaponHitmarkerTimer + 0.01f)
+                TriggerHitmarker(_weapons.HitmarkerIsCrit, kill: false);
+            _prevWeaponHitmarkerTimer = _weapons.HitmarkerTimer;
+        }
+    }
+
     private static float _pitchSpring, _yawSpring;
     private static Vector3 _dashDirection;
     private static bool _isGrounded = true, _sprinting, _toggleCrouch, _exhausted;
@@ -62,6 +161,7 @@ public static partial class Program
         _playerHitAnimTimer=.22f;
         _weapons.HitJolt=1;
         _lastDamageAmount=amount; _lastDamageLabel=label; _lastDamageSourcePos=source; _lastDamageTimer=2.6f;
+        TriggerDirectionalHitIndicator(source, amount);
         AudioMusicSystem.PlayLanding();
     }
     private static void ReceiveDamage(int amount,string label,Vector3 source)
@@ -93,6 +193,7 @@ public static partial class Program
         _knockoutActive=false; _playerHp=100;
         _eyeHeight=1.72f; _playerPos=_world.ResolvePlayerCollision(LobbyEntrance);
         _dashTime=_playerVelY=_lastDamageTimer=_playerHitAnimTimer=_jumpBufferTimer=_weapons.HitJolt=0;
+        ResetCombatFeedback();
         _isGrounded=true; _toggleCrouch=_isCrouching=false;
         LookAtTarget(_world.HrTarotBoothPos+Vector3.UnitY*1.4f);
         Raylib.DisableCursor();
@@ -578,6 +679,7 @@ public static partial class Program
         _weaponFireCooldown = _walkBobPhase = _playerVelY = _jumpBufferTimer = _pitchSpring = _yawSpring = 0;
         _dashTime = _dashCooldown = _regenDelay = _fovKick = _recoilPitch = _recoilYaw = _shake = _playerHitAnimTimer = 0;
         StyleComboSystem.Reset();
+        ResetCombatFeedback();
         BossIntroCutscene.Reset();
         _repairMinigame.Close();
         _eyeHeight=1.72f; _coyoteTimer=.12f; _isGrounded=true; _crosshairGap=4; _weapons.HitJolt=0;
@@ -750,9 +852,19 @@ public static partial class Program
         {
             Raylib.DisableCursor();
         }
+        TickCombatFeedback(dt);
         StyleComboSystem.Update(dt);
         float styleShake = StyleComboSystem.ConsumeShake();
         if (styleShake > _shake) _shake = styleShake;
+        if (_combatHitstopTimer > 0f)
+        {
+            _combatHitstopTimer = MathF.Max(0f, _combatHitstopTimer - dt);
+            if (MainMenuAndPauseUI.InteractiveDisplay && !Net.Ready)
+            {
+                _shake *= MathF.Exp(-8f * dt);
+                return;
+            }
+        }
         if (MainMenuAndPauseUI.InteractiveDisplay && StyleComboSystem.ConsumeHitstop(dt)) return;
         _world.UpdateLooseClutter(dt);
         _world.UpdateIntercom(dt);
@@ -1102,8 +1214,22 @@ public static partial class Program
             float yawKick=(2*ShotRandom.NextSingle()-1)*kick*steady;
             if (melee) { _recoilPitch+=kick*steady; _recoilYaw+=yawKick*.38f; }
             else { _pitchSpring+=kick*steady*30; _yawSpring+=yawKick*8; }
-            if (melee && _weapons.HitmarkerTimer>=.22f && _weapons.HitmarkerIsCrit) _shake=.014f;
-            _crosshairGap=Math.Min(15,_crosshairGap+(melee ? 2 : 4));
+            if (melee && _weapons.HitmarkerTimer>=.22f && _weapons.HitmarkerIsCrit) { _shake=.014f; TriggerHitstop(0.028f); }
+            else if (gun==WeaponType.SawedOff && _weapons.HitmarkerTimer>=.21f) TriggerHitstop(0.026f);
+            if (_weapons.HitmarkerTimer > _prevWeaponHitmarkerTimer + 0.01f)
+            {
+                TriggerHitmarker(_weapons.HitmarkerIsCrit, kill: false);
+                _prevWeaponHitmarkerTimer = _weapons.HitmarkerTimer;
+            }
+            float bloomKick = gun switch
+            {
+                WeaponType.SawedOff => 8.5f,
+                WeaponType.ChatGun => 4.8f,
+                WeaponType.MicroUzi => 3.4f,
+                WeaponType.SolderingIron or WeaponType.Belt => 3.0f,
+                _ => 2.2f
+            };
+            _crosshairGap=Math.Min(20f,_crosshairGap+bloomKick*steady);
             if (_weapons.Ammo==0) _weapons.BeginReload();
         }
         else if (!trigger) _weaponFireCooldown=Math.Max(0,_weaponFireCooldown);
@@ -1247,38 +1373,69 @@ public static partial class Program
         int cx = sw/2, cy = sh/2;
         Color white = new(250,249,245,255), dark = new(22,24,38,142);
         string money = "$" + _playerCash;
-        ShadowText(_serif, money, 36, sh - 92, 26, white);
-        if(_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated)
-            ShadowText(_uiFont, "Ключ-карта СБ", 36, sh - 110, 15, WorldLabelLayout.Ivory);
-        if(Floor.HasRadio || Floor.WingsUnlocked)
-        {
-            int radioY = (_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated) ? sh - 129 : sh - 110;
-            ShadowText(_uiFont, "[X] Рация · Шлейф", 36, radioY, 14, new Color(224, 198, 148, 232));
-        }
+        float moneyW = GameFonts.Measure(_serif, money, 26).X;
+        ShadowText(_serif, money, 36, sh - 96, 26, white);
+        float moneyRight = 36f + moneyW;
         if(Floor.PocketFrogs.Count>0)
         {
-            float mw = GameFonts.Measure(_serif, money, 26).X;
-            ShadowText(_uiFont, $"Садок: {Floor.PocketFrogs.Count}", 36 + mw + 14, sh - 86, 16, white);
+            string frogText = Loc.T($"Садок: {Floor.PocketFrogs.Count}", $"Frogs: {Floor.PocketFrogs.Count}");
+            ShadowText(_uiFont, frogText, moneyRight + 12f, sh - 90, 15, white);
+            moneyRight += 12f + GameFonts.Measure(_uiFont, frogText, 15).X;
         }
 
-        // Subtle smoked-glass backing behind bottom-left status cluster so numbers & hotkeys never wash out over cuffs/watch
+        // Clean stacked upper-left utility notices (zero collisions between Keycard, Radio, and Low-HP hint)
+        int leftStackY = sh - 118;
+        if(_world.HasElevatorKey && !_world.ElevatorBoss.IsDefeated)
+        {
+            ShadowText(_uiFont, "Ключ-карта СБ", 36, leftStackY, 15, WorldLabelLayout.Ivory);
+            leftStackY -= 21;
+        }
+        if(Floor.HasRadio || Floor.WingsUnlocked)
+        {
+            ShadowText(_uiFont, "[X] Рация · Шлейф", 36, leftStackY, 14, new Color(224, 198, 148, 232));
+            leftStackY -= 21;
+        }
+
+        var tools=_weapons.Hotbar;
+        int barX=cx-(tools.Length*70-4)/2, barY=sh-82;
+
+        // Compact [G] Bait pill tucked cleanly above Coffee without intruding on center hotbar
         string baitLabel = Loc.T("[G] Наживка", "[G] Bait") + " ×" + Floor.BaitStock.Sum();
-        float bottomClusterW = 317f + GameFonts.Measure(_uiFont, baitLabel, 16).X - 20f + 14f;
-        Raylib.DrawRectangleRounded(new(24, sh - 66, bottomClusterW, 40), 0.22f, 6, new Color(14, 11, 16, 148));
-        Raylib.DrawRectangleRoundedLinesEx(new(24, sh - 66, bottomClusterW, 40), 0.22f, 6, 1f, new Color(182, 148, 92, 64));
+        float baitTextW = GameFonts.Measure(_uiFont, baitLabel, 15).X;
+        float baitPillW = baitTextW + 18f;
+        float baitPillX = MathF.Min(MathF.Max(208f, moneyRight + 14f), MathF.Max(208f, barX - baitPillW - 14f));
+        Rectangle baitPill = new(baitPillX, sh - 98, baitPillW, 28f);
+        Raylib.DrawRectangleRounded(baitPill, 0.24f, 6, new Color(14, 11, 16, 152));
+        Raylib.DrawRectangleRoundedLinesEx(baitPill, 0.24f, 6, 1f, new Color(182, 148, 92, 68));
+        ShadowText(_uiFont, baitLabel, baitPill.X + 9f, baitPill.Y + 6f, 15, white);
+
+        // Crystal-clear bottom-left smoked-glass status cluster: HP · Energy · [H] Кофе ×N (+HP)
+        int coffeeCups = Net.Guest ? GuestCups : Floor.PocketCoffeeCups;
+        bool coffeeUrgent = _playerHp < 70 && coffeeCups > 0;
+        float coffeePulse = coffeeUrgent ? (0.5f + 0.5f * MathF.Sin((float)Raylib.GetTime() * 5.0f)) : 0f;
+        string coffeeLabel = Loc.T($"[H] Кофе ×{coffeeCups} (+HP)", $"[H] Coffee ×{coffeeCups} (+HP)");
+        float coffeeTextW = GameFonts.Measure(_uiFont, coffeeLabel, 16).X;
+        const float coffeeX = 218f;
+        float bottomClusterW = (coffeeX - 24f) + coffeeTextW + 14f;
+        Rectangle clusterRect = new(24, sh - 66, bottomClusterW, 40);
+        Color clusterBorder = coffeeUrgent
+            ? Raylib.ColorLerp(new Color(182, 148, 92, 92), new Color(246, 182, 74, 198), coffeePulse)
+            : new Color(182, 148, 92, 68);
+        Raylib.DrawRectangleRounded(clusterRect, 0.22f, 6, new Color(14, 11, 16, 162));
+        Raylib.DrawRectangleRoundedLinesEx(clusterRect, 0.22f, 6, coffeeUrgent ? 1.35f : 1f, clusterBorder);
 
         Color heart = _playerHp > 30 ? white : new Color(254, 152, 159, 255);
         Color shadow = new(14, 12, 11, 185);
-        Raylib.DrawCircle(44, sh - 46, 5.5f, shadow);
-        Raylib.DrawCircle(53, sh - 46, 5.5f, shadow);
-        Raylib.DrawTriangle(new(38.5f, sh - 45), new(48.5f, sh - 32.5f), new(58.5f, sh - 45), shadow);
-        Raylib.DrawCircle(43, sh - 47, 5.5f, heart);
-        Raylib.DrawCircle(52, sh - 47, 5.5f, heart);
-        Raylib.DrawTriangle(new(37.5f, sh - 46), new(47.5f, sh - 33.5f), new(57.5f, sh - 46), heart);
-        ShadowText(_serif, _playerHp.ToString(), 67, sh - 59, 28, heart);
+        Raylib.DrawCircle(43, sh - 46, 5.2f, shadow);
+        Raylib.DrawCircle(52, sh - 46, 5.2f, shadow);
+        Raylib.DrawTriangle(new(37.8f, sh - 45), new(47.5f, sh - 33f), new(57.2f, sh - 45), shadow);
+        Raylib.DrawCircle(42, sh - 47, 5.2f, heart);
+        Raylib.DrawCircle(51, sh - 47, 5.2f, heart);
+        Raylib.DrawTriangle(new(36.8f, sh - 46), new(46.5f, sh - 34f), new(56.2f, sh - 46), heart);
+        ShadowText(_serif, _playerHp.ToString(), 64, sh - 59, 26, heart);
 
-        Vector2[] bolt = [new(155, sh - 56), new(145, sh - 43), new(152, sh - 43),
-            new(149, sh - 33), new(161, sh - 47), new(154, sh - 47)];
+        Vector2[] bolt = [new(136, sh - 56), new(126, sh - 43), new(133, sh - 43),
+            new(130, sh - 33), new(142, sh - 47), new(135, sh - 47)];
         foreach (var o in new Vector2[] { new(1, 1), Vector2.Zero })
         {
             Color c = o == Vector2.Zero ? white : shadow;
@@ -1287,36 +1444,36 @@ public static partial class Program
             Raylib.DrawTriangle(bolt[2] + o, bolt[3] + o, bolt[4] + o, c);
             Raylib.DrawTriangle(bolt[2] + o, bolt[4] + o, bolt[5] + o, c);
         }
-        ShadowText(_serif, ((int)MathF.Round(_energy)).ToString(), 170, sh - 59, 28, white);
+        ShadowText(_serif, ((int)MathF.Round(_energy)).ToString(), 148, sh - 59, 26, white);
 
-        ShadowText(_uiFont,"[H]",232,sh-51,18,white);
-        Raylib.DrawRing(new(277,sh-41),3,4.5f,-95,95,12,white);
-        Raylib.DrawRectangleRounded(new(262,sh-47,14,13),.42f,6,white);
-        ShadowText(_uiFont,$"×{(Net.Guest ? GuestCups : Floor.PocketCoffeeCups)}",286,sh-51,18,white);
-        ShadowText(_uiFont,Loc.T("[G] Наживка","[G] Bait")+" ×"+Floor.BaitStock.Sum(),317,sh-51,16,white);
+        Raylib.DrawLineEx(new(206, sh - 58), new(206, sh - 34), 1f, new Color(182, 148, 92, 72));
+        if (coffeeUrgent)
+        {
+            Raylib.DrawRectangleRounded(
+                new(coffeeX - 7f, sh - 61, coffeeTextW + 14f, 30f), 0.24f, 6,
+                new Color(238, 158, 48, (int)(26 + 38 * coffeePulse)));
+        }
+        Color coffeeInk = coffeeUrgent
+            ? Raylib.ColorLerp(new Color(255, 240, 206, 255), new Color(252, 184, 72, 255), coffeePulse)
+            : coffeeCups > 0 ? white : new Color(182, 174, 162, 212);
+        ShadowText(_uiFont, coffeeLabel, coffeeX, sh - 54, 16, coffeeInk);
+
         if(_playerHp<65)
-            ShadowText(_uiFont,"Хил: [H] Кофе или Кофе-машина / Пицца [E]",38,sh-120,15,new Color(178,238,201,(int)(205+42*MathF.Sin((float)Raylib.GetTime()*3))));
+            ShadowText(_uiFont,Loc.T("Хил: [H] Кофе или Кофе-машина / Пицца [E]","Heal: [H] Coffee or Espresso / Pizza [E]"),36,leftStackY,15,new Color(248,208,128,(int)(205+44*MathF.Sin((float)Raylib.GetTime()*3.4f))));
         if(HealFlashTimer>0)
         {
             Color mint=new(99,220,158,(int)(94*HealFlashTimer/.5f));
             Raylib.DrawRectangleGradientH(0,0,64,sh,mint,Color.Blank);
             Raylib.DrawRectangleGradientH(sw-64,0,64,sh,Color.Blank,mint);
         }
+        DrawDirectionalHitIndicators2D(cx, cy);
         if(_lastDamageTimer>.4f)
         {
-            var hitCamera=BuildPlayerCamera();
-            Vector3 forward=Vector3.Normalize(new Vector3(hitCamera.Target.X-hitCamera.Position.X,0,hitCamera.Target.Z-hitCamera.Position.Z));
-            var delta=_lastDamageSourcePos-hitCamera.Position;
-            float angle=MathF.Atan2(Vector3.Dot(delta,Vector3.Cross(forward,Vector3.UnitY)),-Vector3.Dot(delta,forward))*180/MathF.PI;
             float elapsed=2.6f-_lastDamageTimer;
-            if(elapsed<.85f)
-                Raylib.DrawRing(new(cx,sh*.5f),62,65,90-angle-19,90-angle+19,20,new Color(231,63,71,(int)(220*(1-elapsed/.85f))));
             string alert=$"-{_lastDamageAmount} HP   {_lastDamageLabel}";
             ShadowText(_uiFont,alert,cx-GameFonts.Measure(_uiFont,alert,19).X/2,sh*.24f,19,new Color(255,173,170,(int)(255*(1-elapsed/2.2f))));
         }
 
-        var tools=_weapons.Hotbar;
-        int barX=cx-(tools.Length*70-4)/2, barY=sh-82;
         for(int i=0;i<tools.Length;i++)
         {
             Rectangle r=new(barX+i*70,barY,66,66);
@@ -1400,13 +1557,7 @@ public static partial class Program
             Raylib.DrawRectangleRoundedLinesEx(plate, 0.20f, 8, 1f, new Color(196,158,92,105));
             MainMenuAndPauseUI.Center(face,_hudStatusBanner,plate,20,DossierPrint.Ivory);
         }
-        for(int i=0;i<4;i++)
-        {
-            Vector2 axis=i switch {0=>Vector2.UnitX,1=>-Vector2.UnitX,2=>Vector2.UnitY,_=>-Vector2.UnitY};
-            Vector2 a=new Vector2(cx,cy)+axis*MathF.Round(_crosshairGap);
-            Raylib.DrawLineEx(a,a+axis*5,2.5f,new Color(18,20,23,150));
-            Raylib.DrawLineEx(a,a+axis*5,1.4f,white);
-        }
+        DrawCrosshairAndHitmarker2D(cx, cy, white);
         if(_weapons.CurrentWeapon==WeaponType.SolderingIron && _weapons.IronLockout>0)
             ShadowText(_uiFont,"Жало остывает",cx-56,cy+54,16,amber);
         if (_weapons.Capacity>0)
@@ -1423,6 +1574,132 @@ public static partial class Program
             Raylib.DrawRectangleGradientH(sw-width,0,width,sh,Color.Blank,Edge(_playerHitDir.X));
             Raylib.DrawRectangleGradientV(0,0,sw,height,Edge(_playerHitDir.Y),Color.Blank);
             Raylib.DrawRectangleGradientV(0,sh-height,sw,height,Color.Blank,Edge(-_playerHitDir.Y));
+        }
+    }
+
+    private static void DrawDirectionalHitIndicators2D(int cx, int cy)
+    {
+        bool any = false;
+        for (int i = 0; i < _hitArcs.Length; i++)
+            if (_hitArcs[i].Duration > 0f && _hitArcs[i].Age < _hitArcs[i].Duration) { any = true; break; }
+        if (!any) return;
+
+        var hitCamera = BuildPlayerCamera();
+        Vector3 forward = new(hitCamera.Target.X - hitCamera.Position.X, 0f, hitCamera.Target.Z - hitCamera.Position.Z);
+        if (forward.LengthSquared() < 0.0001f) forward = Vector3.UnitZ;
+        forward = Vector3.Normalize(forward);
+        Vector3 right = Vector3.Cross(forward, Vector3.UnitY);
+        Vector2 center = new(cx, cy);
+
+        for (int i = 0; i < _hitArcs.Length; i++)
+        {
+            var arc = _hitArcs[i];
+            if (arc.Duration <= 0f || arc.Age >= arc.Duration) continue;
+            float t = Math.Clamp(arc.Age / arc.Duration, 0f, 1f);
+            float alpha = MathF.Pow(1f - t, 1.45f);
+            if (alpha <= 0.01f) continue;
+
+            Vector3 delta = arc.SourcePos - hitCamera.Position;
+            delta.Y = 0f;
+            float theta;
+            if (delta.LengthSquared() < 0.0001f)
+                theta = MathF.PI * 0.5f;
+            else
+            {
+                Vector3 dir3 = Vector3.Normalize(delta);
+                float side = Vector3.Dot(dir3, right);
+                float ahead = Vector3.Dot(dir3, forward);
+                theta = MathF.Atan2(-ahead, side);
+            }
+
+            float radius = 68f + t * 5f;
+            float halfSpan = (20f + Math.Clamp(arc.Damage * 0.24f, 0f, 12f)) * (MathF.PI / 180f);
+            const int segments = 14;
+
+            Color glowCol = new(196, 18, 30, (int)(92 * alpha));
+            Color darkRim = new(18, 6, 8, (int)(168 * alpha));
+            Color coreCol = new(244, 46, 56, (int)(242 * alpha));
+
+            for (int s = 0; s < segments; s++)
+            {
+                float f0 = s / (float)segments;
+                float f1 = (s + 1) / (float)segments;
+                float fm = (f0 + f1) * 0.5f;
+                float a0 = theta - halfSpan + f0 * halfSpan * 2f;
+                float a1 = theta - halfSpan + f1 * halfSpan * 2f;
+                Vector2 p0 = center + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius;
+                Vector2 p1 = center + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * radius;
+                float taper = MathF.Sin(fm * MathF.PI);
+                float thick = 1.0f + 5.6f * taper;
+                Raylib.DrawLineEx(p0, p1, thick + 5.0f, glowCol);
+                Raylib.DrawLineEx(p0, p1, thick + 1.8f, darkRim);
+                Raylib.DrawLineEx(p0, p1, thick, coreCol);
+            }
+
+            // Sleek directional apex notch pointing directly toward the attacker
+            Vector2 radial = new(MathF.Cos(theta), MathF.Sin(theta));
+            Vector2 tangent = new(-radial.Y, radial.X);
+            Vector2 tip = center + radial * (radius + 9.5f);
+            Vector2 baseL = center + radial * (radius + 1.5f) - tangent * 6.5f;
+            Vector2 baseR = center + radial * (radius + 1.5f) + tangent * 6.5f;
+            Raylib.DrawTriangle(tip, baseL, baseR, coreCol);
+            Raylib.DrawTriangle(tip, baseR, baseL, coreCol);
+        }
+    }
+
+    private static void DrawCrosshairAndHitmarker2D(int cx, int cy, Color white)
+    {
+        Vector2 center = new(cx, cy);
+        float gap = MathF.Round(_crosshairGap);
+        if (gap < 10.5f)
+        {
+            Raylib.DrawCircleV(center, 2.3f, new Color(14, 14, 16, 165));
+            Raylib.DrawCircleV(center, 1.3f, white);
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            Vector2 axis = i switch { 0 => Vector2.UnitX, 1 => -Vector2.UnitX, 2 => Vector2.UnitY, _ => -Vector2.UnitY };
+            Vector2 a = center + axis * gap;
+            Vector2 b = a + axis * 5.5f;
+            Raylib.DrawLineEx(a, b, 3.0f, new Color(14, 16, 20, 168));
+            Raylib.DrawLineEx(a, b, 1.5f, white);
+        }
+
+        if (_hitmarkerDuration <= 0f || _hitmarkerAge >= _hitmarkerDuration) return;
+        float t = Math.Clamp(_hitmarkerAge / _hitmarkerDuration, 0f, 1f);
+        float ease = 1f - (1f - t) * (1f - t);
+        float fade = t < 0.35f ? 1f : Math.Clamp(1f - (t - 0.35f) / 0.65f, 0f, 1f);
+        if (fade <= 0.01f) return;
+
+        Color ink = _hitmarkerKill
+            ? new Color(246, 52, 62, (int)(255 * fade))
+            : _hitmarkerCrit
+                ? new Color(255, 208, 86, (int)(252 * fade))
+                : new Color(252, 249, 242, (int)(246 * fade));
+        Color outline = new(12, 10, 12, (int)(195 * fade));
+
+        float inner = (_hitmarkerKill ? 8.5f : _hitmarkerCrit ? 8.0f : 6.5f) + ease * (_hitmarkerKill ? 5.0f : 4.0f);
+        float outer = inner + (_hitmarkerKill ? 10.5f : _hitmarkerCrit ? 9.0f : 7.0f);
+        float stroke = _hitmarkerKill ? 2.8f : _hitmarkerCrit ? 2.4f : 1.9f;
+
+        for (int sx = -1; sx <= 1; sx += 2)
+        for (int sy = -1; sy <= 1; sy += 2)
+        {
+            Vector2 diag = Vector2.Normalize(new Vector2(sx, sy));
+            Vector2 p0 = center + diag * inner;
+            Vector2 p1 = center + diag * outer;
+            Raylib.DrawLineEx(p0, p1, stroke + 2.6f, outline);
+            Raylib.DrawLineEx(p0, p1, stroke, ink);
+
+            if (_hitmarkerKill)
+            {
+                float inner2 = outer + 3.4f + ease * 3.2f;
+                float outer2 = inner2 + 7.2f;
+                Vector2 q0 = center + diag * inner2;
+                Vector2 q1 = center + diag * outer2;
+                Raylib.DrawLineEx(q0, q1, stroke + 1.8f, outline);
+                Raylib.DrawLineEx(q0, q1, stroke * 0.80f, ink);
+            }
         }
     }
 
@@ -1755,7 +2032,7 @@ public static partial class Program
         Check(!Floor.HasWeapon(WeaponType.CaptureNet) && !TrySpendCash(3),"zero budget");
         Check(_weapons.CurrentWeapon==WeaponType.BareHands,"locked weapon");
         RoundTrip();
-        Check(_world.Frogs.Count is >=7 and <=9 && _world.ActiveCoders.Count==0,"visible lobby population");
+        Check(_world.Frogs.Count == 3 && _world.ActiveCoders.Count==0,"visible lobby population");
         Check(_world.Frogs.Any(f=>f.Feet.Y>.15f),"jumping frogs at spawn");
         _weapons.Equip(WeaponType.BareHands);
         capture("12_bare_start_frogs.png");
@@ -1822,7 +2099,8 @@ public static partial class Program
         _playerPos=new(.2f,1.72f,11.5f); LookAtTarget(new(.25f,.75f,7.4f));
         for(int i=0;i<32;i++) _weapons.UpdateWeapons(1f/60,BuildPlayerCamera());
         capture("13_net_and_progression.png");
-        var crash=_world.Frogs.First(f=>f.SpeciesId=="frog_crash");
+        var crash=_world.Frogs.FirstOrDefault(f=>f.SpeciesId=="frog_crash") ?? _world.SpawnFrog(0,"frog_crash");
+        for(int i=0;i<60 && crash.VentExit;i++) TickFloor(1f/60);
         Approach(crash.Feet+Vector3.UnitY*.11f);
         Key(KeyboardKey.One); Attack();
         Check(_world.Frogs.Contains(crash) && Floor.PocketFrogs.Count==0 && _hudStatusBanner=="Нужен Сачок ($3) у Вероники","crash dodge");
@@ -2559,6 +2837,29 @@ public static partial class Program
         capture("22_elevator_repair_reveal.png");
         FinishElevatorIntro();
         Check(_world.ElevatorBoss.State==ElevatorBossState.ChargingPlayer,"charge after walkout");
+        // Live visual QC captures: monumental Boss Bar (with ghost drain & shield) + Combat Feedback + Clever Escape Pursuit Dossier
+        {
+            var boss = _world.ElevatorBoss;
+            boss.Phase = 2;
+            boss.Hp = 500f;
+            boss.ShieldHp = 135f;
+            DrawFrame();
+            boss.Hp = 420f;
+            boss.ShieldHp = 92f;
+            _playerHp = 52;
+            Floor.PocketCoffeeCups = 2;
+            TriggerDirectionalHitIndicator(boss.Position + new Vector3(4.2f, 0f, 1.4f), 26);
+            TriggerHitmarker(crit: true, kill: false);
+            TriggerCrosshairBloom(6f);
+            capture("74_boss_hud_combat_feedback.png");
+
+            _world.BossEscapedPursuit = true;
+            Floor.FinalePending = true;
+            Floor.ShutdownTime = 0f;
+            OpenFloorPanel(FloorPanel.BossFinale);
+            capture("75_boss_escape_pursuit_dossier.png");
+            OpenFloorPanel(FloorPanel.None);
+        }
         foreach(bool miniboss in new[]{false,true})
         {
             ResetNewGameFloor(greet:false);
@@ -3597,6 +3898,7 @@ public static partial class Program
         Check(_world.BossInCombat,"quarantine contract encounter");
         _world.ElevatorBoss.Hp=1; _world.ElevatorBoss.Position=new(24,0,17);
         At(new(24,1.72f,20),new(24,1.35f,17)); Strike(WeaponType.MicroUzi,new(24,1.35f,17));
+        for(int i=0;i<20 && !_world.ElevatorBoss.IsDefeated;i++) TickFloor(.1f);
         Floor.Tick(.01f,_world,null); Check(Floor.Report is {Job:4,Success:true},"agent liquidation");
         var restoreData=MainMenuAndPauseUI.CaptureCurrentGameState!();
         pendingFloorSave=null;

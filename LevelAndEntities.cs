@@ -38,7 +38,8 @@ public enum ElevatorBossState
     StunnedWallCrash = 3,
     SpinningWhileTrue = 4,
     ThrowingNodeModules = 5,
-    Defeated = 6
+    Defeated = 6,
+    Dying = 8
 }
 
 public sealed class VibeCoderEntity
@@ -148,9 +149,19 @@ public sealed class GalleyDeskSlot
     public float WhackFlashTimer;
 }
 
+public enum EnemyProjectileKind
+{
+    CoffeeCup = 0,
+    Keyboard = 1,
+    Laptop = 2,
+    TaserDart = 3,
+    NodeModulesCrate = 4
+}
+
 public struct EnemyProjectile3D
 {
     public Vector3 Position;
+    public Vector3 Origin;
     public Vector3 Velocity;
     public Vector3 Rotation;
     public Vector3 AngularVelocity;
@@ -164,6 +175,21 @@ public struct EnemyProjectile3D
     public int OwnerId;
     public bool Deflected, Coin;
     public bool IsNodeModulesCube, IsGlitch;
+    public EnemyProjectileKind Kind;
+}
+
+internal struct CombatDebrisParticle3D
+{
+    public Vector3 Position;
+    public Vector3 Velocity;
+    public Vector3 Size;
+    public float Yaw;
+    public float Spin;
+    public float Life;
+    public float MaxLife;
+    public Color Tint;
+    public Finish Surface;
+    public bool Glowing;
 }
 
 public struct CashBurstParticle3D
@@ -385,20 +411,32 @@ public sealed partial class SkyscraperFloor1World
     public int TotalCodersSoldToHr = 0;
 
     // Elevator & Progression State
-    internal const float RepairSeconds = 2.3f, IntroSeconds = 2.4f;
+    internal const float RepairSeconds = 2.3f, IntroSeconds = 2.4f, MeltdownSeconds = 1.85f;
     public float ElevatorGlassOpacity = 1f;
     public bool ElevatorRepaired;
     internal bool BrokenElevator => !ElevatorRepaired && !ElevatorBoss.IsActive && !ElevatorBoss.IsDefeated;
     internal bool BossRevealed => ElevatorBoss.IsActive && ElevatorBoss.State != ElevatorBossState.Repairing;
     internal float BossHudOpacity => !BossRevealed ? 0 : ElevatorBoss.State == ElevatorBossState.IntroSpeech ?
         Smooth((IntroSeconds-ElevatorBoss.StateTimer)/.45f) : 1;
-    internal bool BossInCombat => BossRevealed && ElevatorBoss.State != ElevatorBossState.IntroSpeech;
-    internal bool BossModelVisible => BossRevealed || (ElevatorBoss.IsActive &&
-        ElevatorBoss.State == ElevatorBossState.Repairing && ElevatorBoss.StateTimer < RepairSeconds * .5f && ElevatorGlassOpacity < .65f) ||
-        (ElevatorBoss.IsDefeated && Systems.Verdict == AgentVerdict.Pending);
+    internal bool BossInCombat => BossRevealed && ElevatorBoss.State != ElevatorBossState.IntroSpeech &&
+        ElevatorBoss.State != ElevatorBossState.Dying && !BossEscapedPursuit;
+    internal bool BossModelVisible =>
+        (BossRevealed && !(ElevatorBoss.State == ElevatorBossState.Dying && (MeltdownSeconds - ElevatorBoss.StateTimer) >= 1.45f)) ||
+        (ElevatorBoss.IsActive && ElevatorBoss.State == ElevatorBossState.Repairing && ElevatorBoss.StateTimer < RepairSeconds * .5f && ElevatorGlassOpacity < .65f) ||
+        (ElevatorBoss.IsDefeated && !BossWreckageActive && Systems.Verdict == AgentVerdict.Pending);
     public bool HasElevatorKey = false;
     public float ElevatorDoorOpenAmount = 0f; // 0 = closed, 1 = open
     public bool IsFloor2Unlocked = false;
+    public bool BossEscapedPursuit = false;
+    public bool BossWreckageActive = false;
+    public Vector3 BossWreckagePos;
+    public float BossWreckageYaw;
+    private float _bossMeltdownBurstAge = -1f;
+    private int _bossMeltdownStageMask = 0;
+    private float _bossTackleCooldown = 0f;
+    private float _escapePursuitTimer = -1f;
+    private bool _escapeDoorSmashed = false;
+    private readonly List<CombatDebrisParticle3D> _combatDebris = new(128);
     public float WarningBeaconPhase = 0f;
 
     // Burning Chaos Boss Arena & Cutscene Set-Piece State
@@ -705,6 +743,14 @@ public sealed partial class SkyscraperFloor1World
         ElevatorGlassOpacity = 1f;
         ElevatorRepaired = HasElevatorKey = false;
         IsFloor2Unlocked = false;
+        BossEscapedPursuit = false;
+        BossWreckageActive = false;
+        _bossMeltdownBurstAge = -1f;
+        _bossMeltdownStageMask = 0;
+        _bossTackleCooldown = 0f;
+        _escapePursuitTimer = -1f;
+        _escapeDoorSmashed = false;
+        _combatDebris.Clear();
         CarriedCoder = null;
         BossArenaChaos = 0f;
         CutsceneRocketTime = -1f;
@@ -1244,7 +1290,7 @@ public sealed partial class SkyscraperFloor1World
         if(feet<4)
             for(int side=-1;side<=1;side+=2)
                 for(int leaf=-1;leaf<=1;leaf+=2)
-                    pos=PushOutOfBoxXZ(pos,LiftLeafCenter(side,leaf),1.06f,.045f,playerRadius);
+                    pos=PushOutOfBoxXZ(pos,LiftLeafCenter(side,leaf),.70f,.045f,playerRadius);
         for(int i=0;i<RoomDoors.Length && feet<2.55f;i++)
         {
             float s=RoomExitSign(i);
@@ -1310,7 +1356,7 @@ public sealed partial class SkyscraperFloor1World
             for(int leaf=-1;leaf<=1;leaf+=2)
             {
                 var center=LiftLeafCenter(side,leaf);
-                Vector3 half=new(1.06f,2,.045f);
+                Vector3 half=new(.70f,1.56f,.045f);
                 var hit=Raylib.GetRayCollisionBox(ray,new(center-half,center+half));
                 if(hit.Hit && hit.Distance>=0) range=Math.Min(range,hit.Distance);
             }
@@ -1504,9 +1550,36 @@ public sealed partial class SkyscraperFloor1World
     // =========================================================================
     // ELEVATOR BOSS SUMMONING & AI
     // =========================================================================
+    internal const string EscapePursuitBossLine = "Думаешь, уедешь?! Я уже ползу по тросам шахты на второй этаж!";
+    internal const string EscapePursuitShleifLine = "Красавчик, проскочил! Держись — он полез следом по шахте. Если выживешь, с меня перец с говядиной... правда, пока без говядины.";
+    internal const string EscapeElevatorButtonPrompt = "ЭКСТРЕННО ЗАКРЫТЬ ЛИФТ — УЙТИ НА 2-Й ЭТАЖ!";
+
+    internal bool IsPlayerInsideNorthElevatorCabin(Vector3 pos) =>
+        MathF.Abs(pos.X) < 1.32f && pos.Z > -8.20f && pos.Z < -4.45f;
+
+    internal string TriggerCleverElevatorEscape()
+    {
+        if (BossEscapedPursuit || !BossInCombat) return ElevatorPrompt();
+        BossEscapedPursuit = true;
+        IsFloor2Unlocked = true;
+        _escapePursuitTimer = 0f;
+        _escapeDoorSmashed = false;
+        ElevatorBoss.SpeechBubble = EscapePursuitBossLine;
+        ElevatorBoss.SpeechTimer = 6.5f;
+        Systems.FinalePending = true;
+        Systems.ShutdownTime = 0.90f;
+        AudioMusicSystem.PlayActionClack(0.65f);
+        AudioMusicSystem.PlayBossSiren();
+        AudioMusicSystem.Speak("ИИ-Агент v0.1", EscapePursuitBossLine, SpeakerVoiceType.RoboticAgent);
+        Systems.Announce(EscapePursuitShleifLine, 6.5f);
+        return "ЛИФТ ЗАХЛОПНУТ! ИИ-Агент v0.1 полез следом по шахте!";
+    }
+
     internal string ElevatorPrompt()
     {
+        if (BossEscapedPursuit) return "ЭКСТРЕННЫЙ ПРОРЫВ: лифт идёт на 2-й этаж!";
         if (ElevatorBoss.IsDefeated) return "Лифт на 2-й этаж открыт";
+        if (ElevatorBoss.State == ElevatorBossState.Dying) return "ПЕРЕГРЕВ ЯДРА — ОТОЙДИ ОТ ВЗРЫВА!";
         if (ElevatorBoss.State == ElevatorBossState.Repairing) return "Питание восстановлено. Карантинный замок снят";
         if (ElevatorBoss.IsActive) return "Шахта заблокирована до конца боя";
         return (HasElevatorKey, Systems.HasWeapon(WeaponType.SolderingIron)) switch
@@ -1538,6 +1611,13 @@ public sealed partial class SkyscraperFloor1World
         ElevatorGlassOpacity = 1f;
         ElevatorDoorOpenAmount = 0f;
         BossArenaChaos = 0f;
+        BossEscapedPursuit = false;
+        BossWreckageActive = false;
+        _bossMeltdownBurstAge = -1f;
+        _bossMeltdownStageMask = 0;
+        _bossTackleCooldown = 0f;
+        _escapePursuitTimer = -1f;
+        _escapeDoorSmashed = false;
         CutsceneRocketTime = -1f;
         CutsceneShowDroppedGun = false;
         CutsceneDroppedGunPos = Vector3.Zero;
@@ -1655,15 +1735,21 @@ public sealed partial class SkyscraperFloor1World
         UpdateVibeCoders(dt, playerPos,guestPosition,onPlayerHitByProjectile,onGuestHit,onPassiveIncomeOrPayout,second,hitSecond);
 
         // 3. Update Floor 1 Elevator Boss
-        UpdateElevatorBoss(dt, Nearest(ElevatorBoss.Position));
+        UpdateElevatorBoss(dt, Nearest(ElevatorBoss.Position), onPlayerHitByProjectile);
 
-        // 4. Update Enemy Projectiles (500 ERROR blocks & 40GB node_modules cubes)
+        // 4. Update Enemy Projectiles (Real 3D Office Projectiles & 40GB node_modules crates)
         UpdateEnemyProjectiles(dt, playerPos, onPlayerHitByProjectile,guestPosition,onGuestHit,onPassiveIncomeOrPayout,second,hitSecond);
 
         // 5. Update 4 Galley Desks (Passive +$20/sec per working coder, or Twitter slack state)
         int passiveEarned = UpdateGalleyDesks(dt, onPassiveIncomeOrPayout);
 
         UpdateCashParticles(dt);
+        UpdateCombatDebris(dt);
+        if (_bossMeltdownBurstAge >= 0f)
+        {
+            _bossMeltdownBurstAge += dt;
+            if (_bossMeltdownBurstAge > 3.2f) _bossMeltdownBurstAge = -1f;
+        }
 
         Systems.Tick(dt,this,onPassiveIncomeOrPayout);
         TickFrogs(dt,playerPos,guestPosition,second);
@@ -2004,30 +2090,40 @@ public sealed partial class SkyscraperFloor1World
         if (c.Windup>0)
         {
             c.Windup = Math.Max(0,c.Windup-dt);
-            if(c.Archetype==CoderArchetype.ToxicPM)
-        {
-            c.AttackCooldown-=dt;
-            if(c.AttackCooldown<=0 && visible)
-            {
-                foreach(var ally in ActiveCoders)
-                    if(ally.State==CoderAIState.CombatHostile && Vector3.DistanceSquared(ally.Position,c.Position)<=81) ally.Deadline=10;
-                Systems.Risk(heat:4); c.AttackCooldown=22;
-            }
-            float pace=dist<6 ? -2.8f : dist>9 ? 2.3f : 0;
-            c.Position=ResolvePlayerCollision(c.Position+dir*dt*pace,.24f);
-            c.WalkCycle+=Math.Abs(pace)*dt*5;
-            return false;
-        }
-        if (c.Windup>0) return false;
-            c.AttackCooldown = c.WindingSlap ? 1.4f : 1.85f;
+            if (c.Windup>0) return false;
+            c.AttackCooldown = c.WindingSlap ? 1.4f : (c.Archetype == CoderArchetype.SecurityGuard ? 2.25f : 1.85f);
             if (c.WindingSlap) return (!c.LaptopLost || c.Archetype==CoderArchetype.SecurityGuard) && visible && dist<2.8f && Math.Abs(eye.Y-1.4f)<1;
+            EnemyProjectileKind projKind = ProjectileKindFor(c.Archetype);
+            float projSpeed = projKind == EnemyProjectileKind.TaserDart ? 19.5f : projKind == EnemyProjectileKind.Keyboard ? 13.0f : 12.0f;
+            Vector3 projDir = (c.ThrowTarget - hand).LengthSquared() > 1e-4f ? Vector3.Normalize(c.ThrowTarget - hand) : dir;
+            Vector3 spin = projKind switch
+            {
+                EnemyProjectileKind.CoffeeCup => new(310, 440, 260),
+                EnemyProjectileKind.Keyboard  => new(220, 520, 170),
+                EnemyProjectileKind.Laptop    => new(240, 340, 190),
+                EnemyProjectileKind.TaserDart => Vector3.Zero,
+                _                             => new(180, 290, 110)
+            };
+            string projLabel = projKind switch
+            {
+                EnemyProjectileKind.CoffeeCup => c.TimidIntern && !Systems.WingsUnlocked ? "Конфликт в main" : "Горячий раф",
+                EnemyProjectileKind.Keyboard  => "Механика 65%",
+                EnemyProjectileKind.TaserDart => "Дротик тазера",
+                _ => c.Archetype == CoderArchetype.CryptoBro ? "Глитч-ноут" : "Кирпич-ЯблоБук"
+            };
+            if (projKind == EnemyProjectileKind.TaserDart)
+                SpawnCombatDebrisBurst(hand, projDir, 6, new(115, 224, 255, 255), Finish.Plasma, glowing: true, speed: 3.4f);
             EnemyProjectiles.Add(new() {
-                Position=hand, Velocity=Vector3.Normalize(c.ThrowTarget-hand)*12,
-                AngularVelocity=new(180,290,110), Radius=.14f, Life=2, MaxLife=2,
-                OwnerId=c.Id, Coin=c.Archetype==CoderArchetype.CryptoBro,
-                Damage=c.TimidIntern && !Systems.WingsUnlocked ? 18 : 7, Label=c.Archetype==CoderArchetype.CryptoBro ? "Глитч-коин" : "Конфликт в main",
-                PrimaryColor=c.Archetype==CoderArchetype.CryptoBro ? Color.Gold : new(255,64,31,255),
-                WireColor=new(255,212,106,255), IsGlitch=true });
+                Position = hand, Origin = hand, Velocity = projDir * projSpeed,
+                AngularVelocity = spin, Radius = projKind == EnemyProjectileKind.Laptop ? .22f : projKind == EnemyProjectileKind.Keyboard ? .20f : .15f,
+                Life = projKind == EnemyProjectileKind.TaserDart ? 1.4f : 2.3f,
+                MaxLife = projKind == EnemyProjectileKind.TaserDart ? 1.4f : 2.3f,
+                OwnerId = c.Id, Coin = c.Archetype == CoderArchetype.CryptoBro,
+                Damage = c.TimidIntern && !Systems.WingsUnlocked ? 18 : (projKind == EnemyProjectileKind.TaserDart ? 10 : 7),
+                Label = projLabel,
+                PrimaryColor = projKind == EnemyProjectileKind.TaserDart ? new(88, 212, 255, 255) : new(235, 196, 132, 255),
+                WireColor = projKind == EnemyProjectileKind.TaserDart ? new(185, 245, 255, 255) : new(255, 212, 106, 255),
+                IsGlitch = true, Kind = projKind });
             return false;
         }
         bool synced=ActiveCoders.Exists(lead=>lead!=c && lead.Archetype==CoderArchetype.TeamLeadMeeter &&
@@ -2036,16 +2132,31 @@ public sealed partial class SkyscraperFloor1World
         if(c.Archetype==CoderArchetype.SecurityGuard)
         {
             if(dist>1.7f) { c.Position=ResolvePlayerCollision(c.Position+dir*4.8f*dt,.24f); c.WalkCycle+=14*dt; }
-            if(visible && dist<2.5f && c.AttackCooldown<=0) { c.WindingSlap=true; c.Windup=.35f; }
+            if(visible && c.AttackCooldown<=0)
+            {
+                if(dist<2.5f) { c.WindingSlap=true; c.Windup=.32f; }
+                else if(dist<=10.5f)
+                {
+                    c.WindingSlap=false; c.Windup=.26f;
+                    c.ThrowTarget = eye - Vector3.UnitY*.32f;
+                    c.SpeechBubble = "СТОЙ! ПРИМЕНЯЮ ТАЗЕР!";
+                    c.SpeechTimer = .75f;
+                }
+            }
             return false;
         }
         if (c.AttackCooldown<=0 && visible && dist<=11)
         {
             c.WindingSlap = !c.LaptopLost && dist<2.8f;
-            c.Windup = c.WindingSlap ? .38f : .58f;
+            c.Windup = c.WindingSlap ? .34f : .32f;
             c.ThrowTarget = eye-Vector3.UnitY*.38f;
-            c.SpeechBubble = c.WindingSlap ? "Лови ноут!" : "Пушу в main!";
-            c.SpeechTimer = c.Windup+.22f;
+            c.SpeechBubble = c.WindingSlap ? "Лови ноут!" : c.Archetype switch
+            {
+                CoderArchetype.JuniorPrompter => "Лови горячий раф!",
+                CoderArchetype.TeamLeadMeeter => "Клава в лицо — синк окончен!",
+                _ => "Пушу в main!"
+            };
+            c.SpeechTimer = c.Windup+.35f;
             return false;
         }
         Vector3 strafe = new(dir.Z,0,-dir.X);
@@ -2057,6 +2168,14 @@ public sealed partial class SkyscraperFloor1World
         c.WalkCycle += dt*motion.Length()*5;
         return false;
     }
+
+    private static EnemyProjectileKind ProjectileKindFor(CoderArchetype role) => role switch
+    {
+        CoderArchetype.JuniorPrompter => EnemyProjectileKind.CoffeeCup,
+        CoderArchetype.TeamLeadMeeter or CoderArchetype.ToxicPM => EnemyProjectileKind.Keyboard,
+        CoderArchetype.SecurityGuard => EnemyProjectileKind.TaserDart,
+        _ => EnemyProjectileKind.Laptop
+    };
 
     private void SpawnSaasGuruErrorBlock(Vector3 origin, Vector3 playerPos,int ownerId)
     {
@@ -2075,30 +2194,33 @@ public sealed partial class SkyscraperFloor1World
         EnemyProjectiles.Add(new EnemyProjectile3D
         {
             Position = origin,
-            Velocity = dir * 9.5f, OwnerId=ownerId,
+            Origin = origin,
+            Velocity = dir * 10.2f, OwnerId=ownerId,
             Rotation = Vector3.Zero,
-            AngularVelocity = new Vector3(180f, 260f, 140f),
-            Radius = 0.42f,
+            AngularVelocity = new Vector3(210f, 320f, 160f),
+            Radius = 0.36f,
             Life = 4.0f,
             MaxLife = 4.0f,
             Damage = 12,
             Label = label,
             PrimaryColor = new Color(235, 35, 55, 240),
             WireColor = new Color(255, 225, 70, 255),
-            IsNodeModulesCube = false
+            IsNodeModulesCube = false,
+            Kind = EnemyProjectileKind.Laptop
         });
     }
 
-    private void UpdateElevatorBoss(float dt, Vector3 playerPos)
+    private void UpdateElevatorBoss(float dt, Vector3 playerPos, Action<int, string, Vector3>? onPlayerHit = null)
     {
         ElevatorBoss.LookTarget = playerPos;
         ElevatorBoss.HitFlinchTimer=Math.Max(0,ElevatorBoss.HitFlinchTimer-dt);
+        _bossTackleCooldown = MathF.Max(0f, _bossTackleCooldown - dt);
         if (!ElevatorBoss.IsActive || ElevatorBoss.IsDefeated)
         {
             CutsceneRocketTime = -1f;
             CutsceneShowDroppedGun = false;
             BossArenaChaos = MathF.Max(0f, BossArenaChaos - dt * 0.6f);
-            if (ElevatorBoss.IsDefeated)
+            if (ElevatorBoss.IsDefeated && !BossEscapedPursuit)
             {
                 ElevatorDoorOpenAmount = MathF.Min(1.0f, ElevatorDoorOpenAmount + dt * 0.8f);
             }
@@ -2106,6 +2228,123 @@ public sealed partial class SkyscraperFloor1World
         }
 
         var b = ElevatorBoss;
+        if (BossEscapedPursuit)
+        {
+            // Clever Escape Pursuit: heavy steel doors SLAM SHUT in the Boss's face while he lunges & smashes sparks against them!
+            if (_escapePursuitTimer >= 0f) _escapePursuitTimer += dt;
+            ElevatorDoorOpenAmount = MathF.Max(0f, ElevatorDoorOpenAmount - dt * 5.2f);
+            Vector3 doorOutside = NorthElevatorPos + new Vector3(0f, 0f, -1.08f);
+            Vector3 toDoor = doorOutside - b.Position;
+            toDoor.Y = 0f;
+            float distDoor = toDoor.Length();
+            if (distDoor > 0.12f)
+            {
+                Vector3 dirDoor = toDoor / distDoor;
+                b.Position += dirDoor * MathF.Min(distDoor, 14.5f * dt);
+                b.FacingYaw = MathF.Atan2(dirDoor.X, dirDoor.Z);
+                b.StridePhase += dt * 18f;
+            }
+            else
+            {
+                b.FacingYaw = 0f; // Facing directly into closed North Elevator cabin!
+            }
+            if (!_escapeDoorSmashed && _escapePursuitTimer >= 0.28f)
+            {
+                _escapeDoorSmashed = true;
+                AudioMusicSystem.PlayComicBoom();
+                AudioMusicSystem.PlayKnockout();
+                SpawnCombatDebrisBurst(NorthElevatorPos + new Vector3(0f, 1.75f, -0.22f), -Vector3.UnitZ, 26,
+                    new(255, 198, 72, 255), Finish.Lamp, glowing: true, speed: 6.2f);
+                StyleComboSystem.RegisterTrick("ПРОРВАЛСЯ В ЛИФТ!", "ELEVATOR JUKE!", 0.65f, 95f,
+                    new Color(245, 202, 98, 255), hitstop: false, shake: 0.048f);
+            }
+            if (b.SpeechTimer > 0f) b.SpeechTimer = MathF.Max(0f, b.SpeechTimer - dt);
+            return;
+        }
+
+        if (b.State == ElevatorBossState.Dying)
+        {
+            // Multi-stage 1.85s reactor meltdown sequence: erratic sparks -> 3 internal explosions -> MASSIVE FINAL DETONATION -> charred wreckage!
+            b.StateTimer = MathF.Max(0f, b.StateTimer - dt);
+            float elapsed = MeltdownSeconds - b.StateTimer;
+            b.HitFlashTimer = MathF.Sin(elapsed * 44f) > 0f ? 0.10f : 0f;
+            if (b.SpeechTimer > 0f) b.SpeechTimer = MathF.Max(0f, b.SpeechTimer - dt);
+            BossWreckagePos = b.Position;
+            BossWreckageYaw = b.FacingYaw;
+
+            if (elapsed >= 0.25f && (_bossMeltdownStageMask & 1) == 0)
+            {
+                _bossMeltdownStageMask |= 1;
+                AudioMusicSystem.PlayComicBoom();
+                SpawnCombatDebrisBurst(b.Position + new Vector3(-0.48f, 2.05f, 0f), Vector3.UnitY, 14,
+                    new(255, 168, 56, 255), Finish.Lamp, glowing: true, speed: 5.5f);
+                StyleComboSystem.RegisterTrick("", "", 0f, 0f, Color.White, shake: 0.028f);
+            }
+            if (elapsed >= 0.75f && (_bossMeltdownStageMask & 2) == 0)
+            {
+                _bossMeltdownStageMask |= 2;
+                AudioMusicSystem.PlayComicBoom();
+                SpawnCombatDebrisBurst(b.Position + new Vector3(+0.48f, 2.10f, 0f), Vector3.UnitY, 16,
+                    new(255, 132, 42, 255), Finish.Lamp, glowing: true, speed: 6.4f);
+                StyleComboSystem.RegisterTrick("", "", 0f, 0f, Color.White, shake: 0.036f);
+            }
+            if (elapsed >= 1.25f && (_bossMeltdownStageMask & 4) == 0)
+            {
+                _bossMeltdownStageMask |= 4;
+                AudioMusicSystem.PlayComicBoom();
+                SpawnCombatDebrisBurst(b.ChestCore, Vector3.UnitY, 20,
+                    new(255, 92, 34, 255), Finish.Lamp, glowing: true, speed: 7.4f);
+                StyleComboSystem.RegisterTrick("", "", 0f, 0f, Color.White, shake: 0.048f);
+            }
+            if (elapsed >= 1.45f && (_bossMeltdownStageMask & 8) == 0)
+            {
+                _bossMeltdownStageMask |= 8;
+                BossWreckageActive = true;
+                _bossMeltdownBurstAge = 0f;
+                AudioMusicSystem.PlayComicBoom();
+                AudioMusicSystem.PlayKnockout();
+                AudioMusicSystem.PlayTarotCash();
+                Program.TriggerHitstop(0.040f);
+                StyleComboSystem.RegisterTrick("УТИЛИЗИРОВАН!", "CORE DETONATED!", 0.85f, 140f,
+                    new Color(255, 136, 48, 255), hitstop: false, shake: 0.068f);
+                // 28 flying titanium armor chunks & scorched debris!
+                for (int d = 0; d < 28; d++)
+                {
+                    float ang = d * MathF.Tau / 28f + (_rng.NextSingle() - 0.5f) * 0.28f;
+                    float spd = 4.2f + _rng.NextSingle() * 7.8f;
+                    float up = 3.8f + _rng.NextSingle() * 6.4f;
+                    bool ember = (d % 3 == 0);
+                    _combatDebris.Add(new CombatDebrisParticle3D
+                    {
+                        Position = b.Position + new Vector3(MathF.Cos(ang) * 0.35f, 1.0f + _rng.NextSingle() * 1.4f, MathF.Sin(ang) * 0.35f),
+                        Velocity = new Vector3(MathF.Cos(ang) * spd, up, MathF.Sin(ang) * spd),
+                        Size = ember ? new(0.10f, 0.08f, 0.10f) : new(0.24f + _rng.NextSingle() * 0.22f, 0.09f + _rng.NextSingle() * 0.12f, 0.18f + _rng.NextSingle() * 0.18f),
+                        Yaw = _rng.NextSingle() * MathF.Tau,
+                        Spin = (_rng.NextSingle() - 0.5f) * 18f,
+                        Life = 1.9f + _rng.NextSingle() * 1.1f,
+                        MaxLife = 3.0f,
+                        Tint = ember ? new(255, 146, 42, 255) : (d % 2 == 0 ? new(210, 206, 200, 255) : new(44, 42, 46, 255)),
+                        Surface = ember ? Finish.Lamp : Finish.Armor,
+                        Glowing = ember
+                    });
+                }
+            }
+            if (b.StateTimer <= 0f)
+            {
+                b.IsDefeated = true;
+                b.IsActive = false;
+                b.State = ElevatorBossState.Defeated;
+                b.SpeechBubble = AgentDefeatTwistLine;
+                b.SpeechTimer = 7.5f;
+                IsFloor2Unlocked = true;
+                ElevatorDoorOpenAmount = 1.0f;
+                Systems.FinalePending = true;
+                Systems.ShutdownTime = 0.45f;
+                AudioMusicSystem.Speak("ИИ-Агент v0.1", AgentDefeatTwistLine, SpeakerVoiceType.RoboticAgent, "vo_boss_defeat_twist");
+            }
+            return;
+        }
+
         if(b.KnockbackVel.LengthSquared()>.001f)
         {
             float decay=MathF.Exp(-12*dt);
@@ -2135,6 +2374,8 @@ public sealed partial class SkyscraperFloor1World
             BossArenaChaos = 1f;
             CutsceneRocketTime = -1f;
             CutsceneShowDroppedGun = false;
+            // Keep North Elevator doors standing OPEN behind Boss during combat as a high-risk clever escape bait!
+            ElevatorDoorOpenAmount = MathF.Min(1.0f, ElevatorDoorOpenAmount + dt * 2.2f);
         }
         UpdateBossPhase();
         b.ShieldDelay=Math.Max(0,b.ShieldDelay-dt);
@@ -2231,6 +2472,16 @@ public sealed partial class SkyscraperFloor1World
                     nextPos = resolved;
                 }
                 b.Position = nextPos;
+
+                // Menacing bull-rush proximity tackle: player must dodge/bait Boss out into the North Wing instead of walking past him!
+                float distToPlayerXZ = Vector2.Distance(new(b.Position.X, b.Position.Z), new(playerPos.X, playerPos.Z));
+                if (distToPlayerXZ < 1.48f && _bossTackleCooldown <= 0f)
+                {
+                    _bossTackleCooldown = 1.15f;
+                    onPlayerHit?.Invoke(18, "ИИ-Агент v0.1 (Таран)", b.Position);
+                    AudioMusicSystem.PlayKnockout();
+                    StyleComboSystem.RegisterTrick("", "", 0f, 0f, Color.White, shake: 0.032f);
+                }
 
                 for (int p = 0; p < Pillars.Count; p++)
                 {
@@ -2339,6 +2590,7 @@ public sealed partial class SkyscraperFloor1World
         EnemyProjectiles.Add(new EnemyProjectile3D
         {
             Position = origin,
+            Origin = origin,
             Velocity = dir * (ElevatorBoss.Phase>=2 ? 15f : 10.2f),
             Rotation = Vector3.Zero,
             AngularVelocity = new Vector3(130f, 190f, 150f),
@@ -2349,8 +2601,119 @@ public sealed partial class SkyscraperFloor1World
             Label = "node_modules (40 GB)",
             PrimaryColor = new Color(22, 26, 34, 250),
             WireColor = new Color(65, 255, 130, 255),
-            IsNodeModulesCube = true
+            IsNodeModulesCube = true,
+            Kind = EnemyProjectileKind.NodeModulesCrate
         });
+    }
+
+    private void SpawnCombatDebrisBurst(Vector3 origin, Vector3 normal, int count, Color tint, Finish surface, bool glowing = false, float speed = 4.5f, float sizeScale = 1f)
+    {
+        Vector3 n = normal.LengthSquared() > 1e-5f ? Vector3.Normalize(normal) : Vector3.UnitY;
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 rnd = new(_rng.NextSingle() * 2f - 1f, _rng.NextSingle() * 1.4f + 0.25f, _rng.NextSingle() * 2f - 1f);
+            Vector3 vel = (n * 0.65f + rnd) * (speed * (0.45f + _rng.NextSingle() * 0.85f));
+            _combatDebris.Add(new CombatDebrisParticle3D
+            {
+                Position = origin + rnd * 0.08f,
+                Velocity = vel,
+                Size = new Vector3(0.055f + _rng.NextSingle() * 0.055f, 0.032f + _rng.NextSingle() * 0.038f, 0.048f + _rng.NextSingle() * 0.048f) * sizeScale,
+                Yaw = _rng.NextSingle() * MathF.Tau,
+                Spin = (_rng.NextSingle() - 0.5f) * 16f,
+                Life = 0.35f + _rng.NextSingle() * 0.55f,
+                MaxLife = 0.90f,
+                Tint = tint,
+                Surface = surface,
+                Glowing = glowing
+            });
+        }
+    }
+
+    private void SpawnProjectileImpactFx(in EnemyProjectile3D pr, Vector3 normal)
+    {
+        EnemyProjectileKind kind = ResolveProjectileKind(pr);
+        switch (kind)
+        {
+            case EnemyProjectileKind.CoffeeCup:
+                // Hot dark-espresso coffee splash droplets + torn kraft sleeve bits!
+                SpawnCombatDebrisBurst(pr.Position, normal, 10, new(68, 36, 18, 255), Finish.Paint, speed: 4.8f, sizeScale: 0.72f);
+                SpawnCombatDebrisBurst(pr.Position, normal, 4, new(226, 206, 178, 255), Finish.Paint, speed: 3.4f, sizeScale: 0.95f);
+                break;
+            case EnemyProjectileKind.Keyboard:
+                // Scattered plastic keycaps & flying office paper flecks!
+                SpawnCombatDebrisBurst(pr.Position, normal, 9, new(42, 46, 52, 255), Finish.Armor, speed: 5.2f, sizeScale: 0.58f);
+                SpawnCombatDebrisBurst(pr.Position, normal, 5, new(244, 240, 228, 255), Finish.Paint, speed: 3.8f, sizeScale: 1.05f);
+                break;
+            case EnemyProjectileKind.Laptop:
+                // Sparking lithium battery embers + metallic aluminum shards!
+                SpawnCombatDebrisBurst(pr.Position, normal, 8, new(255, 174, 52, 255), Finish.Lamp, glowing: true, speed: 5.6f, sizeScale: 0.65f);
+                SpawnCombatDebrisBurst(pr.Position, normal, 6, new(168, 176, 184, 255), Finish.Armor, speed: 4.2f, sizeScale: 1.15f);
+                break;
+            case EnemyProjectileKind.TaserDart:
+                // Crackling blue electric discharge sparks!
+                SpawnCombatDebrisBurst(pr.Position, normal, 10, new(118, 232, 255, 255), Finish.Plasma, glowing: true, speed: 5.4f, sizeScale: 0.55f);
+                break;
+            default:
+                SpawnCombatDebrisBurst(pr.Position, normal, 10, new(255, 142, 48, 255), Finish.Lamp, glowing: true, speed: 6.0f, sizeScale: 1.1f);
+                break;
+        }
+    }
+
+    private void UpdateCombatDebris(float dt)
+    {
+        for (int i = _combatDebris.Count - 1; i >= 0; i--)
+        {
+            var d = _combatDebris[i];
+            d.Life -= dt;
+            if (d.Life <= 0f)
+            {
+                _combatDebris.RemoveAt(i);
+                continue;
+            }
+            d.Velocity.Y -= 11.8f * dt;
+            d.Position += d.Velocity * dt;
+            d.Yaw += d.Spin * dt;
+            if (d.Position.Y < 0.03f)
+            {
+                d.Position.Y = 0.03f;
+                d.Velocity.Y = MathF.Abs(d.Velocity.Y) * 0.32f;
+                d.Velocity.X *= 0.65f;
+                d.Velocity.Z *= 0.65f;
+                d.Spin *= 0.55f;
+            }
+            _combatDebris[i] = d;
+        }
+    }
+
+    private static EnemyProjectileKind ResolveProjectileKind(in EnemyProjectile3D pr)
+    {
+        if (pr.IsNodeModulesCube || pr.Kind == EnemyProjectileKind.NodeModulesCrate)
+            return EnemyProjectileKind.NodeModulesCrate;
+        if (pr.Kind != EnemyProjectileKind.CoffeeCup)
+            return pr.Kind;
+        return pr.Coin ? EnemyProjectileKind.Laptop : EnemyProjectileKind.CoffeeCup;
+    }
+
+    private void BeginBossMeltdown(WeaponAndCombatView? weaponSystem, Action<int, string>? onGrantMoney)
+    {
+        if (ElevatorBoss.State == ElevatorBossState.Dying || ElevatorBoss.IsDefeated) return;
+        ElevatorBoss.Hp = 0f;
+        ElevatorBoss.ShieldHp = 0f;
+        ElevatorBoss.State = ElevatorBossState.Dying;
+        ElevatorBoss.StateTimer = MeltdownSeconds;
+        _bossMeltdownStageMask = 0;
+        BossWreckagePos = ElevatorBoss.Position;
+        BossWreckageYaw = ElevatorBoss.FacingYaw;
+        ElevatorBoss.SpeechBubble = "КРИТИЧЕСКИЙ ПЕРЕГРЕВ ЯДРА!! СЕГФОЛТ—";
+        ElevatorBoss.SpeechTimer = MeltdownSeconds + 0.2f;
+        if (weaponSystem != null) weaponSystem.UnlockedChatGun = true;
+        Systems.Discover(VibeCoderCollection.All.Single(s => s.Id == "ai_agent_v01"), onGrantMoney);
+        Program.TriggerHitstop(0.042f);
+        Program.TriggerHitmarker(crit: true, kill: true);
+        StyleComboSystem.RegisterTrick("ПЕРЕГРЕВ ЯДРА!", "CORE MELTDOWN!", 0.65f, 80f,
+            new Color(255, 118, 46, 255), hitstop: false, shake: 0.042f);
+        AudioMusicSystem.PlayBossSiren();
+        AudioMusicSystem.PlayComicBoom();
     }
 
     private void UpdateEnemyProjectiles(float dt, Vector3 playerPos, Action<int, string, Vector3>? onPlayerHit, Vector3? guestPosition, Action<int,string,Vector3>? onGuestHit, Action<int,string>? projectilePayout,Vector3? second,Action<int,string,Vector3>? hitSecond)
@@ -2366,8 +2729,10 @@ public sealed partial class SkyscraperFloor1World
             }
 
             float travel = pr.Velocity.Length()*dt;
-            if (pr.IsGlitch && TraceSurface(pr.Position,Vector3.Normalize(pr.Velocity),travel)<travel)
+            Vector3 dir = travel > 1e-5f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
+            if (pr.IsGlitch && TraceSurface(pr.Position, dir, travel) < travel)
             {
+                SpawnProjectileImpactFx(pr, -dir);
                 EnemyProjectiles.RemoveAt(i);
                 continue;
             }
@@ -2389,16 +2754,48 @@ public sealed partial class SkyscraperFloor1World
 
             if (hitObstacle || pr.Position.Y < 0.2f || MathF.Abs(pr.Position.X) > HalfWidth || MathF.Abs(pr.Position.Z) > HalfDepth)
             {
+                SpawnProjectileImpactFx(pr, -dir);
                 EnemyProjectiles.RemoveAt(i);
                 continue;
             }
 
             if(pr.Deflected)
             {
+                // Deflected Boss node_modules crate rockets straight back into the Boss's chest!
+                if (pr.IsNodeModulesCube && BossInCombat &&
+                    Vector3.DistanceSquared(pr.Position, ElevatorBoss.Position + Vector3.UnitY * 1.45f) < 2.25f)
+                {
+                    int parryDmg = Math.Max(48, pr.Damage * 2);
+                    ElevatorBoss.ShieldHp = MathF.Max(0f, ElevatorBoss.ShieldHp - parryDmg);
+                    ElevatorBoss.ShieldDelay = 5f;
+                    float minimum = ElevatorBoss.Phase == 2 ? MathF.Min(ElevatorBoss.Hp, ElevatorBoss.MaxHp * .33f) : 0f;
+                    ElevatorBoss.Hp = MathF.Max(minimum, ElevatorBoss.Hp - parryDmg);
+                    ElevatorBoss.HitFlashTimer = 0.16f;
+                    ElevatorBoss.HitFlinchTimer = 0.24f;
+                    ElevatorBoss.HitDirection = new(dir.X, 0f, dir.Z);
+                    ElevatorBoss.KnockbackVel = ElevatorBoss.HitDirection * 1.6f;
+                    AudioMusicSystem.PlayComicBoom();
+                    AudioMusicSystem.PlayHitmarker();
+                    Program.TriggerHitstop(0.040f);
+                    Program.TriggerHitmarker(crit: true, kill: ElevatorBoss.Hp <= 0f);
+                    SpawnProjectileImpactFx(pr, -dir);
+                    if (ElevatorBoss.Hp <= 0f) BeginBossMeltdown(null, projectilePayout);
+                    EnemyProjectiles.RemoveAt(i);
+                    continue;
+                }
                 var target=ActiveCoders.Find(c=>c.Hp>0 && Vector3.DistanceSquared(pr.Position,c.CombatCenter)<.72f);
                 if(target!=null)
                 {
-                    target.Hp=Math.Max(0,target.Hp-pr.Damage); target.HitStaggerTimer=.5f;
+                    target.Hp=Math.Max(0,target.Hp-pr.Damage);
+                    target.HitFlashTimer = 0.14f;
+                    target.HitFlinchTimer = 0.24f;
+                    target.HitStaggerTimer = 0.85f;
+                    target.HitDirection = new(dir.X, 0f, dir.Z);
+                    target.KnockbackVel = target.HitDirection * 6.5f;
+                    AudioMusicSystem.PlayHitmarker();
+                    Program.TriggerHitstop(0.032f);
+                    Program.TriggerHitmarker(crit: true, kill: target.Hp <= 0f);
+                    SpawnProjectileImpactFx(pr, -dir);
                     if(target.Hp==0) KillCoder(target,projectilePayout);
                     EnemyProjectiles.RemoveAt(i);
                 }
@@ -2414,10 +2811,12 @@ public sealed partial class SkyscraperFloor1World
                 if(owner?.TimidIntern!=true || Systems.WingsUnlocked || Systems.Onboarding==OnboardingStep.StunAndHeal)
                 {
                     string attacker=pr.IsNodeModulesCube ? "ИИ-Агент v0.1" : owner?.IsMiniBoss==true ? "Гуру Табсора" :
+                        owner?.Archetype == CoderArchetype.SecurityGuard ? "Охрана СБ" :
                         owner?.Archetype is CoderArchetype.ToxicPM or CoderArchetype.SeniorArchitect ? owner.Name : "Вайбкодер";
                     Vector3 source=pr.IsNodeModulesCube ? ElevatorBoss.Position : owner?.Position ?? pr.Position-pr.Velocity;
                     (hitHost ? onPlayerHit : hitGuest ? onGuestHit : hitSecond)?.Invoke(pr.Damage,$"{attacker} ({pr.Label})",source);
                 }
+                SpawnProjectileImpactFx(pr, -dir);
                 EnemyProjectiles.RemoveAt(i);
                 continue;
             }
@@ -2631,24 +3030,16 @@ public sealed partial class SkyscraperFloor1World
 
                 AudioMusicSystem.PlayHitmarker();
                 Impact(hitPt,bossCenter,dmg,isCrit);
+                Program.TriggerHitmarker(isCrit, ElevatorBoss.Hp <= 0f);
+                if (isCrit) Program.TriggerHitstop(0.036f);
+                else if (tool is WeaponType.SawedOff or WeaponType.Belt or WeaponType.ChatGun) Program.TriggerHitstop(0.026f);
+                SpawnCombatDebrisBurst(hitPt, -forward, isCrit ? 12 : 6,
+                    shield ? new(118, 224, 245, 255) : new(255, 194, 72, 255), Finish.Lamp, glowing: true, speed: 5.2f, sizeScale: 0.72f);
 
                 if (ElevatorBoss.Hp <= 0f)
                 {
-                    ElevatorBoss.IsDefeated = true;
-                    ElevatorBoss.IsActive = false;
-                    ElevatorBoss.State = ElevatorBossState.Defeated;
-                    ElevatorBoss.SpeechBubble = AgentDefeatTwistLine;
-                    ElevatorBoss.SpeechTimer = 7.5f;
-                    IsFloor2Unlocked = true;
-                    ElevatorDoorOpenAmount = 1.0f;
-                    weaponSystem.UnlockedChatGun = true;
-
-                    Systems.FinalePending=true; Systems.ShutdownTime=.8f;
-                    Systems.Discover(VibeCoderCollection.All.Single(s=>s.Id=="ai_agent_v01"),onGrantMoney);
-                    AudioMusicSystem.PlayTarotCash();
-                    AudioMusicSystem.Speak("ИИ-Агент v0.1", AgentDefeatTwistLine, SpeakerVoiceType.RoboticAgent, "vo_boss_defeat_twist");
-
-                    feedback = "БОСС ЭТАЖА ПОВЕРЖЕН! Чат-ган получен [T]. Подпиши акт утилизации.";
+                    BeginBossMeltdown(weaponSystem, onGrantMoney);
+                    feedback = "ЯДРО ПЕРЕГРЕТО! ИИ-АГЕНТ v0.1 ДЕТОНИРУЕТ!!";
                 }
                 else
                 {
@@ -2689,7 +3080,7 @@ public sealed partial class SkyscraperFloor1World
             target.KnockbackVel=impulse*(tool==WeaponType.BareHands ? 1.45f : melee ? 7 : tool==WeaponType.SawedOff ? 9 : 3.6f);
             if(tool==WeaponType.Belt && Systems.Coffee>0) target.KnockbackVel*=2;
             target.HitStaggerTimer=melee ? .32f : .18f;
-            target.HitFlashTimer=.18f;
+            target.HitFlashTimer=.09f;
             target.HitFlinchTimer=.24f;
             target.HitDirection=impulse;
             if(melee || salt)
@@ -2788,6 +3179,16 @@ public sealed partial class SkyscraperFloor1World
             }
             if(target.Hp>0 && target.State!=CoderAIState.Subdued) { target.Stress=100; Spook(target); }
             if(!target.EscapingToDoor && !target.FloorHunter && target.Hp>0 && !target.CanSignNda && (target.TimidIntern || !target.IsCombatCoder && !target.IsMiniBoss)) Panic(target);
+            bool killedOrSubdued = target.Hp <= 0 || (!wasSubduedBefore && target.State == CoderAIState.Subdued);
+            Program.TriggerHitmarker(isCrit, killedOrSubdued);
+            if (killedOrSubdued) Program.TriggerHitstop(0.036f);
+            else if (tool is WeaponType.Belt or WeaponType.SawedOff or WeaponType.SolderingIron) Program.TriggerHitstop(0.025f);
+            // Flying office papers, coffee droplets & kinetic sparks on every hit!
+            SpawnCombatDebrisBurst(hitPt, -forward, killedOrSubdued ? 8 : 4, new(246, 240, 224, 255), Finish.Paint, speed: 4.1f, sizeScale: 1.05f);
+            SpawnCombatDebrisBurst(hitPt, -forward, killedOrSubdued ? 6 : 3,
+                tool == WeaponType.SolderingIron ? new(115, 228, 255, 255) : new(82, 46, 24, 255),
+                tool == WeaponType.SolderingIron ? Finish.Plasma : Finish.Paint,
+                glowing: tool == WeaponType.SolderingIron, speed: 4.8f, sizeScale: 0.72f);
             AudioMusicSystem.PlayHitmarker();
         }
 
@@ -2900,6 +3301,8 @@ public sealed partial class SkyscraperFloor1World
         }
 
         // 4. Check if near Central Armored Elevator Core (North or South doors) or Call Buttons
+        if (BossInCombat && !BossEscapedPursuit && IsPlayerInsideNorthElevatorCabin(playerPos))
+            return TriggerCleverElevatorEscape();
         float distElevNorth = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(NorthElevatorPos.X, NorthElevatorPos.Z));
         float distElevSouth = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(SouthElevatorDoorPos.X, SouthElevatorDoorPos.Z));
         float distBtnNorth = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z), new Vector2(ElevatorButtonPos.X, ElevatorButtonPos.Z));
@@ -3076,6 +3479,7 @@ public sealed partial class SkyscraperFloor1World
         DrawStations();
         if(VisualEngine3D.CastingShadows) return;
         DrawEnemyProjectiles3D();
+        DrawCombatDebris3D();
 
         // Draw 3D Cash Bundles flying in the air
         for (int i = 0; i < CashParticles.Count; i++)
@@ -3094,6 +3498,7 @@ public sealed partial class SkyscraperFloor1World
         Rlgl.EnableDepthMask();
         DrawBossCutsceneRocketFx3D(camera);
         DrawBossArenaChaos3D(camera);
+        DrawBossMeltdownAndWreckage3D(camera);
     }
 
     private void DrawOfficeProps3D()
@@ -3167,11 +3572,12 @@ public sealed partial class SkyscraperFloor1World
 
         VisualEngine3D.DrawArchitecture(BuildTowerArchitecture);
 
-        // 4. Prestige Art-Deco Honed Travertine Limestone, Dark Walnut Wainscoting, Vertical Pilasters & Brass Sconce Columns
-        Color limestone = new(224, 214, 198, 255);
-        Color walnut = new(56, 36, 24, 255);
-        Color brass = new(166, 130, 74, 255);
-        Color darkBronze = new(78, 58, 36, 255);
+        // 4. Architectural Honed Travertine Limestone, Warm Natural Walnut Wainscoting & Subtle Anodized Sconce Columns
+        Color limestone = new(236, 230, 218, 255);
+        Color walnut = new(156, 112, 76, 255);
+        Color darkAlum = new(62, 64, 68, 255);
+        Color brass = new(162, 132, 86, 255);
+        Color darkBronze = new(74, 64, 54, 255);
         for (int i = 0; i < Pillars.Count; i++)
         {
             var p = Pillars[i];
@@ -3181,23 +3587,21 @@ public sealed partial class SkyscraperFloor1World
 
             // Warm honed travertine/limestone ashlar column shaft
             VisualEngine3D.Box(colPos, w, CeilingHeight, d, limestone, Finish.Plaster);
-            // Dark oiled-walnut lower wainscoting + stepped brushed-brass plinth, chair-rail & Art-Deco capital
+            // Warm oiled-walnut lower wainscoting + clean anodized plinth & walnut chair-rail
             VisualEngine3D.Box(p.Center + new Vector3(0f, 0.58f, 0f), w + 0.06f, 1.16f, d + 0.06f, walnut, Finish.Leather);
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 0.08f, 0f), w + 0.12f, 0.16f, d + 0.12f, brass, Finish.Bronze);
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 1.18f, 0f), w + 0.11f, 0.075f, d + 0.11f, brass, Finish.Bronze);
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 1.25f, 0f), w + 0.07f, 0.045f, d + 0.07f, walnut, Finish.Leather);
-            // 4 vertical dark-walnut & brass corner architectural pilasters breaking up flat column faces
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 0.06f, 0f), w + 0.09f, 0.12f, d + 0.09f, darkAlum, Finish.Armor);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 1.18f, 0f), w + 0.09f, 0.055f, d + 0.09f, darkBronze, Finish.Bronze);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 1.24f, 0f), w + 0.07f, 0.045f, d + 0.07f, walnut, Finish.Leather);
+            // Restrained dark-anodized architectural shadow reveals at column corners (ZERO loud yellow corner stripes!)
             foreach (int sx in new[] { -1, 1 })
             foreach (int sz in new[] { -1, 1 })
             {
-                Vector3 corner = p.Center + new Vector3(sx * (p.HalfWidth + 0.01f), 0f, sz * (p.HalfDepth + 0.01f));
-                VisualEngine3D.Box(corner + Vector3.UnitY * 5.6f, 0.13f, CeilingHeight, 0.13f, darkBronze, Finish.Bronze);
-                VisualEngine3D.Box(corner + Vector3.UnitY * 2.98f, 0.075f, 3.45f, 0.075f, brass, Finish.Bronze);
+                Vector3 corner = p.Center + new Vector3(sx * (p.HalfWidth + 0.008f), 0f, sz * (p.HalfDepth + 0.008f));
+                VisualEngine3D.Box(corner + Vector3.UnitY * 5.6f, 0.08f, CeilingHeight, 0.08f, darkAlum, Finish.Armor);
             }
-            // Mid-height Art-Deco frieze collar (aligning with interior wall cornice at Y=4.6..4.85m) & ceiling crown
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.64f, 0f), w + 0.08f, 0.09f, d + 0.08f, walnut, Finish.Leather);
-            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.78f, 0f), w + 0.14f, 0.14f, d + 0.14f, brass, Finish.Bronze);
-            VisualEngine3D.Box(p.Center + new Vector3(0f, CeilingHeight - 0.20f, 0f), w + 0.16f, 0.22f, d + 0.16f, brass, Finish.Bronze);
+            // Clean walnut architectural frieze collar (aligning with interior wall cornice at Y=4.6m) & anodized crown
+            VisualEngine3D.Box(p.Center + new Vector3(0f, 4.64f, 0f), w + 0.08f, 0.11f, d + 0.08f, walnut, Finish.Leather);
+            VisualEngine3D.Box(p.Center + new Vector3(0f, CeilingHeight - 0.16f, 0f), w + 0.12f, 0.18f, d + 0.12f, darkAlum, Finish.Armor);
 
             // Warm Art-Deco frosted-glass & brass wall sconces on core atrium/corridor columns (matching elevator lobby!)
             if (i < 6)
@@ -3484,8 +3888,11 @@ public sealed partial class SkyscraperFloor1World
 
     private void BuildEntryRooms(VisualEngine3D.ArchitectureBuilder mesh)
     {
-        Color metal=new(42,48,56,255), darkSteel=new(32,37,44,255), warm=new(255,214,152,255);
-        Color walnut=new(60,38,26,255), brass=new(168,132,74,255), slate=new(36,40,49,255);
+        Color warmConcrete = new(226, 222, 216, 255), travertine = new(238, 232, 222, 255);
+        Color creamOchre = new(236, 214, 176, 255), serviceTile = new(212, 198, 176, 255);
+        Color satinSteel = new(212, 216, 220, 255), breakerGrey = new(216, 214, 208, 255), conduitSteel = new(156, 154, 150, 255);
+        Color warmWalnut = new(162, 114, 76, 255), darkAlum = new(56, 60, 66, 255), warmLamp = new(255, 240, 206, 255);
+        Color brass = new(166, 130, 74, 255);
         for(int i=0;i<RoomDoors.Length;i++)
         {
             var d=RoomDoors[i];
@@ -3494,55 +3901,88 @@ public sealed partial class SkyscraperFloor1World
             void Part(float x,float y,float z,float w,float h,float depth,Color color,Finish finish=Finish.Paint) =>
                 mesh.Add(d+new Vector3(x,y,z*s),new(w,h,depth),color,finish);
 
-            // Recessed 2.5m-wide back-of-house chamber tucked completely BEHIND the wall (ZERO protruding box!)
-            Part(0,1.48f,-2.1f,2.54f,2.96f,.16f,tech ? darkSteel : new(46,42,40,255),tech ? Finish.Armor : Finish.Slate);
-            Part(0,2.94f,-1.05f,2.56f,.14f,2.24f,tech ? darkSteel : walnut,tech ? Finish.Slate : Finish.Leather);
-            Part(0,2.82f,-1.45f,1.88f,.03f,.10f,tech ? new(255,188,118,255) : warm,Finish.Lamp);
             if (tech)
             {
-                // Back-of-house utility electrical breaker panel & pipe riser visible when a vibe coder cracks the door!
-                Part(0,1.35f,-1.96f,1.15f,1.25f,.14f,metal,Finish.Armor);
-                Part(-.62f,1.35f,-1.94f,.10f,2.70f,.10f,new(72,78,86,255),Finish.Bronze);
-                Part(.68f,.62f,-1.84f,.72f,1.24f,.36f,new(54,60,68,255),Finish.Rack);
+                // WARM-LIT CREAM-OCHRE TILED SERVICE CORRIDOR INSIDE (replaces pitch-black void!)
+                Part(0, 1.48f, -2.10f, 2.54f, 2.96f, .16f, creamOchre, Finish.Plaster);
+                Part(0, 2.94f, -1.05f, 2.56f, .14f, 2.24f, new(224, 214, 196, 255), Finish.Plaster);
+                // Warm beige ceramic tiled service floor + crisp plinth skirting
+                Part(0, .016f, -1.05f, 2.48f, .022f, 2.18f, serviceTile, Finish.Plaster);
+                Part(0, .08f, -2.01f, 2.44f, .14f, .04f, new(124, 114, 102, 255));
+                // Two glowing warm linear overhead ceiling light fixtures inside the service corridor
+                foreach (float lz in new[] { -.68f, -1.48f })
+                {
+                    Part(0, 2.86f, lz, .22f, .045f, .52f, satinSteel, Finish.Armor);
+                    Part(0, 2.82f, lz, .16f, .032f, .46f, warmLamp, Finish.Lamp);
+                }
+                // Wall-mounted off-white/light-grey steel electrical breaker cabinets + yellow caution badge + vertical steel conduits!
+                Part(-.46f, 1.44f, -1.96f, .56f, .76f, .14f, breakerGrey, Finish.Armor);
+                Part(-.46f, 1.44f, -1.885f, .50f, .70f, .015f, new(184, 182, 176, 255));
+                Part(-.25f, 1.44f, -1.87f, .03f, .11f, .025f, darkAlum);
+                Part(.42f, 1.52f, -1.96f, .64f, .82f, .14f, breakerGrey, Finish.Armor);
+                Part(.42f, 1.52f, -1.885f, .58f, .76f, .015f, new(188, 186, 180, 255));
+                Part(.42f, 1.58f, -1.87f, .085f, .085f, .012f, new(234, 190, 52, 255));
+                // 4 neat vertical galvanized steel electrical conduit pipes rising from the breaker cabinet to the ceiling
+                foreach (float cx in new[] { .26f, .35f, .44f, .53f })
+                    Part(cx, 2.40f, -1.97f, .034f, 1.04f, .034f, conduitSteel, Finish.Armor);
+                Part(-.04f, 1.98f, -1.97f, .96f, .036f, .036f, conduitSteel, Finish.Armor);
+                // Side plastered walls + baseboard
+                foreach (int side in new[] { -1, 1 })
+                {
+                    Part(side * 1.22f, 1.48f, -1.05f, .14f, 2.96f, 2.12f, creamOchre, Finish.Plaster);
+                    Part(side * 1.14f, .08f, -1.05f, .03f, .14f, 2.04f, new(124, 114, 102, 255));
+                }
+
+                // DEEPLY RECESSED ARCHITECTURAL BOARD-FORMED CONCRETE PORTAL FRAME (0.42m deep reveal — exact match to reference!)
+                Color recessConcrete = new(184, 180, 174, 255);
+                foreach (int side in new[] { -1, 1 })
+                {
+                    Part(side * 1.17f, 1.44f, .16f, .34f, 2.88f, .42f, warmConcrete, Finish.Slate);
+                    // Subtle shadowed inner concrete jamb return + sleek brushed-stainless door frame
+                    Part(side * 1.015f, 1.24f, .18f, .032f, 2.48f, .34f, recessConcrete, Finish.Slate);
+                    Part(side * 0.995f, 1.23f, .03f, .055f, 2.46f, .12f, new(126, 130, 136, 255), Finish.Armor);
+                }
+                // Massive concrete portal lintel header + shadowed concrete soffit + brushed-stainless inner top transom
+                Part(0, 2.66f, .16f, 2.68f, .44f, .42f, warmConcrete, Finish.Slate);
+                Part(0, 2.455f, .18f, 2.04f, .032f, .34f, recessConcrete, Finish.Slate);
+                Part(0, 2.455f, .03f, 2.06f, .055f, .12f, new(126, 130, 136, 255), Finish.Armor);
+                // Bright warm honed travertine / cream limestone upper wall panel above the concrete portal (Y = 2.88..4.60m)
+                Part(0, 3.74f, -.04f, 2.68f, 1.72f, .24f, travertine, Finish.Plaster);
             }
             else
             {
-                // Compact coworking/meeting desk inside the recessed wing portal
-                Part(0,.74f,-1.72f,2.05f,.07f,.54f,new(140,101,73,255));
-                foreach(int leg in new[]{-1,1})
-                    Part(leg*.92f,.36f,-1.72f,.06f,.72f,.46f,metal);
-                Part(0,1.08f,-1.78f,.74f,.44f,.07f,metal);
-            }
-            // Flush portal header & transom seamlessly closing the architectural wall up to ceiling cornice (Y=4.2/4.6m)
-            float wallTop = tech ? 4.60f : 4.20f;
-            float headerH = wallTop - 2.45f;
-            Part(0, 2.45f + headerH * .5f, -.05f, 2.54f, headerH, .24f, tech ? darkSteel : slate, Finish.Slate);
-            Part(0, 2.45f, .02f, 2.56f, .055f, .28f, brass, Finish.Bronze);
-            Part(0, wallTop - .06f, -.05f, 2.56f, .08f, .28f, brass, Finish.Bronze);
-
-            foreach(int side in new[]{-1,1})
-            {
-                // Recessed interior side walls
-                Part(side*1.22f,1.48f,-1.05f,.14f,2.96f,2.12f,tech ? darkSteel : walnut,tech ? Finish.Slate : Finish.Leather);
-                // Flush architectural portal jambs framing the 2.0m sliding door opening
-                Part(side*1.12f,1.23f,-.02f,.28f,2.46f,.26f,tech ? darkSteel : walnut,tech ? Finish.Armor : Finish.Leather);
-                Part(side*1.00f,1.23f,.06f,.06f,2.46f,.18f,brass,Finish.Bronze);
+                // North Wing Coworking / Meeting Room recessed portal with warm walnut interior & concrete portal frame
+                Part(0, 1.48f, -2.10f, 2.54f, 2.96f, .16f, travertine, Finish.Plaster);
+                Part(0, 2.94f, -1.05f, 2.56f, .14f, 2.24f, warmWalnut, Finish.Leather);
+                Part(0, 2.82f, -1.45f, 1.88f, .03f, .10f, warmLamp, Finish.Lamp);
+                Part(0, .74f, -1.72f, 2.05f, .07f, .54f, warmWalnut, Finish.Leather);
+                foreach (int leg in new[] { -1, 1 })
+                    Part(leg * .92f, .36f, -1.72f, .06f, .72f, .46f, darkAlum);
+                Part(0, 1.08f, -1.78f, .74f, .44f, .07f, darkAlum);
+                foreach (int side in new[] { -1, 1 })
+                {
+                    Part(side * 1.22f, 1.48f, -1.05f, .14f, 2.96f, 2.12f, warmWalnut, Finish.Leather);
+                    Part(side * 1.15f, 1.44f, .10f, .30f, 2.88f, .34f, warmConcrete, Finish.Slate);
+                    Part(side * 1.005f, 1.23f, .03f, .055f, 2.46f, .10f, satinSteel, Finish.Armor);
+                }
+                Part(0, 2.66f, .10f, 2.60f, .44f, .34f, warmConcrete, Finish.Slate);
+                Part(0, 3.54f, -.04f, 2.60f, 1.32f, .24f, travertine, Finish.Plaster);
             }
         }
-        // Seamless dark-steel & brass Technical Zone architectural trim strip uniting Doors 0 & 1 beside Veronika
-        mesh.Add(new(5.78f, 3.62f, 16.21f), new(6.10f, .06f, .08f), brass, Finish.Bronze);
-        mesh.Add(new(5.78f, 4.48f, 16.21f), new(6.10f, .10f, .12f), brass, Finish.Bronze);
-        // Built-in dark-walnut & honed black-marble HVAC/hospitality credenza console (replaces random black server rack near coffee bar!)
+        // Built-in warm natural walnut & honed black-marble hospitality credenza console at VentMouth(0)
         var cabinet=VentMouth(0)+new Vector3(0,.64f,-.44f);
-        mesh.Add(cabinet,new(1.20f,1.22f,.88f),walnut,Finish.Leather);
-        mesh.Add(cabinet+new Vector3(0,-.58f,0),new(1.24f,.10f,.92f),brass,Finish.Bronze);
+        mesh.Add(cabinet,new(1.20f,1.22f,.88f),warmWalnut,Finish.Leather);
+        mesh.Add(cabinet+new Vector3(0,-.58f,0),new(1.24f,.10f,.92f),darkAlum,Finish.Armor);
         mesh.Add(cabinet+new Vector3(0,.63f,0),new(1.28f,.07f,.94f),new(34,32,36,255),Finish.BlackMarble);
         mesh.Add(cabinet+new Vector3(0,.58f,0),new(1.24f,.04f,.91f),brass,Finish.Bronze);
     }
 
     private void DrawEntryHardware()
     {
-        Color steel=new(52,59,68,255), darkSteel=new(34,39,46,255), brass=new(172,134,74,255);
+        Color steel = new(52, 59, 68, 255);
+        Color satinSteel = new(144, 148, 154, 255), brushedKick = new(130, 134, 140, 255), handleSteel = new(212, 216, 222, 255);
+        Color darkSeam = new(54, 56, 62, 255), readerBlack = new(26, 28, 32, 255);
+        Color frostGlass = new(216, 212, 206, 198);
         for(int i=0;i<RoomDoors.Length;i++)
         {
             var d=RoomDoors[i];
@@ -3552,21 +3992,27 @@ public sealed partial class SkyscraperFloor1World
                 VisualEngine3D.Box(d+new Vector3(x,y,z*s),w,h,depth,color,finish);
             float t=RoomOpen[i];
             float gap=t*t*(3-2*t);
-            // Illuminated overhead room plaque (reads cleanly from lobby/corridor side)
-            Part(0,2.76f,.115f,2.08f,.35f,.035f,Color.White,Finish.Coworking+i);
+            // Clean minimalist brushed-aluminum architectural room plaque (flat FaceBox for razor-sharp 1:1 engraved lettering!)
+            VisualEngine3D.FaceBox(d+new Vector3(0, 2.66f, (tech ? .382f : .282f)*s), 1.38f, .27f, .018f, 0f, Color.White, Finish.Coworking+i);
             if (tech)
             {
-                // Red "ТОЛЬКО ПЕРСОНАЛ / STAFF ONLY" security beacon above each technical service door!
                 bool active = RoomOpen[i] > .01f;
-                Part(1.06f, 2.76f, .125f, .14f, .14f, .06f, new(28, 30, 34, 255), Finish.Bronze);
-                Part(1.06f, 2.76f, .148f, .095f, .095f, .04f, active ? new(255, 132, 48, 255) : new(235, 36, 44, 255), Finish.Lamp);
-                // Red card-reader access badge terminal on the right brass jamb
-                Part(-1.12f, 1.32f, .12f, .10f, .18f, .045f, darkSteel, Finish.Slate);
-                Part(-1.12f, 1.37f, .14f, .05f, .025f, .02f, active ? new(82, 240, 148, 255) : new(235, 36, 44, 255), Finish.Lamp);
+                // Minimalist brushed-aluminum architectural door badge + black RFID keycard reader on the right concrete pier (player's right = -X)
+                Part(-1.17f, 1.76f, .380f, .24f, .15f, .014f, new(186, 190, 196, 255), Finish.Armor);
+                Part(-1.17f, 1.32f, .384f, .090f, .155f, .028f, readerBlack);
+                Part(-1.17f, 1.28f, .399f, .018f, .018f, .008f, active ? new(102, 248, 162, 255) : new(68, 218, 126, 255), Finish.Lamp);
+                // Red wall-mounted fire-alarm pull station ("ПОЖАР") mounted on Door 0's left concrete pier beside the coat rack!
+                if (i == 0)
+                {
+                    Part(1.17f, 1.44f, .385f, .14f, .14f, .036f, new(192, 34, 38, 255));
+                    Part(1.17f, 1.44f, .405f, .070f, .054f, .008f, new(238, 234, 228, 255));
+                    Part(1.17f, 1.44f, .410f, .048f, .014f, .006f, new(42, 44, 48, 255));
+                }
             }
             else
             {
-                Part(1.06f,2.76f,.12f,.14f,.10f,.05f,RoomOpen[i]>.01f ? new(72,245,158,255) : new(255,171,65,255),Finish.Lamp);
+                Part(-1.15f, 1.32f, .282f, .090f, .145f, .026f, readerBlack);
+                Part(-1.15f, 1.28f, .296f, .018f, .018f, .008f, RoomOpen[i]>.01f ? new(82, 242, 152, 255) : new(240, 178, 72, 255), Finish.Lamp);
                 foreach(int ch in new[]{-1,1})
                     VisualEngine3D.Asset("prop_office_chair", d+new Vector3(ch*.64f,0,-s*1.28f), (s<0 ? 0f : 180f)+ch*16f, .92f);
             }
@@ -3575,21 +4021,36 @@ public sealed partial class SkyscraperFloor1World
                 float x=side*(.50f+.90f*gap);
                 if (tech)
                 {
-                    // Authentic dark-steel & brushed-brass Technical Service Doors with frosted narrow security vision slit
-                    Part(x, 1.22f, .06f, .98f, 2.42f, .055f, darkSteel, Finish.Armor);
-                    Part(x, 1.22f, .082f, .96f, 2.38f, .02f, brass, Finish.Bronze);
-                    Part(x, 1.22f, .086f, .88f, 2.28f, .022f, darkSteel, Finish.Slate);
-                    // Vertical narrow frosted vision slit + brass push-pull handle bar
-                    Part(x - side * .20f, 1.56f, .096f, .14f, .76f, .016f, new(156, 186, 194, 140), Finish.Glass);
-                    Part(x - side * .38f, 1.15f, .112f, .032f, .52f, .042f, brass, Finish.Bronze);
-                    Part(x, .10f, .095f, .96f, .16f, .035f, steel, Finish.Armor);
+                    // REAL BRUSHED-STAINLESS & FROSTED-GLASS ARCHITECTURAL DOUBLE DOORS (crisp steel-vs-frosted-glass contrast matching reference!)
+                    // Left & right vertical satin stainless stiles + crisp dark center meeting gasket
+                    Part(x - .445f, 1.22f, .03f, .092f, 2.42f, .054f, satinSteel, Finish.Armor);
+                    Part(x + .445f, 1.22f, .03f, .092f, 2.42f, .054f, satinSteel, Finish.Armor);
+                    Part(x - side * .492f, 1.22f, .032f, .012f, 2.42f, .056f, darkSeam);
+                    // Top rail, wide horizontal brushed-stainless mid push-rail, and bottom stainless kickplate
+                    Part(x, 2.37f, .03f, .98f, .110f, .054f, satinSteel, Finish.Armor);
+                    Part(x, 0.96f, .034f, .98f, .26f, .058f, satinSteel, Finish.Armor);
+                    Part(x, 0.16f, .034f, .98f, .31f, .058f, brushedKick, Finish.Armor);
+                    // Subtle dark anodized glass glazing beads framing the frosted panes
+                    Part(x, 1.095f, .034f, .82f, .014f, .042f, darkSeam);
+                    Part(x, 0.825f, .034f, .82f, .014f, .042f, darkSeam);
+                    // Large translucent frosted architectural glass upper & lower panes
+                    Part(x, 1.70f, .03f, .81f, 1.22f, .018f, frostGlass, Finish.Glass);
+                    Part(x, 0.575f, .03f, .81f, 0.51f, .018f, frostGlass, Finish.Glass);
+                    // Realistic horizontal satin brushed-stainless lever handles meeting cleanly at the center seam
+                    float hx = x - side * .41f;
+                    Part(hx, 1.15f, .064f, .044f, .044f, .016f, handleSteel, Finish.Armor);
+                    Part(hx + side * .060f, 1.15f, .098f, .145f, .024f, .024f, handleSteel, Finish.Armor);
+                    Part(hx, 1.15f, .080f, .020f, .020f, .036f, satinSteel, Finish.Armor);
                 }
                 else
                 {
-                    Part(x,1.23f,.06f,.98f,2.42f,.045f,new(116,183,191,85),Finish.Glass);
-                    Part(x,1.07f,.09f,.98f,.15f,.015f,new(170,193,189,155),Finish.Glass);
-                    Part(x-side*.47f,1.22f,.09f,.035f,2.42f,.045f,brass,Finish.Bronze);
-                    Part(x,.05f,.08f,.98f,.065f,.055f,steel);
+                    Part(x - .455f, 1.22f, .03f, .070f, 2.42f, .046f, satinSteel, Finish.Armor);
+                    Part(x + .455f, 1.22f, .03f, .070f, 2.42f, .046f, satinSteel, Finish.Armor);
+                    Part(x, 2.38f, .03f, .98f, .085f, .046f, satinSteel, Finish.Armor);
+                    Part(x, 0.12f, .03f, .98f, .22f, .048f, brushedKick, Finish.Armor);
+                    Part(x, 1.28f, .03f, .84f, 2.12f, .018f, new(156, 198, 206, 92), Finish.Glass);
+                    Part(x, 1.04f, .048f, .84f, .16f, .012f, frostGlass, Finish.Glass);
+                    Part(x - side * .37f, 1.14f, .082f, .12f, .022f, .022f, satinSteel, Finish.Armor);
                 }
             }
         }
@@ -3616,7 +4077,9 @@ public sealed partial class SkyscraperFloor1World
 
     private static void BuildInteriorRooms(VisualEngine3D.ArchitectureBuilder mesh)
     {
-        Color stone=new(36,40,49,255), brass=new(184,144,82,255), glass=new(128,164,174,103);
+        Color warmConcrete = new(216, 210, 200, 255), travertine = new(238, 232, 222, 255);
+        Color warmWalnut = new(166, 118, 78, 255), feltDark = new(28, 26, 25, 255);
+        Color darkAlum = new(56, 60, 66, 255), glass = new(142, 174, 184, 96);
         foreach(var bay in InteriorWallBays())
         {
             Vector3 c=bay.Center,s=bay.Size;
@@ -3625,32 +4088,49 @@ public sealed partial class SkyscraperFloor1World
             bool alongZ=s.Z>s.X;
             if(reception && c.X==0)
             {
-                mesh.Add(c,s,stone,Finish.Slate);
-                for(int i=-12;i<=12;i++)
-                    if(Math.Abs(i)>5)
-                        mesh.Add(new(i*.215f,2.3f,15.39f),new(.032f,4.35f,.055f),brass);
-                mesh.Add(new(0,3.25f,15.36f),new(2.12f,1.78f,.13f),new(24,27,34,255));
+                // Warm honed travertine limestone backdrop + thick natural walnut acoustic wood-slat bays over charcoal felt (ZERO dark charcoal box + gold sticks!)
+                mesh.Add(c, s, travertine, Finish.Plaster);
+                foreach (int side in new[] { -1, 1 })
+                {
+                    float bayCenter = side * 2.12f;
+                    mesh.Add(new(bayCenter, 2.30f, 15.428f), new(1.32f, 4.54f, .028f), feltDark, Finish.Carpet);
+                    for (int k = 0; k < 14; k++)
+                    {
+                        float rx = side * (1.50f + k * .094f);
+                        mesh.Add(new(rx, 2.30f, 15.396f), new(.048f, 4.54f, .048f), warmWalnut, Finish.Leather);
+                    }
+                }
+                // Warm natural walnut shadow frame around the ARCANA artwork
+                mesh.Add(new(0, 3.25f, 15.36f), new(2.08f, 1.74f, .12f), new(98, 68, 46, 255), Finish.Leather);
             }
             else if(techPier)
             {
-                // Solid dark-slate & brushed-brass Technical Wall piers flanking Staff-Only portals
-                mesh.Add(c,s,new(32,37,44,255),Finish.Slate);
-                foreach(float y in new[]{.08f,1.18f,2.45f,s.Y-.09f})
-                    mesh.Add(new(c.X,y,c.Z),new(s.X+.035f,.065f,s.Z+.035f),brass,Finish.Bronze);
+                // Full-height Warm Natural Walnut Acoustic Wood-Slat Paneling flanking & separating the concrete technical portals!
+                mesh.Add(c, s, feltDark, Finish.Carpet);
+                float frontZ = c.Z - s.Z * .5f - .022f;
+                int slatCount = Math.Max(6, (int)MathF.Floor(s.X / .088f));
+                float step = s.X / slatCount;
+                for (int k = 0; k < slatCount; k++)
+                {
+                    float sx = c.X - s.X * .5f + (k + .5f) * step;
+                    mesh.Add(new(sx, 2.30f, frontZ), new(.048f, s.Y - .02f, .052f), warmWalnut, Finish.Leather);
+                }
             }
             else
             {
                 float h=reception ? .5f : 1.18f;
-                mesh.Add(new(c.X,h/2,c.Z),new(s.X,h,s.Z),stone,Finish.Slate);
-                mesh.Add(new(c.X,(h+s.Y)/2,c.Z),new(s.X,s.Y-h,s.Z),glass,Finish.Glass);
-                foreach(float y in new[]{.08f,h,s.Y-.09f})
-                    mesh.Add(new(c.X,y,c.Z),new(s.X+.035f,.065f,s.Z+.035f),brass);
+                // Warm architectural board-formed concrete wainscoting + clean dark-anodized aluminum glass mullions (ZERO gold zebra wireframes!)
+                mesh.Add(new(c.X, h / 2, c.Z), new(s.X, h, s.Z), warmConcrete, Finish.Slate);
+                mesh.Add(new(c.X, (h + s.Y) / 2, c.Z), new(s.X, s.Y - h, s.Z), glass, Finish.Glass);
+                mesh.Add(new(c.X, .06f, c.Z), new(s.X + .025f, .11f, s.Z + .025f), darkAlum, Finish.Armor);
+                mesh.Add(new(c.X, h, c.Z), new(s.X + .040f, .060f, s.Z + .040f), warmWalnut, Finish.Leather);
+                mesh.Add(new(c.X, s.Y - .08f, c.Z), new(s.X + .030f, .075f, s.Z + .030f), darkAlum, Finish.Armor);
                 float length=alongZ?s.Z:s.X;
                 int count=(int)MathF.Ceiling(length/1.65f);
                 for(int i=0;i<=count;i++)
                 {
                     float offset=-length/2+i*length/count;
-                    mesh.Add(c+new Vector3(alongZ?0:offset,0,alongZ?offset:0),new(.065f,s.Y,.065f),brass);
+                    mesh.Add(c+new Vector3(alongZ?0:offset,0,alongZ?offset:0),new(.058f,s.Y,.058f),darkAlum,Finish.Armor);
                 }
             }
         }
@@ -3658,14 +4138,15 @@ public sealed partial class SkyscraperFloor1World
         {
             Vector3 Size(float w,float h,float d)=>alongZ?new(d,h,w):new(w,h,d);
             foreach(int side in new[]{-1,1})
-                mesh.Add(p+new Vector3(alongZ?0:side*1.99f,1.6f,alongZ?side*1.99f:0),Size(.18f,3.2f,.40f),brass);
-            mesh.Add(p+Vector3.UnitY*3.30f,Size(4.16f,.20f,.40f),stone);
+                mesh.Add(p+new Vector3(alongZ?0:side*1.99f,1.6f,alongZ?side*1.99f:0),Size(.18f,3.2f,.40f),warmWalnut,Finish.Leather);
+            mesh.Add(p+Vector3.UnitY*3.30f,Size(4.16f,.20f,.40f),warmConcrete,Finish.Slate);
             mesh.Add(p+Vector3.UnitY*3.80f,Size(3.8f,.80f,.12f),glass,Finish.Glass);
-            mesh.Add(p+Vector3.UnitY*4.16f,Size(4.16f,.08f,.40f),brass);
+            mesh.Add(p+Vector3.UnitY*4.16f,Size(4.16f,.08f,.40f),darkAlum,Finish.Armor);
         }
         foreach(var gate in Gates) Portal(gate.Feet,gate.Side);
-        mesh.Add(new(0,4.51f,15.6f),new(15,.18f,.65f),stone);
-        mesh.Add(new(0,4.40f,15.25f),new(14.8f,.035f,.035f),brass,Finish.Lamp);
+        // Warm natural walnut reception & technical gallery ceiling beam spanning full South lobby wall + soft warm recessed cove light
+        mesh.Add(new(1.0f, 4.54f, 15.6f), new(17.2f, .18f, .65f), warmWalnut, Finish.Leather);
+        mesh.Add(new(1.0f, 4.43f, 15.25f), new(16.8f, .028f, .028f), new(255, 224, 174, 255), Finish.Lamp);
     }
 
     private static void BuildCurtainWallsAndSkyline(VisualEngine3D.ArchitectureBuilder mesh)
@@ -3926,21 +4407,22 @@ public sealed partial class SkyscraperFloor1World
     private void DrawHrTarotBoothAndVeronika3D()
     {
         Vector3 b = HrTarotBoothPos;
-        Color walnut = new(54, 34, 22, 255), darkWalnut = new(38, 24, 16, 255);
+        Color walnut = new(158, 112, 74, 255), darkWalnut = new(118, 80, 52, 255);
         Color brass = new(166, 130, 74, 255), darkBronze = new(78, 58, 36, 255);
         Color marble = new(32, 30, 34, 255), warmGlow = new(255, 224, 168, 255);
 
-        // Unified Prestige 1990s Art-Deco Executive Reception Counter (Left Executive Wing + Center Tarot Sanctuary + Right Integrated Vitrine!)
+        // Unified Warm Fluted-Walnut Executive Reception Counter (Left Executive Wing + Center Tarot Sanctuary + Right Integrated Vitrine!)
         // Left Executive Wing (X = +0.82..+2.06, Z = b.Z-0.48..b.Z+0.16) + side return to fluted wall
         Vector3 leftWing = b + new Vector3(1.44f, 0f, -0.16f);
         VisualEngine3D.Box(leftWing + new Vector3(0f, 0.46f, 0f), 1.24f, 0.86f, 0.62f, walnut, Finish.Leather);
-        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.045f, 0f), 1.28f, 0.09f, 0.66f, brass, Finish.Bronze);
-        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.905f, 0f), 1.28f, 0.045f, 0.66f, brass, Finish.Bronze);
+        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.045f, 0f), 1.28f, 0.09f, 0.66f, darkBronze, Finish.Bronze);
+        VisualEngine3D.Box(leftWing + new Vector3(0f, 0.905f, 0f), 1.28f, 0.045f, 0.66f, darkWalnut, Finish.Leather);
         VisualEngine3D.Box(leftWing + new Vector3(0f, 0.955f, 0f), 1.32f, 0.06f, 0.70f, marble, Finish.BlackMarble);
-        for (int f = -2; f <= 2; f++)
-            VisualEngine3D.Box(leftWing + new Vector3(f * 0.22f, 0.48f, -0.32f), 0.028f, 0.74f, 0.032f, brass, Finish.Bronze);
+        // Sculpted vertical fluted walnut slats on front face (matching architectural reception desk reference!)
+        for (int f = -6; f <= 6; f++)
+            VisualEngine3D.Box(leftWing + new Vector3(f * 0.092f, 0.48f, -0.32f), 0.044f, 0.76f, 0.036f, darkWalnut, Finish.Leather);
         // Left walnut privacy return linking reception counter flush to fluted backdrop wall (Z = 15.38)
-        VisualEngine3D.Box(new Vector3(b.X + 2.00f, 0.46f, 14.92f), 0.14f, 0.92f, 0.96f, darkWalnut, Finish.Leather);
+        VisualEngine3D.Box(new Vector3(b.X + 2.00f, 0.46f, 14.92f), 0.14f, 0.92f, 0.96f, walnut, Finish.Leather);
         VisualEngine3D.Box(new Vector3(b.X + 2.00f, 0.95f, 14.92f), 0.18f, 0.06f, 0.98f, marble, Finish.BlackMarble);
         // Classic green-shade brass banker's lamp & leather guest register on Left Executive Wing
         Vector3 lampBase = leftWing + new Vector3(0.32f, 0.985f, -0.02f);
@@ -4113,14 +4595,14 @@ public sealed partial class SkyscraperFloor1World
         float spacing=compact ? .49f : .83f;
         if(compact)
         {
-            // Integrated Right Reception Wing Weapon Vitrine — exact matching walnut, brass flutes & black-marble counter rim!
-            Color walnut = new(54, 34, 22, 255), brass = new(166, 130, 74, 255), marble = new(32, 30, 34, 255);
+            // Integrated Right Reception Wing Weapon Vitrine — matching warm fluted walnut & black-marble counter rim!
+            Color walnut = new(158, 112, 74, 255), darkWalnut = new(118, 80, 52, 255), brass = new(166, 130, 74, 255), marble = new(32, 30, 34, 255);
             VisualEngine3D.Box(origin+new Vector3(0,.46f,0),1.54f,.86f,.62f,walnut,Finish.Leather);
-            VisualEngine3D.Box(origin+new Vector3(0,.045f,0),1.58f,.09f,.66f,brass,Finish.Bronze);
-            VisualEngine3D.Box(origin+new Vector3(0,.905f,0),1.58f,.045f,.66f,brass,Finish.Bronze);
+            VisualEngine3D.Box(origin+new Vector3(0,.045f,0),1.58f,.09f,.66f,new(78,58,36,255),Finish.Bronze);
+            VisualEngine3D.Box(origin+new Vector3(0,.905f,0),1.58f,.045f,.66f,darkWalnut,Finish.Leather);
             VisualEngine3D.Box(origin+new Vector3(0,.945f,0),1.60f,.04f,.68f,marble,Finish.BlackMarble);
-            for(int f=-3;f<=3;f++)
-                VisualEngine3D.Box(origin+new Vector3(f*.21f,.48f,-.32f),.028f,.74f,.032f,brass,Finish.Bronze);
+            for(int f=-7;f<=7;f++)
+                VisualEngine3D.Box(origin+new Vector3(f*.095f,.48f,-.32f),.044f,.76f,.036f,darkWalnut,Finish.Leather);
             // 4 sleek brushed-brass museum vitrine corner stanchions + top brass rail framing the clear glass case
             foreach(float sx in new[]{-.74f,.74f})
             foreach(float sz in new[]{-.29f,.29f})
@@ -4308,6 +4790,38 @@ public sealed partial class SkyscraperFloor1World
     {
         foreach(var lamp in PendantLocations)
             VisualEngine3D.Asset("prop_pendant_lamp",new(lamp.X,CeilingHeight,lamp.Y));
+        // Lived-in Moscow-City architectural props around the Technical Portals & Reception Gallery (ZERO walkway blocking!)
+        if (VisualEngine3D.HasAsset("prop_coat_rack"))
+            VisualEngine3D.Asset("prop_coat_rack", new(5.77f, 0f, 15.84f), 192f, 1.0f);
+        if (VisualEngine3D.HasAsset("prop_concrete_plant"))
+        {
+            // Leafy Monstera/Philodendron in warm concrete planters right beside concrete portal jambs & reception desk!
+            VisualEngine3D.Asset("prop_concrete_plant", new(2.74f, 0f, 15.62f), 25f, 1.04f);
+            VisualEngine3D.Asset("prop_concrete_plant", new(9.06f, 0f, 15.86f), -38f, 1.12f);
+            VisualEngine3D.Asset("prop_concrete_plant", new(-2.60f, 0f, 14.96f), 140f, 0.98f);
+            VisualEngine3D.Asset("prop_concrete_plant", new(1.98f, 0.985f, 14.48f), -18f, 0.42f);
+        }
+        if (VisualEngine3D.HasAsset("prop_wall_art"))
+        {
+            // Framed modernist Moscow-City architectural artworks mounted cleanly on solid lobby & wing walls
+            VisualEngine3D.Asset("prop_wall_art", new(4.53f, 2.45f, -4.25f), 90f, 1.05f);
+            VisualEngine3D.Asset("prop_wall_art", new(-4.53f, 2.45f, -1.75f), -90f, 1.05f);
+            VisualEngine3D.Asset("prop_wall_art", new(-14.80f, 2.30f, 19.84f), 180f, 1.15f);
+            VisualEngine3D.Asset("prop_wall_art", new(14.80f, 2.30f, 19.84f), 180f, 1.15f);
+        }
+        // Clustered warm glowing frosted-glass globe pendant lamps hanging above the Reception & Technical Portal gallery!
+        foreach (var (gx, gy, gz, gr) in new (float, float, float, float)[] {
+            (2.45f, 3.32f, 13.85f, .165f),
+            (2.96f, 3.64f, 13.38f, .145f),
+            (2.05f, 3.88f, 13.52f, .125f),
+            (5.77f, 3.55f, 14.45f, .155f),
+            (8.62f, 3.42f, 14.30f, .140f)
+        })
+        {
+            VisualEngine3D.Rod(new(gx, CeilingHeight, gz), new(gx, gy + gr * .85f, gz), .008f, .008f, 8, new(42, 44, 48, 255));
+            VisualEngine3D.Rod(new(gx, gy + gr * .42f, gz), new(gx, gy + gr * .95f, gz), gr * .82f, gr * .32f, 14, new(164, 128, 72, 255), Finish.Bronze);
+            VisualEngine3D.Orb(new(gx, gy, gz), gr, new(255, 232, 186, 255), Finish.Lamp);
+        }
         VisualEngine3D.Asset("prop_server_cart",CartPosition,-139);
         foreach(var rack in SideRacks) VisualEngine3D.Asset("prop_server_rack",rack,180);
         // Hospitality coffee cups & serving tray atop the built-in walnut credenza at VentMouth(0)
@@ -4449,10 +4963,10 @@ public sealed partial class SkyscraperFloor1World
         foreach(int side in new[]{-1,1})
         {
             yield return (c+new Vector3(side*4.38f,CeilingHeight/2,0),new(.24f,CeilingHeight,9));
-            // Realistic human-scale 2.36m x 2.52m executive elevator portal inside the 9m skyscraper core
-            yield return (c+new Vector3(0,(CeilingHeight+2.52f)/2,side*4.38f),new(9,CeilingHeight-2.52f,.24f));
+            // Grand 2.72m wide x 3.08m tall armored skyscraper elevator portal (zero boss head/shoulder/fin clipping!)
+            yield return (c+new Vector3(0,(CeilingHeight+3.08f)/2,side*4.38f),new(9,CeilingHeight-3.08f,.24f));
             foreach(int end in new[]{-1,1})
-                yield return (c+new Vector3(end*2.84f,1.26f,side*4.4f),new(3.32f,2.52f,.4f));
+                yield return (c+new Vector3(end*2.93f,1.54f,side*4.4f),new(3.14f,3.08f,.4f));
         }
     }
 
@@ -4468,10 +4982,10 @@ public sealed partial class SkyscraperFloor1World
         {
             void Front(float x,float y,float depth,float w,float h,float d,Color c,Finish f=Finish.Paint) =>
                 Part(x,y,side*(4.5f+depth),w,h,d,c,f);
-            // Solid structural marble backing behind the sculpted 3D GLB lobby facade (zero gaps!)
-            Front(0,3.88f,.02f,8.96f,2.70f,.68f,marble,Finish.BlackMarble);
+            // Solid structural marble backing behind the sculpted 3D GLB lobby facade (zero gaps, 3.08m tall x 2.72m clear opening!)
+            Front(0,4.54f,.02f,8.96f,2.92f,.68f,marble,Finish.BlackMarble);
             foreach(int end in new[]{-1,1})
-                Front(end*2.86f,1.26f,.02f,3.28f,2.54f,.68f,marble,Finish.BlackMarble);
+                Front(end*2.93f,1.54f,.02f,3.14f,3.08f,.68f,marble,Finish.BlackMarble);
             // Architectural side shaft brass reveals
             for(int seam=-2;seam<=2;seam++)
                 Part(side*4.50f,CeilingHeight/2,seam*2.13f,.045f,CeilingHeight,.052f,bronze,Finish.Bronze);
@@ -4479,18 +4993,18 @@ public sealed partial class SkyscraperFloor1World
             Part(side*4.50f,3.74f,0,.08f,.14f,9,bronze,Finish.Bronze);
             Part(side*4.50f,CeilingHeight-.14f,0,.09f,.22f,9,bronze,Finish.Bronze);
         }
-        Part(0,.044f,0,8.62f,.088f,9,new(52,50,55,255),Finish.BlackMarble);
-        Part(0,2.82f,0,8.62f,.16f,9,darkStone);
+        Part(0,.08f,0,8.62f,.16f,9,new(52,50,55,255),Finish.BlackMarble);
+        Part(0,3.48f,0,8.62f,.16f,9,darkStone);
     }
 
     private Vector3 LiftLeafCenter(int side,int leaf) =>
-        (side<0 ? NorthElevatorPos : SouthElevatorDoorPos)+new Vector3(leaf*(.59f+1.20f*ElevatorDoorOpenAmount),1.27f,side*.105f);
+        (side<0 ? NorthElevatorPos : SouthElevatorDoorPos)+new Vector3(leaf*(.65f+1.48f*ElevatorDoorOpenAmount),1.55f,side*.105f);
 
     private void DrawElevatorDoors(bool glass)
     {
         Color pane=Raylib.ColorLerp(new(112,86,62,135),new(28,30,34,244),ElevatorGlassOpacity);
         if (!glass && VisualEngine3D.HasAsset("elevator_cabin_interior"))
-            VisualEngine3D.Asset("elevator_cabin_interior", CentralElevatorCorePos, 0f, 1f);
+            VisualEngine3D.Asset("elevator_cabin_interior", CentralElevatorCorePos, 0f, 1f, stretch: new Vector3(1f, 1.24f, 1f));
         foreach(int side in new[]{-1,1})
         {
             Vector3 face=side<0 ? NorthElevatorPos : SouthElevatorDoorPos;
@@ -4500,7 +5014,7 @@ public sealed partial class SkyscraperFloor1World
             if (!glass)
             {
                 if (VisualEngine3D.HasAsset("elevator_lobby_facade"))
-                    VisualEngine3D.Asset("elevator_lobby_facade", face, faceYaw, 1f);
+                    VisualEngine3D.Asset("elevator_lobby_facade", face, faceYaw, 1f, stretch: new Vector3(1f, 1.24f, 1f));
                 if (VisualEngine3D.HasAsset("elevator_floor_medallion"))
                     VisualEngine3D.Asset("elevator_floor_medallion", face + new Vector3(0f, 0.015f, side * 1.92f), faceYaw, 1f);
             }
@@ -4509,9 +5023,9 @@ public sealed partial class SkyscraperFloor1World
             {
                 Vector3 p=LiftLeafCenter(side,leaf);
                 if(glass)
-                    VisualEngine3D.Box(p,1.02f,2.04f,.032f,pane,Finish.LiftGlass);
+                    VisualEngine3D.Box(p,1.24f,2.86f,.032f,pane,Finish.LiftGlass);
                 else if (VisualEngine3D.HasAsset("elevator_door_leaf"))
-                    VisualEngine3D.Asset("elevator_door_leaf", p, faceYaw, 1f);
+                    VisualEngine3D.Asset("elevator_door_leaf", p, faceYaw, 1f, stretch: new Vector3(1.10f, 1.24f, 1f));
             }
             if(glass)
             {
@@ -4520,7 +5034,7 @@ public sealed partial class SkyscraperFloor1World
                 continue;
             }
             if (ElevatorRepaired && ElevatorGlassOpacity < 1)
-                VisualEngine3D.Box(face+new Vector3(0,2.44f,-side*.55f),.52f,.08f,.14f,
+                VisualEngine3D.Box(face+new Vector3(0,3.02f,-side*.55f),.52f,.08f,.14f,
                     Raylib.ColorLerp(new(45,25,25,255),new(251,58,42,255),1-ElevatorGlassOpacity),Finish.Lamp);
             VisualEngine3D.Box(LiftSignCenter(face,side),LiftSignSize.X,LiftSignSize.Y,LiftSignSize.Z,Color.White,Finish.Lift);
             DrawElevatorCallPanel(panel,side);
@@ -4702,9 +5216,31 @@ public sealed partial class SkyscraperFloor1World
         if (c.IsCombatCoder && c.Windup>0)
         {
             Vector3 forward=new(MathF.Sin(c.FacingYaw),0,MathF.Cos(c.FacingYaw));
-            float lift = 1 - c.Windup/(c.WindingSlap ? .38f : .58f);
-            Vector3 hand=c.CombatCenter+forward*.24f+new Vector3(-forward.Z,.0f,forward.X)*.20f+Vector3.UnitY*(.22f+.20f*lift);
-            VisualEngine3D.Orb(hand,.055f+.032f*lift,new(255,88,34,255),Finish.Lamp);
+            float maxWindup = c.WindingSlap ? .34f : (c.Archetype == CoderArchetype.SecurityGuard ? .26f : .32f);
+            float lift = Math.Clamp(1f - c.Windup / maxWindup, 0f, 1f);
+            Vector3 hand=c.CombatCenter+forward*.24f+new Vector3(-forward.Z,.0f,forward.X)*.22f+Vector3.UnitY*(.20f+.24f*lift);
+            float yawDeg = c.FacingYaw * 180f / MathF.PI;
+            EnemyProjectileKind wk = ProjectileKindFor(c.Archetype);
+            if (!c.WindingSlap && wk == EnemyProjectileKind.TaserDart)
+            {
+                if (VisualEngine3D.HasAsset("proj_taser_dart"))
+                    VisualEngine3D.AssetOriented("proj_taser_dart", hand, yawDeg, -8f, 0f, 1.15f);
+                // Crisp blue stun-prong warning arc telegraph so player reads the incoming taser shot!
+                VisualEngine3D.Rod(hand - forward * 0.04f, hand + forward * (0.14f + 0.08f * lift), 0.010f, 0.004f, 6, new(115, 232, 255, 255), Finish.Plasma);
+            }
+            else if (!c.WindingSlap)
+            {
+                string asset = wk switch
+                {
+                    EnemyProjectileKind.CoffeeCup => "proj_coffee_cup",
+                    EnemyProjectileKind.Keyboard  => "proj_keyboard",
+                    _                             => "proj_laptop"
+                };
+                if (VisualEngine3D.HasAsset(asset))
+                    VisualEngine3D.AssetOriented(asset, hand, yawDeg + lift * 36f, -24f * lift, 14f * lift, 0.96f);
+                else
+                    VisualEngine3D.OrientedBox(hand, new(0.24f, 0.14f, 0.18f), c.FacingYaw, new(185, 165, 138, 255));
+            }
         }
 
     }
@@ -4850,13 +5386,13 @@ public sealed partial class SkyscraperFloor1World
     {
         Vector3 c = BossArenaWallCenter;
         Vector3 s = BossArenaWallSize;
-        Color stone = new(36, 40, 49, 255);
-        Color charStone = new(26, 27, 32, 255);
-        Color charBlack = new(16, 15, 17, 255);
-        Color brass = new(184, 144, 82, 255);
-        Color darkBrass = new(118, 90, 50, 255);
+        Color stone = new(216, 210, 200, 255);
+        Color charStone = new(118, 114, 108, 255);
+        Color charBlack = new(44, 42, 40, 255);
+        Color brass = new(56, 60, 66, 255);
+        Color darkBrass = new(42, 46, 52, 255);
         Color rebar = new(62, 54, 48, 255);
-        Color glass = new(128, 164, 174, 103);
+        Color glass = new(142, 174, 184, 96);
 
         if (!BossArenaWallDestroyed)
         {
@@ -5566,48 +6102,349 @@ public sealed partial class SkyscraperFloor1World
 
     private void DrawEnemyProjectiles3D()
     {
+        const float rad2Deg = 180f / MathF.PI;
         for (int i = 0; i < EnemyProjectiles.Count; i++)
         {
             var pr = EnemyProjectiles[i];
-            if (pr.Coin)
+            Vector3 dir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
+            Vector3 upRef = MathF.Abs(dir.Y) > 0.9f ? Vector3.UnitX : Vector3.UnitY;
+            Vector3 side = Vector3.Normalize(Vector3.Cross(upRef, dir));
+            Vector3 up = Vector3.Cross(dir, side);
+            EnemyProjectileKind kind = ResolveProjectileKind(pr);
+
+            switch (kind)
             {
-                VisualEngine3D.Oval(pr.Position, new(.095f, .095f, .027f), Color.Gold, Finish.Lamp);
-                continue;
-            }
-            if (pr.IsNodeModulesCube)
-            {
-                Vector3 dir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
-                if (VisualEngine3D.HasAsset("prop_node_modules_crate"))
+                case EnemyProjectileKind.NodeModulesCrate:
                 {
-                    VisualEngine3D.AssetOriented("prop_node_modules_crate", pr.Position,
-                        pr.Rotation.Y + _worldClock * 180f, pr.Rotation.X + 24f, pr.Rotation.Z + _worldClock * 120f, 1.05f);
+                    if (VisualEngine3D.HasAsset("prop_node_modules_crate"))
+                    {
+                        VisualEngine3D.AssetOriented("prop_node_modules_crate", pr.Position,
+                            pr.Rotation.Y + _worldClock * 180f, pr.Rotation.X + 24f, pr.Rotation.Z + _worldClock * 120f, 1.05f);
+                    }
+                    else
+                    {
+                        VisualEngine3D.Box(pr.Position, 0.32f, 0.32f, 0.32f, new Color(34, 38, 46, 255), Finish.Armor);
+                    }
+                    Color trailCol = pr.Deflected ? new Color(255, 224, 96, 240) : new Color(255, 118, 46, 210);
+                    VisualEngine3D.Rod(pr.Position - dir * 0.48f, pr.Position - dir * 0.14f, 0.014f, 0.002f, 5, trailCol, Finish.Lamp);
+                    break;
                 }
-                else
+
+                case EnemyProjectileKind.CoffeeCup:
                 {
-                    VisualEngine3D.Box(pr.Position, 0.32f, 0.32f, 0.32f, new Color(34, 38, 46, 255), Finish.Armor);
+                    // Spinning real 3D paper specialty coffee cup + hot espresso spray droplets trail!
+                    if (VisualEngine3D.HasAsset("proj_coffee_cup"))
+                    {
+                        VisualEngine3D.AssetOriented("proj_coffee_cup", pr.Position,
+                            pr.Rotation.Y, pr.Rotation.X, pr.Rotation.Z, 1.18f);
+                    }
+                    else
+                    {
+                        VisualEngine3D.Rod(pr.Position - up * 0.11f, pr.Position + up * 0.11f, 0.052f, 0.068f, 10, new(226, 208, 182, 255));
+                        VisualEngine3D.Rod(pr.Position + up * 0.10f, pr.Position + up * 0.13f, 0.072f, 0.065f, 10, new(244, 242, 236, 255));
+                    }
+                    // Arcing dark hot-coffee droplets trailing behind the spinning cup
+                    for (int d = 1; d <= 5; d++)
+                    {
+                        float t = d * 0.11f;
+                        float swirl = _worldClock * 18f + d * 1.9f + i;
+                        Vector3 dropPos = pr.Position - dir * (0.14f + t * 0.95f)
+                            + side * MathF.Sin(swirl) * (0.04f + t * 0.12f)
+                            + up * (MathF.Cos(swirl) * 0.04f - t * 0.14f);
+                        float r = MathF.Max(0.010f, 0.024f - d * 0.003f);
+                        VisualEngine3D.Oval(dropPos, new(r, r * 1.25f, r),
+                            pr.Deflected ? new(255, 214, 88, 255) : new(62, 32, 16, 255),
+                            pr.Deflected ? Finish.Lamp : Finish.Paint);
+                    }
+                    break;
                 }
-                // Crisp trailing ember-crimson aerodynamic slipstream behind the hurled 40 GB server crate
-                VisualEngine3D.Rod(pr.Position - dir * 0.42f, pr.Position - dir * 0.14f, 0.012f, 0.002f, 5,
-                    new Color(255, 118, 46, 210), Finish.Lamp);
-                continue;
+
+                case EnemyProjectileKind.Keyboard:
+                {
+                    // Spinning real 3D mechanical developer keyboard + flying keycap/paper flecks trail!
+                    if (VisualEngine3D.HasAsset("proj_keyboard"))
+                    {
+                        VisualEngine3D.AssetOriented("proj_keyboard", pr.Position,
+                            pr.Rotation.Y, pr.Rotation.X, pr.Rotation.Z, 1.12f);
+                    }
+                    else
+                    {
+                        VisualEngine3D.OrientedBox(pr.Position, new(0.42f, 0.04f, 0.16f), pr.Rotation.Y * MathF.PI / 180f, new(52, 56, 64, 255));
+                    }
+                    for (int k = 1; k <= 5; k++)
+                    {
+                        float t = k * 0.12f;
+                        float ang = _worldClock * 14f + k * 2.3f + i;
+                        Vector3 fleckPos = pr.Position - dir * (0.18f + t * 1.15f)
+                            + side * MathF.Cos(ang) * (0.07f + t * 0.16f)
+                            + up * MathF.Sin(ang * 1.3f) * (0.05f + t * 0.12f);
+                        bool paper = (k % 2 == 0);
+                        Color fleckCol = pr.Deflected ? new(255, 222, 102, 255) : (paper ? new(242, 236, 222, 255) : new(48, 52, 60, 255));
+                        VisualEngine3D.OrientedBox(fleckPos, paper ? new(0.055f, 0.008f, 0.075f) : new(0.024f, 0.018f, 0.024f), ang, fleckCol);
+                    }
+                    break;
+                }
+
+                case EnemyProjectileKind.Laptop:
+                {
+                    // Tumbling open 3D developer laptop + sparking lithium battery & thin grey smoke trail!
+                    float lapScale = pr.Radius > 0.30f ? 1.24f : 1.05f;
+                    if (VisualEngine3D.HasAsset("proj_laptop"))
+                    {
+                        VisualEngine3D.AssetOriented("proj_laptop", pr.Position,
+                            pr.Rotation.Y, pr.Rotation.X, pr.Rotation.Z, lapScale);
+                    }
+                    else
+                    {
+                        VisualEngine3D.OrientedBox(pr.Position, new(0.36f, 0.03f, 0.24f), pr.Rotation.Y * MathF.PI / 180f, new(162, 168, 176, 255));
+                    }
+                    for (int s = 1; s <= 4; s++)
+                    {
+                        float t = s * 0.14f;
+                        float ang = _worldClock * 22f + s * 2.1f + i;
+                        Vector3 sp = pr.Position - dir * (0.18f + t * 1.1f)
+                            + side * MathF.Sin(ang) * 0.09f
+                            + up * (0.04f * s + MathF.Cos(ang) * 0.06f);
+                        if (s <= 2)
+                        {
+                            Vector3 tail = sp - dir * 0.11f + up * 0.03f;
+                            VisualEngine3D.Rod(sp, tail, 0.007f, 0.002f, 4,
+                                pr.Deflected ? Color.Gold : new(255, 176, 48, 255), Finish.Lamp);
+                        }
+                        else
+                        {
+                            float sr = 0.045f + s * 0.018f;
+                            VisualEngine3D.Oval(sp, new(sr, sr * 0.85f, sr), new(126, 128, 132, 138), Finish.Cloud);
+                        }
+                    }
+                    break;
+                }
+
+                case EnemyProjectileKind.TaserDart:
+                {
+                    // High-velocity nose-first 3D security taser dart + crackling blue taser wire arc + guard muzzle flash!
+                    float yawDeg = MathF.Atan2(dir.X, dir.Z) * rad2Deg;
+                    float pitchDeg = -MathF.Asin(Math.Clamp(dir.Y, -0.999f, 0.999f)) * rad2Deg;
+                    if (VisualEngine3D.HasAsset("proj_taser_dart"))
+                    {
+                        VisualEngine3D.AssetOriented("proj_taser_dart", pr.Position, yawDeg, pitchDeg, 0f, 1.25f);
+                    }
+                    else
+                    {
+                        VisualEngine3D.Rod(pr.Position - dir * 0.14f, pr.Position + dir * 0.12f, 0.022f, 0.008f, 6, new(232, 194, 44, 255), Finish.Armor);
+                    }
+                    // Crackling blue taser wire arc trailing back toward guard origin (up to 3.4m)
+                    Vector3 wireTailStart = pr.Position - dir * 0.14f;
+                    Vector3 wireEnd = pr.Origin != Vector3.Zero
+                        ? (Vector3.Distance(wireTailStart, pr.Origin) <= 3.4f ? pr.Origin : wireTailStart - dir * 3.4f)
+                        : wireTailStart - dir * 2.6f;
+                    Color arcCol = pr.Deflected ? new Color(255, 224, 96, 255) : new Color(112, 232, 255, 255);
+                    Vector3 prev = wireTailStart;
+                    for (int seg = 1; seg <= 6; seg++)
+                    {
+                        float f = seg / 6f;
+                        float jig = MathF.Sin(_worldClock * 95f + seg * 3.7f + i * 2.1f) * 0.055f * MathF.Sin(f * MathF.PI);
+                        float jigY = MathF.Cos(_worldClock * 84f + seg * 4.3f + i) * 0.045f * MathF.Sin(f * MathF.PI);
+                        Vector3 pt = Vector3.Lerp(wireTailStart, wireEnd, f) + side * jig + up * jigY;
+                        VisualEngine3D.Rod(prev, pt, 0.0065f, 0.0045f, 4, arcCol, Finish.Plasma);
+                        prev = pt;
+                    }
+                    // Brief bright guard taser muzzle flash on launch (first 0.12s)
+                    float age = pr.MaxLife - pr.Life;
+                    if (age < 0.12f && pr.Origin != Vector3.Zero)
+                    {
+                        float mf = 1f - age / 0.12f;
+                        VisualEngine3D.Orb(pr.Origin, 0.055f * mf, new(165, 244, 255, 255), Finish.Plasma);
+                    }
+                    break;
+                }
             }
-            if (pr.IsGlitch)
+
+            // Crisp golden parry aura ring on deflected projectiles so player instantly sees their counter-rocket!
+            if (pr.Deflected)
             {
-                Vector3 dir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
-                VisualEngine3D.Rod(pr.Position - dir * .16f, pr.Position, .016f, .005f, 6, pr.PrimaryColor, Finish.Lamp);
-                VisualEngine3D.Orb(pr.Position, .024f, pr.WireColor, Finish.Lamp);
-                continue;
+                VisualEngine3D.Rod(pr.Position - dir * 0.42f, pr.Position - dir * 0.08f, 0.016f, 0.003f, 5, Color.Gold, Finish.Lamp);
             }
-            // Compact metallic/energy projectile bolt
-            Vector3 pDir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
-            VisualEngine3D.Rod(pr.Position - pDir * .12f, pr.Position + pDir * .04f, .022f, .010f, 6, pr.PrimaryColor, Finish.Lamp);
+        }
+    }
+
+    private void DrawCombatDebris3D()
+    {
+        for (int i = 0; i < _combatDebris.Count; i++)
+        {
+            var d = _combatDebris[i];
+            float fade = Math.Clamp(d.Life / MathF.Max(0.05f, d.MaxLife * 0.35f), 0f, 1f);
+            Vector3 sz = d.Size * (0.45f + 0.55f * fade);
+            if (d.Glowing)
+            {
+                Color c = new(d.Tint.R, d.Tint.G, d.Tint.B, Math.Clamp((int)(d.Tint.A * fade), 0, 255));
+                VisualEngine3D.Rod(d.Position - d.Velocity * 0.025f, d.Position, sz.X * 0.35f, sz.X * 0.12f, 4, c, d.Surface);
+            }
+            else
+            {
+                VisualEngine3D.OrientedBox(d.Position, sz, d.Yaw, d.Tint);
+            }
+        }
+    }
+
+    private void DrawBossMeltdownAndWreckage3D(Camera3D camera)
+    {
+        Vector3 lookDir = camera.Target - camera.Position;
+        lookDir = lookDir.LengthSquared() > 1e-6f ? Vector3.Normalize(lookDir) : -Vector3.UnitZ;
+        Vector3 camRight = Vector3.Cross(lookDir, camera.Up);
+        camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
+        Vector3 camUp = Vector3.Normalize(Vector3.Cross(camRight, lookDir));
+        bool hasFx = CombatSprites.HasPaintedFx;
+
+        // 1. Pre-detonation 1.45s reactor overload sparks & 3 staggered internal explosions across torso/shoulders!
+        if (ElevatorBoss.IsActive && ElevatorBoss.State == ElevatorBossState.Dying)
+        {
+            float elapsed = Math.Clamp(MeltdownSeconds - ElevatorBoss.StateTimer, 0f, MeltdownSeconds);
+            Vector3 bp = ElevatorBoss.Position;
+            if (elapsed < 1.48f)
+            {
+                // Violent crimson reactor core flare pulsing through chest
+                float corePulse = 0.65f + 0.35f * MathF.Sin(elapsed * 58f);
+                VisualEngine3D.Orb(ElevatorBoss.ChestCore, (0.14f + 0.18f * (elapsed / 1.45f)) * corePulse,
+                    new(255, 62, 28, 255), Finish.Lamp);
+                // Erratic high-voltage overload arcs leaping off shoulders & head
+                for (int a = 0; a < 5; a++)
+                {
+                    float ang = _worldClock * 17f + a * 1.25f;
+                    Vector3 p0 = bp + new Vector3(MathF.Cos(ang) * 0.32f, 1.35f + (a % 3) * 0.42f, MathF.Sin(ang) * 0.32f);
+                    Vector3 p1 = p0 + new Vector3(MathF.Cos(ang * 1.7f) * 0.55f, 0.25f * MathF.Sin(ang * 2.3f), MathF.Sin(ang * 1.7f) * 0.55f);
+                    VisualEngine3D.Rod(p0, p1, 0.014f, 0.004f, 5,
+                        a % 2 == 0 ? new(255, 224, 130, 255) : new(255, 76, 36, 255), Finish.Lamp);
+                }
+
+                // 3 staggered internal blasts at 0.25s, 0.75s, 1.25s
+                ReadOnlySpan<(float T0, Vector3 Offset, float Scale)> blasts =
+                [
+                    (0.25f, new(-0.52f, 2.02f, +0.18f), 1.05f),
+                    (0.75f, new(+0.52f, 2.12f, -0.14f), 1.22f),
+                    (1.25f, new( 0.00f, 1.85f, +0.26f), 1.50f)
+                ];
+                if (hasFx) CombatSprites.Begin(BlendMode.Additive);
+                for (int i = 0; i < blasts.Length; i++)
+                {
+                    float local = elapsed - blasts[i].T0;
+                    if (local < 0f || local > 0.55f) continue;
+                    float e = local / 0.55f;
+                    float r = (0.45f + e * 1.15f) * blasts[i].Scale;
+                    int alpha = Math.Clamp((int)(245 * (1f - e)), 0, 255);
+                    Vector3 cPos = bp + blasts[i].Offset + Vector3.UnitY * (e * 0.35f);
+                    if (hasFx)
+                        CombatSprites.ExplosionFrame(Math.Clamp((int)(e * 4f), 0, 3), cPos, camRight, camUp, r, e * 3.5f + i,
+                            new Color(255, 198, 118, alpha));
+                    else
+                        VisualEngine3D.Orb(cPos, r * 0.55f, new(255, 142, 46, alpha), Finish.Lamp);
+                }
+                if (hasFx) CombatSprites.End();
+            }
+        }
+
+        // 2. MASSIVE FINAL DETONATION (1.45s -> +2.8s): multi-layer painted fireball, blinding shockwave ring & smoke column!
+        if (_bossMeltdownBurstAge >= 0f && _bossMeltdownBurstAge < 2.8f)
+        {
+            float t = _bossMeltdownBurstAge;
+            Vector3 center = BossWreckagePos + Vector3.UnitY * 1.25f;
+
+            // Blinding expanding shockwave ring sweeping across the marble floor
+            if (t < 0.75f)
+            {
+                float swProg = t / 0.75f;
+                float ringR = 0.65f + (1f - MathF.Pow(1f - swProg, 2.4f)) * 6.8f;
+                int ringA = Math.Clamp((int)(235 * (1f - swProg)), 0, 255);
+                Raylib.DrawCircle3D(BossWreckagePos + Vector3.UnitY * 0.25f, ringR, Vector3.UnitX, 90f, new Color(255, 226, 152, ringA));
+                Raylib.DrawCircle3D(BossWreckagePos + Vector3.UnitY * 0.62f, ringR * 0.86f, Vector3.UnitX, 90f, new Color(255, 132, 46, (int)(ringA * 0.85f)));
+            }
+
+            // Rising dark blast smoke plume
+            if (hasFx)
+            {
+                CombatSprites.Begin(BlendMode.Alpha);
+                for (int sm = 0; sm < 6; sm++)
+                {
+                    float ang = sm * MathF.Tau / 6f + t * 0.6f;
+                    float spread = 0.45f + MathF.Min(1f, t * 1.4f) * 1.65f;
+                    Vector3 sp = BossWreckagePos + new Vector3(MathF.Cos(ang) * spread, 0.85f + t * (1.45f + (sm % 3) * 0.35f), MathF.Sin(ang) * spread);
+                    float sr = 1.15f + t * 1.25f;
+                    int sa = Math.Clamp((int)(225 * (1f - t / 2.8f)), 0, 255);
+                    CombatSprites.SmokeFrame(sm, sp, camRight, camUp, sr, sr * 0.92f, new Color(56, 50, 48, sa),
+                        flipX: (sm & 1) == 0, rotation: sm * 0.5f + t * 0.4f);
+                }
+                CombatSprites.End();
+
+                // Multi-layer painted fireball core + outer inferno petals!
+                if (t < 1.55f)
+                {
+                    float e = t / 1.55f;
+                    float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.6f), 3f);
+                    float fade = 1f - Smooth((e - 0.28f) / 0.72f);
+                    int stage = Math.Clamp((int)(e * 4f), 0, 3);
+                    CombatSprites.Begin(BlendMode.Additive);
+                    CombatSprites.ExplosionFrame(stage, center + Vector3.UnitY * (e * 1.1f), camRight, camUp,
+                        1.45f + grow * 2.55f, e * 2.4f, new Color(255, 182, 86, Math.Clamp((int)(255 * fade), 0, 255)));
+                    CombatSprites.ExplosionFrame(Math.Max(0, stage - 1), center + Vector3.UnitY * (0.4f + e * 0.6f), camRight, camUp,
+                        0.95f + grow * 1.75f, -e * 3.1f, new Color(255, 242, 188, Math.Clamp((int)(245 * fade * fade), 0, 255)));
+                    CombatSprites.End();
+                }
+            }
+        }
+
+        // 3. SMOKING COLLAPSED CHARRED BOSS TORSO WRECKAGE on the marble floor (persists after detonation!)
+        if (BossWreckageActive)
+        {
+            Vector3 wp = BossWreckagePos;
+            float wy = BossWreckageYaw;
+            Color charBlack = new(24, 22, 24, 255);
+            Color scorchTitanium = new(62, 60, 64, 255);
+            Color burntCeramic = new(96, 88, 84, 255);
+            Color emberRed = new(238, 68, 28, 255);
+
+            // Blackened blast scorch crater on the marble floor
+            Raylib.DrawCylinder(new(wp.X, 0.016f, wp.Z), 1.85f, 1.95f, 0.004f, 22, new Color(18, 15, 16, 210));
+            Raylib.DrawCylinder(new(wp.X, 0.021f, wp.Z), 0.95f, 1.05f, 0.004f, 18, new Color(12, 10, 10, 235));
+
+            // Collapsed charred titanium torso chassis lying tilted on floor + glowing dying core crack
+            VisualEngine3D.OrientedBox(wp + new Vector3(0.0f, 0.24f, 0.0f), new(0.84f, 0.42f, 0.96f), wy + 0.32f, scorchTitanium);
+            VisualEngine3D.OrientedBox(wp + new Vector3(-0.18f, 0.34f, 0.14f), new(0.56f, 0.26f, 0.48f), wy - 0.18f, burntCeramic);
+            VisualEngine3D.OrientedBox(wp + new Vector3(0.12f, 0.44f, 0.06f), new(0.24f, 0.08f, 0.28f), wy + 0.32f, emberRed);
+            // Severed shoulder pauldron, snapped TOKEN-GUN 98 barrel & cracked visor helmet resting beside torso
+            VisualEngine3D.OrientedBox(wp + new Vector3(-0.82f, 0.14f, 0.36f), new(0.42f, 0.24f, 0.36f), wy + 0.95f, charBlack);
+            VisualEngine3D.Rod(wp + new Vector3(0.45f, 0.10f, -0.35f), wp + new Vector3(1.18f, 0.12f, -0.78f), 0.065f, 0.052f, 8, scorchTitanium, Finish.Armor);
+            VisualEngine3D.Oval(wp + new Vector3(0.52f, 0.18f, 0.54f), new(0.19f, 0.17f, 0.22f), burntCeramic);
+            VisualEngine3D.Box(wp + new Vector3(0.54f, 0.20f, 0.72f), 0.22f, 0.045f, 0.04f,
+                new Color(220, 32, 32, (int)(135 + 75 * MathF.Sin(_worldClock * 6.5f))), Finish.Lamp);
+
+            // Steady curling dark reactor smoke + occasional dying ember spark rising from charred wreckage
+            if (hasFx)
+            {
+                CombatSprites.Begin(BlendMode.Alpha);
+                for (int s = 0; s < 5; s++)
+                {
+                    float age = (_worldClock * 0.42f + s * 0.2f) % 1f;
+                    Vector3 sp = wp + new Vector3(MathF.Sin(s * 2.1f + age * 2.5f) * 0.26f, 0.35f + age * 2.45f, MathF.Cos(s * 1.7f + age * 2.1f) * 0.24f);
+                    float r = 0.24f + age * 0.56f;
+                    int a = Math.Clamp((int)(148 * MathF.Sin(age * MathF.PI)), 0, 255);
+                    CombatSprites.SmokeFrame(s, sp, camRight, camUp, r, r, new Color(72, 68, 66, a),
+                        flipX: (s & 1) == 0, rotation: age * 0.6f + s * 0.4f);
+                }
+                CombatSprites.End();
+            }
+            float spAge = (_worldClock * 1.4f) % 1f;
+            if (spAge < 0.35f)
+            {
+                Vector3 sparkP = wp + new Vector3(0.10f, 0.48f + spAge * 1.1f, 0.06f);
+                VisualEngine3D.Rod(sparkP, sparkP + new Vector3(0.06f, 0.14f, -0.05f), 0.008f, 0.002f, 4, new(255, 188, 64, 255), Finish.Lamp);
+            }
         }
     }
 
     // =========================================================================
     // 2D WORLD-TO-SCREEN LABELS, HEALTH BARS, ANXIETY BARS & INTERACTION HINTS
     // =========================================================================
-    private enum FocusKind { None, Terminal, Frog, Offer, MacBook, Veronika, Shop, Elevator, Desk, Coder, Board, Barrier, Pizza, Cooler, Coffee, Rack, Printer, Deploy, Extinguisher }
+    private enum FocusKind { None, Terminal, Frog, Offer, MacBook, Veronika, Shop, Elevator, ElevatorEscape, Desk, Coder, Board, Barrier, Pizza, Cooler, Coffee, Rack, Printer, Deploy, Extinguisher }
     private readonly record struct Focus(FocusKind Kind, string Label, int Index);
     internal bool CanCarryWith(WeaponType tool) => tool==WeaponType.BareHands || Systems.Has(Sidegrade.CarryHarness);
 
@@ -5709,7 +6546,11 @@ public sealed partial class SkyscraperFloor1World
                 return SeatCarriedCoderAtGalley(focus.Index);
             case FocusKind.MacBook:
                 return RecoverBait();
+            case FocusKind.ElevatorEscape:
+                return TriggerCleverElevatorEscape();
             case FocusKind.Elevator:
+                if (BossInCombat && !BossEscapedPursuit && IsPlayerInsideNorthElevatorCabin(camera.Position))
+                    return TriggerCleverElevatorEscape();
                 TrySummonElevatorBoss(out string lift);
                 return lift;
             case FocusKind.Shop:
@@ -5761,6 +6602,14 @@ public sealed partial class SkyscraperFloor1World
             Systems.Onboarding==OnboardingStep.TalkToVeronika ? "Поговорить с Вероникой" :
             Systems.Onboarding!=OnboardingStep.BuyNet && Systems.PocketFrogs.Count>0 ? "Сдать Джаба-жаб Веронике" : VeronikaShop);
         Consider(ArsenalShopPos, 1.1f, 4.2f, FocusKind.Shop, "Арсенал и подписки");
+        if (BossInCombat && !BossEscapedPursuit && IsPlayerInsideNorthElevatorCabin(camera.Position))
+        {
+            // Clever Escape Pursuit: deep inside open North Elevator cabin -> interior Floor 2 emergency close button!
+            Vector3 cabinBtn = CentralElevatorCorePos + new Vector3(1.52f, 0f, -4.166f);
+            Consider(cabinBtn, 1.38f, 4.2f, FocusKind.ElevatorEscape, EscapeElevatorButtonPrompt);
+            if (focus.Kind == FocusKind.None)
+                return new(FocusKind.ElevatorEscape, EscapeElevatorButtonPrompt, -1);
+        }
         Consider(NorthElevatorPos,1.65f,5.5f,FocusKind.Elevator, ElevatorPrompt());
         Consider(SouthElevatorDoorPos,1.65f,5.2f,FocusKind.Elevator, ElevatorPrompt());
         Consider(ElevatorButtonPos, 1.22f, 4, FocusKind.Elevator, ElevatorPrompt());
@@ -5783,7 +6632,7 @@ public sealed partial class SkyscraperFloor1World
     }
 
     internal static readonly Vector3 LiftSignSize=new(2.74f,0.58f,.06f);
-    internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,3.14f,side*.43f);
+    internal static Vector3 LiftSignCenter(Vector3 face,int side) => face+new Vector3(0,3.88f,side*.43f);
 
     internal (Vector3 Position,float Height,string Label)? OnboardingWaypoint(Vector3 eye)
     {
@@ -6106,19 +6955,35 @@ public sealed partial class SkyscraperFloor1World
         {
             var p=EnemyProjectiles[i];
             Vector3 offset=p.Position-cam.Position;
-            if(p.Deflected || p.IsNodeModulesCube || offset.LengthSquared()>(wide ? 12.25f : 7.84f) ||
-                Vector3.Dot(aim,Vector3.Normalize(offset))<(wide ? .42f : .63f) || Vector3.Dot(p.Velocity,offset)>=0 ||
+            float maxDistSq = p.IsNodeModulesCube ? (wide ? 18.5f : 13.5f) : (wide ? 12.25f : 7.84f);
+            if(p.Deflected || offset.LengthSquared() > maxDistSq ||
+                Vector3.Dot(aim,Vector3.Normalize(offset))<(wide ? .42f : .60f) || Vector3.Dot(p.Velocity,offset)>=0 ||
                 TraceSurface(cam.Position,Vector3.Normalize(offset),offset.Length())+.02f<offset.Length()) continue;
-            var owner=ActiveCoders.Find(c=>c.Id==p.OwnerId && c.Hp>0);
-            Vector3 direction=owner!=null ? Vector3.Normalize(owner.CombatCenter-p.Position) : -Vector3.Normalize(p.Velocity);
-            p.Velocity=direction*Math.Max(14,p.Velocity.Length()*1.4f);
+            Vector3 direction;
+            if (p.IsNodeModulesCube && BossInCombat)
+            {
+                direction = Vector3.Normalize((ElevatorBoss.Position + Vector3.UnitY * 1.65f) - p.Position);
+            }
+            else
+            {
+                var owner=ActiveCoders.Find(c=>c.Id==p.OwnerId && c.Hp>0);
+                direction=owner!=null ? Vector3.Normalize(owner.CombatCenter-p.Position) : -Vector3.Normalize(p.Velocity);
+            }
+            p.Velocity=direction*Math.Max(16f,p.Velocity.Length()*1.55f);
+            p.AngularVelocity *= 1.85f;
             p.Damage*=2; p.Deflected=true; p.WireColor=p.PrimaryColor=Color.Gold; p.Life=3;
             EnemyProjectiles[i]=p;
             Systems.Style(StyleAction.Parry);
-            StyleComboSystem.RegisterTrick("ПАРИРОВАНИЕ!", "BELT PARRY!", 0.45f, 34f, new Color(245, 202, 98, 255), hitstop: true, shake: 0.020f);
-            feedback="ОТБИЛ БАГ РЕМНЁМ!";
+            Program.TriggerHitstop(0.038f);
+            Program.TriggerHitmarker(crit: true, kill: false);
+            Program.TriggerCrosshairBloom(1.2f);
+            AudioMusicSystem.PlayComicWhipSnap();
+            AudioMusicSystem.PlayActionClack(1.35f);
+            StyleComboSystem.RegisterTrick("ПАРИРОВАНИЕ!", "BELT PARRY!", 0.45f, 34f, new Color(245, 202, 98, 255), hitstop: false, shake: 0.024f);
+            feedback = p.IsNodeModulesCube ? "ОТБИЛ КОНТЕЙНЕР В БОССА!" : "ОТБИЛ ПРЕДМЕТ РЕМНЁМ!";
             weapon.TriggerWeaponAttack(cam,p.Position,true,0,true,customHitLabel:feedback);
-            weapon.SpawnBurstSparks(p.Position,direction,24,Color.Gold,Color.Yellow,2,6,false);
+            weapon.SpawnBurstSparks(p.Position,direction,28,Color.Gold,Color.Yellow,2.8f,7.2f,false);
+            SpawnCombatDebrisBurst(p.Position, direction, 8, Color.Gold, Finish.Lamp, glowing: true, speed: 5.5f, sizeScale: 0.72f);
             return true;
         }
         return false;
@@ -6332,10 +7197,13 @@ internal sealed class BugFrog
 
 public sealed partial class SkyscraperFloor1World
 {
+    public const int MaxLiveFloorFrogs = 3;
+    private const float FrogRespawnCooldown = 4.5f;
     internal readonly List<BugFrog> Frogs=new();
     internal static readonly Vector3 TerminalPos=new(-3.1f,0,10.85f);
     private readonly Random frogRandom;
     private float refill, previousDebt, croakDelay;
+    private int _pendingFrogRespawns;
 
     internal void MigrateTrainingAtrium()
     {
@@ -6349,14 +7217,14 @@ public sealed partial class SkyscraperFloor1World
 
     private void SeedLobby()
     {
-        Frogs.Clear(); previousDebt=0; refill=4;
-        Vector3[] pads=[new(3.45f,0,10.05f),new(4.95f,0,9.4f),new(5.55f,0,8.1f),
-            new(5.1f,0,11.4f),new(-3.1f,0,7.2f),new(4.1f,0,6.7f),new(-5,0,11),new(5,0,10)];
+        Frogs.Clear(); previousDebt=0; refill=FrogRespawnCooldown; _pendingFrogRespawns=0;
+        // Strict cap = MAX 3 live frogs on the floor (zero spam! Respawn 1-by-1 only after caught/sold/used)
+        Vector3[] pads=[new(3.45f,0,10.05f),new(4.95f,0,9.4f),new(-3.1f,0,7.2f)];
         for(int i=0;i<pads.Length;i++)
         {
-            var frog=PlaceFrog(pads[i],i<3 ? "frog_hopper" : i==3 ? "frog_crash" : i==4 ? "frog_syntax" : null);
+            var frog=PlaceFrog(pads[i],"frog_hopper");
             BeginHop(frog,frog.From+Vector3.UnitZ*3);
-            frog.Phase=i*.12f; frog.Yaw=frog.TargetYaw;
+            frog.Phase=i*.18f; frog.Yaw=frog.TargetYaw;
         }
     }
 
@@ -6429,17 +7297,28 @@ public sealed partial class SkyscraperFloor1World
 
     private void TickFrogs(float dt,Vector3 eye,Vector3? guest,Vector3? second=null)
     {
-        refill-=dt; croakDelay-=dt;
+        croakDelay-=dt;
         if(Systems.TD<previousDebt) previousDebt=Systems.TD;
-        if(Systems.WingsUnlocked && Frogs.Count<Systems.Balance.Cap(24) && Systems.TD>previousDebt && (previousDebt==0 || Systems.TD-previousDebt>=1))
+        // Strict Jaba-Frog Cap = MAX 3 live frogs on the floor (ZERO spam!).
+        // Respawn strictly ONE at a time after a 4.5s cooldown ONLY when < 3 live frogs AND a frog was caught/sold/used!
+        int deficit = MaxLiveFloorFrogs - Frogs.Count;
+        if (deficit > 0 && _pendingFrogRespawns > 0)
         {
-            SpawnFrog(frogRandom.Next(1,3));
-            previousDebt=Systems.TD;
+            refill -= dt;
+            if (refill <= 0f)
+            {
+                string? nextSpecies = (Systems.HasWeapon(WeaponType.CaptureNet) && !Frogs.Exists(f => f.SpeciesId == "frog_crash"))
+                    ? "frog_crash"
+                    : null;
+                SpawnFrog(Systems.WingsUnlocked ? frogRandom.Next(3) : 0, nextSpecies);
+                _pendingFrogRespawns = Math.Max(0, _pendingFrogRespawns - 1);
+                refill = FrogRespawnCooldown;
+            }
         }
-        if(refill<=0 && Frogs.Count<Systems.Balance.Cap(8))
+        else if (deficit <= 0)
         {
-            SpawnFrog(Systems.WingsUnlocked ? frogRandom.Next(3) : 0);
-            refill=3.5f;
+            _pendingFrogRespawns = 0;
+            refill = FrogRespawnCooldown;
         }
         foreach(var frog in Frogs)
         {
@@ -6485,6 +7364,8 @@ public sealed partial class SkyscraperFloor1World
             }
             if(Systems.Has(Sidegrade.CarbonNda)) Systems.Risk(security:6);
             Systems.PocketFrogs.Add(frog.SpeciesId); Frogs.Remove(frog);
+            if (_pendingFrogRespawns == 0) refill = FrogRespawnCooldown;
+            _pendingFrogRespawns = Math.Min(MaxLiveFloorFrogs - Frogs.Count, _pendingFrogRespawns + 1);
         }
         return targets.Length>0 ? $"В садке: {Systems.PocketFrogs.Count}" : "";
     }
@@ -6500,6 +7381,12 @@ public sealed partial class SkyscraperFloor1World
             Systems.Discover(species,grant);
         }
         Systems.PocketFrogs.Clear();
+        int missing = Math.Max(0, MaxLiveFloorFrogs - Frogs.Count);
+        if (missing > 0)
+        {
+            if (_pendingFrogRespawns == 0) refill = FrogRespawnCooldown;
+            _pendingFrogRespawns = Math.Max(_pendingFrogRespawns, missing);
+        }
         Systems.Earned+=total;
         grant(total,"Баг-трекер");
         AudioMusicSystem.PlayTarotCash();

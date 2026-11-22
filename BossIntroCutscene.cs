@@ -166,18 +166,18 @@ internal static class BossIntroCutscene
     {
         u = Math.Clamp(u, 0f, 1f);
 
-        ReadOnlySpan<(float Start, float End, bool LeftSwing)> steps =
+        ReadOnlySpan<(float Start, float End, bool LeftSwing, float Dist)> steps =
         [
-            (0.00f, 0.068f, false), // Step 0: Explosive threshold lunge right into hero's face for physical collar grab!
-            (0.28f, 0.39f,  true),  // Step 1: Heavy stomp onto carpet after hurling hero across atrium
-            (0.54f, 0.65f,  false), // Step 2: Towering stomp forward
-            (0.67f, 0.78f,  true)   // Step 3: Final plant onto compass medallion -> DEAD STILL STANCE
+            (0.00f, 0.068f, false, 2.05f), // Step 0: Explosive surge completely past Z=-8.5..-9.15 portal arch (to Z=-9.20) for zero-clip collar grab!
+            (0.28f, 0.39f,  true,  0.88f), // Step 1: Heavy stomp onto carpet (Z=-10.08, 100% clear of facade & jambs!)
+            (0.54f, 0.65f,  false, 0.88f), // Step 2: Towering stomp onto compass medallion (Z=-10.96)
+            (0.67f, 0.78f,  true,  0.84f)  // Step 3: Final plant in open North Arena (Z=-11.80) -> DEAD STILL STANCE
         ];
 
         const float startZ = 1.35f;
-        const float stepLen = 0.875f; // Exact anatomical single-step distance for 2.95m boss (L_eff = 1.465m)
 
         float progressSteps = 0f;
+        float traveledZ = 0f;
         int completed = 0;
         bool isMoving = false;
         bool leftSwing = false;
@@ -190,6 +190,7 @@ internal static class BossIntroCutscene
             if (u >= s.End)
             {
                 progressSteps += 1f;
+                traveledZ += s.Dist;
                 completed = i + 1;
                 float after = (u - s.End) / 0.055f;
                 if (after >= 0f && after < 1f)
@@ -200,6 +201,7 @@ internal static class BossIntroCutscene
                 float f = (u - s.Start) / (s.End - s.Start);
                 float eased = SmoothStep(f);
                 progressSteps += eased;
+                traveledZ += s.Dist * eased;
                 isMoving = true;
                 leftSwing = s.LeftSwing;
                 stepFrac = f;
@@ -209,8 +211,9 @@ internal static class BossIntroCutscene
             }
         }
 
-        float offsetZ = startZ - stepLen * progressSteps;
-        float stepDown = SmoothStep((progressSteps - 0.15f) / 0.65f);
+        float offsetZ = startZ - traveledZ;
+        // Drop cleanly from cabin floor (Y=0.16m) to marble lobby floor (Y=0.00m) strictly at doorway threshold!
+        float stepDown = SmoothStep((0.35f - offsetZ) / 0.55f);
         float offsetY = 0.16f * (1f - stepDown);
 
         // ShovePulse encodes the violent release whip right at ThrowWindupU..0.27
@@ -223,9 +226,10 @@ internal static class BossIntroCutscene
                 : 1f - SmoothStep((sf - 0.30f) / 0.70f);
         }
 
-        // Uncoil partially during the mid-air collar lift so boss towers eye-to-eye, then full 2.95m by Step 1..2!
-        float liftUncoil = SmoothStep((u - 0.07f) / 0.08f) * 0.42f;
-        float walkUncoil = SmoothStep((u - 0.28f) / 0.20f);
+        // Stay low under lintel until completely past portal arch (offsetZ <= -0.55f), then uncoil cleanly to full towering stature!
+        float clearPortal = SmoothStep((-0.45f - offsetZ) / 0.35f);
+        float liftUncoil = SmoothStep((u - 0.07f) / 0.08f) * 0.48f * clearPortal;
+        float walkUncoil = SmoothStep((u - 0.28f) / 0.18f) * clearPortal;
         float uncoil = MathF.Max(liftUncoil, walkUncoil);
 
         return new IntroWalkSample(
@@ -304,11 +308,11 @@ internal static class BossIntroCutscene
             }
             else
             {
-                // BEAT 1B (r = 0.52..1.00): Player steps right up to the threshold (Z = -9.68, 1.18m from doors!)
+                // BEAT 1B (r = 0.52..1.00): Player steps up cleanly before the wider tall glass doors
                 // expecting to board — glass clears until r = 0.88..1.00 when twin crimson visor eyes snap ON!
                 float t = SmoothStep((r - CalmPhaseEndR) / (1f - CalmPhaseEndR));
-                Vector3 pos = Vector3.Lerp(new(0.04f, 1.66f, -10.25f), new(-0.14f, 1.66f, -9.68f), t);
-                Vector3 tgt = Vector3.Lerp(new(0.00f, 1.72f, -7.80f), new(-0.04f, 1.70f, -7.25f), t);
+                Vector3 pos = Vector3.Lerp(new(0.04f, 1.66f, -10.55f), new(-0.08f, 1.66f, -10.05f), t);
+                Vector3 tgt = Vector3.Lerp(new(0.00f, 1.72f, -7.80f), new(0.00f, 1.64f, -7.25f), t);
 
                 float eyeSnap = SmoothStep((r - EyeSnapR) / 0.06f);
                 float eyeTremor = eyeSnap * (1f - SmoothStep((r - 0.94f) / 0.06f)) * 0.015f;
@@ -322,7 +326,7 @@ internal static class BossIntroCutscene
                     Position = pos,
                     Target = tgt,
                     Up = Vector3.UnitY,
-                    FovY = LerpF(47f, 44f, t),
+                    FovY = LerpF(49f, 47f, t),
                     Projection = CameraProjection.Perspective
                 };
             }
@@ -352,9 +356,9 @@ internal static class BossIntroCutscene
         SkyscraperFloor1World world, EscapedAgentBoss b, IntroWalkSample walk, float u)
     {
         Vector3 north = world.NorthElevatorPos;
-        Vector3 standAtDoor  = north + new Vector3(-0.08f, 1.64f, -1.44f); // Cleanly framed right at open threshold (zero door/collar clipping!)
-        Vector3 liftedInAir  = north + new Vector3(-0.10f, 2.08f, -1.28f); // Hoisted off floor face-to-face with sleek crimson visor!
-        Vector3 windupPull   = north + new Vector3(-0.42f, 2.16f, -1.16f); // Cocked sideways before brutal hurl!
+        Vector3 standAtDoor  = north + new Vector3(-0.08f, 1.64f, -1.98f); // Cleanly framed outside open doorway facing Boss (zero door/chest clipping!)
+        Vector3 liftedInAir  = north + new Vector3(-0.10f, 2.08f, -1.80f); // Hoisted off floor face-to-face with sleek crimson visor!
+        Vector3 windupPull   = north + new Vector3(-0.42f, 2.16f, -1.68f); // Cocked sideways before brutal hurl!
         Vector3 floorImpact  = north + new Vector3(+1.48f, 0.48f, -10.25f);// Violent 9.1m hurl PAST Z=-15.8 glass partition into North Wing!
         Vector3 floorRest    = north + new Vector3(+1.65f, 0.94f, -11.00f);// (+1.65, 0.94, -19.50) pushed up on forearms/knee with crisp view over wainscot!
         Vector3 braceRight   = north + new Vector3(+1.65f, 1.16f, -10.90f);// (+1.65, 1.16, -19.40) crouching up right as rockets blow Z=-15.8 wall open!

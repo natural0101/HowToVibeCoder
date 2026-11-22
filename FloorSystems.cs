@@ -803,15 +803,8 @@ public static partial class Program
     internal static AgentVerdict AgentOutcome => Floor.Verdict;
     internal static IReadOnlyDictionary<string,int> Discoveries => Floor.DiscoveredSpecies;
 
-    internal static void ShadowText(Font font,string text,float x,float y,int size,Color ink)
-    {
-        text=Loc.RenderText(text);
-        Font face=GameFonts.At(font,size);
-        Vector2 pos=new(MathF.Round(x),MathF.Round(y));
-        float spacing=size<=16 ? .5f : 0;
-        Raylib.DrawTextEx(face,text,pos+new Vector2(1.5f),size,spacing,new Color(8,12,16,(int)(190*ink.A/255f)));
-        Raylib.DrawTextEx(face,text,pos,size,spacing,ink);
-    }
+    internal static void ShadowText(Font font,string text,float x,float y,int size,Color ink) =>
+        GameFonts.Draw(font,text,new(x,y),size,ink,shadowed:true);
 
     private static readonly string[] BeatTitles=["РАЗГОВОР С HR","ДЖАБА-ЖАБЫ","БАГ-ТРЕКЕР","САЧОК","ЯБЛОБУК","СТАЖЁР","ХИЛ У КОФЕ-МАШИНЫ","ДОСТАВКА КАДРОВ","ОПЕНСПЕЙС"];
     private static void DrawFloorTelemetry()
@@ -1048,11 +1041,11 @@ public static partial class Program
             }
 
             // Write compact controls right onto the curled yellow sticky note in the bottom-right corner of the corkboard!
-            DossierPrint.Text("[W/A/S/D]", 1094, 548, 13, LoreAndMenusUI.ThemeSepiaInk, Typeface.InterfaceBold);
-            DossierPrint.Text("Выбор", 1094, 565, 13, LoreAndMenusUI.ThemeSepiaMuted);
+            DossierPrint.Text("[W/A/S/D]", 1094, 546, 13, LoreAndMenusUI.ThemeSepiaInk, Typeface.InterfaceBold);
+            DossierPrint.Text("Выбор", 1094, 566, 13, LoreAndMenusUI.ThemeSepiaMuted);
             DossierPrint.Text("[Enter]", 1094, 588, 13, LoreAndMenusUI.ThemeStampRed, Typeface.InterfaceBold);
-            DossierPrint.Text("Подписать", 1094, 605, 13, LoreAndMenusUI.ThemeSepiaInk);
-            DossierPrint.Text("[Esc] Выход", 1094, 632, 12, LoreAndMenusUI.ThemeSepiaMuted, Typeface.InterfaceBold);
+            DossierPrint.Text("Подписать", 1094, 608, 13, LoreAndMenusUI.ThemeSepiaInk);
+            DossierPrint.Text("[Esc] Выход", 1094, 633, 12, LoreAndMenusUI.ThemeSepiaMuted, Typeface.InterfaceBold);
 
             if (panelMessage.Length > 0 || Floor.JobId >= 0)
             {

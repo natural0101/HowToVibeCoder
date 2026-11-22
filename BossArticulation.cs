@@ -513,6 +513,49 @@ internal static unsafe partial class VisualEngine3D
                 break;
             }
 
+            case ElevatorBossState.Dying:
+            {
+                // Violent Multi-Stage Reactor Meltdown Stagger: spasmodic high-frequency jolts, chest core blown open, knees buckling!
+                float elapsed = Math.Clamp(SkyscraperFloor1World.MeltdownSeconds - b.StateTimer, 0f, SkyscraperFloor1World.MeltdownSeconds);
+                float prog = elapsed / SkyscraperFloor1World.MeltdownSeconds;
+                float spasmA = MathF.Sin(clock * 31f);
+                float spasmB = MathF.Cos(clock * 39f + 1.3f);
+                float blowBack = SmoothStep((prog - 0.55f) / 0.35f);
+
+                p.PelvisRoll  = 0.14f * spasmA;
+                p.TorsoPitch  = LerpF(0.24f, -0.34f, blowBack) + 0.16f * spasmB;
+                p.TorsoYaw    = 0.32f * spasmA;
+                p.TorsoRoll   = 0.22f * spasmB;
+
+                p.ThighLPitch = LerpF(-0.32f, -0.68f, prog) + 0.08f * spasmA;
+                p.ThighLRoll  = +0.22f;
+                p.ShinLPitch  = LerpF(+0.62f, +1.28f, prog);
+
+                p.ThighRPitch = LerpF(-0.28f, -0.62f, prog) - 0.08f * spasmA;
+                p.ThighRRoll  = -0.22f;
+                p.ShinRPitch  = LerpF(+0.58f, +1.22f, prog);
+
+                // Arms thrown wide & jerking wildly as internal shoulder explosions rip outward
+                p.ArmLPitch   = -0.68f + 0.34f * spasmA - 0.35f * blowBack;
+                p.ArmLYaw     = +0.28f * spasmB;
+                p.ArmLRoll    = +0.62f + 0.38f * prog + 0.16f * spasmA;
+                p.ElbowLPitch = -0.64f + 0.28f * spasmB;
+                p.ElbowLYaw   = -0.22f;
+
+                p.ArmRPitch   = -0.62f - 0.36f * spasmB - 0.32f * blowBack;
+                p.ArmRYaw     = -0.28f * spasmA;
+                p.ArmRRoll    = -0.62f - 0.38f * prog + 0.16f * spasmB;
+                p.ElbowRPitch = -0.58f - 0.28f * spasmA;
+                p.ElbowRYaw   = +0.22f;
+
+                // Head thrown back as crimson reactor core overloads
+                p.HeadPitch   = LerpF(-0.18f, -0.56f, blowBack) + 0.22f * spasmA;
+                p.HeadYaw     = 0.42f * spasmB;
+                p.HeadRoll    = 0.28f * spasmA;
+                p.PelvisY     = ComputeBossGroundedPelvisY(p, allowKneeRest: true);
+                break;
+            }
+
             case ElevatorBossState.StunnedWallCrash:
             {
                 // Damaged Glitching Stagger: dropped pelvis, buckled wide knees, slumped torso, spasmodic short-circuit!

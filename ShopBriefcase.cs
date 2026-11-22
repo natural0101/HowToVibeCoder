@@ -18,8 +18,7 @@ public static partial class Program
         var font=GameFonts.Get(display ? Typeface.SerifBold : Typeface.Interface,size);
         while(width>0 && size>9 && GameFonts.Measure(font,text,size).X>width) size--;
         if(center) x-=GameFonts.Measure(font,text,size).X/2;
-        if(shadow) GameFonts.Draw(font,text,new(x+2,y+2),size,shopInk,false);
-        GameFonts.Draw(font,text,new(x,y),size,ink,false);
+        GameFonts.Draw(font,text,new(x,y),size,ink,shadowed:shadow);
     }
 
     private static void PaperSlip(Rectangle r,Color stock,Color edge)

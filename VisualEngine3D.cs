@@ -270,8 +270,10 @@ internal static unsafe partial class VisualEngine3D
             vec2 st=uv;
             if(slotReels>0. && colSpecular.a>.60 && colSpecular.a<.64 && uv.x<.75)
                 st.y=fract(st.y+slotReels*(1.+floor(uv.x*4.)));
-            if(finish==1) st=pos.xz*.36;
-            if(finish==11) st=(abs(n.y)>.6 ? pos.xz : (abs(n.x)>.6 ? pos.zy : pos.xy))*.5;
+            bool isFloorSlab=finish==1 && abs(n.y)>.7 && abs(pos.y)<.25;
+            if(isFloorSlab) st=pos.xz*.36;
+            else if(finish==1 || finish==11 || finish==6 || (finish==2 && firstPerson==0))
+                st=(abs(n.y)>.65 ? pos.xz : (abs(n.x)>.65 ? vec2(pos.z,-pos.y) : vec2(pos.x,-pos.y)))/2.4;
             vec4 tex=texture(texture0,st);
             if(finish==8) {
                 float halo=1.-smoothstep(.35,1.,length(uv*2.-1.));
@@ -371,6 +373,12 @@ internal static unsafe partial class VisualEngine3D
                     float frost=clamp((ink.a*255.-138.)/110.,0.,1.);
                     float grain=fract(sin(dot(floor(pos.xy*180.),vec2(12.9898,78.233)))*43758.5453);
                     glass=mix(glass,vec4(ink.rgb*(.90+.15*grain),ink.a),frost);
+                } else if(ink.a>.72) {
+                    // Architectural frosted satin door glass (luminous warm-lit milky center with soft perimeter frame shading)
+                    float softGrad=.82+.22*smoothstep(.25,2.15,pos.y)+.05*sin(pos.x*2.4+pos.y*1.6);
+                    float frostGrain=fbm(vec2(abs(n.x)>.6 ? pos.z : pos.x, pos.y)*22.)*.07;
+                    vec3 frostCol=ink.rgb*(softGrad+frostGrain)+vec3(.14,.12,.10)*glint+vec3(.08,.08,.09)*edge;
+                    glass=vec4(frostCol,clamp(ink.a*.90+edge*.06,0.,.94));
                 }
                 color=glass; return;
             }
@@ -534,29 +542,26 @@ internal static unsafe partial class VisualEngine3D
                 return;
             }
             if(finish==17) base=pow(base,vec3(.78));
-            // Executive Moscow-City Bookmatched Honed Marble & Charcoal Granite Floor Slabs with brass corner cabochons!
+            // Warm Honed Cream-Ivory Marble Lobby Floor Slabs (strictly horizontal floor slabs only; vertical Finish.Slate walls render real Board-Formed Concrete!)
             float floorBrass = 0.;
-            if(finish==1) {
-                vec2 slabUV = pos.xz * .72;
+            if(isFloorSlab) {
+                vec2 slabUV = pos.xz * .70;
                 vec2 slabId = floor(slabUV);
                 vec2 tile = fract(slabUV) - .5;
                 float checker = mod(slabId.x + slabId.y, 2.);
-                vec2 veinP = (checker > .5 ? pos.xz : pos.zx) * .95 + slabId * 3.17;
-                float turb = fbm(veinP * 1.45 + vec2(fbm(veinP * 2.1), fbm(veinP * 1.8 + 4.3)) * 1.15);
-                float fineVein = 1. - smoothstep(.018, .085, abs(sin((veinP.x * 2.2 + veinP.y * 1.6) + turb * 5.2)));
-                float goldVein = 1. - smoothstep(.008, .034, abs(sin((veinP.x * 1.3 - veinP.y * 2.7) + turb * 6.8)));
-                float slabTone = .88 + .18 * hash(slabId) + (checker > .5 ? .07 : -.05);
-                vec3 stoneCol = mix(vec3(.145,.152,.175), vec3(.215,.208,.212), checker * .42 + turb * .45) * slabTone;
-                stoneCol += vec3(.12,.115,.11) * fineVein * .35 + vec3(.28,.21,.10) * goldVein * .22;
-                // Crisp dark recessed bevel grout joints
+                vec2 veinP = (checker > .5 ? pos.xz : pos.zx) * .88 + slabId * 3.17;
+                float turb = fbm(veinP * 1.35 + vec2(fbm(veinP * 2.0), fbm(veinP * 1.7 + 4.3)) * 1.15);
+                float softVein = 1. - smoothstep(.022, .12, abs(sin((veinP.x * 1.9 + veinP.y * 1.4) + turb * 5.0)));
+                float warmVein = 1. - smoothstep(.010, .055, abs(sin((veinP.x * 1.2 - veinP.y * 2.3) + turb * 6.2)));
+                float slabTone = .93 + .10 * hash(slabId) + (checker > .5 ? .03 : -.025);
+                vec3 stoneCol = mix(vec3(.65,.61,.55), vec3(.77,.73,.66), turb * .65 + checker * .20) * slabTone;
+                stoneCol = mix(stoneCol, vec3(.53,.48,.42), softVein * .30);
+                stoneCol = mix(stoneCol, vec3(.60,.51,.38), warmVein * .22);
+                // Crisp delicate recessed grout joints between large honed marble slabs
                 vec2 edgeDist = .5 - abs(tile);
-                float grout = 1. - smoothstep(.006, .019, min(edgeDist.x, edgeDist.y));
-                stoneCol = mix(stoneCol, vec3(.055,.058,.066), grout * .82);
-                // Warm inlaid brushed-brass corner diamond cabochons at slab intersections!
-                vec2 cornerD = abs(fract(slabUV + .5) - .5);
-                float cabochon = 1. - smoothstep(.038, .048, cornerD.x + cornerD.y);
-                floorBrass = cabochon * (1. - smoothstep(.04, .18, length(fwidth(slabUV))));
-                base = mix(stoneCol, vec3(.76,.58,.30), floorBrass);
+                float grout = 1. - smoothstep(.005, .016, min(edgeDist.x, edgeDist.y));
+                stoneCol = mix(stoneCol, vec3(.40,.37,.33), grout * .75);
+                base = stoneCol;
             }
             // Royal-Burgundy Woven Art-Deco Jacquard Hotel-Lobby Runner & Commercial Modular Openspace Carpet Tiles!
             if(finish==18) {
@@ -592,21 +597,30 @@ internal static unsafe partial class VisualEngine3D
                 vec3 t=abs(n.y)>.7 ? vec3(1,0,0) : normalize(cross(vec3(0,1,0),n));
                 vec3 b=cross(n,t);
                 vec2 p=vec2(dot(pos,t),dot(pos,b));
-                float freq=finish==18 ? 148. : leather ? 105. : finish==2 ? 80. : 56.;
+                float freq=finish==18 ? 148. : leather ? 96. : finish==2 ? 90. : 52.;
                 float resolve=1.-smoothstep(.3,2.8,length(fwidth(p))*freq);
-                vec2 slope=.035*resolve*vec2(sin(p.x*freq),cos(p.y*freq+sin(p.x*freq)));
-                if(finish==1) {
-                    vec2 tile=fract(p*.72)-.5;
+                vec2 slope=.030*resolve*vec2(sin(p.x*freq),cos(p.y*freq+sin(p.x*freq)));
+                if(isFloorSlab) {
+                    vec2 tile=fract(p*.70)-.5;
                     float tileDetail=1.-smoothstep(.009,.053,length(fwidth(p)));
-                    slope=sign(tile)*smoothstep(vec2(.468),vec2(.494),abs(tile))*.058*tileDetail;
-                    slope+=.0042*cos(p*vec2(4.,8.)+sin(p.y*3.))*tileDetail;
+                    slope=sign(tile)*smoothstep(vec2(.470),vec2(.494),abs(tile))*.045*tileDetail;
+                    slope+=.0032*cos(p*vec2(4.,8.)+sin(p.y*3.))*tileDetail;
+                } else if(finish==1) {
+                    // Board-formed architectural concrete horizontal plank reveals & subtle porous grain
+                    float plank=fract(p.y*(8./2.4))-.5;
+                    float concreteDetail=1.-smoothstep(.008,.06,length(fwidth(p)));
+                    slope=vec2(0.,sign(plank)*smoothstep(.45,.49,abs(plank))*.048*concreteDetail);
+                    slope+=.018*resolve*vec2(sin(p.x*34.+p.y*5.),cos(p.y*68.));
+                } else if(finish==6) {
+                    // Natural vertical walnut wood grain micro-relief
+                    slope=.020*resolve*vec2(sin(p.x*115.+sin(p.y*7.)*2.2),cos(p.y*16.)*.22);
                 }
                 n=normalize(n+t*slope.x+b*slope.y);
             }
             if(weaponSkin>0) base=finishSkin(skinPos,n,v,clock,base);
             vec3 key=sunDir;
             float shadow=sunlight(n);
-            float gloss=finish==1 ? 65. : (finish==2 ? 44. : 24.);
+            float gloss=isFloorSlab ? 58. : (finish==2 ? 52. : finish==6 ? 26. : 18.);
             bool weapon=firstPerson==1 && finish==17 && weaponFinish.y>0.;
             if(weapon) gloss=mix(96.,18.,weaponFinish.y);
             float ao=mix(1.,mix(.78,1.,smoothstep(0.,.42,pos.y)),1.-abs(n.y));
@@ -621,6 +635,13 @@ internal static unsafe partial class VisualEngine3D
                     pool=max(pool,1.-smoothstep(.16,1.,dot(offset,offset*vec2(.062,.095))));
                 }
                 light+=vec3(.96,.64,.34)*pool*(.34+.66*max(0.,n.y));
+                // Warm architectural lobby accent wash illuminating Technical Portals, Walnut Slats & Reception Back Wall
+                light+=point(vec3(5.78,3.65,14.20),vec3(.68,.54,.38),n,v,gloss);
+                // Warm overhead ceiling illumination inside the recessed Technical Service Corridors (eliminates pitch-black door void!)
+                if(pos.z>15.90 && pos.x>2.6 && pos.x<9.0 && pos.y<3.15) {
+                    light+=point(vec3(4.10,2.55,17.25),vec3(1.65,1.28,.82),n,v,gloss);
+                    light+=point(vec3(7.45,2.55,17.25),vec3(1.65,1.28,.82),n,v,gloss);
+                }
                 // Localized cool vending/cooler alcove bounce (East corridor) + warm Xerox/filing alcove cove light (West corridor)
                 light+=point(vec3(5.65,1.55,-5.45),vec3(.28,.54,.72),n,v,gloss);
                 light+=point(vec3(-5.85,2.25,-4.80),vec3(.66,.56,.44),n,v,gloss);
@@ -639,10 +660,10 @@ internal static unsafe partial class VisualEngine3D
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
             float nh=max(0.,dot(n,normalize(v+key))),nv=max(.01,dot(n,v));
-            float rough=finish==1 ? mix(.30,.18,floorBrass) : finish==2 || finish==23 ? .32 : .53;
+            float rough=isFloorSlab ? .26 : finish==1 ? .76 : finish==2 ? .34 : finish==23 ? .32 : finish==6 ? .48 : .56;
             float a2=pow(rough,4.), denom=nh*nh*(a2-1.)+1.;
             float D=a2/(3.14159*denom*denom+.0001);
-            vec3 F0=finish==23 ? base*.72 : mix(vec3(.04),base*.78,floorBrass);
+            vec3 F0=finish==23 ? base*.72 : finish==2 ? base*.58 : vec3(.04);
             vec3 F=F0+(1.-F0)*pow(1.-max(0.,dot(v,normalize(v+key))),5.);
             lit+=vec3(1.48,1.02,.64)*F*min(3.,D)*max(0.,dot(n,key))*shadow/(.45+nv);
             if(weapon) {
@@ -669,8 +690,14 @@ internal static unsafe partial class VisualEngine3D
                 float band=.5+.5*sin(r.y*13.+r.x*3.);
                 lit=base*(.26+.30*band+.65*max(0.,dot(n,key))*shadow)+vec3(.21,.14,.07)*pow(band,8.);
             }
-            if(finish==1) {
-                lit=lit*.76+reflectionBands(reflect(-v,n))*(.025+.34*fres);
+            if(finish==2 && firstPerson==0) {
+                // Clean satin brushed stainless steel subtle architectural reflection band
+                vec3 r=reflect(-v,n);
+                float sBand=.5+.5*sin(r.y*7.+r.x*2.5);
+                lit=lit*.84+base*(.14+.16*sBand)+vec3(.14,.15,.16)*fres;
+            }
+            if(isFloorSlab) {
+                lit=lit*.84+reflectionBands(reflect(-v,n))*(.03+.28*fres);
                 lit+=point(puddleLight,vec3(.07,.85,1.3)*puddlePower,n,v,54.)*(.08+fres*.22);
             }
             if(finish==7 || finish==15 || finish==16 || finish==20) lit=base*1.62;
@@ -1321,6 +1348,8 @@ internal static unsafe partial class VisualEngine3D
             Mesh cube = box.Meshes[0];
             foreach (var (finish, blocks) in groups)
             {
+                bool worldTiled = finish is Finish.Slate or Finish.Plaster or Finish.Leather or Finish.Armor
+                                         or Finish.BlackMarble or Finish.Bronze or Finish.Paint;
                 Mesh mesh = new() { TriangleCount=blocks.Count*cube.TriangleCount };
                 mesh.VertexCount=mesh.TriangleCount*3;
                 mesh.AllocVertices(); mesh.AllocNormals(); mesh.AllocTexCoords(); mesh.AllocColors();
@@ -1332,9 +1361,24 @@ internal static unsafe partial class VisualEngine3D
                     {
                         int source=cube.Indices==null ? i : cube.Indices[i];
                         Vector3 local=((Vector3*)cube.Vertices)[source]*block.Size;
-                        ((Vector3*)mesh.Vertices)[vertex]=Vector3.Transform(local,rotation)+block.Center;
-                        ((Vector3*)mesh.Normals)[vertex]=Vector3.TransformNormal(((Vector3*)cube.Normals)[source],rotation);
-                        ((Vector2*)mesh.TexCoords)[vertex]=((Vector2*)cube.TexCoords)[source];
+                        Vector3 wp=Vector3.Transform(local,rotation)+block.Center;
+                        Vector3 wn=Vector3.TransformNormal(((Vector3*)cube.Normals)[source],rotation);
+                        ((Vector3*)mesh.Vertices)[vertex]=wp;
+                        ((Vector3*)mesh.Normals)[vertex]=wn;
+                        if (worldTiled)
+                        {
+                            const float tileMeters = 2.4f;
+                            Vector2 tiledUv = MathF.Abs(wn.Y) > 0.65f
+                                ? new Vector2(wp.X, wp.Z) / tileMeters
+                                : MathF.Abs(wn.X) > 0.65f
+                                    ? new Vector2(wp.Z, -wp.Y) / tileMeters
+                                    : new Vector2(wp.X, -wp.Y) / tileMeters;
+                            ((Vector2*)mesh.TexCoords)[vertex]=tiledUv;
+                        }
+                        else
+                        {
+                            ((Vector2*)mesh.TexCoords)[vertex]=((Vector2*)cube.TexCoords)[source];
+                        }
                         ((Color*)mesh.Colors)[vertex]=block.Color;
                     }
                 }
@@ -1395,16 +1439,35 @@ internal static unsafe partial class VisualEngine3D
         }
     }
 
+    private static float PeriodicNoise(float u, float v, int periodX, int periodY, int seed = 0)
+    {
+        float x = u * periodX, y = v * periodY;
+        int x0 = ((int)MathF.Floor(x) % periodX + periodX) % periodX;
+        int y0 = ((int)MathF.Floor(y) % periodY + periodY) % periodY;
+        int x1 = (x0 + 1) % periodX;
+        int y1 = (y0 + 1) % periodY;
+        float fx = x - MathF.Floor(x), fy = y - MathF.Floor(y);
+        fx = fx * fx * (3f - 2f * fx);
+        fy = fy * fy * (3f - 2f * fy);
+        float n00 = Hash(x0 + seed * 97, y0 + seed * 53) / 255f;
+        float n10 = Hash(x1 + seed * 97, y0 + seed * 53) / 255f;
+        float n01 = Hash(x0 + seed * 97, y1 + seed * 53) / 255f;
+        float n11 = Hash(x1 + seed * 97, y1 + seed * 53) / 255f;
+        return (n00 * (1f - fx) + n10 * fx) * (1f - fy) + (n01 * (1f - fx) + n11 * fx) * fy;
+    }
+
     private static Texture2D MakeTexture(Finish f)
     {
+        bool hiResArch = f is Finish.Slate or Finish.Plaster or Finish.Leather or Finish.Armor;
         int size=f is Finish.Paint or Finish.Contact or Finish.Lamp or Finish.Sky or Finish.Facade
                     or Finish.Glass or Finish.Imported or Finish.Carpet or Finish.CharacterShadow or Finish.Fluorescent or Finish.Anatomy
-                    or Finish.BlackMarble or Finish.Bronze or Finish.LiftGlass or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1 : 512;
+                    or Finish.BlackMarble or Finish.Bronze or Finish.LiftGlass or Finish.Cloud or Finish.RosinSmoke or Finish.Plasma or Finish.WaterPuddle ? 1
+                    : hiResArch ? 1024 : 512;
         Image img=f==Finish.Lift ? Raylib.GenImageColor(1792,384,new Color(22,16,13,255))
                                  : Raylib.GenImageColor(size,size,Color.White);
         Color* pixels=(Color*)img.Data;
         if(f!=Finish.Lift)
-            for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y);
+            for(int y=0;y<size;y++) for(int x=0;x<size;x++) pixels[y*size+x]=Pixel(f,x,y,size);
         void Inscription(string value, int size, int y, Color ink)
         {
             Font native = GameFonts.Get(Typeface.InterfaceBold, Math.Max(1, size / 2));
@@ -1511,49 +1574,140 @@ internal static unsafe partial class VisualEngine3D
         if(f is Finish.Coworking or Finish.Meeting or Finish.Standup or Finish.BreakRoom)
         {
             Raylib.UnloadImage(img);
-            bool techDoor = f is Finish.Coworking or Finish.Meeting;
-            img=Raylib.GenImageColor(512,80, techDoor ? new Color(26,28,34,255) : new Color(32,47,52,255));
-            if(techDoor)
+            const int PW = 768, PH = 128;
+            img = Raylib.GenImageColor(PW, PH, new Color(196, 200, 204, 255));
+            Color* pp = (Color*)img.Data;
+            // Minimalist satin brushed-aluminum architectural room plaque (ZERO black box, ZERO yellow border, ZERO red underline!)
+            for (int y = 0; y < PH; y++)
             {
-                // Brushed-steel technical border + crimson "STAFF ONLY" hazard stripe at bottom edge
-                Raylib.ImageDrawRectangleLines(ref img, new Rectangle(3, 3, 506, 74), 3, new Color(168, 132, 74, 255));
-                Raylib.ImageDrawRectangle(ref img, 8, 66, 496, 6, new Color(196, 36, 42, 255));
+                float ny = (float)y / (PH - 1);
+                float sheen = 1.04f - 0.10f * ny + 0.03f * MathF.Sin(ny * MathF.PI * 2.2f);
+                int streak = (Hash(17, y) % 13) - 6;
+                for (int x = 0; x < PW; x++)
+                {
+                    int micro = (Hash(x / 5, y) % 7) - 3;
+                    float nx = (x - PW * 0.5f) / (PW * 0.5f);
+                    float edgeV = 1.0f - 0.05f * nx * nx;
+                    byte r = (byte)Math.Clamp(196 * sheen * edgeV + streak + micro, 152, 232);
+                    byte g = (byte)Math.Clamp(199 * sheen * edgeV + streak + micro, 156, 235);
+                    byte b = (byte)Math.Clamp(202 * sheen * edgeV + streak + micro, 160, 238);
+                    pp[y * PW + x] = new Color(r, g, b, (byte)255);
+                }
             }
-            string title=f switch {
-                Finish.Coworking=>Loc.T("ТЕХ. ПОМЕЩЕНИЕ","UTILITY ROOM"),
-                Finish.Meeting=>Loc.T("СЛУЖЕБНЫЙ ВХОД","STAFF ONLY"),
-                Finish.Standup=>Loc.T("КОВОРКИНГ","CO-WORKING"),
-                _=>Loc.T("ПЕРЕГОВОРНАЯ","MEETING ROOM") };
-            Inscription(title, techDoor ? 38 : 44, techDoor ? 14 : 16, techDoor ? new(255,214,142,255) : new(255,226,171,255));
+            // Crisp milled silver top/left bevel highlight + soft anodized bottom/right shadow bevel
+            Raylib.ImageDrawRectangle(ref img, 0, 0, PW, 4, new Color(230, 233, 236, 255));
+            Raylib.ImageDrawRectangle(ref img, 0, 0, 4, PH, new Color(224, 227, 230, 255));
+            Raylib.ImageDrawRectangle(ref img, 0, PH - 4, PW, 4, new Color(118, 122, 128, 255));
+            Raylib.ImageDrawRectangle(ref img, PW - 4, 0, 4, PH, new Color(126, 130, 136, 255));
+            // 4 tiny subtle countersunk stainless corner pins
+            foreach (int px in new[] { 20, PW - 20 })
+            foreach (int py in new[] { 20, PH - 20 })
+            {
+                Raylib.ImageDrawCircle(ref img, px, py, 5, new Color(132, 136, 142, 255));
+                Raylib.ImageDrawCircle(ref img, px - 1, py - 1, 2, new Color(218, 222, 226, 255));
+            }
+            string title = f switch {
+                Finish.Coworking => Loc.T("ТЕХ. ПОМЕЩЕНИЕ", "UTILITY ROOM"),
+                Finish.Meeting   => Loc.T("СЛУЖЕБНЫЙ ВХОД", "STAFF ONLY"),
+                Finish.Standup   => Loc.T("КОВОРКИНГ", "CO-WORKING"),
+                _                => Loc.T("ПЕРЕГОВОРНАЯ", "MEETING ROOM") };
+            // 1:1 native atlas BaseSize (28 -> 56px) filling the 768x128 brushed-aluminum plaque cleanly for crisp long-distance legibility!
+            Font fnt = GameFonts.Get(Typeface.InterfaceBold, 28);
+            int drawPx = fnt.BaseSize;
+            float tw = Raylib.MeasureTextEx(fnt, title, drawPx, 2f).X;
+            if (tw > PW - 64)
+            {
+                fnt = GameFonts.Get(Typeface.InterfaceBold, 24);
+                drawPx = fnt.BaseSize;
+                tw = Raylib.MeasureTextEx(fnt, title, drawPx, 2f).X;
+            }
+            int tx = (int)((PW - tw) * 0.5f);
+            int ty = (PH - drawPx) / 2;
+            // Subtle light-etched micro-highlight under crisp dark charcoal engraved lettering
+            Raylib.ImageDrawTextEx(ref img, fnt, title, new(tx, ty + 2), drawPx, 2f, new Color(230, 233, 236, 255));
+            Raylib.ImageDrawTextEx(ref img, fnt, title, new(tx, ty), drawPx, 2f, new Color(20, 24, 30, 255));
+            Raylib.ImageDrawTextEx(ref img, fnt, title, new(tx + 1, ty), drawPx, 2f, new Color(20, 24, 30, 255));
+            // GenMeshCube (FaceBox) maps V=0 at bottom -> V=1 at top on both +Z and -Z faces while U runs left-to-right; flip vertically so all 4 plaques read right-side up!
+            Raylib.ImageFlipVertical(ref img);
         }
         Texture2D tex=Raylib.LoadTextureFromImage(img);
         Raylib.UnloadImage(img);
         if(tex.Id==0) throw new InvalidOperationException($"Could not upload {f}.");
-        if(size>1) { Raylib.GenTextureMipmaps(ref tex); Raylib.SetTextureFilter(tex,TextureFilter.Anisotropic8X); }
+        if(size>1)
+        {
+            bool clamp = f is Finish.Coworking or Finish.Meeting or Finish.Standup or Finish.BreakRoom
+                           or Finish.Lift or Finish.Tarot or Finish.Exit or Finish.Billboard
+                           or Finish.JiraSheet or Finish.NdaSheet or Finish.PitchDeck;
+            Raylib.SetTextureWrap(tex, clamp ? TextureWrap.Clamp : TextureWrap.Repeat);
+            Raylib.GenTextureMipmaps(ref tex);
+            Raylib.SetTextureFilter(tex, TextureFilter.Anisotropic8X);
+        }
         return tex;
     }
 
-    private static Color Pixel(Finish f,int x,int y)
+    private static Color Pixel(Finish f,int x,int y,int size=512)
     {
         int grain=Hash(x,y)%11-5;
         int band=Hash(0,y)%13-6;
+        float u = (float)x / size, v = (float)y / size;
         static Color Rgb(float r,float g,float b) => new((int)Math.Clamp(r,0,255),(int)Math.Clamp(g,0,255),(int)Math.Clamp(b,0,255),255);
         switch(f)
         {
             case Finish.Slate:
-                float phase=x*.026f+y*.043f+1.7f*MathF.Sin(y*.025f)+MathF.Sin(x*.04f);
-                float vein=MathF.Pow(MathF.Max(0,MathF.Cos(phase)),15);
-                int seam=Math.Min(x%256,y%256);
-                float s=(seam<3 ? -22 : seam==4 ? 10 : 0)+grain+vein*4+Hash(x/256,y/256)%8;
-                return Rgb(53+s,58+s,67+s);
+            {
+                // Warm Architectural Board-Formed Concrete (8 horizontal timber formwork courses per 2.4m tile, concrete aggregate & recessed tie-rod holes!)
+                const int planks = 8;
+                float plankF = v * planks;
+                int plankId = (int)plankF;
+                float py = plankF - plankId; // 0..1 within plank height
+                int plankH = size / planks;
+                int localY = y % plankH;
+                // Staggered vertical formwork board butt-joint per course
+                int buttX = ((plankId * 379 + 140) % size);
+                int distButt = Math.Min(Math.Abs(x - buttX), size - Math.Abs(x - buttX));
+
+                // Multi-octave seamless concrete mottling & horizontal timber grain imprint
+                float cloud = (PeriodicNoise(u, v, 4, 4, 1) * 0.55f + PeriodicNoise(u, v, 10, 10, 2) * 0.30f + PeriodicNoise(u, v, 24, 24, 3) * 0.15f - 0.5f) * 26f;
+                float woodGrain = (PeriodicNoise(u, v, 6, 64, 4 + plankId) - 0.5f) * 16f
+                                + (PeriodicNoise(u, v, 18, 128, 19) - 0.5f) * 8f;
+                float plankTone = ((Hash(plankId, 71) % 17) - 8) * 1.15f;
+                float speckle = ((Hash(x, y) % 15) - 7) * 0.9f + (Hash(x * 3, y * 5) < 7 ? -16f : 0f);
+
+                // Crisp horizontal plank groove & subtle bottom catch-light
+                float seam = localY < 3 ? -34f : localY == 3 ? -14f : localY == 4 ? 11f : 0f;
+                if (distButt < 2) seam = Math.Min(seam, -22f);
+
+                // Authentic architectural concrete formwork tie-rod cone holes (2 per alternate plank course)
+                float tieHole = 0f;
+                if ((plankId & 1) == 0)
+                {
+                    int cy = plankH / 2;
+                    int ty = localY - cy;
+                    for (int t = 0; t < 2; t++)
+                    {
+                        int cx = (t * (size / 2) + ((plankId / 2) % 2) * (size / 4) + size / 8) % size;
+                        int tx = x - cx;
+                        if (tx > size / 2) tx -= size;
+                        if (tx < -size / 2) tx += size;
+                        float r2 = tx * tx + ty * ty;
+                        if (r2 < 52f) tieHole = -48f;
+                        else if (r2 < 96f) tieHole = -16f;
+                        else if (r2 < 130f && ty > 0) tieHole = 8f;
+                    }
+                }
+                float val = cloud + woodGrain + plankTone + speckle + seam + tieHole;
+                return Rgb(170f + val, 165f + val * 0.97f, 157f + val * 0.93f);
+            }
             case Finish.Armor:
-                int panel=Math.Min(Math.Min(x,511-x),Math.Min(y%256,255-y%256));
-                int boltX=Math.Min(x,511-x)-22, boltY=Math.Min(y%256,255-y%256)-18;
-                int bolt=boltX*boltX+boltY*boltY;
-                if(bolt<37) return Rgb(85-boltY*6,92-boltY*6,97-boltY*6);
-                if(y>442 && y<466) return ((x+y)/22)%2==0 ? Rgb(189+grain,133+grain,53) : Rgb(38,39,44);
-                float steel=panel<5 ? 41 : panel<8 ? 138 : 96+grain+band+12f*MathF.Cos(x*.016f);
-                return Rgb(steel,steel+7,steel+14);
+            {
+                // Clean Satin Brushed Stainless Steel (fine metallic brush streaks + soft architectural sheen, ZERO yellow hazard stripes!)
+                float brushFine = (PeriodicNoise(u, v, 128, 6, 31) - 0.5f) * 18f
+                                + (PeriodicNoise(u, v, 256, 16, 32) - 0.5f) * 10f;
+                float brushWide = (PeriodicNoise(u, v, 12, 2, 33) - 0.5f) * 12f;
+                float sheen = MathF.Sin(u * MathF.Tau) * 6f + MathF.Cos(v * MathF.Tau) * 4f;
+                float s = brushFine + brushWide + sheen + grain * 0.55f;
+                return Rgb(188f + s, 192f + s, 196f + s);
+            }
             case Finish.Rack:
                 int row=y%64;
                 if(row<4 || x<13 || x>498) return Rgb(57+band,66+band,73+band);
@@ -1572,17 +1726,35 @@ internal static unsafe partial class VisualEngine3D
                 float weave=grain+((x+y)%9<3 ? 15 : -6)+(y%5==0 ? 8 : 0)+9*MathF.Sin(x*.035f+y*.014f);
                 return Rgb(161+weave,35+weave*.48f,62+weave*.72f);
             case Finish.Leather:
-                float a=(x+y)%128/128f,b=(x-y+512)%128/128f;
-                float quilt=MathF.Pow(MathF.Max(0,MathF.Sin(MathF.PI*a)*MathF.Sin(MathF.PI*b)),.42f);
-                float l=grain+quilt*41;
-                return Rgb(76+l,32+l*.62f,36+l*.48f);
+            {
+                // Rich Natural Architectural Walnut Wood Grain (organic vertical timber fibers & subtle cathedral rings — replaces dark red diamond leather!)
+                float warp = (PeriodicNoise(u, v, 6, 4, 41) - 0.5f) * 0.35f + (PeriodicNoise(u, v, 12, 8, 42) - 0.5f) * 0.14f;
+                float ringPhase = (u * 14f + warp * 5.2f) * MathF.Tau;
+                float rings = MathF.Sin(ringPhase) * 0.5f + 0.5f;
+                float cathedral = MathF.Pow(rings, 1.55f);
+                float fibers = (PeriodicNoise(u, v, 96, 12, 43) - 0.5f) * 24f
+                             + (PeriodicNoise(u, v, 220, 24, 44) - 0.5f) * 12f;
+                float boardVar = ((Hash((int)(u * 8f), 89) % 15) - 7) * 1.4f;
+                int boardEdge = (x % (size / 8));
+                float seam = boardEdge < 2 ? -22f : 0f;
+                float w = (cathedral - 0.5f) * 44f + fibers + boardVar + seam + grain * 0.45f;
+                return Rgb(204f + w, 166f + w * 0.84f, 130f + w * 0.68f);
+            }
             case Finish.Plaster:
-                // Warm honed travertine / limestone ashlar architectural stone paneling with subtle veins & reveal joints
-                float tvein = 6f*MathF.Sin(y*.032f + 2.4f*MathF.Sin(x*.018f)) + 3.5f*MathF.Cos(x*.025f - y*.014f);
-                float trav = grain*.75f + tvein;
-                bool joint = y<4 || (y>=254 && y<=257) || x<3 || (x>=255 && x<=257);
-                if(joint) trav -= 38f;
-                return Rgb(222+trav,213+trav*.96f,197+trav*.88f);
+            {
+                // Warm Honed Travertine / Cream Limestone (soft organic sedimentary stone veining + refined architectural slab joints!)
+                float warp = (PeriodicNoise(u, v, 5, 5, 51) - 0.5f) * 0.22f + (PeriodicNoise(u, v, 12, 12, 52) - 0.5f) * 0.08f;
+                float strata = MathF.Sin((v * 7f + warp * 4.5f) * MathF.Tau) * 8.5f
+                             + MathF.Sin((v * 15f - warp * 3.2f + u * 2f) * MathF.Tau) * 4.5f;
+                float cloud = (PeriodicNoise(u, v, 6, 6, 53) - 0.5f) * 18f
+                            + (PeriodicNoise(u, v, 20, 20, 54) - 0.5f) * 9f;
+                float pores = (PeriodicNoise(u, v, 96, 28, 55) < 0.14f) ? -14f : 0f;
+                int half = size / 2;
+                bool joint = y < 3 || (y >= half - 1 && y <= half + 1) || x < 2 || (x >= half - 1 && x <= half + 1);
+                float jShade = joint ? -26f : 0f;
+                float t = strata + cloud + pores + jShade + grain * 0.55f;
+                return Rgb(224f + t, 213f + t * 0.96f, 195f + t * 0.90f);
+            }
             case Finish.Tarot:
                 float dx=x-256,dy=y-204,r=MathF.Sqrt(dx*dx+dy*dy);
                 bool gilded=Math.Abs(r-106)<3 || Math.Abs(r-83)<2 || (r>114 && r<188 && MathF.Cos(32*MathF.Atan2(dy,dx))>.91f);
