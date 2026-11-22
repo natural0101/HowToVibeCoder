@@ -174,13 +174,13 @@ internal static unsafe partial class VisualEngine3D
         out vec4 color;
         float sunlight(vec3 n) {
             if(firstPerson==1 || shadows==0) return 1.;
-            vec4 light=lightVP*vec4(pos,1.);
+            vec4 light=lightVP*vec4(pos+n*.045,1.);
             vec3 q=light.xyz/light.w*.5+.5;
             if(any(lessThan(q,vec3(.001))) || any(greaterThan(q,vec3(.999)))) return 1.;
-            float bias=max(.0014,.0058*(1.-clamp(dot(n,sunDir),0.,1.)));
+            float bias=max(.0018,.0065*(1.-clamp(dot(n,sunDir),0.,1.)));
             float visibility=0.;
             for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++)
-                visibility+=step(q.z-bias,texture(shadowMap,q.xy+vec2(x,y)/2048.).r);
+                visibility+=step(q.z-bias,texture(shadowMap,q.xy+vec2(x,y)*(1.45/2048.)).r);
             return visibility/9.;
         }
         float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
@@ -609,8 +609,10 @@ internal static unsafe partial class VisualEngine3D
             float gloss=finish==1 ? 65. : (finish==2 ? 44. : 24.);
             bool weapon=firstPerson==1 && finish==17 && weaponFinish.y>0.;
             if(weapon) gloss=mix(96.,18.,weaponFinish.y);
-            float ao=mix(1.,mix(.68,1.,smoothstep(0.,.42,pos.y)),1.-abs(n.y));
-            vec3 light=mix(vec3(.18,.15,.12),vec3(.22,.24,.29),.5+.5*n.y)*ao;
+            float ao=mix(1.,mix(.78,1.,smoothstep(0.,.42,pos.y)),1.-abs(n.y));
+            vec3 light=mix(vec3(.25,.21,.18),vec3(.31,.34,.40),.5+.5*n.y)*ao;
+            // Subtle opposite-sun twilight skyline wrap bounce so shadowed mahogany partitions, cabinets & vending sides stay richly readable!
+            light+=vec3(.14,.16,.22)*max(0.,dot(n,normalize(vec3(.52,.30,.78))));
             light+=vec3(1.48,1.02,.64)*max(0.,dot(n,key))*shadow;
             if(firstPerson==0 && pos.y<9.) {
                 float pool=0.;
@@ -619,6 +621,9 @@ internal static unsafe partial class VisualEngine3D
                     pool=max(pool,1.-smoothstep(.16,1.,dot(offset,offset*vec2(.062,.095))));
                 }
                 light+=vec3(.96,.64,.34)*pool*(.34+.66*max(0.,n.y));
+                // Localized cool vending/cooler alcove bounce (East corridor) + warm Xerox/filing alcove cove light (West corridor)
+                light+=point(vec3(5.65,1.55,-5.45),vec3(.28,.54,.72),n,v,gloss);
+                light+=point(vec3(-5.85,2.25,-4.80),vec3(.66,.56,.44),n,v,gloss);
             }
             if(firstPerson==0) light+=point(puddleLight,vec3(.08,1.12,1.55)*puddlePower,n,v,gloss);
             light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
@@ -626,8 +631,10 @@ internal static unsafe partial class VisualEngine3D
             light+=point(tarot+vec3(.45,-.30,.15),vec3(.18,.11,.28),n,v,gloss);
             float beacon=.84+.20*sin(clock*3.2);
             light+=point(northBeacon,vec3(.78,.24,.14)*beacon,n,v,gloss);
+            light+=point(northBeacon+vec3(0.,-1.85,-.35),vec3(.68,.48,.28),n,v,gloss);
             light+=point(northBeacon+vec3(0.,-.5,2.35),vec3(1.85,.12,.08)*cabinPower,n,v,gloss);
             light+=point(southBeacon,vec3(.78,.24,.14)*beacon,n,v,gloss);
+            light+=point(southBeacon+vec3(0.,-1.85,.35),vec3(.68,.48,.28),n,v,gloss);
             if(firstPerson==1) light=max(light,vec3(.68,.64,.66));
             float fres=pow(1.-max(0.,dot(n,v)),3.);
             vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
@@ -653,7 +660,9 @@ internal static unsafe partial class VisualEngine3D
                 float turb=fbm(p*1.1+vec2(fbm(p*2.3),fbm(p*1.7+3.1))*.85);
                 float vein1=1.-smoothstep(.012,.052+fwidth(p.y)*1.5,abs(sin(p.y*1.9+p.x*1.2+turb*5.4)));
                 float vein2=1.-smoothstep(.008,.032+fwidth(p.x)*1.5,abs(sin(p.y*3.1-p.x*1.7+turb*4.8)));
-                lit+=vec3(.14,.13,.11)*vein1*.42+vec3(.24,.18,.09)*vein2*.28;
+                lit=max(lit,vec3(.062,.060,.070));
+                lit+=reflectionBands(reflect(-v,n))*(.05+.22*fres);
+                lit+=vec3(.16,.15,.13)*vein1*.46+vec3(.28,.21,.11)*vein2*.32;
             }
             if(finish==23) {
                 vec3 r=reflect(-v,n);
@@ -669,6 +678,7 @@ internal static unsafe partial class VisualEngine3D
             if(finish==3) lit+=base*max(tex.g,tex.r)*.65;
             if(finish==10) lit=base;
             if(firstPerson==1) lit+=muzzleLight(n,v)*(.26+base);
+            if(firstPerson==0) lit=max(lit,base*.22+vec3(.042,.038,.046));
             lit+=emission*1.65;
             float fog=1.-exp(-.000055*dist*dist);
             color=vec4(mix(lit,vec3(.26,.23,.28),fog),ink.a);
