@@ -499,7 +499,11 @@ public static partial class Program
     private static void EndSceneFrame()
     {
         if (comicFade > 0)
-            Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), new Color(18, 16, 26, (int)(255 * comicFade / .22f)));
+        {
+            float u = Math.Clamp(comicFade / .68f, 0f, 1f);
+            float ease = u * u * (3f - 2f * u);
+            Raylib.DrawRectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight(), new Color(9, 8, 11, (int)(255 * ease)));
+        }
         Raylib.EndDrawing();
     }
 
@@ -521,7 +525,10 @@ public static partial class Program
             finally { Raylib.UnloadImage(image); }
         }
         Loc.Set(GameLang.Ru, false);
-        comic.Open();
+        comic.Open(withTitleCurtain: true);
+        for (int frame = 0; frame < 72; frame++) comic.Update(1f / 60, false, false);
+        Capture("39a_comic_loading_curtain.png");
+        comic.Open(withTitleCurtain: false);
         for (int i = 1; i <= 8; i++)
         {
             // Sample the live timeline after both staggered bursts have settled.
@@ -573,7 +580,7 @@ public static partial class Program
         MainMenuAndPauseUI.OnIntroComicRequested = start =>
         {
             startAfterComic = start;
-            comic.Open();
+            comic.Open(withTitleCurtain: true);
         };
         MainMenuAndPauseUI.OnStartNewGameRequested = () =>
         {
@@ -761,7 +768,7 @@ public static partial class Program
             if (!comic.Active)
             {
                 if (startAfterComic) MainMenuAndPauseUI.StartNewOrResumeFloor();
-                comicFade = .22f;
+                comicFade = .68f;
             }
             return;
         }
@@ -1282,7 +1289,7 @@ public static partial class Program
     private static void DrawFrame(bool showHud=true)
     {
         Raylib.BeginDrawing();
-        if (comic.Active)
+        if (comic.Active && !comic.OverlayOnMenu)
         {
             comic.Draw();
             Raylib.EndDrawing();
@@ -1313,6 +1320,7 @@ public static partial class Program
             VisualEngine3D.Composite();
             MainMenuAndPauseUI.Draw(_uiFont, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
             LoreAndMenusUI.Draw(_uiFont);
+            if (comic.OverlayOnMenu) comic.Draw();
             EndSceneFrame();
             return;
         }

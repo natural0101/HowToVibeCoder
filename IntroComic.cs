@@ -51,12 +51,14 @@ internal sealed class IntroComic : IDisposable
     private static int First(int i) => i switch { 0 => 0, <= 3 => 1, <= 6 => 4, _ => 7 };
     private sealed record Caption(Font Font, int Size, string[] Lines, int Width, int Height);
     private readonly Caption[,] lettering = new Caption[2, 8];
+    private const float MenuFadeDur = .45f, CurtainHoldDur = 1.65f, CurtainTotal = MenuFadeDur + CurtainHoldDur, PanelRevealDur = .55f;
     private int panel;
-    private float age, turnAge, duration, silence;
-    private bool turning;
+    private float age, turnAge, duration, silence, curtainAge, panelRevealFade;
+    private bool turning, curtainActive;
     internal bool Active { get; private set; }
+    internal bool OverlayOnMenu => Active && curtainActive && curtainAge < MenuFadeDur;
 
-    internal void Open()
+    internal void Open(bool withTitleCurtain = false)
     {
         for (int i = 0; i < art.Length; i++)
         {
@@ -73,7 +75,22 @@ internal sealed class IntroComic : IDisposable
         Active = true;
         turning = false;
         Array.Clear(drift);
-        Reveal(0);
+        if (withTitleCurtain)
+        {
+            curtainActive = true;
+            curtainAge = 0;
+            panelRevealFade = PanelRevealDur;
+            panel = 0;
+            age = silence = 0;
+            AudioMusicSystem.StopComicNarration();
+        }
+        else
+        {
+            curtainActive = false;
+            curtainAge = 0;
+            panelRevealFade = 0;
+            Reveal(0);
+        }
     }
 
     private static Caption Typeset(string text, int limit, int initialSize)
@@ -121,6 +138,18 @@ internal sealed class IntroComic : IDisposable
     internal void Update(float dt, bool advance, bool skip)
     {
         if (skip) { Close(); return; }
+        if (curtainActive)
+        {
+            curtainAge += dt;
+            if (curtainAge >= CurtainTotal || (advance && curtainAge >= MenuFadeDur))
+            {
+                curtainActive = false;
+                panelRevealFade = PanelRevealDur;
+                Reveal(0);
+            }
+            return;
+        }
+        if (panelRevealFade > 0) panelRevealFade = Math.Max(0, panelRevealFade - dt);
         if (turning)
         {
             float previous = turnAge;
@@ -200,8 +229,66 @@ internal sealed class IntroComic : IDisposable
 
     internal void Draw()
     {
+        int sw = Raylib.GetScreenWidth(), sh = Raylib.GetScreenHeight();
         float scale = UiViewport.Scale;
-        Vector2 offset = new((Raylib.GetScreenWidth()-1280*scale)/2,(Raylib.GetScreenHeight()-720*scale)/2);
+        Vector2 offset = new((sw - 1280 * scale) / 2, (sh - 720 * scale) / 2);
+
+        if (curtainActive)
+        {
+            if (curtainAge < MenuFadeDur)
+            {
+                int a = (int)(255 * Smooth(curtainAge / MenuFadeDur));
+                Raylib.DrawRectangle(0, 0, sw, sh, new Color(9, 8, 11, a));
+                return;
+            }
+            Raylib.ClearBackground(new Color(9, 8, 11, 255));
+            float t = Math.Clamp((curtainAge - MenuFadeDur) / CurtainHoldDur, 0f, 1f);
+            float cardAlpha = Smooth(t / 0.24f) * (1f - Smooth((t - 0.78f) / 0.22f));
+            Raylib.BeginMode2D(new Camera2D { Offset = offset, Zoom = scale });
+            if (cardAlpha > 0.01f)
+            {
+                int a = Math.Clamp((int)(255 * cardAlpha), 0, 255);
+                int dim = Math.Clamp((int)(195 * cardAlpha), 0, 255);
+                Color brass = new(198, 158, 88, a);
+                Color ivory = new(244, 236, 218, a);
+                Color muted = new(168, 156, 138, dim);
+
+                string eyebrow = Loc.T("МОСКВА-СИТИ · 2026", "MOSCOW-CITY · 2026");
+                string title = Loc.T("СЕССИЯ #01", "SESSION #01");
+                string subtitle = Loc.T("БЛЮЗ ПЕРВОГО ЭТАЖА", "FLOOR ONE BLUES");
+                string status = Loc.T("ПОДГОТОВКА ЭТАЖА...", "PREPARING FLOOR ONE...");
+                string hint = Loc.T("[ПРОБЕЛ] ДАЛЕЕ   [ESC] ПРОПУСТИТЬ", "[SPACE] CONTINUE   [ESC] SKIP");
+
+                var fEye = GameFonts.Get(Typeface.InterfaceBold, 16);
+                var fTitle = GameFonts.Get(Typeface.SerifBold, 64);
+                var fSub = GameFonts.Get(Typeface.SerifBold, 26);
+                var fStat = GameFonts.Get(Typeface.Interface, 14);
+
+                float eyeW = GameFonts.Measure(fEye, eyebrow, 16).X;
+                float titleW = GameFonts.Measure(fTitle, title, 64).X;
+                float subW = GameFonts.Measure(fSub, subtitle, 26).X;
+
+                GameFonts.Draw(fEye, eyebrow, new(640 - eyeW * 0.5f, 246), 16, brass, false);
+                GameFonts.Draw(fTitle, title, new(640 - titleW * 0.5f, 276), 64, ivory, false);
+                GameFonts.Draw(fSub, subtitle, new(640 - subW * 0.5f, 358), 26, brass, false);
+
+                // Minimalist loading progress bar along the lower center
+                float barW = 280f, barX = 640f - barW * 0.5f, barY = 446f;
+                float fill = Smooth(Math.Clamp(t / 0.85f, 0f, 1f));
+                Raylib.DrawRectangleRounded(new(barX, barY, barW, 4f), 0.5f, 4, new Color(46, 40, 36, a));
+                if (fill > 0.01f)
+                    Raylib.DrawRectangleRounded(new(barX, barY, barW * fill, 4f), 0.5f, 4, brass);
+
+                float statW = GameFonts.Measure(fStat, status, 14).X;
+                GameFonts.Draw(fStat, status, new(640 - statW * 0.5f, barY + 14), 14, muted, false);
+
+                float hintW = GameFonts.Measure(fStat, hint, 14).X;
+                GameFonts.Draw(fStat, hint, new(1224 - hintW, 676), 14, muted, false);
+            }
+            Raylib.EndMode2D();
+            return;
+        }
+
         float kick = shakePower * Math.Max(0,1-shakeAge/.22f);
         Vector2 camera = offset + scale*kick*new Vector2(MathF.Cos(shakeAge*113),MathF.Sin(shakeAge*149));
         Raylib.ClearBackground(Ground);
@@ -217,10 +304,10 @@ internal sealed class IntroComic : IDisposable
         for (int i=0;i<8;i++)
             Raylib.DrawRectangle(49+i*14,696,10,5,i==panel ? Gold : i<panel ? uiCream : new Color(83,78,84,255));
         string counter = Loc.IsEn ? $"PANEL {panel+1} / 8" : $"КАДР {panel+1} / 8";
-        string hint = Loc.T("[ПРОБЕЛ / ЛКМ] ДАЛЕЕ   [ESC] ПРОПУСТИТЬ","[SPACE / CLICK] NEXT   [ESC] SKIP");
+        string skipHint = Loc.T("[ПРОБЕЛ / ЛКМ] ДАЛЕЕ   [ESC] ПРОПУСТИТЬ","[SPACE / CLICK] NEXT   [ESC] SKIP");
         var face = GameFonts.Get(Typeface.InterfaceBold,15);
         GameFonts.Draw(face,counter,new(172,689),15,uiCream,false);
-        GameFonts.Draw(face,hint,new(Page.X+Page.Width-GameFonts.Measure(face,hint,15).X,689),15,uiCream,false);
+        GameFonts.Draw(face,skipHint,new(Page.X+Page.Width-GameFonts.Measure(face,skipHint,15).X,689),15,uiCream,false);
         if (turning)
         {
             float x = -1840 + 3340 * Smooth(turnAge/Turn);
@@ -237,6 +324,11 @@ internal sealed class IntroComic : IDisposable
             Stripe(1610,12,Ink);
         }
         Raylib.EndMode2D();
+        if (panelRevealFade > 0)
+        {
+            int fadeA = Math.Clamp((int)(255 * Smooth(panelRevealFade / PanelRevealDur)), 0, 255);
+            Raylib.DrawRectangle(0, 0, sw, sh, new Color(9, 8, 11, fadeA));
+        }
     }
 
     private static void Clip(Rectangle r, Vector2 offset, float scale)

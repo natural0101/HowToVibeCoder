@@ -188,21 +188,18 @@ public static partial class Program
             _menuFloor.AdvanceLighting(frameDt);
             EmitCurrentFrame();
         }
-        // Smooth fade into New Game intro comic
-        for (int i = 0; i < 7; i++)
+        // Smooth cinematic fade from Main Menu -> 1998 Noir Session Loading Curtain -> Intro Comic Panel 1
+        BeginChapter("02_intro_comic");
+        comic.Open(withTitleCurtain: true);
+        int curtainFrames = (int)MathF.Round(2.15f * fps);
+        for (int i = 0; i < curtainFrames; i++)
         {
             _menuTime += frameDt;
-            comicFade = 0.22f * ((i + 1) / 7f);
+            comic.Update(frameDt, advance: false, skip: false);
             EmitCurrentFrame();
         }
         MainMenuAndPauseUI.IsInMainMenu = false;
         comicFade = 0f;
-
-        // =========================================================================
-        // ACT 2: BRAND-NEW NOIR INTRO COMIC (ALL 8 PANELS, ~20.8s)
-        // =========================================================================
-        BeginChapter("02_intro_comic");
-        comic.Open();
         for (int p = 0; p < 8; p++)
         {
             // Slightly longer hold on hero splash panels 1 & 8, crisp 2.45s on interior panels
