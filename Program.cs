@@ -1407,43 +1407,18 @@ public static partial class Program
         var tools=_weapons.Hotbar;
         int barX=cx-(tools.Length*70-4)/2, barY=sh-82;
 
-        // Compact [G] Bait pill tucked cleanly above Coffee without intruding on center hotbar
-        string baitLabel = Loc.T("[G] Наживка", "[G] Bait") + " ×" + Floor.BaitStock.Sum();
-        float baitTextW = GameFonts.Measure(_uiFont, baitLabel, 15).X;
-        float baitPillW = baitTextW + 18f;
-        float baitPillX = MathF.Min(MathF.Max(208f, moneyRight + 14f), MathF.Max(208f, barX - baitPillW - 14f));
-        Rectangle baitPill = new(baitPillX, sh - 98, baitPillW, 28f);
-        Raylib.DrawRectangleRounded(baitPill, 0.24f, 6, new Color(14, 11, 16, 152));
-        Raylib.DrawRectangleRoundedLinesEx(baitPill, 0.24f, 6, 1f, new Color(182, 148, 92, 68));
-        ShadowText(_uiFont, baitLabel, baitPill.X + 9f, baitPill.Y + 6f, 15, white);
-
-        // Crystal-clear bottom-left smoked-glass status cluster: HP · Energy · [H] Кофе ×N (+HP)
-        int coffeeCups = Net.Guest ? GuestCups : Floor.PocketCoffeeCups;
-        bool coffeeUrgent = _playerHp < 70 && coffeeCups > 0;
-        float coffeePulse = coffeeUrgent ? (0.5f + 0.5f * MathF.Sin((float)Raylib.GetTime() * 5.0f)) : 0f;
-        string coffeeLabel = Loc.T($"[H] Кофе ×{coffeeCups} (+HP)", $"[H] Coffee ×{coffeeCups} (+HP)");
-        float coffeeTextW = GameFonts.Measure(_uiFont, coffeeLabel, 16).X;
-        const float coffeeX = 218f;
-        float bottomClusterW = (coffeeX - 24f) + coffeeTextW + 14f;
-        Rectangle clusterRect = new(24, sh - 66, bottomClusterW, 40);
-        Color clusterBorder = coffeeUrgent
-            ? Raylib.ColorLerp(new Color(182, 148, 92, 92), new Color(246, 182, 74, 198), coffeePulse)
-            : new Color(182, 148, 92, 68);
-        Raylib.DrawRectangleRounded(clusterRect, 0.22f, 6, new Color(14, 11, 16, 162));
-        Raylib.DrawRectangleRoundedLinesEx(clusterRect, 0.22f, 6, coffeeUrgent ? 1.35f : 1f, clusterBorder);
-
         Color heart = _playerHp > 30 ? white : new Color(254, 152, 159, 255);
         Color shadow = new(14, 12, 11, 185);
-        Raylib.DrawCircle(43, sh - 46, 5.2f, shadow);
-        Raylib.DrawCircle(52, sh - 46, 5.2f, shadow);
-        Raylib.DrawTriangle(new(37.8f, sh - 45), new(47.5f, sh - 33f), new(57.2f, sh - 45), shadow);
-        Raylib.DrawCircle(42, sh - 47, 5.2f, heart);
-        Raylib.DrawCircle(51, sh - 47, 5.2f, heart);
-        Raylib.DrawTriangle(new(36.8f, sh - 46), new(46.5f, sh - 34f), new(56.2f, sh - 46), heart);
-        ShadowText(_serif, _playerHp.ToString(), 64, sh - 59, 26, heart);
+        Raylib.DrawCircle(43, sh - 46, 5.5f, shadow);
+        Raylib.DrawCircle(53, sh - 46, 5.5f, shadow);
+        Raylib.DrawTriangle(new(38.5f, sh - 45), new(48.5f, sh - 32.5f), new(58.5f, sh - 45), shadow);
+        Raylib.DrawCircle(42, sh - 47, 5.5f, heart);
+        Raylib.DrawCircle(52, sh - 47, 5.5f, heart);
+        Raylib.DrawTriangle(new(37.5f, sh - 46), new(47.5f, sh - 33.5f), new(57.5f, sh - 46), heart);
+        ShadowText(_serif, _playerHp.ToString(), 67, sh - 59, 28, heart);
 
-        Vector2[] bolt = [new(136, sh - 56), new(126, sh - 43), new(133, sh - 43),
-            new(130, sh - 33), new(142, sh - 47), new(135, sh - 47)];
+        Vector2[] bolt = [new(155, sh - 56), new(145, sh - 43), new(152, sh - 43),
+            new(149, sh - 33), new(161, sh - 47), new(154, sh - 47)];
         foreach (var o in new Vector2[] { new(1, 1), Vector2.Zero })
         {
             Color c = o == Vector2.Zero ? white : shadow;
@@ -1452,22 +1427,16 @@ public static partial class Program
             Raylib.DrawTriangle(bolt[2] + o, bolt[3] + o, bolt[4] + o, c);
             Raylib.DrawTriangle(bolt[2] + o, bolt[4] + o, bolt[5] + o, c);
         }
-        ShadowText(_serif, ((int)MathF.Round(_energy)).ToString(), 148, sh - 59, 26, white);
+        ShadowText(_serif, ((int)MathF.Round(_energy)).ToString(), 170, sh - 59, 28, white);
 
-        Raylib.DrawLineEx(new(206, sh - 58), new(206, sh - 34), 1f, new Color(182, 148, 92, 72));
-        if (coffeeUrgent)
-        {
-            Raylib.DrawRectangleRounded(
-                new(coffeeX - 7f, sh - 61, coffeeTextW + 14f, 30f), 0.24f, 6,
-                new Color(238, 158, 48, (int)(26 + 38 * coffeePulse)));
-        }
-        Color coffeeInk = coffeeUrgent
-            ? Raylib.ColorLerp(new Color(255, 240, 206, 255), new Color(252, 184, 72, 255), coffeePulse)
-            : coffeeCups > 0 ? white : new Color(182, 174, 162, 212);
-        ShadowText(_uiFont, coffeeLabel, coffeeX, sh - 54, 16, coffeeInk);
+        ShadowText(_uiFont,"[H]",232,sh-51,18,white);
+        Raylib.DrawRing(new(277,sh-41),3,4.5f,-95,95,12,white);
+        Raylib.DrawRectangleRounded(new(262,sh-47,14,13),.42f,6,white);
+        ShadowText(_uiFont,$"×{(Net.Guest ? GuestCups : Floor.PocketCoffeeCups)}",286,sh-51,18,white);
+        ShadowText(_uiFont,Loc.T("[G] Наживка","[G] Bait")+" ×"+Floor.BaitStock.Sum(),317,sh-51,16,white);
 
         if(_playerHp<65)
-            ShadowText(_uiFont,Loc.T("Хил: [H] Кофе или Кофе-машина / Пицца [E]","Heal: [H] Coffee or Espresso / Pizza [E]"),36,leftStackY,15,new Color(248,208,128,(int)(205+44*MathF.Sin((float)Raylib.GetTime()*3.4f))));
+            ShadowText(_uiFont,Loc.T("Хил: [H] Кофе или Кофе-машина / Пицца [E]","Heal: [H] Coffee or Espresso / Pizza [E]"),36,leftStackY,15,new Color(178,238,201,(int)(205+42*MathF.Sin((float)Raylib.GetTime()*3))));
         if(HealFlashTimer>0)
         {
             Color mint=new(99,220,158,(int)(94*HealFlashTimer/.5f));
