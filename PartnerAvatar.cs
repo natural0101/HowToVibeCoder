@@ -124,37 +124,40 @@ internal sealed class PartnerAvatar(int slot=0)
         }
     }
 
+    private static readonly Vector3 HatAnchor = new(0.0000f, 1.6900f, -0.0120f);
+    private static readonly Vector3 EyeAnchor = new(0.0000f, 1.5860f, +0.1030f);
+    private static readonly Vector3 RightShoulderPivot = new(-0.1940f, 1.3520f, -0.0520f);
+    private static readonly Vector3 RightHandGripOffset = new(-0.0640f, -0.5500f, +0.0840f);
+
     public void Draw()
     {
-        float yaw=Pose.Yaw;
-        Vector3 f=new(MathF.Sin(yaw),0,MathF.Cos(yaw)), r=new(f.Z,0,-f.X);
-        float recoilPhase = flash>0 ? MathF.Sin((flash/.12f)*MathF.PI) : 0f;
-        bool bareOrNet = Pose.Weapon is WeaponType.BareHands or WeaponType.CaptureNet;
-        // Tactical firing crouch stance when actively shooting (bent knees / lower center of gravity)
-        float height=Pose.Eye.Y<1.4f ? .75f : (flash>0 ? .91f : 1f);
-        Vector3 P(float x,float y,float z) => Feet+r*x+Vector3.UnitY*(y*height)+f*z;
-        Color dark=new(38,42,55,255), metal=new(89,99,113,255);
-        void Tube(Vector3 a,Vector3 b,float ra,float rb,Color c) => VisualEngine3D.Rod(a,b,ra,rb,10,c);
-        float step = bareOrNet ? 0f : MathF.Abs(MathF.Sin(stride))*.024f;
-        float combatLean = bareOrNet ? 0f : (Pose.Weapon == WeaponType.MicroUzi ? (flash>0 ? .115f : .075f) : .025f);
-        float leanTilt = bareOrNet ? 0f : (combatLean + .032f*MathF.Sin(stride*2f) - .045f*recoilPhase);
-        VisualEngine3D.DrawCharacterDirectionalShadow(Feet,1.70f*height,.32f);
-        // The authored SMG is a separate material group in the character asset.
-        bool smg = Pose.Weapon == WeaponType.MicroUzi;
+        float yaw = Pose.Yaw;
+        Vector3 f = new(MathF.Sin(yaw), 0, MathF.Cos(yaw)), r = new(f.Z, 0, -f.X);
+        float recoilPhase = flash > 0 ? MathF.Sin((flash / .12f) * MathF.PI) : 0f;
+        bool bareHands = Pose.Weapon == WeaponType.BareHands;
+        bool useArticulatedArm = !bareHands && VisualEngine3D.HasAsset("char_partner_90s_body") && VisualEngine3D.HasAsset("char_partner_90s_arm_r");
+
+        // Natural upright posture (zero Michael-Jackson full-body forward tilt!)
+        float height = Pose.Eye.Y < 1.4f ? .78f : 1f;
+        float step = bareHands ? 0f : MathF.Abs(MathF.Sin(stride)) * .018f;
+        float leanTilt = bareHands ? 0f : (-0.022f * recoilPhase + 0.012f * MathF.Sin(stride * 2f));
+        VisualEngine3D.DrawCharacterDirectionalShadow(Feet, 1.74f * height, .32f);
+
         Vector3 basePos = Feet + Vector3.UnitY * step;
         Vector3 stretch = new(1f, height, 1f);
-        VisualEngine3D.DrawPartnerCharacter(basePos, yaw * 180f / MathF.PI, leanTilt, stretch, Appearance, UseSlotFallback ? SlotBlazerFallback : null);
+        Color? slotOverride = UseSlotFallback ? SlotBlazerFallback : null;
+        string bodyAsset = useArticulatedArm ? "char_partner_90s_body" : "char_partner_90s";
+        VisualEngine3D.DrawPartnerCharacter(basePos, yaw * 180f / MathF.PI, leanTilt, stretch, Appearance, slotOverride, bodyAsset);
 
-        // Anchor 3D eyewear and hats to the exact sculpted char_partner_90s head frame (+Z forward, +Y up).
-        // Sculpted 3D eyes (sclera/iris/pupil/catchlight) are authored directly in char_partner_90s.glb and tinted via partnerIrisMeshes.
         Matrix4x4 charTransform = Matrix4x4.CreateRotationX(leanTilt)
             * Matrix4x4.CreateScale(stretch)
             * Matrix4x4.CreateRotationY(yaw)
             * Matrix4x4.CreateTranslation(basePos);
 
+        // Anchor 3D eyewear and hats to the exact Hunyuan3D sculpted head frame (+Z forward, +Y up).
         if (Appearance.EyewearAsset is string eyeAsset && VisualEngine3D.HasAsset(eyeAsset))
         {
-            Vector3 eyeAnchorWorld = Vector3.Transform(new Vector3(0f, 1.5993f, 0.1036f), charTransform);
+            Vector3 eyeAnchorWorld = Vector3.Transform(EyeAnchor, charTransform);
             Matrix4x4 eyeTransform = Matrix4x4.CreateRotationX(leanTilt)
                 * Matrix4x4.CreateRotationY(yaw)
                 * Matrix4x4.CreateTranslation(eyeAnchorWorld);
@@ -163,86 +166,128 @@ internal sealed class PartnerAvatar(int slot=0)
 
         if (Appearance.HatAsset is string hatAsset && VisualEngine3D.HasAsset(hatAsset))
         {
-            Vector3 hatAnchorWorld = Vector3.Transform(new Vector3(0f, 1.6898f, -0.0094f), charTransform);
+            Vector3 hatAnchorWorld = Vector3.Transform(HatAnchor, charTransform);
             Matrix4x4 hatTransform = Matrix4x4.CreateRotationX(leanTilt)
                 * Matrix4x4.CreateRotationY(yaw)
                 * Matrix4x4.CreateTranslation(hatAnchorWorld);
             VisualEngine3D.Asset(hatAsset, Vector3.Zero, assemblyTransform: hatTransform);
         }
 
-        float kick=.048f*recoilPhase;
-        float climb=.016f*recoilPhase;
-        float lash=MathF.Sin(Pose.Swing*MathF.PI)*.6f;
-        // Raised 3D middle-finger salute when teammate triggers [V]!
+        // Raised 3D middle-finger salute when teammate triggers [V]
         if (FlipOffTimer > 0)
         {
+            Vector3 P(float x, float y, float z) => Feet + r * x + Vector3.UnitY * (y * height) + f * z;
             Color skin = Appearance.SkinColor;
             Vector3 fist = P(-.18f, 1.46f, .34f) + Vector3.UnitY * step;
-            Tube(P(-.22f, 1.26f, .16f) + Vector3.UnitY * step, fist, .042f, .036f, Blazer);
+            VisualEngine3D.Rod(P(-.22f, 1.26f, .16f) + Vector3.UnitY * step, fist, .042f, .036f, 10, Blazer);
             VisualEngine3D.Oval(fist, new(.045f, .045f, .045f), skin, Finish.Anatomy);
-            Tube(fist + Vector3.UnitY * .02f, fist + Vector3.UnitY * .135f, .012f, .010f, skin);
+            VisualEngine3D.Rod(fist + Vector3.UnitY * .02f, fist + Vector3.UnitY * .135f, .012f, .010f, 10, skin);
         }
-        if (smg)
+
+        if (bareHands) return;
+
+        // Articulated Right Arm raised forward so the weapon grip sits PHYSICALLY INSIDE HIS 5-FINGERED PALM!
+        float swingRad = MathF.Sin(Pose.Swing * MathF.PI) * 0.72f;
+        float aimPitchDeg = Pose.Weapon switch
         {
-            VisualEngine3D.Asset("weapon_uzi_90s",P(-.092f,1.335f+climb,.315f-kick)+Vector3.UnitY*step,
-                yaw*180f/MathF.PI+194f, scale:.74f*height, tilt:-.10f*recoilPhase);
-            if (flash > 0f && !VisualEngine3D.CastingShadows)
+            WeaponType.MicroUzi => -76.0f - 8.5f * recoilPhase,
+            WeaponType.SawedOff => -74.0f - 12.0f * recoilPhase,
+            WeaponType.SolderingIron => -68.0f - 28.0f * swingRad,
+            WeaponType.Belt => -58.0f - 48.0f * swingRad,
+            WeaponType.CaptureNet => -64.0f - 32.0f * swingRad,
+            _ => -76.0f
+        };
+        float armPitchRad = aimPitchDeg * MathF.PI / 180f;
+
+        Matrix4x4 armLocalTransform = Matrix4x4.CreateRotationX(armPitchRad)
+            * Matrix4x4.CreateTranslation(RightShoulderPivot);
+        Matrix4x4 armWorldTransform = armLocalTransform * charTransform;
+
+        if (useArticulatedArm)
+            VisualEngine3D.DrawPartnerCharacter(Vector3.Zero, 0f, 0f, Vector3.One, Appearance, slotOverride, "char_partner_90s_arm_r", armWorldTransform);
+
+        // Exact world position of his sculpted right palm
+        Vector3 palmWorld = Vector3.Transform(RightHandGripOffset, armWorldTransform);
+        float weaponPitch = (aimPitchDeg + 76.0f) * MathF.PI / 180f;
+
+        switch (Pose.Weapon)
+        {
+            case WeaponType.MicroUzi:
             {
-                // Hand-painted compact additive firearm muzzle burst + incandescent tracer filaments (zero cartoon yellow rods!)
-                Vector3 muzzle = P(-.095f, 1.358f + climb, .545f - kick) + Vector3.UnitY * step;
-                if (CombatSprites.HasPaintedFx)
+                // Pistol grip offset measured directly in Blender on char_partner_90s_arm_r.glb (scale 0.74, rotated 180° around Y to point +Z)
+                Vector3 gripOffsetLocal = new(0f, -0.0459f, -0.0089f);
+                Matrix4x4 rot = Matrix4x4.CreateRotationY(MathF.PI) * Matrix4x4.CreateRotationX(weaponPitch) * Matrix4x4.CreateRotationY(yaw);
+                Matrix4x4 uziTransform = Matrix4x4.CreateScale(0.74f * height) * rot
+                    * Matrix4x4.CreateTranslation(palmWorld - Vector3.TransformNormal(gripOffsetLocal * height, Matrix4x4.CreateRotationX(weaponPitch) * Matrix4x4.CreateRotationY(yaw)));
+                VisualEngine3D.Asset("weapon_uzi_90s", Vector3.Zero, assemblyTransform: uziTransform);
+
+                if (flash > 0f && !VisualEngine3D.CastingShadows)
                 {
-                    CombatSprites.Begin(BlendMode.Additive);
-                    float flareR = 0.125f + 0.045f * recoilPhase;
-                    CombatSprites.ExplosionFrame(0, muzzle + f * 0.055f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
-                        flareR, stride * 6.5f, new Color(255, 224, 152, Math.Clamp((int)(230 * (0.45f + 0.55f * recoilPhase)), 0, 255)));
-                    CombatSprites.FireFrame(((int)(stride * 12f)) & 3, muzzle + f * 0.11f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
-                        0.065f + 0.025f * recoilPhase, 0.12f + 0.04f * recoilPhase,
-                        new Color(255, 178, 86, Math.Clamp((int)(168 * (0.4f + 0.6f * recoilPhase)), 0, 255)));
-                    CombatSprites.End();
+                    Vector3 aimDir = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, Matrix4x4.CreateRotationX(weaponPitch) * Matrix4x4.CreateRotationY(yaw)));
+                    Vector3 muzzle = palmWorld + aimDir * (0.24f * height) + Vector3.UnitY * (0.045f * height);
+                    if (CombatSprites.HasPaintedFx)
+                    {
+                        CombatSprites.Begin(BlendMode.Additive);
+                        float flareR = 0.14f + 0.05f * recoilPhase;
+                        CombatSprites.ExplosionFrame(0, muzzle + aimDir * 0.055f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                            flareR, stride * 6.5f, new Color(255, 224, 152, Math.Clamp((int)(235 * (0.45f + 0.55f * recoilPhase)), 0, 255)));
+                        CombatSprites.FireFrame(((int)(stride * 12f)) & 3, muzzle + aimDir * 0.11f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                            0.075f + 0.025f * recoilPhase, 0.13f + 0.04f * recoilPhase,
+                            new Color(255, 184, 92, Math.Clamp((int)(180 * (0.4f + 0.6f * recoilPhase)), 0, 255)));
+                        CombatSprites.End();
+                    }
                 }
-                Color hot = new(255, 244, 198, 255);
-                VisualEngine3D.Rod(muzzle, muzzle + f * (.11f + .04f * recoilPhase), .0045f, .0012f, 5, hot, Finish.Lamp);
-                for (int k = 0; k < 2; k++)
-                {
-                    float a = k * MathF.PI + stride * 4.1f + 0.6f;
-                    Vector3 spark = Vector3.Normalize(f * 0.85f + r * MathF.Cos(a) * 0.45f + Vector3.UnitY * MathF.Sin(a) * 0.45f);
-                    VisualEngine3D.Rod(muzzle + f * 0.02f, muzzle + spark * (.095f + .03f * k), .0032f, .0008f, 4, new Color(255, 198, 92, 255), Finish.Lamp);
-                }
-            }
-        }
-        switch(Pose.Weapon)
-        {
-            case WeaponType.BareHands:
                 break;
+            }
+            case WeaponType.SawedOff:
+            {
+                if (VisualEngine3D.HasAsset("weapon_shotgun_90s"))
+                {
+                    Matrix4x4 sgTransform = Matrix4x4.CreateScale(0.86f * height)
+                        * Matrix4x4.CreateRotationY(MathF.PI)
+                        * Matrix4x4.CreateRotationX(weaponPitch)
+                        * Matrix4x4.CreateRotationY(yaw)
+                        * Matrix4x4.CreateTranslation(palmWorld + Vector3.UnitY * (0.025f * height) + f * (0.05f * height));
+                    VisualEngine3D.Asset("weapon_shotgun_90s", Vector3.Zero, assemblyTransform: sgTransform);
+                }
+                break;
+            }
             case WeaponType.CaptureNet:
             {
-                var grip = Feet + Vector3.Transform(new Vector3(-.095f, 1.25f * height, .26f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw));
-                if (VisualEngine3D.HasAsset("weapon_net_90s")) VisualEngine3D.Asset("weapon_net_90s", grip, yaw * 180f / MathF.PI);
-                else
+                if (VisualEngine3D.HasAsset("weapon_net_90s"))
                 {
-                    var tip = grip + new Vector3(MathF.Sin(yaw), .23f, MathF.Cos(yaw)) * .62f;
-                    VisualEngine3D.Rod(grip, tip, .014f, .012f, 8, new(154, 103, 68, 255));
-                    Raylib.DrawCircle3D(tip, .16f, Vector3.UnitX, 90, Color.LightGray);
+                    Matrix4x4 netTransform = Matrix4x4.CreateScale(0.92f * height)
+                        * Matrix4x4.CreateRotationX(weaponPitch)
+                        * Matrix4x4.CreateRotationY(yaw)
+                        * Matrix4x4.CreateTranslation(palmWorld);
+                    VisualEngine3D.Asset("weapon_net_90s", Vector3.Zero, assemblyTransform: netTransform);
                 }
                 break;
             }
             case WeaponType.Belt:
-                Tube(P(-.10f,1.26f,.32f),P(-.13f,1.16f,.56f),.027f,.021f,new(115,66,41,255));
-                Tube(P(-.13f,1.16f,.56f),P(-.17f,.87f+lash,.69f+kick+lash),.021f,.012f,dark);
-                break;
-            case WeaponType.SolderingIron:
-                Tube(P(-.10f,1.25f,.30f),P(-.10f,1.29f,.47f),.025f,.023f,dark);
-                Tube(P(-.10f,1.29f,.47f),P(-.10f,1.31f,.65f),.012f,.003f,Color.Orange);
-                break;
-            default:
-                if(!smg)
+            {
+                if (VisualEngine3D.HasAsset("weapon_belt_90s"))
                 {
-                    Tube(P(-.095f,1.25f,.26f),P(-.095f,1.30f,.42f),.03f,.026f,new(118,66,43,255));
-                    foreach(float x in new[]{-.11f,-.08f})
-                        Tube(P(x,1.30f,.42f),P(x,1.32f,.73f),.019f,.016f,metal);
+                    Matrix4x4 beltTransform = Matrix4x4.CreateScale(0.85f * height)
+                        * Matrix4x4.CreateRotationX(weaponPitch)
+                        * Matrix4x4.CreateRotationY(yaw)
+                        * Matrix4x4.CreateTranslation(palmWorld);
+                    VisualEngine3D.Asset("weapon_belt_90s", Vector3.Zero, assemblyTransform: beltTransform);
                 }
                 break;
+            }
+            case WeaponType.SolderingIron:
+            {
+                if (VisualEngine3D.HasAsset("weapon_solder_90s"))
+                {
+                    Matrix4x4 solderTransform = Matrix4x4.CreateScale(0.95f * height)
+                        * Matrix4x4.CreateRotationX(weaponPitch)
+                        * Matrix4x4.CreateRotationY(yaw)
+                        * Matrix4x4.CreateTranslation(palmWorld);
+                    VisualEngine3D.Asset("weapon_solder_90s", Vector3.Zero, assemblyTransform: solderTransform);
+                }
+                break;
+            }
         }
     }
 }

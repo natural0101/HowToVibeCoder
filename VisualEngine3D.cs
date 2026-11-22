@@ -22,6 +22,7 @@ internal static unsafe partial class VisualEngine3D
     private static readonly HashSet<int> partnerGlassMeshes = new();
     private static readonly HashSet<int> partnerHeadFrameMeshes = new();
     private static readonly HashSet<int> partnerPropMeshes = new();
+    private static readonly Dictionary<string, Dictionary<int, string>> partnerMaterials = new();
     private static int batchLoc, clockLoc, beltTensionLoc;
     private static readonly Texture2D[] maps = new Texture2D[Enum.GetValues<Finish>().Length];
     private static readonly Dictionary<(string Asset,int Mesh),int> handSurfaces=new();
@@ -682,7 +683,7 @@ internal static unsafe partial class VisualEngine3D
             light+=point(southBeacon+vec3(0.,-1.85,.35),vec3(.68,.48,.28),n,v,gloss);
             if(firstPerson==1) light=max(light,vec3(.68,.64,.66));
             float fres=pow(1.-max(0.,dot(n,v)),3.);
-            vec3 lit=base*light+vec3(.08,.09,.11)*fres*(.35+tex.r);
+            vec3 lit=base*light+vec3(.08,.09,.11)*fres*(finish==17 ? (.14+tex.r*.32) : (.35+tex.r));
             float nh=max(0.,dot(n,normalize(v+key))),nv=max(.01,dot(n,v));
             float rough=isFloorSlab ? .26 : finish==1 ? .76 : finish==2 ? .34 : finish==23 ? .32 : finish==6 ? .48 : .56;
             float a2=pow(rough,4.), denom=nh*nh*(a2-1.)+1.;
@@ -729,7 +730,7 @@ internal static unsafe partial class VisualEngine3D
             if(finish==3) lit+=base*max(tex.g,tex.r)*.65;
             if(finish==10) lit=base;
             if(firstPerson==1) lit+=muzzleLight(n,v)*(.26+base);
-            if(firstPerson==0) lit=max(lit,base*.22+vec3(.042,.038,.046));
+            if(firstPerson==0) lit=max(lit, finish==17 ? (base*.16 + vec3(.006,.005,.007)) : (base*.22+vec3(.042,.038,.046)));
             lit+=emission*1.65;
             float fog=1.-exp(-.000055*dist*dist);
             color=vec4(mix(lit,vec3(.26,.23,.28),fog),ink.a);
@@ -791,7 +792,7 @@ internal static unsafe partial class VisualEngine3D
             string name = Path.GetFileNameWithoutExtension(path);
             RestoreBoothPalette(path,name,model);
             imports.Add(name, model);
-            if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name == "char_partner_90s") ReadMeshGroups(path, name, model.MeshCount);
+            if (name.StartsWith("fps_hands_", StringComparison.Ordinal) || name.StartsWith("fps_left_", StringComparison.Ordinal) || name is "char_partner_90s" or "char_partner_90s_body" or "char_partner_90s_arm_r") ReadMeshGroups(path, name, model.MeshCount);
             else if (name.StartsWith("vc_", StringComparison.Ordinal) || name == "escaped_ai_boss") ReadCoderParts(path, name, model.MeshCount);
         }
     }
@@ -836,19 +837,28 @@ internal static unsafe partial class VisualEngine3D
         foreach (var mesh in json.RootElement.GetProperty("meshes").EnumerateArray())
         {
             int count = mesh.GetProperty("primitives").GetArrayLength();
-            if (asset == "char_partner_90s")
+            if (asset is "char_partner_90s" or "char_partner_90s_body" or "char_partner_90s_arm_r")
             {
                 var materials = json.RootElement.GetProperty("materials");
+                if (!partnerMaterials.TryGetValue(asset, out var map))
+                {
+                    map = new Dictionary<int, string>();
+                    partnerMaterials[asset] = map;
+                }
                 foreach (var part in mesh.GetProperty("primitives").EnumerateArray())
                 {
-                    string material = materials[part.GetProperty("material").GetInt32()].GetProperty("name").GetString();
-                    if (material == "crimson") blazerMeshes.Add(index);
-                    else if (material == "lapel") partnerLapelMeshes.Add(index);
-                    else if (material == "skin") partnerSkinMeshes.Add(index);
-                    else if (material == "iris") partnerIrisMeshes.Add(index);
-                    else if (material == "glass") partnerGlassMeshes.Add(index);
-                    else if (material is "onyx" or "gold") partnerHeadFrameMeshes.Add(index);
-                    if (material is "GunMetal" or "Gold90s" or "PolymerGrip") partnerPropMeshes.Add(index);
+                    string material = materials[part.GetProperty("material").GetInt32()].GetProperty("name").GetString() ?? "";
+                    map[index] = material;
+                    if (asset == "char_partner_90s")
+                    {
+                        if (material == "crimson") blazerMeshes.Add(index);
+                        else if (material == "lapel") partnerLapelMeshes.Add(index);
+                        else if (material == "skin") partnerSkinMeshes.Add(index);
+                        else if (material == "iris") partnerIrisMeshes.Add(index);
+                        else if (material == "glass") partnerGlassMeshes.Add(index);
+                        else if (material is "onyx" or "gold") partnerHeadFrameMeshes.Add(index);
+                        if (material is "GunMetal" or "Gold90s" or "PolymerGrip") partnerPropMeshes.Add(index);
+                    }
                     index++;
                 }
                 continue;
@@ -877,7 +887,8 @@ internal static unsafe partial class VisualEngine3D
             index += count;
         }
         bool isFpsArm = asset.StartsWith("fps_hands_", StringComparison.Ordinal) || asset.StartsWith("fps_left_", StringComparison.Ordinal);
-        if (index != meshCount || (isFpsArm ? leftArm.Count * rightArm.Count == 0 : partnerPropMeshes.Count != 3))
+        bool isPartnerPart = asset is "char_partner_90s_body" or "char_partner_90s_arm_r";
+        if (index != meshCount || (isFpsArm ? leftArm.Count * rightArm.Count == 0 : (!isPartnerPart && partnerPropMeshes.Count != 3)))
             throw new InvalidDataException("Incomplete first-person arm mesh");
         if (isFpsArm) armGroups.Add(asset, (leftArm, rightArm));
     }
@@ -1103,16 +1114,20 @@ internal static unsafe partial class VisualEngine3D
         if (!CastingShadows) Raylib.SetShaderValue(shader, wardrobeStageLoc, active ? 1 : 0, ShaderUniformDataType.Int);
     }
 
-    internal static void DrawPartnerCharacter(Vector3 position, float yawDeg, float tilt, Vector3 stretch, CharacterAppearance appearance, Color? blazerOverride = null)
+    internal static void DrawPartnerCharacter(Vector3 position, float yawDeg, float tilt, Vector3 stretch, CharacterAppearance appearance, Color? blazerOverride = null, string assetName = "char_partner_90s", Matrix4x4? explicitTransform = null)
     {
-        Model model = imports["char_partner_90s"];
-        var transform = Matrix4x4.CreateRotationX(tilt)
+        if (!imports.TryGetValue(assetName, out Model model))
+        {
+            assetName = "char_partner_90s";
+            model = imports[assetName];
+        }
+        var transform = explicitTransform ?? (Matrix4x4.CreateRotationX(tilt)
             * Matrix4x4.CreateScale(stretch)
             * Matrix4x4.CreateRotationY(yawDeg * MathF.PI / 180f)
-            * Matrix4x4.CreateTranslation(position);
+            * Matrix4x4.CreateTranslation(position));
         if (CastingShadows)
         {
-            DrawDepth(model, transform, hideProp: true);
+            DrawDepth(model, transform, hideProp: assetName == "char_partner_90s");
             return;
         }
         Surface(Finish.Anatomy, 0);
@@ -1123,22 +1138,21 @@ internal static unsafe partial class VisualEngine3D
         Color? skinCol = appearance.SkinIndex == 0 ? null : appearance.PartnerSkinMaterialColor;
         Color irisCol = appearance.EyeIrisColor;
         Matrix4x4 pose = Matrix4x4.Transpose(transform);
+        partnerMaterials.TryGetValue(assetName, out var matMap);
         for (int i = 0; i < model.MeshCount; i++)
         {
-            if (partnerPropMeshes.Contains(i) || partnerGlassMeshes.Contains(i)) continue;
+            string matName = matMap != null && matMap.TryGetValue(i, out var mn) ? mn : "";
+            if (matName is "GunMetal" or "Gold90s" or "PolymerGrip" or "glass") continue;
             var material = model.Materials[model.MeshMaterial[i]];
             var original = material.Maps[0].Color;
-            bool clipHead = partnerHeadFrameMeshes.Contains(i);
-            if (clipHead) Raylib.SetShaderValue(shader, clipHeadFrameLoc, 1, ShaderUniformDataType.Int);
-            if (blazerMeshes.Contains(i)) material.Maps[0].Color = blazerCol;
-            else if (partnerLapelMeshes.Contains(i)) material.Maps[0].Color = lapelCol;
-            else if (skinCol.HasValue && partnerSkinMeshes.Contains(i)) material.Maps[0].Color = skinCol.Value;
-            else if (partnerIrisMeshes.Contains(i)) material.Maps[0].Color = irisCol;
+            if (matName == "crimson") material.Maps[0].Color = blazerCol;
+            else if (matName == "lapel") material.Maps[0].Color = lapelCol;
+            else if (skinCol.HasValue && matName == "skin") material.Maps[0].Color = skinCol.Value;
+            else if (matName == "iris") material.Maps[0].Color = irisCol;
             Raylib.DrawMesh(model.Meshes[i], material, pose);
             material.Maps[0].Color = original;
-            if (clipHead) Raylib.SetShaderValue(shader, clipHeadFrameLoc, 0, ShaderUniformDataType.Int);
         }
-        CapturedAssets?.Add("char_partner_90s");
+        CapturedAssets?.Add(assetName);
     }
 
     internal static void MountedWhiteboard(Vector3 origin,float yaw)
@@ -1880,7 +1894,7 @@ internal static unsafe partial class VisualEngine3D
     {
         foreach(Model m in imports.Values) Raylib.UnloadModel(m);
         imports.Clear();
-        partnerPropMeshes.Clear(); blazerMeshes.Clear(); partnerLapelMeshes.Clear();
+        partnerPropMeshes.Clear(); blazerMeshes.Clear(); partnerLapelMeshes.Clear(); partnerMaterials.Clear();
         partnerSkinMeshes.Clear(); partnerIrisMeshes.Clear(); partnerGlassMeshes.Clear(); partnerHeadFrameMeshes.Clear();
         armGroups.Clear();
         armWrists.Clear();

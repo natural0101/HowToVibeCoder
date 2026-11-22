@@ -292,183 +292,54 @@ public static partial class Program
         bool showShield = !isDying && (curShield > 0.1f || _bossShieldGhost > 0.5f);
 
         int cx = UiViewport.Width / 2;
-        const float plateW = 640f;
-        float left = cx - plateW * 0.5f;
-        float top = 12f;
-        float plateH = showShield ? 80f : 70f;
-        const float padX = 18f;
+        const float barW = 540f;
+        float barX = cx - barW * 0.5f;
+        float titleY = 14f;
+        float barY = 41f;
         float pulse = 0.5f + 0.5f * MathF.Sin(time * 8.5f);
 
         Color F(Color c) => Raylib.Fade(c, fade);
 
-        // 1. Heavy Dark-Obsidian Architectural Backing Plate with subtle brushed-brass corner bevels
-        Raylib.DrawRectangle((int)left + 3, (int)top + 4, (int)plateW, (int)plateH, new Color(5, 4, 7, (int)(168 * fade)));
-        Raylib.DrawRectangleGradientV(
-            (int)left, (int)top, (int)plateW, (int)plateH,
-            new Color(23, 20, 26, (int)(236 * fade)),
-            new Color(11, 10, 14, (int)(244 * fade)));
-
-        // Warm amber / ember inner glow wash when Overheated or Core Meltdown
-        if (isOverheated || isDying)
-        {
-            Color warnGlow = isDying
-                ? new Color(224, 62, 42, (int)((32 + 44 * pulse) * fade))
-                : new Color(242, 168, 52, (int)((26 + 40 * pulse) * fade));
-            Raylib.DrawRectangleGradientV((int)left + 2, (int)top + 2, (int)plateW - 4, 14, warnGlow, Color.Blank);
-            Raylib.DrawRectangleGradientV((int)left + 2, (int)(top + plateH - 16), (int)plateW - 4, 14, Color.Blank, warnGlow);
-        }
-
-        Color brassBase = new(186, 152, 92, 205);
-        Color frameCol = isDying
-            ? Raylib.ColorLerp(new Color(214, 58, 44, 245), new Color(252, 178, 72, 255), pulse)
-            : isOverheated
-                ? Raylib.ColorLerp(new Color(204, 148, 56, 235), new Color(255, 202, 82, 255), pulse)
-                : Raylib.ColorLerp(brassBase, new Color(248, 232, 192, 245), _bossHitPulse * 0.55f);
-
-        Raylib.DrawRectangleLinesEx(new(left, top, plateW, plateH), (isOverheated || isDying) ? 1.8f : 1.3f, F(frameCol));
-        Raylib.DrawLineEx(new(left + 10, top + 1.5f), new(left + plateW - 10, top + 1.5f), 1f, new Color(240, 214, 158, (int)(44 * fade)));
-
-        // Subtle Art-Deco brushed-brass architectural corner chamfers & machined corner rivets (zero protruding L-brackets)
-        Color bevelCol = F(Raylib.ColorLerp(frameCol, new Color(242, 214, 152, 255), 0.35f));
-        const float ch = 8f;
-        Raylib.DrawLineEx(new(left + 1, top + ch), new(left + ch, top + 1), 1.3f, bevelCol);
-        Raylib.DrawLineEx(new(left + plateW - ch, top + 1), new(left + plateW - 1, top + ch), 1.3f, bevelCol);
-        Raylib.DrawLineEx(new(left + 1, top + plateH - ch), new(left + ch, top + plateH - 1), 1.3f, bevelCol);
-        Raylib.DrawLineEx(new(left + plateW - ch, top + plateH - 1), new(left + plateW - 1, top + plateH - ch), 1.3f, bevelCol);
-
-        Color rivetCol = F(new Color(212, 178, 114, 215));
-        Raylib.DrawCircleV(new(left + 7f, top + 7f), 1.5f, rivetCol);
-        Raylib.DrawCircleV(new(left + plateW - 7f, top + 7f), 1.5f, rivetCol);
-        Raylib.DrawCircleV(new(left + 7f, top + plateH - 7f), 1.5f, rivetCol);
-        Raylib.DrawCircleV(new(left + plateW - 7f, top + plateH - 7f), 1.5f, rivetCol);
-
-        // 2. Header Row: Bold Serif Boss Title + 3 Phase Pips (I · II · III) + Clear Status Badge + Numeric HP Readout
-        float headerY = top + 9f;
-        var titleFont = GameFonts.Get(Typeface.SerifBold, 19);
+        // 1. Clean Souls-style Floating Header (zero dark code-box, zero corner rivets, zero boxed I/II/III pills!)
+        var titleFont = GameFonts.Get(Typeface.SerifBold, 20);
         string bossTitle = Loc.T("ИИ-АГЕНТ v0.1", "AI AGENT v0.1");
-        ShadowText(titleFont, bossTitle, left + padX, headerY, 19, F(DossierPrint.Ivory));
-        float cursorX = left + padX + GameFonts.Measure(titleFont, bossTitle, 19).X + 14f;
+        ShadowText(titleFont, bossTitle, barX, titleY, 20, F(DossierPrint.Ivory));
 
-        // 3 Phase Pips: I · II · III
-        var pipFont = GameFonts.Get(Typeface.InterfaceBold, 12);
-        string[] romans = ["I", "II", "III"];
-        int activePhase = Math.Clamp(b.Phase, 1, 3);
-        for (int p = 1; p <= 3; p++)
-        {
-            bool spent = p < activePhase || isDying;
-            bool current = p == activePhase && !isDying;
-            Rectangle pip = new(cursorX, headerY + 2f, 24f, 18f);
-            Color pipBg = current
-                ? new Color(148, 34, 38, (int)(235 * fade))
-                : spent
-                    ? new Color(24, 22, 26, (int)(185 * fade))
-                    : new Color(20, 18, 22, (int)(220 * fade));
-            Color pipBorder = current
-                ? F(new Color(238, 198, 116, 245))
-                : spent
-                    ? F(new Color(98, 84, 66, 130))
-                    : F(new Color(172, 140, 86, 190));
-            Color pipInk = current
-                ? F(new Color(252, 244, 226, 255))
-                : spent
-                    ? F(new Color(126, 116, 102, 165))
-                    : F(new Color(224, 208, 180, 225));
-
-            Raylib.DrawRectangleRounded(pip, 0.24f, 4, pipBg);
-            Raylib.DrawRectangleRoundedLinesEx(pip, 0.24f, 4, current ? 1.3f : 1f, pipBorder);
-            float rw = GameFonts.Measure(pipFont, romans[p - 1], 12).X;
-            GameFonts.Draw(pipFont, romans[p - 1], new(pip.X + (pip.Width - rw) * 0.5f, pip.Y + 3f), 12, pipInk, shadowed: false);
-            cursorX += 29f;
-        }
-
-        // Status Badge: ЩИТ / ЯДРО / ПЕРЕГРЕВ! / ВЗРЫВ ЯДРА!
-        cursorX += 6f;
-        string badgeText;
-        Color badgeBg, badgeBorder, badgeInk;
+        // Optional plain status whisper on the right (no pill rectangle!)
+        string? statusWhisper = null;
+        Color whisperCol = new(218, 198, 160, 220);
         if (isDying)
         {
-            badgeText = Loc.T("ВЗРЫВ ЯДРА!", "CORE MELTDOWN!");
-            badgeBg = Raylib.ColorLerp(new Color(176, 36, 34, 242), new Color(228, 92, 42, 248), pulse);
-            badgeBorder = new Color(255, 208, 112, 250);
-            badgeInk = new Color(255, 248, 232, 255);
+            statusWhisper = Loc.T("КРИТИЧЕСКИЙ ПЕРЕГРЕВ", "CORE MELTDOWN");
+            whisperCol = Raylib.ColorLerp(new Color(255, 134, 96, 255), new Color(255, 224, 152, 255), pulse);
         }
         else if (isOverheated)
         {
-            badgeText = Loc.T("ПЕРЕГРЕВ!", "OVERHEATED!");
-            badgeBg = Raylib.ColorLerp(new Color(206, 138, 38, 242), new Color(248, 186, 62, 250), pulse);
-            badgeBorder = new Color(255, 232, 164, 250);
-            badgeInk = new Color(20, 14, 10, 255);
+            statusWhisper = Loc.T("ПЕРЕГРЕВ — БЕЙ!", "OVERHEATED — STRIKE!");
+            whisperCol = Raylib.ColorLerp(new Color(248, 178, 64, 255), new Color(255, 232, 162, 255), pulse);
         }
         else if (curShield > 0.1f)
         {
-            badgeText = Loc.T("ЩИТ", "SHIELD");
-            badgeBg = new Color(36, 82, 106, 234);
-            badgeBorder = new Color(142, 210, 232, 232);
-            badgeInk = new Color(238, 248, 252, 255);
+            statusWhisper = Loc.T("ЭНЕРГОЩИТ", "ENERGY SHIELD");
+            whisperCol = new Color(148, 222, 244, 235);
         }
-        else
+        if (statusWhisper != null)
         {
-            badgeText = Loc.T("ЯДРО", "CORE");
-            badgeBg = new Color(116, 26, 32, 234);
-            badgeBorder = new Color(214, 168, 96, 215);
-            badgeInk = new Color(250, 240, 224, 255);
+            var wf = GameFonts.Get(Typeface.InterfaceBold, 13);
+            float ww = GameFonts.Measure(wf, statusWhisper, 13).X;
+            ShadowText(wf, statusWhisper, barX + barW - ww, titleY + 5f, 13, F(whisperCol));
         }
 
-        var badgeFont = GameFonts.Get(Typeface.InterfaceBold, 12);
-        float badgeTextW = GameFonts.Measure(badgeFont, badgeText, 12).X;
-        Rectangle badgeRect = new(cursorX, headerY + 2f, badgeTextW + 14f, 18f);
-        Raylib.DrawRectangleRounded(badgeRect, 0.24f, 4, F(badgeBg));
-        Raylib.DrawRectangleRoundedLinesEx(badgeRect, 0.24f, 4, 1.1f, F(badgeBorder));
-        GameFonts.Draw(badgeFont, badgeText, new(badgeRect.X + 7f, badgeRect.Y + 3f), 12, F(badgeInk), shadowed: false);
-
-        // Right-aligned Numeric HP Readout (420 / 600)
-        var hpFont = GameFonts.Get(Typeface.InterfaceBold, 15);
-        int hpDisp = Math.Max(0, (int)MathF.Ceiling(curHp));
-        int maxDisp = Math.Max(1, (int)MathF.Round(maxHp));
-        string hpReadout = $"{hpDisp} / {maxDisp}";
-        float hpW = GameFonts.Measure(hpFont, hpReadout, 15).X;
-        ShadowText(hpFont, hpReadout, left + plateW - padX - hpW, headerY + 3f, 15, F(new Color(238, 226, 202, 242)));
-
-        // 3. Dual-Layer Thick Health + Shield Bars
-        float barX = left + padX;
-        float barW = plateW - padX * 2f;
-        float barY = top + 36f;
-
-        if (showShield)
-        {
-            const float shieldH = 8f;
-            Raylib.DrawRectangle((int)barX, (int)barY, (int)barW, (int)shieldH, new Color(14, 22, 30, (int)(236 * fade)));
-
-            float sGhostFrac = Math.Clamp(_bossShieldGhost / maxShield, 0f, 1f);
-            float sGhostW = barW * sGhostFrac;
-            if (sGhostW > 0.5f)
-                Raylib.DrawRectangle((int)barX, (int)barY, (int)MathF.Ceiling(sGhostW), (int)shieldH, F(new Color(220, 242, 250, 220)));
-
-            float sFrac = Math.Clamp(curShield / maxShield, 0f, 1f);
-            float sLiveW = barW * sFrac;
-            if (sLiveW > 0.5f)
-            {
-                int wInt = (int)MathF.Ceiling(sLiveW);
-                Raylib.DrawRectangleGradientH((int)barX, (int)barY, wInt, (int)shieldH,
-                    F(new Color(54, 122, 152, 255)), F(new Color(142, 214, 236, 255)));
-                Raylib.DrawRectangle((int)barX, (int)barY, wInt, 2, new Color(224, 248, 255, (int)(92 * fade)));
-                Raylib.DrawRectangle((int)(barX + wInt - 2), (int)barY, 2, (int)shieldH, F(new Color(232, 250, 255, 245)));
-            }
-
-            Raylib.DrawRectangleLinesEx(new(barX, barY, barW, shieldH), 1f, new Color(108, 166, 188, (int)(135 * fade)));
-            barY += shieldH + 3f;
-        }
-
-        // Main HP Bar: 18px tall, arterial crimson-to-ember gradient + delayed golden-white drain ghost + 100-HP tick marks
-        const float hpH = 18f;
-        Raylib.DrawRectangle((int)barX, (int)barY, (int)barW, (int)hpH, new Color(18, 12, 14, (int)(244 * fade)));
-        Raylib.DrawRectangle((int)barX, (int)barY, (int)barW, 2, new Color(6, 4, 6, (int)(185 * fade)));
+        // 2. Sleek 10px Sculpted Arterial Crimson Health Bar with soft drop shadow & delayed gold-white damage trail
+        const float hpH = 10f;
+        Raylib.DrawRectangle((int)barX - 1, (int)barY + 2, (int)barW + 2, (int)hpH + 2, new Color(4, 3, 5, (int)(170 * fade)));
+        Raylib.DrawRectangle((int)barX, (int)barY, (int)barW, (int)hpH, new Color(16, 10, 12, (int)(228 * fade)));
 
         float hpGhostFrac = Math.Clamp(_bossHpGhost / maxHp, 0f, 1f);
         float hpGhostW = barW * hpGhostFrac;
         if (hpGhostW > 0.5f)
         {
-            Color gLeft = Raylib.ColorLerp(new Color(234, 194, 114, 238), new Color(255, 244, 212, 255), _bossHitPulse * 0.65f);
+            Color gLeft = Raylib.ColorLerp(new Color(230, 186, 106, 232), new Color(255, 244, 212, 255), _bossHitPulse * 0.65f);
             Color gRight = new Color(255, 244, 214, 248);
             Raylib.DrawRectangleGradientH((int)barX, (int)barY + 1, (int)MathF.Ceiling(hpGhostW), (int)hpH - 2, F(gLeft), F(gRight));
         }
@@ -478,59 +349,65 @@ public static partial class Program
         if (hpLiveW > 0.5f)
         {
             int wInt = (int)MathF.Ceiling(hpLiveW);
-            Color cLeft = isOverheated ? new Color(168, 42, 24, 255) : new Color(122, 18, 26, 255);
+            Color cLeft = isOverheated ? new Color(172, 46, 24, 255) : new Color(118, 16, 24, 255);
             Color cRight = isOverheated
-                ? Raylib.ColorLerp(new Color(238, 122, 42, 255), new Color(255, 196, 78, 255), pulse)
-                : new Color(214, 56, 42, 255);
+                ? Raylib.ColorLerp(new Color(242, 124, 42, 255), new Color(255, 202, 82, 255), pulse)
+                : new Color(204, 44, 38, 255);
             Raylib.DrawRectangleGradientH((int)barX, (int)barY + 1, wInt, (int)hpH - 2, F(cLeft), F(cRight));
-            // Subtle upper specular bevel across live bar
-            Raylib.DrawRectangle((int)barX, (int)barY + 1, wInt, 4, new Color(255, 186, 146, (int)(54 * fade)));
-            // Crisp golden-ivory leading edge at live HP boundary
+            Raylib.DrawRectangle((int)barX, (int)barY + 1, wInt, 2, new Color(255, 198, 162, (int)(62 * fade)));
             Raylib.DrawRectangle((int)(barX + Math.Max(0, wInt - 2)), (int)barY + 1, 2, (int)hpH - 2, F(new Color(255, 232, 182, 245)));
         }
 
-        // Subtle engraved 100-HP segmented tick marks across the 18px bar
-        for (float mark = 100f; mark < maxHp - 1f; mark += 100f)
+        // Two subtle phase-threshold hairline notches (Phase II / Phase III)
+        for (int p = 1; p <= 2; p++)
         {
-            float mx = MathF.Round(barX + barW * (mark / maxHp));
-            Raylib.DrawLineEx(new(mx, barY + 1f), new(mx, barY + hpH - 1f), 1.4f, new Color(10, 7, 9, (int)(152 * fade)));
-            Raylib.DrawLineEx(new(mx + 1.3f, barY + 2f), new(mx + 1.3f, barY + hpH - 2f), 0.9f, new Color(248, 224, 178, (int)(26 * fade)));
+            float mx = MathF.Round(barX + barW * (p / 3f));
+            Raylib.DrawLineEx(new(mx, barY + 1f), new(mx, barY + hpH - 1f), 1.2f, new Color(8, 5, 7, (int)(168 * fade)));
         }
 
-        Raylib.DrawRectangleLinesEx(new(barX, barY, barW, hpH), 1.1f, F(new Color(142, 114, 72, 175)));
+        Color rimCol = isDying
+            ? Raylib.ColorLerp(new Color(224, 68, 46, 235), new Color(255, 192, 84, 245), pulse)
+            : isOverheated
+                ? Raylib.ColorLerp(new Color(214, 152, 58, 225), new Color(255, 212, 92, 240), pulse)
+                : Raylib.ColorLerp(new Color(174, 142, 86, 185), new Color(248, 230, 188, 235), _bossHitPulse * 0.55f);
+        Raylib.DrawRectangleLinesEx(new(barX, barY, barW, hpH), 1f, F(rimCol));
 
-        // 4. Contextual Callout Pill tucked cleanly below the Boss Bar (Overheat warning / Meltdown / Phase 3 Tape)
+        float belowY = barY + hpH + 4f;
+
+        // 3. Sleek 4px Luminous Cyan Shield Line right below HP bar ONLY while shield > 0
+        if (showShield)
+        {
+            const float shieldH = 4f;
+            Raylib.DrawRectangle((int)barX, (int)belowY, (int)barW, (int)shieldH, new Color(10, 20, 28, (int)(208 * fade)));
+            float sGhostW = barW * Math.Clamp(_bossShieldGhost / maxShield, 0f, 1f);
+            if (sGhostW > 0.5f)
+                Raylib.DrawRectangle((int)barX, (int)belowY, (int)MathF.Ceiling(sGhostW), (int)shieldH, F(new Color(216, 244, 255, 205)));
+            float sLiveW = barW * Math.Clamp(curShield / maxShield, 0f, 1f);
+            if (sLiveW > 0.5f)
+                Raylib.DrawRectangleGradientH((int)barX, (int)belowY, (int)MathF.Ceiling(sLiveW), (int)shieldH,
+                    F(new Color(52, 138, 178, 255)), F(new Color(146, 224, 248, 255)));
+            belowY += shieldH + 5f;
+        }
+
+        // 4. Optional clean floating whisper below bar (no pill box!)
         string? callout = null;
         Color calloutInk = DossierPrint.Ivory;
-        Color calloutBorder = new(186, 152, 92, 128);
         if (isDying)
         {
-            callout = Loc.T("КРИТИЧЕСКИЙ ПЕРЕГРЕВ ЯДРА — ОТОЙДИ!", "CORE MELTDOWN — STAND BACK!");
+            callout = Loc.T("ОТОЙДИ ОТ ВЗРЫВА!", "STAND BACK — DETONATION!");
             calloutInk = Raylib.ColorLerp(new Color(255, 178, 124, 255), new Color(255, 234, 186, 255), pulse);
-            calloutBorder = new Color(232, 76, 52, 210);
-        }
-        else if (isOverheated)
-        {
-            callout = Loc.T("ЯДРО ОТКРЫТО — БЕЙ!", "CORE EXPOSED — STRIKE NOW!");
-            calloutInk = Raylib.ColorLerp(new Color(252, 192, 76, 255), new Color(255, 238, 188, 255), pulse);
-            calloutBorder = new Color(246, 178, 62, 215);
         }
         else if (b.Phase == 3 && !string.IsNullOrEmpty(_world.CurrentTape))
         {
             callout = _world.CurrentTape;
-            calloutInk = DossierPrint.Ivory;
-            calloutBorder = new Color(186, 152, 92, 118);
+            calloutInk = new Color(236, 212, 168, 235);
         }
 
         if (!string.IsNullOrEmpty(callout))
         {
-            var cFont = GameFonts.Get(Typeface.InterfaceBold, 14);
-            float cw = MathF.Min(plateW, GameFonts.Measure(cFont, callout, 14).X + 24f);
-            Rectangle pill = new(cx - cw * 0.5f, top + plateH + 5f, cw, 22f);
-            Raylib.DrawRectangleRounded(pill, 0.26f, 6, new Color(14, 11, 16, (int)(214 * fade)));
-            Raylib.DrawRectangleRoundedLinesEx(pill, 0.26f, 6, 1f, F(calloutBorder));
-            float tw = GameFonts.Measure(cFont, callout, 14).X;
-            ShadowText(cFont, callout, cx - tw * 0.5f, pill.Y + 4f, 14, F(calloutInk));
+            var cFont = GameFonts.Get(Typeface.Interface, 13);
+            float cw = GameFonts.Measure(cFont, callout, 13).X;
+            ShadowText(cFont, callout, cx - cw * 0.5f, belowY + 2f, 13, F(calloutInk));
         }
     }
 }
