@@ -251,12 +251,13 @@ public static partial class Program
         bool gripTest = HasFlag("--grip-test");
         bool captureComic = HasFlag("--capture-comic");
         bool recordCutscene = HasFlag("--record-cutscene");
+        bool recordPlaythrough = HasFlag("--record-playthrough");
         DevMode = HasFlag("--dev");
-        bool silent = captureComic || recordCutscene || args.Any(arg => arg.StartsWith('-') &&
+        bool silent = captureComic || recordCutscene || recordPlaythrough || args.Any(arg => arg.StartsWith('-') &&
             (arg.Contains("test", StringComparison.OrdinalIgnoreCase) ||
              arg.Contains("smoke", StringComparison.OrdinalIgnoreCase)));
         bool localPair=coopSmoke && !HasFlag("--host") && !HasFlag("--join");
-        fixtureSeed=autoTest || coopSmoke || gripTest || polishTest || recordCutscene ? 6 : null;
+        fixtureSeed=autoTest || coopSmoke || gripTest || polishTest || recordCutscene || recordPlaythrough ? 6 : null;
         if (HasFlag("--regenerate-music"))
         {
             AudioMusicSystem.EnsureMusicFiles(Path.Combine(Environment.CurrentDirectory, "assets", "sounds"), force: true);
@@ -359,6 +360,7 @@ public static partial class Program
             finally { if(guest is { HasExited:false }) guest.Kill(); }
         }
         else if (recordCutscene) RecordCutsceneVideo();
+        else if (recordPlaythrough) RecordFullPlaythrough();
         else if (autoTest || gripTest || polishTest) RunAutomatedScreenshotSuite(displayPath,polishTest);
         else
         {
@@ -2245,9 +2247,9 @@ public static partial class Program
         Require(fighters.Select(c=>c.MaxHp).SequenceEqual(new float[]{50,90,100,145}),"fighter HP by role");
         var enemy=fighters[0];
         enemy.BaitTaken=true;
-        // Keep the test lane clear of the nearby architectural pillar.
-        _playerPos=new(-5.6f,1.72f,5.6f);
-        enemy.Position=new(-5.6f,0,10.4f);
+        // Keep the test lane clear of the lounge sofa and architectural pillars on the open central runner.
+        _playerPos=new(-1.2f,1.72f,5.2f);
+        enemy.Position=new(-1.2f,0,10.0f);
         Key(KeyboardKey.LeftControl,true); // Stay quiet while measuring the fighter’s attack cadence.
         Tick(32);
         Require(enemy.Aggro && enemy.Windup>0 && _world.EnemyProjectiles.Count==0,"warn before throw");
@@ -2636,11 +2638,17 @@ public static partial class Program
             Blocked(probe,0);
             Blocked(probe,SkyscraperFloor1World.CeilingHeight-.4f);
         }
-        foreach(var door in SkyscraperFloor1World.RoomDoors)
+        for(int i=0;i<SkyscraperFloor1World.RoomDoors.Length;i++)
         {
-            for(float z=-2.1f;z<=0;z+=.18f)
-                foreach(int side in new[]{-1,1}) Blocked(door+new Vector3(side*1.9f,0,z),2.5f);
-            for(float x=-1.85f;x<1.9f;x+=.18f) Blocked(door+new Vector3(x,0,-2.1f),2.5f);
+            var door=SkyscraperFloor1World.RoomDoors[i];
+            float s=SkyscraperFloor1World.RoomExitSign(i);
+            for(float z=0;z<=2.1f;z+=.18f)
+                foreach(int side in new[]{-1,1}) Blocked(door+new Vector3(side*1.22f,0,-s*z),2.5f);
+            for(float x=-1.20f;x<=1.20f;x+=.18f) Blocked(door+new Vector3(x,0,-s*2.1f),2.5f);
+            // Verify player is ALWAYS blocked from crossing the threshold even when RoomOpen[i] == 1f!
+            float prev=_world.RoomOpen[i]; _world.RoomOpen[i]=1f;
+            Blocked(door+new Vector3(0,0,s*.06f),0f);
+            _world.RoomOpen[i]=prev;
         }
         for(float z=-8.5f;z<=.5f;z+=.125f)
             foreach(int side in new[]{-1,1})
@@ -2674,17 +2682,18 @@ public static partial class Program
             if(visited.Add(room))
             {
                 var door=SkyscraperFloor1World.RoomDoors[room];
-                if(room<2 && Vector3.Distance(door,world.CentralMacBookPos) is <7.5f or >12f) throw new InvalidDataException("Atrium run distance");
-                if(coder.Position.Z>=door.Z || Math.Abs(coder.Position.X-door.X)>.5f)
+                float s=SkyscraperFloor1World.RoomExitSign(room);
+                if(room<2 && Vector3.Distance(door,world.CentralMacBookPos) is <5.0f or >12f) throw new InvalidDataException("Atrium run distance");
+                if((coder.Position.Z-door.Z)*s>=0 || Math.Abs(coder.Position.X-door.X)>.5f)
                     throw new InvalidDataException("Coder spawned outside alcove");
                 Tick(75);
-                if(coder.Position.Z<=door.Z || world.RoomOpen[room]<.99f)
-                    throw new InvalidDataException("Coder failed to walk through open glass");
+                if((coder.Position.Z-door.Z)*s<=0 || world.RoomOpen[room]<.99f)
+                    throw new InvalidDataException("Coder failed to walk through open door");
                 for(int frame=0;frame<1750 && coder.State==CoderAIState.WalkingToBait;frame++) Tick(1);
                 if(coder.State!=CoderAIState.Subdued || Vector3.Distance(coder.Position,world.CentralMacBookPos+Vector3.UnitX*1.15f)>.36f)
                     throw new InvalidDataException($"Room {room} route ended at {coder.Position} in {coder.State}");
                 Tick(205);
-                if(world.RoomOpen[room]!=0) throw new InvalidDataException("Glass failed to close");
+                if(world.RoomOpen[room]!=0) throw new InvalidDataException("Door failed to close");
             }
             world.ActiveCoders.Clear();
         }
@@ -3070,9 +3079,13 @@ public static partial class Program
                     if(dir.Z>.5f && Math.Abs(dir.X)>.5f) eye.Z=.68f; // Stay in front of the spawn pods.
                     Sample(eye+Vector3.UnitY*2.3f,_world.CentralElevatorCorePos+Vector3.UnitY*2.1f);
                 }
-                foreach(var door in SkyscraperFloor1World.RoomDoors)
-                    foreach(var offset in new Vector3[]{new(-3.6f,2.2f,-1.3f),new(0,2.2f,-5),new(3.6f,2.2f,-1.3f)})
-                        Sample(door+offset,door+new Vector3(0,1.4f,-1.3f));
+                for(int i=0;i<SkyscraperFloor1World.RoomDoors.Length;i++)
+                {
+                    var door=SkyscraperFloor1World.RoomDoors[i];
+                    float s=SkyscraperFloor1World.RoomExitSign(i);
+                    foreach(var offset in new Vector3[]{new(-2.8f,2.2f,s*2.2f),new(0,2.2f,s*4.2f),new(2.8f,2.2f,s*2.2f)})
+                        Sample(door+offset,door+new Vector3(0,1.4f,0));
+                }
                 string path=Path.Combine(Path.GetTempPath(),"vibecoder-perimeter-audit.png");
                 if(!Raylib.ExportImage(sheet,path)) throw new IOException(path);
             }

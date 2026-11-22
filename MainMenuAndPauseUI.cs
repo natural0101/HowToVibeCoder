@@ -234,7 +234,7 @@ public static class MainMenuAndPauseUI
             Name = "Hardcore Boss Mode",
             Version = "v1.0",
             Author = "Red Jacket Hardcore",
-            Description = "Повышенная агрессия Мини-Босса SaaS и Сбежавшего ИИ-Агента v0.1 (+25% к скорости атак).",
+            Description = "Повышенная агрессия боссов и охраны этажа (+25% к скорости атак).",
             Enabled = false
         }
     };

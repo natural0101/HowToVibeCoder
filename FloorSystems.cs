@@ -33,7 +33,7 @@ internal sealed partial class FloorSystems
     ];
     internal static readonly Gear[] GearList = [
         new("Соль-дробь","Срывает выдержку и оглушает. Урон по броне снижен на 55%.",210),
-        new("Картечь «Переговорщик»","На 40% больше урона по броне агента. Смертельна для кадров.",340),
+        new("Картечь «Переговорщик»","На 40% больше урона по тяжёлой броне. Смертельна для кадров.",340),
         new("Синяя изолента MK2","На 45% сильнее удар по эго. Жало быстрее греется и остывает.",260),
         new("Барабан Узи","50 патронов. Перезарядка на 30% дольше.",320),
         new("Ремень «Директорский»","Цепляет соседние цели. Шире окно отражения, короче оглушение.",250),
@@ -72,8 +72,8 @@ internal sealed partial class FloorSystems
         {
             CoderArchetype.SeniorArchitect => ("XVI Башня","INTJ","Culture Fit 12%"),
             CoderArchetype.TeamLeadMeeter => ("X Колесо Фортуны","ENTJ","Culture Fit 98%"),
-            CoderArchetype.CryptoBro => ("XV Дьявол","ENFP","Меркурий ретрограден"),
-            _ => ("0 Шут","INFP","Меркурий ретрограден")
+            CoderArchetype.CryptoBro => ("XV Дьявол","ENFP","Кармический долг"),
+            _ => ("0 Шут","INFP","Слабая аура")
         };
         return $"{Loc.Tr("Вайб-Чек")}   {Loc.Tr(card)}   {type}   {Loc.Tr(verdict)}";
     }

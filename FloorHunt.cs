@@ -35,8 +35,9 @@ public sealed partial class SkyscraperFloor1World
     internal bool IsPlayerSpottedAtBait(FloorBait bait,Vector3 eye,bool crouched)
     {
         float distance=Vector3.Distance(Flat(eye),bait.Position);
+        float s=RoomExitSign(bait.Door);
         return distance<(crouched ? 4.2f : 7.5f) &&
-            Visible(RoomDoors[bait.Door]+new Vector3(0,1.21f,.14f),eye) &&
+            Visible(RoomDoors[bait.Door]+new Vector3(0,1.21f,s*.14f),eye) &&
             Visible(bait.Position+Vector3.UnitY*.18f,eye);
     }
     internal string DropFloorBait(Camera3D camera)
@@ -81,7 +82,9 @@ public sealed partial class SkyscraperFloor1World
             1=>s.Rarity is VibeCoderRarity.Rare or VibeCoderRarity.Epic,
             _=>s.Rarity==VibeCoderRarity.Legendary || s.Id=="no-commits" })).ToArray();
         var species=speciesPool[speciesRandom.Next(speciesPool.Length)];
-        var coder=SpawnFighter(species.Archetype,RoomDoors[bait.Door]-Vector3.UnitZ*.26f,species);
+        float s=RoomExitSign(bait.Door);
+        var coder=SpawnFighter(species.Archetype,RoomDoors[bait.Door]-Vector3.UnitZ*(s*.26f),species);
+        coder.FacingYaw=s<0 ? MathF.PI : 0f;
         coder.FloorHunter=coder.LaptopLost=true; coder.IsCombatCoder=coder.Aggro=false;
         bait.HunterId=coder.Id;
         coder.EntryRoom=bait.Door; coder.TimidIntern=bait.Tier==0;
@@ -139,10 +142,12 @@ public sealed partial class SkyscraperFloor1World
     private void UpdateHunter(VibeCoderEntity c,float dt)
     {
         var door=RoomDoors[c.EntryRoom];
+        float s=RoomExitSign(c.EntryRoom);
         var bait=Systems.PlacedBait;
         if(c.State==CoderAIState.Peeking)
         {
             c.StateTimer+=dt;
+            c.FacingYaw=s<0 ? MathF.PI : 0f;
             RoomOpen[c.EntryRoom]=Math.Min(.35f,c.StateTimer*1.6f);
             if(c.StateTimer>.95f) { RoomOpen[c.EntryRoom]=0; ActiveCoders.Remove(c); if(bait!=null) bait.Wait=.45f; }
             return;
@@ -157,8 +162,9 @@ public sealed partial class SkyscraperFloor1World
         if(c.ExitingRoom)
         {
             roomHold[c.EntryRoom]=.6f;
-            if(RoomOpen[c.EntryRoom]>.68f) c.Position.Z+=dt*1.3f;
-            c.ExitingRoom=c.Position.Z<door.Z+.95f;
+            c.FacingYaw=s<0 ? MathF.PI : 0f;
+            if(RoomOpen[c.EntryRoom]>.68f) c.Position.Z+=s*dt*1.3f;
+            c.ExitingRoom=(c.Position.Z-door.Z)*s<.95f;
             return;
         }
         int step=(int)(c.WalkCycle/MathF.PI);
@@ -166,15 +172,16 @@ public sealed partial class SkyscraperFloor1World
         if(c.State==CoderAIState.SneakingToBait && step!=(int)(c.WalkCycle/MathF.PI) && Vector3.DistanceSquared(c.Position,hostEye)<100)
             AudioMusicSystem.PlayWeaponSound(AudioMusicSystem.SfxSubduedDrop,.88f,.065f);
         if(c.State==CoderAIState.LuredAtBait) return;
-        var goal=fleeing ? door+Vector3.UnitZ*.8f : bait!.Position;
+        var goal=fleeing ? door+Vector3.UnitZ*(s*.8f) : bait!.Position;
         float remaining=Flat(goal-c.Position).Length();
         if(fleeing && remaining<2.8f) roomHold[c.EntryRoom]=.8f;
-        if(fleeing && (remaining<.45f || c.Position.Z<door.Z+.8f && Math.Abs(c.Position.X-door.X)<.65f)) { goal=door-Vector3.UnitZ*.65f; c.BaitRoute=new(); }
-        if(fleeing && c.Position.Z<=door.Z+.04f && Math.Abs(c.Position.X-door.X)<.83f)
+        float relZ=(c.Position.Z-door.Z)*s;
+        if(fleeing && (remaining<.45f || relZ<.8f && Math.Abs(c.Position.X-door.X)<.65f)) { goal=door-Vector3.UnitZ*(s*.65f); c.BaitRoute=new(); }
+        if(fleeing && relZ<=.04f && Math.Abs(c.Position.X-door.X)<.83f)
         {
             ActiveCoders.Remove(c);
             if(bait?.HunterId==c.Id) { bait.Wait=2; bait.Spotted=false; }
-            Program.SetHudBanner(Loc.T("Улизнул в коворкинг!","Escaped into co-working!")); return;
+            Program.SetHudBanner(c.EntryRoom<2 ? Loc.T("Улизнул в служебку!","Escaped into staff room!") : Loc.T("Улизнул в коворкинг!","Escaped into co-working!")); return;
         }
         if(!fleeing && remaining<.47f)
         {
@@ -187,7 +194,7 @@ public sealed partial class SkyscraperFloor1World
         float length=delta.Length();
         if(length<.001f) return;
         var dir=delta/length;
-        c.Position=ResolvePlayerCollision(c.Position+dir*Math.Min(length,dt*(fleeing ? c.Burst>0 ? 6.2f : 4.8f : 1.28f)),.24f);
+        c.Position=ResolvePlayerCollision(c.Position+dir*Math.Min(length,dt*(fleeing ? c.Burst>0 ? 6.2f : 4.8f : 1.28f)),.24f,allowOpenRoomDoors:fleeing && RoomOpen[c.EntryRoom]>.45f);
         c.FacingYaw=MathF.Atan2(dir.X,dir.Z)+(fleeing ? 0 : .24f*MathF.Sin(c.WalkCycle*.7f));
     }
 }

@@ -1509,11 +1509,20 @@ internal static unsafe partial class VisualEngine3D
         if(f is Finish.Coworking or Finish.Meeting or Finish.Standup or Finish.BreakRoom)
         {
             Raylib.UnloadImage(img);
-            img=Raylib.GenImageColor(512,80,new Color(32,47,52,255));
+            bool techDoor = f is Finish.Coworking or Finish.Meeting;
+            img=Raylib.GenImageColor(512,80, techDoor ? new Color(26,28,34,255) : new Color(32,47,52,255));
+            if(techDoor)
+            {
+                // Brushed-steel technical border + crimson "STAFF ONLY" hazard stripe at bottom edge
+                Raylib.ImageDrawRectangleLines(ref img, new Rectangle(3, 3, 506, 74), 3, new Color(168, 132, 74, 255));
+                Raylib.ImageDrawRectangle(ref img, 8, 66, 496, 6, new Color(196, 36, 42, 255));
+            }
             string title=f switch {
-                Finish.Coworking=>Loc.T("КОВОРКИНГ","CO-WORKING"), Finish.Meeting=>Loc.T("ПЕРЕГОВОРКА","MEETING ROOM"),
-                Finish.Standup=>Loc.T("ДЕЙЛИ-РУМ","STANDUP POD"), _=>Loc.T("КОФЕ-ПОИНТ","BREAK ROOM") };
-            Inscription(title,44,16,new(255,226,171,255));
+                Finish.Coworking=>Loc.T("ТЕХ. ПОМЕЩЕНИЕ","UTILITY ROOM"),
+                Finish.Meeting=>Loc.T("СЛУЖЕБНЫЙ ВХОД","STAFF ONLY"),
+                Finish.Standup=>Loc.T("КОВОРКИНГ","CO-WORKING"),
+                _=>Loc.T("ПЕРЕГОВОРНАЯ","MEETING ROOM") };
+            Inscription(title, techDoor ? 38 : 44, techDoor ? 14 : 16, techDoor ? new(255,214,142,255) : new(255,226,171,255));
         }
         Texture2D tex=Raylib.LoadTextureFromImage(img);
         Raylib.UnloadImage(img);

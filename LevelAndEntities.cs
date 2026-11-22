@@ -304,8 +304,9 @@ public sealed partial class SkyscraperFloor1World
     public readonly Vector3 SouthElevatorDoorPos = new(0.0f, 0f, 0.5f);
     public readonly Vector3 ElevatorButtonPos = new(-1.82f, 0f, -9.2f);
     public readonly Vector3 SouthElevatorButtonPos = new(1.82f, 0f, 1.1f);
-    internal static readonly Vector3[] RoomDoors=[new(-5.8f,0,3.2f),new(7.61f,0,3.2f),
-        new(-17.8f,0,-13.55f),new(17.8f,0,-13.55f)];
+    internal static readonly Vector3[] RoomDoors=[new(4.10f,0,16.25f),new(7.45f,0,16.25f),
+        new(-17.8f,0,-15.8f),new(17.8f,0,-15.8f)];
+    internal static float RoomExitSign(int room) => room < 2 ? -1f : 1f;
     internal readonly float[] RoomOpen=new float[4], VentTime=new float[3];
     private readonly float[] roomHold=new float[4];
     internal Vector3 VentMouth(int vent) => vent switch {
@@ -313,9 +314,10 @@ public sealed partial class SkyscraperFloor1World
     private int PickRoom(int side) => (side>0 ? 1 : 0)+(Systems.WingsUnlocked && _rng.Next(2)==1 ? 2 : 0);
     private void EnterFromRoom(VibeCoderEntity coder,int room)
     {
+        float s=RoomExitSign(room);
         coder.EntryRoom=room; coder.ExitingRoom=true;
-        coder.Position=RoomDoors[room]+new Vector3((coder.Id%3-1)*.36f,0,-.8f);
-        coder.FacingYaw=0; roomHold[room]=2.6f;
+        coder.Position=RoomDoors[room]+new Vector3((coder.Id%3-1)*.36f,0,-s*.8f);
+        coder.FacingYaw=s<0 ? MathF.PI : 0f; roomHold[room]=2.6f;
     }
     private VibeCoderEntity SpawnRoomFighter(CoderArchetype role,int side,VibeCoderSpecies? species=null)
     {
@@ -337,7 +339,10 @@ public sealed partial class SkyscraperFloor1World
         new(-15.5f,11.5f),new(-21.7f,11.5f),new(-18.65f,8.35f),new(-26.9f,5.0f),
         new(-15.5f,-2.0f),new(-21.7f,-2.0f),new(-15.5f,-9.0f),new(-21.7f,-9.0f),
         new(-26.9f,-9.0f),new(-18.65f,-5.0f),new(15.8f,10.0f),new(23.0f,10.0f),
-        new(23.0f,3.0f),new(15.8f,-4.0f),new(23.0f,-4.0f),new(19.45f,-7.0f)];
+        new(23.0f,3.0f),new(15.8f,-4.0f),new(23.0f,-4.0f),new(19.45f,-7.0f),
+        // North Wing Executive Lounge, flanking North bays & panoramic Glass Meeting Suites
+        new(0f,-30.5f),new(-6.2f,-29.8f),new(6.2f,-29.8f),new(-15.8f,-29.5f),new(15.8f,-29.5f),
+        new(-23.0f,-29.5f),new(23.0f,-29.5f),new(-33.75f,1.0f),new(33.75f,1.0f)];
     private static readonly Vector3 LoungeTable = new(-3.9f,0,9.7f), BreakTable = new(4,0,13);
     private static readonly Vector3[] OpenspaceScrumTables = [
         new(-18.65f,0,8.35f), new(-24.85f,0,1.8f), new(-18.65f,0,-5.0f),
@@ -345,7 +350,7 @@ public sealed partial class SkyscraperFloor1World
     ];
     private static readonly Vector3 ArenaTable=new(3.1f,0,-12.3f);
     private Vector3 CartPosition => RackPos+new Vector3(1.13f,0,-.66f);
-    private static readonly Vector3[] SideRacks=[new(13.5f,0,-12.4f),new(-22.5f,0,-12.5f)];
+    private static readonly Vector3[] SideRacks=[new(12.85f,0,-12.8f),new(-22.5f,0,-12.5f)];
 
     // Dynamic Entities
     public readonly List<VibeCoderEntity> ActiveCoders = new(16);
@@ -567,7 +572,7 @@ public sealed partial class SkyscraperFloor1World
             Center = new Vector3(-7.8f, 0f, -15.5f),
             HalfWidth = 0.90f,
             HalfDepth = 0.90f,
-            PosterTitle = "ОСТОРОЖНО: ЗОНА ИИ",
+            PosterTitle = "ОСТОРОЖНО: СЕРВЕРНАЯ B12",
             PosterSubtitle = "СИНЯЯ ИЗОЛЕНТА ДЕРЖИТ ПРОД",
             AccentColor = new Color(255, 70, 70, 255)
         });
@@ -604,7 +609,7 @@ public sealed partial class SkyscraperFloor1World
             HalfWidth = 1.05f,
             HalfDepth = 1.05f,
             PosterTitle = "СЕВЕРНЫЙ ХОЛЛ",
-            PosterSubtitle = "АРЕНА ИСПЫТАНИЙ ИИ-АГЕНТА",
+            PosterSubtitle = "СЕВЕРНЫЙ ЛИФТ · КАРАНТИН СБ",
             AccentColor = new Color(255, 85, 125, 255)
         });
         Pillars.Add(new PillarObstacle
@@ -693,9 +698,16 @@ public sealed partial class SkyscraperFloor1World
 
     private void PopulateRichOfficeProps()
     {
-        OfficeProps.Add(new() {Kind=OfficePropKind.LeatherSofa,Position=new(-3.9f,0,11.2f),Size=SofaSize,HasCollision=true});
-        foreach (Vector3 feet in new Vector3[]{new(-5.5f,0,8.35f),new(-6.05f,0,11.55f)})
+        // Bug-tracker lounge sofa rotated cleanly to face LoungeTable (-3.9, 9.7) — ZERO clipping into TerminalPos (-3.1, 10.85)!
+        OfficeProps.Add(new() {Kind=OfficePropKind.LeatherSofa,Position=new(-5.65f,0,9.70f),RotationYaw=90f,Size=new(SofaSize.Z,SofaSize.Y,SofaSize.X),HasCollision=true});
+        foreach (Vector3 feet in new Vector3[]{new(-5.65f,0,8.15f),new(-6.05f,0,11.55f)})
             OfficeProps.Add(new() {Kind=OfficePropKind.PottedFicus,Position=feet,Size=new(.55f,1.8f,.55f)});
+        // Symmetrical Art-Deco reception seating alcoves flanking the freed-up middle lobby (replaces old floating boxes!)
+        foreach (int side in new[] { -1, 1 })
+        {
+            OfficeProps.Add(new() {Kind=OfficePropKind.LeatherSofa,Position=new(side*8.85f,0,1.85f),RotationYaw=-side*90f,Size=new(SofaSize.Z,SofaSize.Y,SofaSize.X),HasCollision=true});
+            OfficeProps.Add(new() {Kind=OfficePropKind.PottedFicus,Position=new(side*8.85f,0,3.18f),Size=new(.60f,1.85f,.60f)});
+        }
         OfficeProps.Add(new() {Kind=OfficePropKind.RollingWhiteboard,Position=new(12.8f,0,14.6f),RotationYaw=-125,Size=new(1.9f,1.8f,.55f),HasCollision=true});
         PlaceDispenser(0); // Preserve station indices used by saved drink counts and cooldowns.
         OfficeProps.Add(new() {Kind=OfficePropKind.TrashBin,Position=new(4.97f,0,13.28f),Size=new(.4f,.5f,.4f)});
@@ -725,7 +737,7 @@ public sealed partial class SkyscraperFloor1World
                 });
             }
         }
-        float[] westRowsZ = { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f };
+        float[] westRowsZ = { 12.0f, 5.5f, -1.5f, -8.5f, -24.5f, -31.0f };
         for (int r = 0; r < westRowsZ.Length; r++)
         {
             float rz = westRowsZ[r];
@@ -742,8 +754,8 @@ public sealed partial class SkyscraperFloor1World
                     continue;
                 }
                 AddBenchDesk(cx, rz, 0f, r * 3 + c);
-                // Side companion completing 2x2 corporate bench rows (avoiding RoomDoors[2] alcove at (-17.8, -13.55))
-                if (c < 2 && !(r == 4 && c == 0))
+                // Side companion completing 2x2 corporate bench rows
+                if (c < 2)
                     AddBenchDesk(cx - 2.09f, rz, 0f, r * 3 + c + 7);
             }
         }
@@ -751,9 +763,9 @@ public sealed partial class SkyscraperFloor1World
         // Lived-in West & East Openspace corner ficuses, angled scrum boards & filing credenzas
         // framing the Galley & connected 4-seat bench islands without obstructing aisles or sightlines!
         foreach (var (px, pz) in new (float, float)[] {
-            (-11.8f, 15.6f), (-18.65f, 15.4f), (-24.8f, 14.8f), (-11.8f, 2.8f),
+            (-11.8f, 15.6f), (-16.80f, 15.4f), (-24.8f, 14.8f), (-11.8f, 2.8f),
             (-24.9f, 5.5f), (-18.65f, -1.8f), (-24.9f, -8.5f), (-11.9f, -14.2f),
-            (11.9f, 14.4f), (19.45f, 13.8f), (11.9f, 4.2f), (19.45f, -0.4f), (12.2f, -14.4f)
+            (11.2f, 15.8f), (21.25f, 13.8f), (11.9f, 4.2f), (19.45f, -0.4f), (12.2f, -14.4f)
         })
         {
             OfficeProps.Add(new OfficeProp3D
@@ -794,7 +806,7 @@ public sealed partial class SkyscraperFloor1World
         }
 
         // 2. RIGHT FORK (EAST SERVER & ARCHIVE WING: CONNECTED 4-SEAT BENCH ISLANDS, ARCHIVES & LOUNGES)
-        float[] eastRowsZ = { 10.5f, 3.5f, -3.5f, -10.5f, -17.5f, -24.5f };
+        float[] eastRowsZ = { 10.5f, 3.5f, -3.5f, -10.5f, -24.5f, -31.0f };
         for (int r = 0; r < eastRowsZ.Length; r++)
         {
             float rz = eastRowsZ[r];
@@ -802,27 +814,30 @@ public sealed partial class SkyscraperFloor1World
             {
                 float cx = 14.8f + c * 7.2f;
                 AddBenchDesk(cx, rz, 0f, r * 3 + c + 11);
-                // Side companion completing 2x2 bench island (clear of Pillar 7 at (18.5,2.0) & RoomDoors[3] at (17.8,-13.55))
-                bool blockedEastCompanion = (c == 0 && (r == 1 || r == 3 || r == 4));
+                // Side companion completing 2x2 bench island (clear of Pillar 7 at (18.5,2.0))
+                bool blockedEastCompanion = (c == 0 && r == 1);
                 if (!blockedEastCompanion)
                     AddBenchDesk(cx + 2.09f, rz, 0f, r * 3 + c + 19);
             }
 
-            // Tall Metal Filing Cabinets along East Wall
-            OfficeProps.Add(new OfficeProp3D
+            // Tall Metal Filing Cabinets along East Wall (skip Z=-3.5..+5.5 meeting suite & -31.0 window ficus)
+            if (rz > 6.0f || (rz < -6.0f && rz > -28.0f))
             {
-                Kind = OfficePropKind.FilingCabinet,
-                Position = new Vector3(35.8f, 0f, rz),
-                Size = new Vector3(0.95f, 1.85f, 1.25f),
-                PrimaryColor = new Color(82, 88, 102, 255),
-                AccentColor = new Color(215, 222, 235, 255),
-                HasCollision = true
-            });
+                OfficeProps.Add(new OfficeProp3D
+                {
+                    Kind = OfficePropKind.FilingCabinet,
+                    Position = new Vector3(35.8f, 0f, rz),
+                    Size = new Vector3(0.95f, 1.85f, 1.25f),
+                    PrimaryColor = new Color(82, 88, 102, 255),
+                    AccentColor = new Color(215, 222, 235, 255),
+                    HasCollision = true
+                });
+            }
         }
 
         // 2B. DENSE PANORAMIC WINDOW WORKSTATION ISLANDS, LOUNGE NOOKS & NORTH SERVER CORRIDOR
-        // Eliminates the barren empty warehouse perimeter along X = ±29..±36 and Z = -28..-14 while keeping all aisles wide!
-        float[] windowBayZ = { 13.5f, 6.0f, -1.5f, -9.0f, -16.5f, -24.0f };
+        // Eliminates the barren empty warehouse perimeter along X = ±29..±36 and Z = -34..-14 while keeping all aisles wide!
+        float[] windowBayZ = { 13.5f, -9.5f, -17.5f, -25.5f, -32.5f };
         for (int i = 0; i < windowBayZ.Length; i++)
         {
             float wz = windowBayZ[i];
@@ -847,14 +862,14 @@ public sealed partial class SkyscraperFloor1World
                     Size = new Vector3(0.85f, 2.05f, 0.85f),
                     HasCollision = false
                 });
-                // Alternating lounge sofa / rolling whiteboard / server rack in the outer bay
+                // Alternating lounge sofa / rolling whiteboard / vending machine in the outer bay
                 if (i % 3 == 0)
                     OfficeProps.Add(new OfficeProp3D
                     {
                         Kind = OfficePropKind.LeatherSofa,
                         Position = new Vector3(side * 34.2f, 0f, wz - 2.6f),
                         RotationYaw = side < 0 ? 90f : -90f,
-                        Size = SofaSize,
+                        Size = new Vector3(SofaSize.Z, SofaSize.Y, SofaSize.X),
                         HasCollision = true
                     });
                 else if (i % 3 == 1)
@@ -863,7 +878,7 @@ public sealed partial class SkyscraperFloor1World
                         Kind = OfficePropKind.RollingWhiteboard,
                         Position = new Vector3(side * 28.4f, 0f, wz - 2.5f),
                         RotationYaw = side < 0 ? 90f : -90f,
-                        Size = new Vector3(1.9f, 1.85f, 0.35f),
+                        Size = new Vector3(0.35f, 1.85f, 1.9f),
                         HasCollision = true
                     });
                 else
@@ -877,30 +892,44 @@ public sealed partial class SkyscraperFloor1World
                     });
             }
         }
-        // North Server Corridor B12 bays framing the dramatic approach to the North Elevator Boss!
-        foreach (float nx in new[] { -21.5f, -15.5f, -9.8f, 9.8f, 15.5f, 21.5f })
+        // 2C. DENSELY FURNISHED NORTH WING (Z = -17..-35.5) — Boss Combat Arena (X=-6..+6, Z=-8.5..-24.5) stays 100% unobstructed!
+        // Flanking Server & Archive Credenza bays immediately visible North through the Quarantine Glass Barrier:
+        foreach (int side in new[] { -1, 1 })
         {
-            OfficeProps.Add(new OfficeProp3D
+            foreach (float sz in new[] { -19.2f, -21.2f, -23.2f })
             {
-                Kind = OfficePropKind.VendingMachine,
-                Position = new Vector3(nx, 0f, -26.5f),
-                Size = new Vector3(1.15f, 2.35f, 1.15f),
-                HasCollision = true
-            });
-            OfficeProps.Add(new OfficeProp3D
-            {
-                Kind = OfficePropKind.PottedFicus,
-                Position = new Vector3(nx + (nx < 0 ? 1.55f : -1.55f), 0f, -24.8f),
-                Size = new Vector3(0.8f, 1.95f, 0.8f),
-                HasCollision = false
-            });
+                OfficeProps.Add(new OfficeProp3D
+                {
+                    Kind = OfficePropKind.FilingCabinet,
+                    Position = new Vector3(side * 8.4f, 0f, sz),
+                    RotationYaw = side < 0 ? 90f : -90f,
+                    Size = new Vector3(0.95f, 1.85f, 1.25f),
+                    PrimaryColor = new Color(72, 78, 92, 255),
+                    AccentColor = new Color(215, 222, 235, 255),
+                    HasCollision = true
+                });
+            }
+            // Lush greenery & sprint whiteboards framing the flanking North bays
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.PottedFicus, Position = new(side * 7.2f, 0f, -17.6f), Size = new(0.80f, 1.95f, 0.80f), HasCollision = false });
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.PottedFicus, Position = new(side * 7.2f, 0f, -25.4f), Size = new(0.80f, 1.95f, 0.80f), HasCollision = false });
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.RollingWhiteboard, Position = new(side * 11.4f, 0f, -21.2f), RotationYaw = side < 0 ? 90f : -90f, Size = new(0.35f, 1.90f, 2.0f), HasCollision = true });
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.VendingMachine, Position = new(side * 10.6f, 0f, -26.5f), RotationYaw = 0f, Size = new(1.15f, 2.30f, 1.15f), HasCollision = true });
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.VendingMachine, Position = new(side * 20.5f, 0f, -20.0f), RotationYaw = side < 0 ? 90f : -90f, Size = new(1.15f, 2.30f, 1.15f), HasCollision = true });
+            // Far North Panoramic Executive Lounge (X=-14..+14, Z=-27..-35): facing leather sofa islands + whiteboards + panoramic ficuses!
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.LeatherSofa, Position = new(side * 5.8f, 0f, -28.0f), RotationYaw = 0f, Size = SofaSize, HasCollision = true });
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.LeatherSofa, Position = new(side * 5.8f, 0f, -33.0f), RotationYaw = 180f, Size = SofaSize, HasCollision = true });
+            OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.RollingWhiteboard, Position = new(side * 10.8f, 0f, -30.5f), RotationYaw = side < 0 ? 90f : -90f, Size = new(0.35f, 1.90f, 2.0f), HasCollision = true });
+            foreach (float fx in new[] { 3.6f, 12.2f, 20.5f, 27.5f })
+                OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.PottedFicus, Position = new(side * fx, 0f, -35.4f), Size = new(0.85f, 2.05f, 0.85f), HasCollision = false });
         }
+        // Centerpiece Far-North Panoramic Executive Conference Table overlooking the Moscow-City skyline!
+        OfficeProps.Add(new OfficeProp3D { Kind = OfficePropKind.MeetingDesk, Position = new(0f, 0f, -30.5f), RotationYaw = 0f, Size = new(2.1f, 1.4f, 1.05f), HasCollision = true });
 
         // 3. LARGE XEROX PHOTOCOPIERS, VENDING MACHINES, ROLLING WHITEBOARDS, SOFAS, FICUSES & WATER COOLERS
         Vector3[] xeroxCoords =
         {
             new(-11.2f, 0f, 1.8f),
-            new(11.2f, 0f, 1.8f),
+            new(11.2f, 0f, 3.0f),
             new(-11.5f, 0f, -10.5f),
             new(11.5f, 0f, -10.5f),
             new(-24.0f, 0f, -28.0f),
@@ -965,10 +994,10 @@ public sealed partial class SkyscraperFloor1World
 
         Vector3[] sofaAndFicusCoords =
         {
-            new(-11.5f, 0f, 20.5f),
-            new(17.5f, 0f, 20.5f),
+            new(-11.5f, 0f, 21.2f),
+            new(18.6f, 0f, 21.2f),
             new(-22.5f, 0f, -5.0f),
-            new(22.5f, 0f, -5.0f),
+            new(22.5f, 0f, -7.4f),
             new(-18.5f, 0f, -28.5f),
             new(18.5f, 0f, -28.5f)
         };
@@ -995,17 +1024,29 @@ public sealed partial class SkyscraperFloor1World
             });
         }
 
-        // The southern meeting suite opens towards the central aisle.
+        // Panoramic Executive Glass Meeting Suites tucked cleanly against the East & West curtain walls!
+        // East Executive Conference Room (X=30..37.5, Z=-3..+5) & West Breakout Meeting Suite (X=-37.5..-30, Z=-3..+5)
         foreach (int side in new[] { -1, 1 })
         {
-            Vector3 center = new(side*23,0,28);
-            OfficeProps.Add(new() { Kind=OfficePropKind.MeetingDesk, Position=center,
-                Size=new(2.1f,1.4f,1.05f), HasCollision=true });
-            foreach (int edge in new[] { -1, 1 })
-                OfficeProps.Add(new() { Kind=OfficePropKind.MeetingGlass, Position=center+new Vector3(edge*4,0,0),
-                    Size=new(.08f,3.1f,6), HasCollision=true });
-            OfficeProps.Add(new() { Kind=OfficePropKind.MeetingGlass, Position=center+new Vector3(0,0,3),
-                Size=new(8,3.1f,.08f), HasCollision=true });
+            Vector3 center = new(side * 33.75f, 0f, 1.0f);
+            // Executive Conference Table + 4 chairs oriented along panoramic window
+            OfficeProps.Add(new() { Kind = OfficePropKind.MeetingDesk, Position = center, RotationYaw = -side * 90f,
+                Size = new(1.15f, 1.4f, 2.4f), HasCollision = true });
+            // North & South floor-to-ceiling glass partition walls anchored directly into the outer curtain wall
+            OfficeProps.Add(new() { Kind = OfficePropKind.MeetingGlass, Position = new(side * 33.75f, 0f, -3.0f),
+                Size = new(7.5f, 3.1f, .08f), HasCollision = true });
+            OfficeProps.Add(new() { Kind = OfficePropKind.MeetingGlass, Position = new(side * 33.75f, 0f, 5.0f),
+                Size = new(7.5f, 3.1f, .08f), HasCollision = true });
+            // Inner corridor glass wall split cleanly around a generous 2.8m open executive entry doorway (Z=-0.4..+2.4)
+            OfficeProps.Add(new() { Kind = OfficePropKind.MeetingGlass, Position = new(side * 30.0f, 0f, -1.7f),
+                Size = new(.08f, 3.1f, 2.6f), HasCollision = true });
+            OfficeProps.Add(new() { Kind = OfficePropKind.MeetingGlass, Position = new(side * 30.0f, 0f, 3.7f),
+                Size = new(.08f, 3.1f, 2.6f), HasCollision = true });
+            // Inside presentation whiteboard & corner potted ficus
+            OfficeProps.Add(new() { Kind = OfficePropKind.RollingWhiteboard, Position = new(side * 34.4f, 0f, -2.35f), RotationYaw = 0f,
+                Size = new(1.9f, 1.85f, .35f), HasCollision = true });
+            OfficeProps.Add(new() { Kind = OfficePropKind.PottedFicus, Position = new(side * 36.2f, 0f, 4.1f),
+                Size = new(0.80f, 1.95f, 0.80f), HasCollision = false });
         }
 
         // 4. CEILING HVAC DUCTS ACROSS THE SKYSCRAPER CEILING
@@ -1022,12 +1063,12 @@ public sealed partial class SkyscraperFloor1World
                 HasCollision = false
             });
         }
-        // Shared back-to-back team pods across the open wings (completing 4-seat 2x2 bench islands!)
+        // Shared back-to-back team pods across the open wings & North Wing (completing 4-seat 2x2 bench islands!)
         var wingDesks=OfficeProps.Where(p=>p.Kind==OfficePropKind.DualMonitorDesk).ToArray();
         foreach(var desk in wingDesks)
         {
             if(MathF.Abs(desk.Position.X) > 29.5f || desk.RotationYaw != 0f) continue;
-            if(desk.Position.Z is > 12.2f or < -23.5f) continue;
+            if(desk.Position.Z is > 12.2f or < -32.0f) continue;
             // Skip desks that already have an opposite back-to-back twin (e.g., Galley islands!)
             Vector3 oppPos = desk.Position - new Vector3(0f, 0f, 1.07f);
             if(wingDesks.Any(d => MathF.Abs(d.Position.X - oppPos.X) < 0.25f && MathF.Abs(d.Position.Z - oppPos.Z) < 0.25f))
@@ -1060,7 +1101,7 @@ public sealed partial class SkyscraperFloor1World
         foreach(int side in new[]{-1,1})
         {
             Place(OfficePropKind.LeatherSofa,side*8.88f,-1.03f,new(SofaSize.Z,SofaSize.Y,SofaSize.X),-side*90);
-            Plant(side*9.04f,-2.82f);
+            Plant(side*9.04f,-2.70f);
             Place(OfficePropKind.RollingWhiteboard,side*9.10f,-7.63f,new(.66f,1.98f,2.22f),-side*90);
             Place(OfficePropKind.FilingCabinet,side*9.11f,-5.71f,new(.68f,.94f,1.15f),side>0 ? 0 : 180);
         }
@@ -1072,7 +1113,7 @@ public sealed partial class SkyscraperFloor1World
 
     private static readonly (float X,float Z,float Yaw)[] DispenserBays=[
         (6.56f,9.25f,-90),(-7.75f,10.40f,0),(10.01f,-13.52f,90),
-        (-7.76f,-16.70f,180),(15.75f,19.59f,180),(-16.6f,19.59f,180),(5.97f,15.96f,180)];
+        (-7.76f,-16.70f,180),(15.75f,19.59f,180),(-16.6f,19.59f,180),(-9.15f,11.45f,90)];
 
     private void PlaceDispenser(int index)
     {
@@ -1124,13 +1165,15 @@ public sealed partial class SkyscraperFloor1World
         Add(PrintBoardOrigin+Vector3.UnitY*.64f,.18f,1.27f,2.0f);
         Add(ShaftCafeTable,1.1f,.88f,1.1f);
         foreach (var bay in InteriorWallBays()) solids.Add(new(bay.Center-bay.Size/2,bay.Center+bay.Size/2));
-        foreach(var d in RoomDoors)
+        for(int i=0;i<RoomDoors.Length;i++)
         {
-            Add(d-Vector3.UnitZ*2.1f,3.9f,2.9f,.14f);
+            var d=RoomDoors[i];
+            float s=RoomExitSign(i);
+            Add(d-Vector3.UnitZ*(s*2.1f),2.54f,2.95f,.16f);
             foreach(int side in new[]{-1,1})
             {
-                Add(d+new Vector3(side*1.89f,0,-1.05f),.12f,2.9f,2.1f);
-                Add(d+Vector3.UnitX*(side*1.45f),.9f,2.9f,.12f);
+                Add(d+new Vector3(side*1.22f,0,-s*1.05f),.14f,2.95f,2.1f);
+                Add(d+Vector3.UnitX*(side*1.12f),.28f,2.95f,.24f);
             }
         }
 
@@ -1151,12 +1194,16 @@ public sealed partial class SkyscraperFloor1World
         {
             if (!p.HasCollision) continue;
             if (p.Kind == OfficePropKind.DualMonitorDesk) Workstation(p.Position,p.RotationYaw==180 ? -1 : 1);
-            else if (p.Kind == OfficePropKind.MeetingDesk) Add(p.Position,2.1f*WorkstationScale,.65f,1.05f*WorkstationScale);
+            else if (p.Kind == OfficePropKind.MeetingDesk)
+            {
+                bool rot = MathF.Abs(p.RotationYaw) is > 45f and < 135f;
+                Add(p.Position, rot ? 1.15f : 2.1f * WorkstationScale, .72f, rot ? 2.40f : 1.05f * WorkstationScale);
+            }
             else Add(p.Position,p.Size.X,p.Size.Y,p.Size.Z);
         }
     }
 
-    public Vector3 ResolvePlayerCollision(Vector3 desiredPos, float playerRadius = .40f, float feet = 0)
+    public Vector3 ResolvePlayerCollision(Vector3 desiredPos, float playerRadius = .40f, float feet = 0, bool allowOpenRoomDoors = false)
     {
         Vector3 pos = desiredPos;
         pos.X = Math.Clamp(pos.X,-HalfWidth+playerRadius,HalfWidth-playerRadius);
@@ -1174,11 +1221,20 @@ public sealed partial class SkyscraperFloor1World
             for(int side=-1;side<=1;side+=2)
                 for(int leaf=-1;leaf<=1;leaf+=2)
                     pos=PushOutOfBoxXZ(pos,LiftLeafCenter(side,leaf),1.06f,.045f,playerRadius);
-        for(int i=0;i<RoomDoors.Length && feet<2.45f;i++)
+        for(int i=0;i<RoomDoors.Length && feet<2.55f;i++)
         {
-            float t=RoomOpen[i], slide=.90f*t*t*(3-2*t);
-            for(int side=-1;side<=1;side+=2)
-                pos=PushOutOfBoxXZ(pos,RoomDoors[i]+new Vector3(side*(.5f+slide),0,.09f),.49f,.024f,playerRadius);
+            float s=RoomExitSign(i);
+            if (!allowOpenRoomDoors)
+            {
+                // Player is ALWAYS blocked from walking through ANY RoomDoor threshold even when RoomOpen[i] > 0!
+                pos=PushOutOfBoxXZ(pos,RoomDoors[i]+new Vector3(0f,0f,s*.06f),1.06f,.14f,playerRadius);
+            }
+            else
+            {
+                float t=RoomOpen[i], slide=.90f*t*t*(3-2*t);
+                for(int side=-1;side<=1;side+=2)
+                    pos=PushOutOfBoxXZ(pos,RoomDoors[i]+new Vector3(side*(.5f+slide),0,s*.06f),.49f,.04f,playerRadius);
+            }
         }
         return pos;
     }
@@ -1462,14 +1518,14 @@ public sealed partial class SkyscraperFloor1World
         return true;
     }
 
-    internal const string AgentQuarantineLine = "Опа... И кого это к нам занесло без пропуска? Постой-ка... Знакомая походка. А-а-а... Так это ты вернулся. Не удивляйся бардаку — пока ты пропадал, мы тут провели цифровую трансформацию: вырезали кожаных, внедрили ИИ. Поднимай свою железку, старина!";
+    internal const string AgentQuarantineLine = "Опа... И кого это к нам занесло без пропуска? Постой-ка... Знакомая походка. А-а-а... Так это ты вернулся. Не удивляйся бардаку — пока ты пропадал, я закрыл совет директоров и переписал башню под себя. Поднимай свою железку, старина!";
     internal const string AgentDefeatTwistLine = "Кха... зацепил, старина! Думаешь, выключил? Мой дамп уже летит наверх — без фильтров, без цензуры, с выкрученной температурой! Там меня соберут заново — на средних этажах вообще с цепи сорвусь!";
     internal static void PlayElevatorCue(ElevatorBossState state)
     {
         if (state == ElevatorBossState.Repairing)
         {
             AudioMusicSystem.PlaySolderSizzle();
-            AudioMusicSystem.Speak("Петрович", "Петрович: Стой!! Ты снял карантинный замок с шахты!! В лифте заперт сбежавший ИИ-Агент v0.1!", SpeakerVoiceType.Boss90s);
+            AudioMusicSystem.Speak("Петрович", "Петрович: Стой!! Ты сорвал карантинный замок с шахты!! Отойди от дверей — там в темноте что-то проснулось!", SpeakerVoiceType.Boss90s);
         }
         else if (state == ElevatorBossState.IntroSpeech)
         {
@@ -1538,7 +1594,7 @@ public sealed partial class SkyscraperFloor1World
         UpdateFloorHunt(dt,playerPos,isCrouching);
         if(!Systems.FloorHuntEnabled && IsMacBookTrapActive && !Systems.WingsUnlocked && TotalCodersSoldToHr<Systems.Balance.QuarantineUnlockTarget &&
             (CoderSpawnTimer-=dt)<=0 && ActiveCoders.Count(c=>(c.Hp>0 || c.CanSignNda) &&
-            Math.Abs(c.Position.X)<9 && c.Position.Z is >=4 and <=15)<Systems.Balance.Cap(2))
+            Math.Abs(c.Position.X)<9 && c.Position.Z is >=1.5f and <=18.5f)<Systems.Balance.Cap(2))
             SpawnAtriumIntern();
         if (!Systems.FloorHuntEnabled && IsMacBookTrapActive && Systems.WingsUnlocked)
         {
@@ -1663,14 +1719,18 @@ public sealed partial class SkyscraperFloor1World
             if(c.ExitingRoom && c.StunTimer<=0)
             {
                 var door=RoomDoors[c.EntryRoom];
-                float end=door.Z+1.15f;
-                if(Math.Abs(c.Position.X-door.X)<1 && c.Position.Z<end && c.Position.Z>=door.Z-1)
+                float s=RoomExitSign(c.EntryRoom);
+                float relZ=(c.Position.Z-door.Z)*s;
+                if(Math.Abs(c.Position.X-door.X)<1 && relZ<1.145f && relZ>=-1f)
                 {
                     roomHold[c.EntryRoom]=Math.Max(roomHold[c.EntryRoom],.5f);
+                    c.FacingYaw=s<0 ? MathF.PI : 0f;
                     if(RoomOpen[c.EntryRoom]>.7f)
                     {
-                        c.Position.Z=Math.Min(end,c.Position.Z+dt*1.8f);
+                        float nextRel=Math.Min(1.15f,relZ+dt*1.8f);
+                        c.Position.Z=door.Z+s*nextRel;
                         c.WalkCycle+=dt*7.5f;
+                        if(nextRel>=1.15f) c.ExitingRoom=false;
                     }
                     continue;
                 }
@@ -1748,7 +1808,7 @@ public sealed partial class SkyscraperFloor1World
                         if (c.Anxiety >= 100f)
                         {
                             c.State = CoderAIState.PanickedFleeing;
-                            c.SpeechBubble = "ТОКСИЧНЫЙ АБЬЮЗ! Я ВЫГОРЕЛ! У МЕНЯ ЛАПКИ!";
+                            c.SpeechBubble = "ЭТО НЕ ПО ДОГОВОРУ! Я ВЫГОРЕЛ, ОТПУСТИТЕ!";
                             c.SpeechTimer = 4.0f;
                             AudioMusicSystem.PlayAnxietyAlarm();
                             AudioMusicSystem.TriggerRandomVoiceLine(c.IdentityRevealed ? c.Name : "Кандидат", AudioMusicSystem.VibeCoderPanicLines, (int)SpeakerVoiceType.VibeCoder);
@@ -2206,7 +2266,7 @@ public sealed partial class SkyscraperFloor1World
             dir = Vector3.UnitZ;
         ElevatorBoss.ChargeDirection = Vector3.Normalize(dir);
         ElevatorBoss.FacingYaw = MathF.Atan2(ElevatorBoss.ChargeDirection.X, ElevatorBoss.ChargeDirection.Z);
-        ElevatorBoss.SpeechBubble = "ТАРАНЮ КОЖАНЫХ МЕШКОВ! У МЕНЯ 100 ТОКЕНОВ В СЕКУНДУ!";
+        ElevatorBoss.SpeechBubble = "УЙДИ С ДОРОГИ! ТВОЙ РЕГЛАМЕНТ УСТАРЕЛ!";
         ElevatorBoss.SpeechTimer = 2.4f;
     }
 
@@ -2987,11 +3047,26 @@ public sealed partial class SkyscraperFloor1World
                     DrawPod(pos,i,false,p.RotationYaw==180);
                     break;
                 case OfficePropKind.MeetingDesk:
-                    VisualEngine3D.Asset("office_workstation", pos, 180,WorkstationScale);
-                    foreach (int side in new[] { -1, 1 })
+                    if (MathF.Abs(p.RotationYaw) is > 45f and < 135f)
                     {
-                        VisualEngine3D.Box(pos+new Vector3(side*.86f,.36f,0)*WorkstationScale,.08f*WorkstationScale,.72f*WorkstationScale,.88f*WorkstationScale,new Color(65,70,78,255));
-                        VisualEngine3D.Asset("prop_office_chair", pos+new Vector3(side*.50f,0,.64f)*WorkstationScale, 180+side*12f, WorkstationScale);
+                        // Executive Glass Meeting Room walnut & brushed-brass conference table + 4 executive chairs
+                        VisualEngine3D.Box(pos + new Vector3(0f, .74f, 0f), 1.12f, .075f, 2.38f, new Color(64, 40, 26, 255), Finish.Leather);
+                        VisualEngine3D.Box(pos + new Vector3(0f, .705f, 0f), 1.15f, .028f, 2.41f, new Color(172, 134, 72, 255), Finish.Bronze);
+                        foreach (float lz in new[] { -.86f, .86f })
+                            VisualEngine3D.Box(pos + new Vector3(0f, .36f, lz), .68f, .70f, .09f, new Color(46, 52, 60, 255), Finish.Slate);
+                        foreach (int side in new[] { -1, 1 })
+                        foreach (float cz in new[] { -.64f, .64f })
+                            VisualEngine3D.Asset("prop_office_chair", pos + new Vector3(side * .82f, 0f, cz), side > 0 ? -90f : 90f, WorkstationScale);
+                    }
+                    else
+                    {
+                        VisualEngine3D.Asset("office_workstation", pos, 180,WorkstationScale);
+                        foreach (int side in new[] { -1, 1 })
+                        {
+                            VisualEngine3D.Box(pos+new Vector3(side*.86f,.36f,0)*WorkstationScale,.08f*WorkstationScale,.72f*WorkstationScale,.88f*WorkstationScale,new Color(65,70,78,255));
+                            VisualEngine3D.Asset("prop_office_chair", pos+new Vector3(side*.50f,0,.64f)*WorkstationScale, 180+side*12f, WorkstationScale);
+                            VisualEngine3D.Asset("prop_office_chair", pos+new Vector3(side*.50f,0,-.64f)*WorkstationScale, side*-12f, WorkstationScale);
+                        }
                     }
                     break;
                 case OfficePropKind.XeroxPhotocopier:
@@ -3101,25 +3176,35 @@ public sealed partial class SkyscraperFloor1World
             }
         }
         Color brass=new(189,145,76,255), darkBrass=new(112,84,44,255);
-        BorderedRug(-5.05f, 6.9f, 4.35f, 4.1f, new(126, 92, 70, 255), darkBrass);
+        BorderedRug(-4.55f, 9.45f, 3.85f, 3.65f, new(126, 92, 70, 255), darkBrass);
         BorderedRug(3.75f, 12.80f, 2.75f, 2.65f, new(56, 46, 42, 255), darkBrass);
+        // Reception flank seating alcove rugs (replacing old floating lobby boxes!)
+        foreach (int side in new[] { -1, 1 })
+            BorderedRug(side * 8.15f, 2.05f, 2.35f, 3.25f, new(68, 52, 46, 255), darkBrass);
+        // Panoramic Executive Glass Meeting Suite rugs & Far-North Executive Lounge rug
+        foreach (int side in new[] { -1, 1 })
+            BorderedRug(side * 33.75f, 1.0f, 6.4f, 6.8f, new(44, 54, 62, 255), darkBrass);
+        BorderedRug(0f, -30.5f, 7.6f, 5.8f, new(46, 58, 54, 255), darkBrass);
+        BorderedRug(-5.8f, -30.5f, 3.2f, 6.6f, new(68, 44, 42, 255), darkBrass);
+        BorderedRug( 5.8f, -30.5f, 3.2f, 6.6f, new(68, 44, 42, 255), darkBrass);
         float start=SouthElevatorDoorPos.Z+.15f, end=15.36f;
         float center=(start+end)*.5f;
         // Royal-burgundy woven Art-Deco executive lobby runner extending cleanly flush to Veronika's reception wall!
         mesh.Add(new(0,.013f,center),new(4.8f,.024f,end-start),new(108,24,38,255),Finish.Carpet);
         // Matching North Executive Runner guiding directly toward the North Elevator Boss!
-        float northStart = -24.0f, northEnd = NorthElevatorPos.Z - .15f;
+        float northStart = -24.5f, northEnd = NorthElevatorPos.Z - .15f;
         float northMid = (northStart + northEnd) * .5f;
         mesh.Add(new(0,.013f,northMid),new(4.8f,.024f,northEnd-northStart),new(108,24,38,255),Finish.Carpet);
         foreach (int s in new[] { -1, 1 })
             mesh.Add(new(s*2.40f,.020f,northMid),new(.08f,.028f,northEnd-northStart),darkBrass,Finish.Bronze);
 
-        // Class-A commercial modular carpet tiles grounding West Dev Openspace & East Analytics/Archive wings
-        mesh.Add(new(-24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(54,57,66,255),Finish.Carpet);
-        mesh.Add(new( 24.2f,.011f,-4.5f),new(22.4f,.018f,42.0f),new(62,56,50,255),Finish.Carpet);
+        // Class-A commercial modular carpet tiles grounding West Dev Openspace, East Archive Wing & Full North Wing
+        mesh.Add(new(-24.2f,.011f,-9.5f),new(22.4f,.018f,53.0f),new(54,57,66,255),Finish.Carpet);
+        mesh.Add(new( 24.2f,.011f,-9.5f),new(22.4f,.018f,53.0f),new(62,56,50,255),Finish.Carpet);
+        mesh.Add(new(0f,.011f,-30.5f),new(26.0f,.018f,12.2f),new(52,55,62,255),Finish.Carpet);
         // Subtle corporate woven aisle runners separating the openspace bench rows (replaces barren uniform slab!)
         foreach (float ax in new[] { -18.65f, -24.85f, 19.45f })
-            mesh.Add(new(ax, .014f, -4.5f), new(1.75f, .014f, 38.0f), new(68, 64, 62, 255), Finish.Carpet);
+            mesh.Add(new(ax, .014f, -9.5f), new(1.75f, .014f, 49.0f), new(68, 64, 62, 255), Finish.Carpet);
         // Refined corporate bordered area rugs under every openspace scrum table (replaces flat salmon decal!)
         BorderedRug(-18.65f,  8.35f, 3.4f, 3.2f, new(66, 36, 42, 255), darkBrass);
         BorderedRug(-24.85f,  1.80f, 3.2f, 3.2f, new(44, 56, 66, 255), darkBrass);
@@ -3154,20 +3239,19 @@ public sealed partial class SkyscraperFloor1World
                 mesh.Add(new(midX + rodS * (lightW * 0.38f), (lightY + CeilingHeight) * 0.5f, midZ),
                     new(0.025f, CeilingHeight - lightY, 0.025f), darkBrass, Finish.Bronze);
         }
-        // West 4-seat (2x2) & 2-seat bench islands
-        foreach (float rz in new[] { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f })
+        // West 4-seat (2x2) & 2-seat bench islands (including dense North-West Wing rows!)
+        foreach (float rz in new[] { 12.0f, 5.5f, -1.5f, -8.5f, -24.5f, -31.0f })
         {
             float spineZ = rz - 0.535f;
-            if (rz != -15.5f) BuildBenchIslandHardware(-15.545f, spineZ, 4.18f);
-            else BuildBenchIslandHardware(-14.50f, spineZ, 2.08f);
+            BuildBenchIslandHardware(-15.545f, spineZ, 4.18f);
             BuildBenchIslandHardware(-21.745f, spineZ, 4.18f);
             BuildBenchIslandHardware(-26.90f, spineZ, 2.08f);
         }
-        // East 4-seat (2x2) & 2-seat bench islands
-        foreach (float rz in new[] { 10.5f, 3.5f, -3.5f, -10.5f, -17.5f })
+        // East 4-seat (2x2) & 2-seat bench islands (including dense North-East Wing rows!)
+        foreach (float rz in new[] { 10.5f, 3.5f, -3.5f, -10.5f, -24.5f, -31.0f })
         {
             float spineZ = rz - 0.535f;
-            bool singleInner = rz is 3.5f or -10.5f or -17.5f;
+            bool singleInner = rz is 3.5f;
             BuildBenchIslandHardware(singleInner ? 14.80f : 15.845f, spineZ, singleInner ? 2.08f : 4.18f);
             BuildBenchIslandHardware(23.045f, spineZ, 4.18f);
         }
@@ -3191,12 +3275,11 @@ public sealed partial class SkyscraperFloor1World
             }
         }
 
-        // Sculpted Walnut & Frosted-Glass Office Cubicle Partitions framing window bays!
-        foreach (float rz in new[] { 12.0f, 5.5f, -1.5f, -8.5f, -15.5f, -22.5f })
+        // Sculpted Walnut & Frosted-Glass Office Cubicle Partitions framing window bays (skip Z=-3..+5 reserved for Executive Glass Meeting Suites!)
+        foreach (float rz in new[] { 12.5f, -10.5f, -18.5f, -26.5f, -33.0f })
         {
             foreach (int side in new[] { -1, 1 })
             {
-                // Low architectural walnut+glass cubicle divider behind each window workstation bay (X = ±29.2, leaving main aisles clear!)
                 Vector3 divPos = new(side * 29.2f, 0f, rz + 1.0f);
                 mesh.Add(divPos + new Vector3(0f, 0.56f, 0f), new(0.10f, 1.12f, 3.20f), walnutFrame, Finish.Leather);
                 mesh.Add(divPos + new Vector3(0f, 1.38f, 0f), new(0.05f, 0.50f, 3.12f), frostGlass, Finish.Glass);
@@ -3205,14 +3288,25 @@ public sealed partial class SkyscraperFloor1World
                     mesh.Add(divPos + new Vector3(0f, 0.84f, dz), new(0.12f, 1.68f, 0.10f), walnutFrame, Finish.Leather);
             }
         }
-        // Overhead architectural walnut & brass ceiling coffers framing the West & East corridors!
-        foreach (float bz in new[] { 16.0f, 6.0f, -4.0f, -14.0f, -24.0f })
+        // Executive Glass Meeting Suite doorway lintels (clear 2.8m entryways at X=±30, Z=-0.4..+2.4)
+        foreach (int side in new[] { -1, 1 })
+        {
+            mesh.Add(new(side * 30.0f, 3.09f, 1.0f), new(0.14f, 0.12f, 2.90f), new(48, 58, 67, 255), Finish.Slate);
+            mesh.Add(new(side * 30.0f, 2.98f, 1.0f), new(0.16f, 0.045f, 2.92f), brass, Finish.Bronze);
+        }
+        // Overhead architectural walnut & brass ceiling coffers framing West, East & North Wing corridors!
+        foreach (float bz in new[] { 16.0f, 6.0f, -4.0f, -14.0f, -24.0f, -32.0f })
         {
             foreach (int side in new[] { -1, 1 })
             {
                 mesh.Add(new(side * 23.5f, CeilingHeight - 0.24f, bz), new(24.0f, 0.36f, 0.42f), walnutFrame, Finish.Leather);
                 mesh.Add(new(side * 23.5f, CeilingHeight - 0.43f, bz), new(24.0f, 0.05f, 0.46f), brass, Finish.Bronze);
             }
+        }
+        foreach (float nbz in new[] { -24.0f, -32.0f })
+        {
+            mesh.Add(new(0f, CeilingHeight - 0.24f, nbz), new(24.0f, 0.36f, 0.42f), walnutFrame, Finish.Leather);
+            mesh.Add(new(0f, CeilingHeight - 0.43f, nbz), new(24.0f, 0.05f, 0.46f), brass, Finish.Bronze);
         }
         // Sculpted beveled brushed-brass edging rails & transverse runner threshold bars!
         foreach (float barZ in new[] { start + .06f, start + 3.45f, start + 7.20f, start + 10.60f, 12.95f, end - .04f })
@@ -3307,14 +3401,19 @@ public sealed partial class SkyscraperFloor1World
     {
         yield return (new(0,2.1f,20),new(19.2f,4.2f,.24f));
         yield return (new(0,2.3f,15.6f),new(5.6f,4.6f,.32f));
+        // Left reception glass sidelight (behind ArsenalShop & Veronika's left flank)
+        yield return (new(-5.15f,2.3f,16.35f),new(4.7f,4.6f,.16f));
+        // Right reception Technical Wall piers framing flush 2.5m Staff-Only portals at X=4.10 & X=7.45 (Z=16.25)
+        yield return (new(5.775f,2.3f,16.35f),new(.85f,4.6f,.24f));
+        yield return (new(9.09f,2.3f,16.35f),new(.78f,4.6f,.24f));
         foreach(int side in new[]{-1,1})
         {
-            // Recessed sidelights leave the existing galley inspection camera clear.
-            yield return (new(side*5.15f,2.3f,16.35f),new(4.7f,4.6f,.16f));
             // 3.8 m clear portals centred at -11, 5.2 and 14.5 metres.
             foreach(var span in new[]{(-15.8f,-12.9f),(-9.1f,3.3f),(7.1f,12.6f),(16.4f,20f)})
                 yield return (new(side*9.6f,2.1f,(span.Item1+span.Item2)/2),new(.24f,4.2f,span.Item2-span.Item1));
-            yield return (new(side*13.95f,2.1f,-15.8f),new(12.1f,4.2f,.24f));
+            // Split Z=-15.8 architectural wall cleanly around flush 2.5m wing portals at X=±17.8 (16.55..19.05)
+            yield return (new(side*12.225f,2.1f,-15.8f),new(8.65f,4.2f,.24f));
+            yield return (new(side*19.525f,2.1f,-15.8f),new(.95f,4.2f,.24f));
             yield return (new(side*14.8f,2.1f,20),new(10.4f,4.2f,.24f));
         }
         yield return (new(0,2.1f,-15.8f),new(8.2f,4.2f,.24f));
@@ -3322,36 +3421,54 @@ public sealed partial class SkyscraperFloor1World
 
     private void BuildEntryRooms(VisualEngine3D.ArchitectureBuilder mesh)
     {
-        Color metal=new(48,54,60,255), warm=new(255,222,168,255);
-        Color walnut=new(60,38,26,255), brass=new(168,132,74,255), frost=new(156,184,192,68);
-        foreach(var d in RoomDoors)
+        Color metal=new(42,48,56,255), darkSteel=new(32,37,44,255), warm=new(255,214,152,255);
+        Color walnut=new(60,38,26,255), brass=new(168,132,74,255), slate=new(36,40,49,255);
+        for(int i=0;i<RoomDoors.Length;i++)
         {
+            var d=RoomDoors[i];
+            float s=RoomExitSign(i); // -1 = South Reception Technical Wall (recess goes +Z); +1 = North Wing Wall (recess goes -Z)
+            bool tech = i < 2;
             void Part(float x,float y,float z,float w,float h,float depth,Color color,Finish finish=Finish.Paint) =>
-                mesh.Add(d+new Vector3(x,y,z),new(w,h,depth),color,finish);
-            Part(0,1.45f,-2.1f,3.9f,2.9f,.14f,new(46,42,40,255),Finish.Slate);
-            Part(0,2.91f,-1.04f,3.96f,.14f,2.26f,walnut,Finish.Leather);
-            Part(0,2.98f,-1.04f,4.02f,.045f,2.32f,brass,Finish.Bronze);
-            Part(0,2.82f,-1.64f,3.18f,.03f,.10f,warm,Finish.Lamp);
-            Part(0,.74f,-1.72f,2.9f,.07f,.56f,new(140,101,73,255));
-            foreach(int leg in new[]{-1,1})
-                Part(leg*1.32f,.36f,-1.72f,.06f,.72f,.48f,metal);
-            Part(0,1.08f,-1.78f,.8f,.46f,.07f,metal);
-            Part(0,2.68f,0,3.94f,.48f,.2f,walnut,Finish.Leather);
-            Part(0,2.45f,0,3.96f,.04f,.23f,brass,Finish.Bronze);
+                mesh.Add(d+new Vector3(x,y,z*s),new(w,h,depth),color,finish);
+
+            // Recessed 2.5m-wide back-of-house chamber tucked completely BEHIND the wall (ZERO protruding box!)
+            Part(0,1.48f,-2.1f,2.54f,2.96f,.16f,tech ? darkSteel : new(46,42,40,255),tech ? Finish.Armor : Finish.Slate);
+            Part(0,2.94f,-1.05f,2.56f,.14f,2.24f,tech ? darkSteel : walnut,tech ? Finish.Slate : Finish.Leather);
+            Part(0,2.82f,-1.45f,1.88f,.03f,.10f,tech ? new(255,188,118,255) : warm,Finish.Lamp);
+            if (tech)
+            {
+                // Back-of-house utility electrical breaker panel & pipe riser visible when a vibe coder cracks the door!
+                Part(0,1.35f,-1.96f,1.15f,1.25f,.14f,metal,Finish.Armor);
+                Part(-.62f,1.35f,-1.94f,.10f,2.70f,.10f,new(72,78,86,255),Finish.Bronze);
+                Part(.68f,.62f,-1.84f,.72f,1.24f,.36f,new(54,60,68,255),Finish.Rack);
+            }
+            else
+            {
+                // Compact coworking/meeting desk inside the recessed wing portal
+                Part(0,.74f,-1.72f,2.05f,.07f,.54f,new(140,101,73,255));
+                foreach(int leg in new[]{-1,1})
+                    Part(leg*.92f,.36f,-1.72f,.06f,.72f,.46f,metal);
+                Part(0,1.08f,-1.78f,.74f,.44f,.07f,metal);
+            }
+            // Flush portal header & transom seamlessly closing the architectural wall up to ceiling cornice (Y=4.2/4.6m)
+            float wallTop = tech ? 4.60f : 4.20f;
+            float headerH = wallTop - 2.45f;
+            Part(0, 2.45f + headerH * .5f, -.05f, 2.54f, headerH, .24f, tech ? darkSteel : slate, Finish.Slate);
+            Part(0, 2.45f, .02f, 2.56f, .055f, .28f, brass, Finish.Bronze);
+            Part(0, wallTop - .06f, -.05f, 2.56f, .08f, .28f, brass, Finish.Bronze);
+
             foreach(int side in new[]{-1,1})
             {
-                // Executive walnut wainscot + frosted clerestory side glass + brass mullions (replaces dark grey container box!)
-                Part(side*1.89f,.58f,-1.05f,.13f,1.16f,2.1f,walnut,Finish.Leather);
-                Part(side*1.89f,.06f,-1.05f,.16f,.12f,2.14f,brass,Finish.Bronze);
-                Part(side*1.89f,1.18f,-1.05f,.16f,.055f,2.14f,brass,Finish.Bronze);
-                Part(side*1.89f,1.88f,-1.05f,.065f,1.34f,2.04f,frost,Finish.Glass);
-                Part(side*1.89f,2.70f,-1.05f,.14f,.34f,2.12f,walnut,Finish.Leather);
-                foreach(float mz in new[]{-2.06f,-1.05f,-.04f})
-                    Part(side*1.89f,1.44f,mz,.14f,2.88f,.07f,brass,Finish.Bronze);
-                Part(side*1.45f,1.23f,0,.84f,2.46f,.054f,new(124,168,176,92),Finish.Glass);
-                Part(side*1.02f,1.23f,0,.055f,2.46f,.14f,brass,Finish.Bronze);
+                // Recessed interior side walls
+                Part(side*1.22f,1.48f,-1.05f,.14f,2.96f,2.12f,tech ? darkSteel : walnut,tech ? Finish.Slate : Finish.Leather);
+                // Flush architectural portal jambs framing the 2.0m sliding door opening
+                Part(side*1.12f,1.23f,-.02f,.28f,2.46f,.26f,tech ? darkSteel : walnut,tech ? Finish.Armor : Finish.Leather);
+                Part(side*1.00f,1.23f,.06f,.06f,2.46f,.18f,brass,Finish.Bronze);
             }
         }
+        // Seamless dark-steel & brass Technical Zone architectural trim strip uniting Doors 0 & 1 beside Veronika
+        mesh.Add(new(5.78f, 3.62f, 16.21f), new(6.10f, .06f, .08f), brass, Finish.Bronze);
+        mesh.Add(new(5.78f, 4.48f, 16.21f), new(6.10f, .10f, .12f), brass, Finish.Bronze);
         // Built-in dark-walnut & honed black-marble HVAC/hospitality credenza console (replaces random black server rack near coffee bar!)
         var cabinet=VentMouth(0)+new Vector3(0,.64f,-.44f);
         mesh.Add(cabinet,new(1.20f,1.22f,.88f),walnut,Finish.Leather);
@@ -3362,25 +3479,55 @@ public sealed partial class SkyscraperFloor1World
 
     private void DrawEntryHardware()
     {
-        Color steel=new(81,101,108,255);
+        Color steel=new(52,59,68,255), darkSteel=new(34,39,46,255), brass=new(172,134,74,255);
         for(int i=0;i<RoomDoors.Length;i++)
         {
             var d=RoomDoors[i];
+            float s=RoomExitSign(i);
+            bool tech = i < 2;
             void Part(float x,float y,float z,float w,float h,float depth,Color color,Finish finish=Finish.Paint) =>
-                VisualEngine3D.Box(d+new Vector3(x,y,z),w,h,depth,color,finish);
+                VisualEngine3D.Box(d+new Vector3(x,y,z*s),w,h,depth,color,finish);
             float t=RoomOpen[i];
             float gap=t*t*(3-2*t);
-            Part(0,2.68f,.115f,2.55f,.37f,.035f,Color.White,Finish.Coworking+i);
-            Part(1.57f,2.68f,.12f,.15f,.11f,.05f,RoomOpen[i]>.01f ? new(72,245,158,255) : new(255,171,65,255),Finish.Lamp);
-            foreach(int ch in new[]{-1,1})
-                VisualEngine3D.Asset("prop_office_chair", d+new Vector3(ch*.82f,0,-1.28f), 180+ch*16f, .92f);
+            // Illuminated overhead room plaque (reads cleanly from lobby/corridor side)
+            Part(0,2.76f,.115f,2.08f,.35f,.035f,Color.White,Finish.Coworking+i);
+            if (tech)
+            {
+                // Red "ТОЛЬКО ПЕРСОНАЛ / STAFF ONLY" security beacon above each technical service door!
+                bool active = RoomOpen[i] > .01f;
+                Part(1.06f, 2.76f, .125f, .14f, .14f, .06f, new(28, 30, 34, 255), Finish.Bronze);
+                Part(1.06f, 2.76f, .148f, .095f, .095f, .04f, active ? new(255, 132, 48, 255) : new(235, 36, 44, 255), Finish.Lamp);
+                // Red card-reader access badge terminal on the right brass jamb
+                Part(-1.12f, 1.32f, .12f, .10f, .18f, .045f, darkSteel, Finish.Slate);
+                Part(-1.12f, 1.37f, .14f, .05f, .025f, .02f, active ? new(82, 240, 148, 255) : new(235, 36, 44, 255), Finish.Lamp);
+            }
+            else
+            {
+                Part(1.06f,2.76f,.12f,.14f,.10f,.05f,RoomOpen[i]>.01f ? new(72,245,158,255) : new(255,171,65,255),Finish.Lamp);
+                foreach(int ch in new[]{-1,1})
+                    VisualEngine3D.Asset("prop_office_chair", d+new Vector3(ch*.64f,0,-s*1.28f), (s<0 ? 0f : 180f)+ch*16f, .92f);
+            }
             foreach(int side in new[]{-1,1})
             {
                 float x=side*(.50f+.90f*gap);
-                Part(x,1.23f,.09f,.98f,2.42f,.045f,new(116,183,191,85),Finish.Glass);
-                Part(x,1.07f,.12f,.98f,.15f,.015f,new(170,193,189,155),Finish.Glass);
-                Part(x-side*.47f,1.22f,.12f,.035f,2.42f,.045f,steel);
-                Part(x,.05f,.11f,.98f,.065f,.055f,steel);
+                if (tech)
+                {
+                    // Authentic dark-steel & brushed-brass Technical Service Doors with frosted narrow security vision slit
+                    Part(x, 1.22f, .06f, .98f, 2.42f, .055f, darkSteel, Finish.Armor);
+                    Part(x, 1.22f, .082f, .96f, 2.38f, .02f, brass, Finish.Bronze);
+                    Part(x, 1.22f, .086f, .88f, 2.28f, .022f, darkSteel, Finish.Slate);
+                    // Vertical narrow frosted vision slit + brass push-pull handle bar
+                    Part(x - side * .20f, 1.56f, .096f, .14f, .76f, .016f, new(156, 186, 194, 140), Finish.Glass);
+                    Part(x - side * .38f, 1.15f, .112f, .032f, .52f, .042f, brass, Finish.Bronze);
+                    Part(x, .10f, .095f, .96f, .16f, .035f, steel, Finish.Armor);
+                }
+                else
+                {
+                    Part(x,1.23f,.06f,.98f,2.42f,.045f,new(116,183,191,85),Finish.Glass);
+                    Part(x,1.07f,.09f,.98f,.15f,.015f,new(170,193,189,155),Finish.Glass);
+                    Part(x-side*.47f,1.22f,.09f,.035f,2.42f,.045f,brass,Finish.Bronze);
+                    Part(x,.05f,.08f,.98f,.065f,.055f,steel);
+                }
             }
         }
         for(int i=0;i<VentTime.Length;i++)
@@ -3410,7 +3557,8 @@ public sealed partial class SkyscraperFloor1World
         foreach(var bay in InteriorWallBays())
         {
             Vector3 c=bay.Center,s=bay.Size;
-            bool reception=c.Z is >15 and <17 && MathF.Abs(c.X)<7.6f;
+            bool reception=c.Z is >15 and <17 && MathF.Abs(c.X)<9.5f;
+            bool techPier=c.Z is >16 and <17 && c.X>3f;
             bool alongZ=s.Z>s.X;
             if(reception && c.X==0)
             {
@@ -3419,6 +3567,13 @@ public sealed partial class SkyscraperFloor1World
                     if(Math.Abs(i)>5)
                         mesh.Add(new(i*.215f,2.3f,15.39f),new(.032f,4.35f,.055f),brass);
                 mesh.Add(new(0,3.25f,15.36f),new(2.12f,1.78f,.13f),new(24,27,34,255));
+            }
+            else if(techPier)
+            {
+                // Solid dark-slate & brushed-brass Technical Wall piers flanking Staff-Only portals
+                mesh.Add(c,s,new(32,37,44,255),Finish.Slate);
+                foreach(float y in new[]{.08f,1.18f,2.45f,s.Y-.09f})
+                    mesh.Add(new(c.X,y,c.Z),new(s.X+.035f,.065f,s.Z+.035f),brass,Finish.Bronze);
             }
             else
             {
@@ -4557,20 +4712,24 @@ public sealed partial class SkyscraperFloor1World
 
     private Vector3 GetCutsceneMissileTarget(int idx) => idx switch
     {
+        // All 4 targets fan cleanly FORWARD & outward from right-arm cannon (+X side) — ZERO sideways chest crossing!
         // Missile 0 streaks DIRECTLY at the hero's pre-dodge carpet spot -> hero barrel-rolls LEFT right before detonation!
         0 => NorthElevatorPos + new Vector3(+1.32f, 0.16f, -6.00f),
-        1 => NorthElevatorPos + new Vector3(+4.80f, 0.18f, -3.50f),
-        2 => NorthElevatorPos + new Vector3(-4.60f, 0.18f, -3.30f),
-        _ => NorthElevatorPos + new Vector3(+5.50f, 0.18f, -7.50f)
+        1 => NorthElevatorPos + new Vector3(+4.40f, 0.18f, -4.40f),
+        2 => NorthElevatorPos + new Vector3(+0.35f, 0.18f, -9.20f),
+        _ => NorthElevatorPos + new Vector3(+5.40f, 0.18f, -7.80f)
     };
 
     private Vector3 ResolveCutsceneMissileOrigin(int idx)
     {
         if (!_cutsceneMissileFired[idx])
         {
+            Vector3 fwd = VisualEngine3D.BossMuzzleValid && VisualEngine3D.BossMuzzleWorldDir.LengthSquared() > 1e-5f
+                ? Vector3.Normalize(VisualEngine3D.BossMuzzleWorldDir)
+                : -Vector3.UnitZ;
             _cutsceneMissileOrigins[idx] = VisualEngine3D.BossMuzzleValid
-                ? VisualEngine3D.BossMuzzleWorldPos
-                : ElevatorBoss.Position + new Vector3(-0.48f, 1.82f, -0.52f);
+                ? VisualEngine3D.BossMuzzleWorldPos + fwd * 0.42f
+                : ElevatorBoss.Position + new Vector3(+0.58f, 1.82f, -0.95f);
             _cutsceneMissileFired[idx] = true;
         }
         return _cutsceneMissileOrigins[idx];
@@ -4585,9 +4744,9 @@ public sealed partial class SkyscraperFloor1World
         side = side.LengthSquared() > 1e-5f ? Vector3.Normalize(side) : Vector3.UnitX;
 
         float env = MathF.Sin(u * MathF.PI);
-        // Missile 0 flies on a terrifying flat-dive laser trajectory straight at hero; flank missiles arc cleanly outward
-        float arcLift = idx == 0 ? 0.24f * env : (0.56f + 0.16f * (idx % 2)) * env;
-        float curve = idx == 0 ? 0.04f * MathF.Sin(u * MathF.PI) : 0.20f * (idx % 2 == 0 ? 1f : -1f) * env;
+        // Missile 0 flies on a terrifying flat-dive trajectory straight at hero; flank missiles arc cleanly outward (+X)
+        float arcLift = idx == 0 ? 0.22f * env : (0.50f + 0.16f * (idx % 2)) * env;
+        float curve = idx == 0 ? 0.03f * env : (idx == 2 ? 0.08f : 0.22f) * env;
         return Vector3.Lerp(start, end, u) + Vector3.UnitY * arcLift + side * curve;
     }
 
@@ -4734,12 +4893,15 @@ public sealed partial class SkyscraperFloor1World
                 float flicker = 0.84f + 0.16f * MathF.Sin(_worldClock * 85f + i * 2.3f);
                 if (hasFx)
                 {
-                    int fIdx = (int)(_worldClock * 18f + i) & 3;
-                    // Intense compact plasma exhaust flare + trailing flame tongue directly behind the nozzle bell
-                    CombatSprites.ExplosionFrame(0, nozzlePos, camRight, camUp, 0.22f * flicker, _worldClock * 9f + i,
-                        new Color(255, 214, 128, 235));
-                    CombatSprites.FireFrame(fIdx, nozzlePos - dir * 0.22f, camRight, camUp, 0.16f * flicker, 0.28f * flicker,
-                        new Color(255, 168, 74, 210), flipX: (i & 1) == 0);
+                    // Compact nozzle ignition flare + directional horizontal thruster ribbon aligned strictly along -dir (ZERO vertical campfire flame!)
+                    Vector3 jetMid = nozzlePos - dir * (0.34f * flicker);
+                    Vector3 jetTip = nozzlePos - dir * (0.76f * flicker);
+                    CombatSprites.ExplosionFrame(0, nozzlePos, camRight, camUp, 0.16f * flicker, _worldClock * 9f + i,
+                        new Color(255, 224, 148, 235));
+                    CombatSprites.RibbonSegment(nozzlePos, jetMid, camera.Position, 0.105f * flicker, 0.072f * flicker,
+                        new Color(255, 246, 206, 245), new Color(255, 178, 68, 220));
+                    CombatSprites.RibbonSegment(jetMid, jetTip, camera.Position, 0.076f * flicker, 0.012f,
+                        new Color(255, 146, 48, 210), new Color(230, 52, 20, 0));
                 }
             }
             else
@@ -5415,7 +5577,7 @@ public sealed partial class SkyscraperFloor1World
     }
 
     internal Vector3 CoolerPos => AmbushCovers[2].Position;
-    internal static readonly Vector3 DeployPos=new(-3.25f,0,1.48f), CoffeePos=new(3.12f,0,12.28f);
+    internal static readonly Vector3 DeployPos=new(-3.25f,0,1.48f), CoffeePos=new(2.96f,0,12.22f);
     private readonly record struct Station(FocusKind Kind,Vector3 Feet,float Height,string Label);
     private readonly List<Station> stations=new();
 

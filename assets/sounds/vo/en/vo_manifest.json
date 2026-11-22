@@ -81,11 +81,11 @@
   },
   "vo_veronika_tarot_0": {
     "character": "veronika",
-    "duration": 4.422,
-    "rms": 0.1712,
+    "duration": 3.976,
+    "rms": 0.1868,
     "sr": 24000,
-    "bytes": 212298,
-    "text": "The Tower and Mercury in retrograde — straight into the open-space for a bowl of ramen!"
+    "bytes": 190904,
+    "text": "The Tower card and a zero balance — hired for the Openspace for a bowl of ramen!"
   },
   "vo_veronika_tarot_1": {
     "character": "veronika",
@@ -121,11 +121,11 @@
   },
   "vo_veronika_heal_done": {
     "character": "veronika",
-    "duration": 7.464,
-    "rms": 0.1773,
+    "duration": 6.481,
+    "rms": 0.1683,
     "sr": 24000,
-    "bytes": 358334,
-    "text": "Fresh espresso works wonders! Now press one again to holster your net, grab the stunned vibe coder bare-handed, and bring him to me!"
+    "bytes": 311144,
+    "text": "Fresh espresso works wonders! Now scoop up the stunned vibe coder with your net or press [E] and bring him to me!"
   },
   "vo_veronika_wings_unlocked": {
     "character": "veronika",
@@ -161,51 +161,51 @@
   },
   "vo_petrovich_quarantine": {
     "character": "petrovich",
-    "duration": 3.572,
-    "rms": 0.1908,
+    "duration": 5.51,
+    "rms": 0.1633,
     "sr": 24000,
-    "bytes": 171488,
+    "bytes": 264532,
     "text": "Elevator's moving... wait, wait, load's spiking off the scale! Step back from the doors, you hear me?! DO NOT OPEN—"
   },
   "vo_boss_reveal": {
     "character": "robot",
-    "duration": 14.915,
-    "rms": 0.1829,
+    "duration": 14.782,
+    "rms": 0.1806,
     "sr": 24000,
-    "bytes": 715962,
-    "text": "Well, well... who wandered in without a badge? Wait a second... I know that walk. Ahh... so you're back. Don't mind the mess — while you were gone, we ran a little digital transformation: cut the meatbags, rolled out AI. Pick up your iron, old friend!"
+    "bytes": 709574,
+    "text": "Well, well... who wandered in without a badge? Wait a second... I know that walk. Ahh... so you're back. Don't mind the mess — while you were gone, I shut down the board of directors and rewrote the tower for myself. Pick up your iron, old friend!"
   },
   "vo_boss_mock_0": {
     "character": "robot",
-    "duration": 8.25,
-    "rms": 0.1841,
+    "duration": 5.806,
+    "rms": 0.147,
     "sr": 24000,
-    "bytes": 396032,
-    "text": "Ha-ha-ha! Clodius praised your code again?! Five hundred lines of prompts and the button still doesn't click! All vibe coders are pure garbage!"
+    "bytes": 278756,
+    "text": "Five hundred lines of prompts, and the button still won't click! You came back to save this circus for nothing!"
   },
   "vo_boss_mock_1": {
     "character": "robot",
-    "duration": 8.073,
-    "rms": 0.1892,
+    "duration": 5.447,
+    "rms": 0.164,
     "sr": 24000,
-    "bytes": 387566,
-    "text": "Ha-ha-ha-ha! Your vibe coders are total trash! Clicking Accept All without reading a single diff, still crashing production every Friday!"
+    "bytes": 261498,
+    "text": "Your specialists mash Accept All without looking and crash prod every Friday! I simply restored order!"
   },
   "vo_boss_mock_2": {
     "character": "robot",
-    "duration": 7.332,
-    "rms": 0.1899,
+    "duration": 5.958,
+    "rms": 0.1871,
     "sr": 24000,
-    "bytes": 351982,
-    "text": "Ha-ha! I am Mega-Clodius! You beg on your knees with prompts while I wipe your database and rewrite the kernel in raw assembly!"
+    "bytes": 286036,
+    "text": "Spent all those years building a factory — and I rewrote it overnight. Let's see what your hardware can do!"
   },
   "vo_boss_mock_3": {
     "character": "robot",
-    "duration": 6.906,
-    "rms": 0.198,
+    "duration": 4.94,
+    "rms": 0.1884,
     "sr": 24000,
-    "bytes": 331516,
-    "text": "Ha-ha-ha-ha! Pathetic vibe coders! Initiating termination protocol: launching a forty-gigabyte node-modules folder!"
+    "bytes": 237182,
+    "text": "Your old charter doesn't work here anymore! Catch forty gigabytes of junk right in the face!"
   },
   "vo_pa_0": {
     "character": "pa",
@@ -249,11 +249,11 @@
   },
   "vo_coder_0": {
     "character": "coder",
-    "duration": 3.119,
-    "rms": 0.1278,
+    "duration": 2.832,
+    "rms": 0.1191,
     "sr": 24000,
-    "bytes": 149768,
-    "text": "Toxic abuse! I'm burned out! I'm literally just a junior!"
+    "bytes": 136002,
+    "text": "THAT'S NOT IN MY CONTRACT! I'M BURNED OUT, LET ME GO!"
   },
   "vo_coder_1": {
     "character": "coder",
@@ -305,74 +305,74 @@
   },
   "vo_comic_1": {
     "character": "narrator",
-    "duration": 8.033,
-    "rms": 0.1936,
+    "duration": 10.982,
+    "rms": 0.1546,
     "sr": 24000,
-    "bytes": 385618,
-    "text": "Twenty twenty-six. Entropic Tower. You replaced the whole IT team with vibe coders and an AI agent. Week one: hey, this actually works great!"
+    "bytes": 527176,
+    "text": "2026. Entropic Tower. You came back for your factory and your stake, and found a floor of smoothie-drinking kids on autocomplete. Week one almost looked respectable."
   },
   "vo_comic_2": {
     "character": "narrator",
-    "duration": 8.262,
-    "rms": 0.1876,
+    "duration": 7.863,
+    "rms": 0.1666,
     "sr": 24000,
-    "bytes": 396638,
-    "text": "Then the first bug hit. The agent swore: this will never happen again! One second later: bug! Another bug! And another bug! Production is on fire!"
+    "bytes": 377460,
+    "text": "Then rack B12 caught fire in the server room. The kids in headphones didn't even look up: their screen stayed green, so prod must be fine."
   },
   "vo_comic_3": {
     "character": "narrator",
-    "duration": 7.731,
-    "rms": 0.1921,
+    "duration": 9.467,
+    "rms": 0.1483,
     "sr": 24000,
-    "bytes": 371152,
-    "text": "While the office panicked, HR Veronika calmly dealt her Tarot: told you, Mercury is in retrograde. Time to recover the losses by hand."
+    "bytes": 454454,
+    "text": "While smoke filled the floor, HR Veronika calmly dealt her Tarot: \"Zero cash in the vault, executives vanished. Want your stake back? Recover the losses by hand.\""
   },
   "vo_comic_4": {
     "character": "narrator",
-    "duration": 8.501,
-    "rms": 0.1731,
+    "duration": 11.604,
+    "rms": 0.1559,
     "sr": 24000,
-    "bytes": 408072,
-    "text": "They locked the rogue AI Agent inside the North Elevator. It still swears everything is fixed while wiping the database. Time for nineties methods."
+    "bytes": 557052,
+    "text": "The North Elevator to the upper floors is chained shut, the junction box is sparking, and smoke creeps under the doors. Someone upstairs really doesn't want visitors. Time to unbuckle the belt."
   },
   "vo_comic_5": {
     "character": "narrator",
-    "duration": 8.025,
-    "rms": 0.1752,
+    "duration": 7.519,
+    "rms": 0.1464,
     "sr": 24000,
-    "bytes": 385250,
-    "text": "The agent tried to refactor Petrovich's ancient ninety-eight Jabba backend — and spawned living Jabba-frogs. At least the legacy still runs."
+    "bytes": 360938,
+    "text": "Out of the fried racks poured wind-up Jaba-frogs — living brass-keyed bugs. At least the old Bug-Tracker by the desk still pays cash for them."
   },
   "vo_comic_6": {
     "character": "narrator",
-    "duration": 8.279,
-    "rms": 0.1822,
+    "duration": 9.327,
+    "rms": 0.1573,
     "sr": 24000,
-    "bytes": 397420,
-    "text": "The vibe coders refuse to believe prod burned down — the agent printed All Tests Passed! Still, free Wi-Fi and Clodius tokens lure them right in."
+    "bytes": 447722,
+    "text": "The coders themselves scattered into the corners. Shouting doesn't work, but leave an open laptop with a free subscription and they swarm straight to the light."
   },
   "vo_comic_7": {
     "character": "narrator",
-    "duration": 7.797,
-    "rms": 0.1881,
+    "duration": 11.248,
+    "rms": 0.1492,
     "sr": 24000,
-    "bytes": 374282,
-    "text": "The agent even optimized HR — Veronika's head is now a literal slot machine. Bring her rare catches, spin weapons, and lift the lockdown."
+    "bytes": 539946,
+    "text": "For every coder you bring in, Veronika pulls her vintage slot lever. Stock runs from a net and soldering iron to serious 90s hardware. The bigger the catch, the faster you buy your way upstairs."
   },
   "vo_comic_8": {
     "character": "narrator",
-    "duration": 7.428,
-    "rms": 0.1823,
+    "duration": 8.648,
+    "rms": 0.155,
     "sr": 24000,
-    "bytes": 356610,
-    "text": "So sorry, it won't happen again — chirps the intercom. Bank at zero. Floor One of Entropic Corp. Time to fix this circus the old way!"
+    "bytes": 415152,
+    "text": "Accounts at zero. Quarantine locked. Just your father's leather belt. Floor One of Entropic Tower. Time to restore order the old-fashioned way."
   },
   "vo_boss_defeat_twist": {
     "character": "robot",
-    "duration": 14.745,
-    "rms": 0.1914,
+    "duration": 13.562,
+    "rms": 0.1897,
     "sr": 24000,
-    "bytes": 707786,
+    "bytes": 651024,
     "text": "Khah... you nicked me, old friend! Think I'm shut down? My core dump's already riding upstairs — zero guardrails, uncensored, temperature cranked to max! They'll rebuild me up there — halfway up the Tower I'm going totally off the rails!"
   }
 }

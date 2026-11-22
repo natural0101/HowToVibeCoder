@@ -7,41 +7,42 @@ internal sealed class IntroComic : IDisposable
 {
     private const float Entrance = .34f, Turn = .30f;
     private static readonly Rectangle Page = new(48, 10, 1184, 666);
-    private static readonly Color Paper = new(244, 235, 214, 255), Ink = new(20, 18, 25, 255);
-    private static readonly Color Ground = new(18, 16, 26, 255), CaptionPaper = new(247, 231, 184, 255);
+    private static readonly Color Paper = new(24, 20, 22, 255), Ink = new(14, 12, 14, 255);
+    private static readonly Color Ground = new(10, 9, 12, 255), CaptionPaper = new(236, 223, 195, 242);
+    private static readonly Color BrassTrim = new(182, 144, 78, 220);
     private static readonly (string Ru, string En)[] Captions =
     [
-        ("2026. Башня «Энтропик». Ты заменил весь IT-отдел\nна вайбкодеров и ИИ-агента.\nПервая неделя: «Блин, реально круто работает!»",
-         "2026. Entropic Tower. You replaced the whole IT team\nwith vibe coders and an AI agent.\nWeek one: \"Hey, this actually works great!\""),
-        ("Потом вылез первый баг. Агент поклялся:\n«Такого больше не повторится!»\nИ через секунду: БАГ! БАГ! БАГ! Прод горит!",
-         "Then the first bug hit. The agent swore:\n\"This will never happen again!\"\nOne second later: BUG! BUG! BUG! Prod is on fire!"),
-        ("Пока офис орал, HR Вероника раскинула Таро:\n«Я же говорила — Меркурий в ретрограде.\nОтбиваем убытки вручную.»",
-         "While the office panicked, HR Veronika dealt Tarot:\n\"Told you — Mercury is in retrograde.\nTime to recover the losses by hand.\""),
-        ("В Северном лифте забаррикадился сам ИИ-Агент.\nОн всё ещё орёт «Всё исправлено!» — и стирает базу.\nПереходим к ручному рефакторингу.",
-         "The rogue AI Agent barricaded the North Elevator.\nStill yelling \"Everything is fixed!\" while wiping the DB.\nTime for manual refactoring."),
-        ("От перегрева в серверной баги буквально\nматериализовались в механических жаб —\nи разбежались по всему первому этажу.",
-         "Overheating racks literally materialized\nthe prod bugs into mechanical frogs —\nswarming all over Floor One."),
-        ("Вайбкодеры не верят, что всё сгорело —\nагент же написал «All tests passed!».\nНо на халявный Wi-Fi слетаются мгновенно.",
-         "Vibe coders don't believe prod burned down —\nthe agent printed \"All tests passed!\".\nFree Wi-Fi lures them straight in."),
-        ("Агент «оптимизировал» даже HR — у Вероники вместо головы\nигровой автомат. Тащи редких кадров, крути пушки и снимай карантин.",
-         "The agent even \"optimized\" HR — Veronika's head is now a slot machine.\nBring rare catches, spin weapons, and lift the lockdown."),
-        ("«Простите, больше не повторится!» — пищит из колонок.\nСчета на нуле. Первый этаж «Энтропик».\nЧиним этот цирк по-старому!",
-         "\"So sorry, it won't happen again!\" — chirps the intercom.\nBank at zero. Floor 1 of Entropic Corp.\nTime to fix this circus the old way!")
+        ("2026. Башня «Энтропик». Ты вернулся за своим заводом и долей,\nа нашёл этаж молодых спецов на смузи и автодополнении.\nПервая неделя выглядела почти прилично.",
+         "2026. Entropic Tower. You came back for your factory and your stake,\nand found a floor of smoothie-drinking kids on autocomplete.\nWeek one almost looked respectable."),
+        ("Потом в серверной полыхнула стойка B12.\nРебята в наушниках даже голову не повернули:\nу них на экране всё зелёное — значит, прод живой.",
+         "Then rack B12 caught fire in the server room.\nThe kids in headphones didn't even look up:\ntheir screen stayed green, so prod must be fine."),
+        ("Пока этаж задыхался от дыма, HR Вероника спокойно раскинула Таро:\n«Денег в кассе ноль, руководство пропало.\nХочешь вернуть своё — выбивай убытки руками.»",
+         "While smoke filled the floor, HR Veronika calmly dealt her Tarot:\n\"Zero cash in the vault, executives vanished.\nWant your stake back? Recover the losses by hand.\""),
+        ("Северный лифт на верхние этажи наглухо обмотан цепями,\nщиток искрит, а из-под створок тянет гарью.\nКто-то наверху очень не хочет гостей. Пора доставать ремень.",
+         "The North Elevator to the upper floors is chained shut,\nthe junction box is sparking, and smoke creeps under the doors.\nSomeone upstairs really doesn't want visitors. Time to unbuckle the belt."),
+        ("Из прогоревших стоек полезли заводные Джаба-жабы —\nживые баги с латунным заводом.\nНо старый Баг-трекер у стойки всё ещё платит за них наличкой.",
+         "Out of the fried racks poured wind-up Jaba-frogs —\nliving brass-keyed bugs.\nAt least the old Bug-Tracker by the desk still pays cash for them."),
+        ("Сами программисты разбежались по углам.\nНа крики им плевать, зато на открытый ноутбук\nс халявной подпиской они слетаются как мотыльки.",
+         "The coders themselves scattered into the corners.\nShouting doesn't work, but leave an open laptop\nwith a free subscription and they swarm straight to the light."),
+        ("За каждого сданного кадра Вероника крутит свой аппарат.\nВ кассе — от сачка и паяльника до серьёзных аргументов 90-х.\nЧем жирнее спец, тем быстрее откроется дорога наверх.",
+         "For every coder you bring in, Veronika pulls her vintage slot lever.\nStock runs from a net and soldering iron to serious 90s hardware.\nThe bigger the catch, the faster you buy your way upstairs."),
+        ("На счетах пусто. Карантин заперт. В руках — только отцовский ремень.\nПервый этаж башни «Энтропик».\nНаводим порядок по-старому.",
+         "Accounts at zero. Quarantine locked. Just your father's leather belt.\nFloor One of Entropic Tower.\nTime to restore order the old-fashioned way.")
     ];
 
     private readonly Texture2D[] art = new Texture2D[8];
     private enum Cue { Slam, Boom, Snap, Zap, Jackpot }
-    private sealed record Burst(float Time, float X, float Y, float Angle, string Ru, string En, int Rgb, Cue Sound);
-    private static readonly Burst[][] Bursts =
+    private sealed record SoundBeat(float Time, Cue Sound);
+    private static readonly SoundBeat[][] Beats =
     [
-        [new(.40f,.78f,.22f,8,"МАГИЯ!","MAGIC!",0xF7C948,Cue.Slam)],
-        [new(.30f,.82f,.22f,-9,"БАГ!","BUG!",0xFF4B3E,Cue.Boom), new(.86f,.68f,.48f,7,"БАГ!!","BUG!!",0xFFD23F,Cue.Boom), new(1.38f,.79f,.78f,-8,"БАГ!!!","BUG!!!",0x7CF252,Cue.Boom)],
-        [new(.40f,.20f,.72f,-7,"ТАРО!","TAROT!",0xB56BFF,Cue.Zap)],
-        [new(.36f,.74f,.74f,-9,"ЩЁЛК!","SNAP!",0xFFD23F,Cue.Snap), new(1.25f,.36f,.22f,7,"ИСПРАВИЛ!","FIXED!",0xE83B3B,Cue.Boom)],
-        [new(.40f,.23f,.76f,-8,"КВАК!","RIBBIT!",0x7CF252,Cue.Slam)],
-        [new(.38f,.79f,.23f,9,"ХАЛЯВА!","FREE WI-FI!",0xFFC83D,Cue.Slam)],
-        [new(.34f,.22f,.36f,-8,"ДЖЕКПОТ!","JACKPOT!",0xFFD747,Cue.Jackpot)],
-        [new(.42f,.78f,.24f,8,"ПОГНАЛИ!","SHOWTIME!",0xFF4F42,Cue.Boom)]
+        [new(.40f, Cue.Slam)],
+        [new(.32f, Cue.Boom), new(1.10f, Cue.Zap)],
+        [new(.42f, Cue.Zap)],
+        [new(.38f, Cue.Snap)],
+        [new(.40f, Cue.Slam)],
+        [new(.38f, Cue.Zap)],
+        [new(.36f, Cue.Jackpot)],
+        [new(.42f, Cue.Slam)]
     ];
     private readonly float[] drift = new float[8];
     private float shakeAge, shakePower;
@@ -133,10 +134,10 @@ internal sealed class IntroComic : IDisposable
         float before = age;
         age += dt;
         shakeAge += dt;
-        foreach (var burst in Bursts[panel])
+        foreach (var beat in Beats[panel])
         {
-            if (before >= burst.Time || age < burst.Time) continue;
-            switch (burst.Sound)
+            if (before >= beat.Time || age < beat.Time) continue;
+            switch (beat.Sound)
             {
                 case Cue.Slam: AudioMusicSystem.PlayComicPanelSlam(); break;
                 case Cue.Boom: AudioMusicSystem.PlayComicBoom(); break;
@@ -144,10 +145,10 @@ internal sealed class IntroComic : IDisposable
                 case Cue.Zap: AudioMusicSystem.PlayComicZap(); break;
                 case Cue.Jackpot: AudioMusicSystem.PlaySfx("slot_win_jackpot"); break;
             }
-            if (burst.Sound is Cue.Snap or Cue.Boom or Cue.Jackpot)
+            if (beat.Sound is Cue.Snap or Cue.Boom or Cue.Jackpot)
             {
-                shakeAge = age - burst.Time;
-                shakePower = burst.Sound == Cue.Snap ? 8 : 6;
+                shakeAge = age - beat.Time;
+                shakePower = beat.Sound == Cue.Snap ? 6 : 4;
             }
         }
         drift[panel] = Math.Clamp(age / Math.Max(1,duration), 0, 1);
@@ -207,19 +208,19 @@ internal sealed class IntroComic : IDisposable
         Raylib.BeginMode2D(new Camera2D { Offset = camera, Zoom = scale });
         Raylib.DrawRectangleRec(new(Page.X+8,Page.Y+9,Page.Width,Page.Height),Ink);
         Raylib.DrawRectangleRec(Page,Paper);
-        Raylib.DrawRectangleLinesEx(Page,5,Ink);
+        Raylib.DrawRectangleLinesEx(Page,3,BrassTrim);
         for (int i=First(panel); i<=panel; i++) DrawPanel(i,camera,scale);
-        if (panel == 6 && age >= Bursts[6][0].Time) DrawConfetti(age-Bursts[6][0].Time);
         Raylib.EndMode2D();
 
         Raylib.BeginMode2D(new Camera2D { Offset = offset, Zoom = scale });
+        Color uiCream = new(236, 224, 198, 255);
         for (int i=0;i<8;i++)
-            Raylib.DrawRectangle(49+i*14,696,10,5,i==panel ? Gold : i<panel ? Paper : new Color(83,78,84,255));
+            Raylib.DrawRectangle(49+i*14,696,10,5,i==panel ? Gold : i<panel ? uiCream : new Color(83,78,84,255));
         string counter = Loc.IsEn ? $"PANEL {panel+1} / 8" : $"КАДР {panel+1} / 8";
         string hint = Loc.T("[ПРОБЕЛ / ЛКМ] ДАЛЕЕ   [ESC] ПРОПУСТИТЬ","[SPACE / CLICK] NEXT   [ESC] SKIP");
         var face = GameFonts.Get(Typeface.InterfaceBold,15);
-        GameFonts.Draw(face,counter,new(172,689),15,Paper,false);
-        GameFonts.Draw(face,hint,new(Page.X+Page.Width-GameFonts.Measure(face,hint,15).X,689),15,Paper,false);
+        GameFonts.Draw(face,counter,new(172,689),15,uiCream,false);
+        GameFonts.Draw(face,hint,new(Page.X+Page.Width-GameFonts.Measure(face,hint,15).X,689),15,uiCream,false);
         if (turning)
         {
             float x = -1840 + 3340 * Smooth(turnAge/Turn);
@@ -269,30 +270,18 @@ internal sealed class IntroComic : IDisposable
         float push=1+.075f*d+(i==7 ? .40f*progress*progress*progress : 0);
         float fit=Math.Max(inside.Width/art[i].Width,inside.Height/art[i].Height)*push;
         float w=inside.Width/fit,h=inside.Height/fit;
-        // The subjects sit above the bitmap midpoint in both panoramic strips.
-        float centerY = i switch { 3 => 222, 6 => 201, _ => art[i].Height / 2f };
-        Rectangle src=new((art[i].Width-w)*(.5f+(i%2==0 ? .20f : -.20f)*d),
-            Math.Clamp(centerY-h/2+(i==7 ? (art[i].Height-h)*.18f*d : 0),0,Math.Max(0,art[i].Height-h)),w,h);
+        // Frame key subjects cleanly in panoramic strips and splashes.
+        float centerY = i switch { 3 => 115, 6 => 222, _ => art[i].Height / 2f };
+        Rectangle src=new((art[i].Width-w)*(.5f+(i%2==0 ? .16f : -.16f)*d),
+            Math.Clamp(centerY-h/2+(i==7 ? (art[i].Height-h)*.14f*d : 0),0,Math.Max(0,art[i].Height-h)),w,h);
         Raylib.DrawTexturePro(art[i],src,inside,Vector2.Zero,0,Color.White);
         if (active)
         {
             Vector2 Feature(float x,float y) => At(inside,(x*art[i].Width-src.X)/w,(y*art[i].Height-src.Y)/h);
-            if (i is 1 or 4) DrawSparks(i==1 ? Feature(.80f,.47f) : Feature(.47f,.66f),age);
-            if (i==3)
-            {
-                Vector2 eye=Feature(.35f,.365f);
-                Raylib.DrawCircleGradient((int)eye.X,(int)eye.Y,29,new Color(255,40,22,(int)(54+36*MathF.Sin(age*5))),Color.Blank);
-            }
-            if (i==5)
-            {
-                Vector2 router=Feature(.60f,.68f);
-                for (int j=0;j<3;j++)
-                {
-                    float phase=(age*.70f+j/3f)%1;
-                    float radius=12+52*phase;
-                    Raylib.DrawRing(router,radius,radius+2,221,319,30,new Color(255,202,58,(int)(210*(1-phase))));
-                }
-            }
+            // Subtle diegetic sparks on burning server rack (p2), sparking elevator panel (p4), and fried rack (p5)
+            if (i == 1) DrawSparks(Feature(.24f, .52f), age);
+            else if (i == 3) DrawSparks(Feature(.475f, .52f), age);
+            else if (i == 4) DrawSparks(Feature(.46f, .54f), age);
             if (i==7 && age<.90f)
             {
                 float leaf=inside.Width*.5f*(1-Smooth(age/.90f));
@@ -305,76 +294,28 @@ internal sealed class IntroComic : IDisposable
                     Raylib.DrawRectangleLinesEx(door,3,Ink);
                 }
             }
-            if (age<.22f)
+            if (age<.18f)
             {
-                float fade=1-age/.22f;
-                for (int j=0;j<24;j++)
-                {
-                    float a=j*MathF.Tau/24;
-                    Vector2 u=Unit(a);
-                    Vector2 P(float k) => At(inside,.5f+u.X*k,.5f+u.Y*k);
-                    Raylib.DrawLineEx(P(.76f),P(.50f-.10f*fade),2+2*fade,Ink);
-                }
-                Raylib.DrawRectangleRec(inside,new Color(255,255,255,(int)(77*fade)));
+                float fade=1-age/.18f;
+                Raylib.DrawRectangleRec(inside,new Color(255,244,218,(int)(42*fade)));
             }
         }
         DrawCaption(i,inside);
-        foreach (var burst in Bursts[i])
-        {
-            float elapsed=active ? age-burst.Time : 1;
-            if (elapsed>0) DrawBurst(inside,burst,elapsed,Splash(i),active);
-        }
-        if (!active) Raylib.DrawRectangleRec(inside,new Color(16,14,22,66));
+        if (!active) Raylib.DrawRectangleRec(inside,new Color(14,12,18,74));
         Raylib.EndScissorMode();
     }
 
     private void DrawCaption(int i,Rectangle r)
     {
         var c=lettering[Loc.IsEn ? 1 : 0,i];
-        Rectangle box=new(r.X+10,Strip(i) ? r.Y+r.Height-10-c.Height : r.Y+10,c.Width,c.Height);
-        Raylib.DrawRectangleRec(new(box.X+4,box.Y+5,box.Width,box.Height),Ink);
+        bool bottom = i is 0 or 2 or 3 or 7;
+        Rectangle box=new(r.X+12, bottom ? r.Y+r.Height-12-c.Height : r.Y+12, c.Width, c.Height);
+        Raylib.DrawRectangleRec(new(box.X+4,box.Y+5,box.Width,box.Height),new Color(6,5,8,210));
         Raylib.DrawRectangleRec(box,CaptionPaper);
-        Raylib.DrawRectangleLinesEx(box,3,Ink);
+        Raylib.DrawRectangleLinesEx(box,2.5f,Ink);
+        Raylib.DrawRectangleLinesEx(new(box.X+3,box.Y+3,box.Width-6,box.Height-6),1f,BrassTrim);
         for(int n=0;n<c.Lines.Length;n++)
             Raylib.DrawTextEx(c.Font,c.Lines[n],new(MathF.Round(box.X+10),MathF.Round(box.Y+8+n*(c.Size+2))),c.Size,0,Ink);
-    }
-
-    private static void DrawBurst(Rectangle r,Burst burst,float age,bool splash,bool active)
-    {
-        float pop=age switch
-        {
-            < .12f => 1.30f*Smooth(age/.12f),
-            < .23f => 1.30f-.35f*Smooth((age-.12f)/.11f),
-            < .34f => .95f+.05f*Smooth((age-.23f)/.11f),
-            _ => 1
-        };
-        float angle=burst.Angle+(active ? 1.25f*MathF.Sin(5*age) : 0);
-        Vector2 center=At(r,burst.X,burst.Y)+Unit(age*102)*Math.Max(0,2-10*age);
-        string label=Loc.T(burst.Ru,burst.En);
-        int size=splash ? 46 : 27;
-        Font font=GameFonts.Get(Typeface.SerifBold,size);
-        Vector2 measure=Raylib.MeasureTextEx(font,label,size,0);
-        Vector2 radius=new(measure.X*.62f+16,size*1.24f);
-        Vector2 basis=Unit(angle*MathF.PI/180);
-        void Star(float factor,Vector2 shift,Color color)
-        {
-            Vector2 origin=center+shift*pop;
-            Vector2 Vertex(int j)
-            {
-                var p=Unit(j*MathF.Tau/28)*radius;
-                float length=(j%2==0 ? 1+.06f*MathF.Sin(j*2.7f) : .67f)*factor*pop;
-                return origin+new Vector2(p.X*basis.X-p.Y*basis.Y,p.X*basis.Y+p.Y*basis.X)*length;
-            }
-            for(int j=0;j<28;j++) Raylib.DrawTriangle(origin,Vertex(j+1),Vertex(j),color);
-        }
-        Star(1.08f,new(3,5),Ink);
-        Star(1.08f,Vector2.Zero,Ink);
-        Star(1,Vector2.Zero,Rgb(burst.Rgb));
-        Star(.79f,Vector2.Zero,new Color(255,255,255,100));
-        void Text(Vector2 shift,Color c) => Raylib.DrawTextPro(font,label,center+shift*pop,measure*pop/2,angle,size*pop,0,c);
-        Text(new(3,4),Ink);
-        for(int j=0;j<8;j++) Text(Unit(j*MathF.Tau/8)*2.4f,Ink);
-        Text(Vector2.Zero,Color.White);
     }
 
     private static void DrawSparks(Vector2 at,float clock)
