@@ -31,6 +31,7 @@ internal sealed class IntroComic : IDisposable
     ];
 
     private readonly Texture2D[] art = new Texture2D[8];
+    private Texture2D curtainArt;
     private enum Cue { Slam, Boom, Snap, Zap, Jackpot }
     private sealed record SoundBeat(float Time, Cue Sound);
     private static readonly SoundBeat[][] Beats =
@@ -71,6 +72,16 @@ internal sealed class IntroComic : IDisposable
             int size = Splash(i) ? 20 : 15;
             lettering[0,i] = Typeset(Captions[i].Ru, limit, size);
             lettering[1,i] = Typeset(Captions[i].En, limit, size);
+        }
+        if (curtainArt.Id == 0)
+        {
+            string cardPath = Path.Combine(AppContext.BaseDirectory, "assets", "ui", "session_01_card.png");
+            if (File.Exists(cardPath))
+            {
+                curtainArt = Raylib.LoadTexture(cardPath);
+                Raylib.GenTextureMipmaps(ref curtainArt);
+                Raylib.SetTextureFilter(curtainArt, TextureFilter.Trilinear);
+            }
         }
         Active = true;
         turning = false;
@@ -243,47 +254,59 @@ internal sealed class IntroComic : IDisposable
             }
             Raylib.ClearBackground(new Color(9, 8, 11, 255));
             float t = Math.Clamp((curtainAge - MenuFadeDur) / CurtainHoldDur, 0f, 1f);
-            float cardAlpha = Smooth(t / 0.24f) * (1f - Smooth((t - 0.78f) / 0.22f));
+            float cardAlpha = Smooth(t / 0.20f) * (1f - Smooth((t - 0.80f) / 0.20f));
             Raylib.BeginMode2D(new Camera2D { Offset = offset, Zoom = scale });
             if (cardAlpha > 0.01f)
             {
                 int a = Math.Clamp((int)(255 * cardAlpha), 0, 255);
-                int dim = Math.Clamp((int)(195 * cardAlpha), 0, 255);
-                Color brass = new(198, 158, 88, a);
-                Color ivory = new(244, 236, 218, a);
-                Color muted = new(168, 156, 138, dim);
+                int dim = Math.Clamp((int)(210 * cardAlpha), 0, 255);
+
+                // Full-bleed 1998 risograph/silkscreen noir eyecatch with subtle slow cinema push-in
+                if (curtainArt.Id != 0)
+                {
+                    float push = 1f + 0.028f * Smooth(t);
+                    float srcW = curtainArt.Width / push;
+                    float srcH = curtainArt.Height / push;
+                    Rectangle src = new((curtainArt.Width - srcW) * 0.5f, (curtainArt.Height - srcH) * 0.5f, srcW, srcH);
+                    Raylib.DrawTexturePro(curtainArt, src, new(0, 0, 1280, 720), Vector2.Zero, 0f, new Color(255, 255, 255, a));
+                }
+
+                // Asymmetric editorial typography tucked into the lower-left dark architectural silhouette
+                Color ochre = new(218, 158, 68, a);
+                Color ivory = new(238, 226, 200, a);
+                Color muted = new(184, 170, 148, dim);
 
                 string eyebrow = Loc.T("МОСКВА-СИТИ · 2026", "MOSCOW-CITY · 2026");
                 string title = Loc.T("СЕССИЯ #01", "SESSION #01");
                 string subtitle = Loc.T("БЛЮЗ ПЕРВОГО ЭТАЖА", "FLOOR ONE BLUES");
-                string status = Loc.T("ПОДГОТОВКА ЭТАЖА...", "PREPARING FLOOR ONE...");
                 string hint = Loc.T("[ПРОБЕЛ] ДАЛЕЕ   [ESC] ПРОПУСТИТЬ", "[SPACE] CONTINUE   [ESC] SKIP");
 
-                var fEye = GameFonts.Get(Typeface.InterfaceBold, 16);
-                var fTitle = GameFonts.Get(Typeface.SerifBold, 64);
-                var fSub = GameFonts.Get(Typeface.SerifBold, 26);
-                var fStat = GameFonts.Get(Typeface.Interface, 14);
+                var fEye = GameFonts.Get(Typeface.InterfaceBold, 15);
+                var fTitle = GameFonts.Get(Typeface.SerifBold, 60);
+                var fSub = GameFonts.Get(Typeface.SerifBold, 23);
+                var fHint = GameFonts.Get(Typeface.Interface, 14);
 
-                float eyeW = GameFonts.Measure(fEye, eyebrow, 16).X;
-                float titleW = GameFonts.Measure(fTitle, title, 64).X;
-                float subW = GameFonts.Measure(fSub, subtitle, 26).X;
+                float textReveal = Smooth(Math.Clamp((t - 0.06f) / 0.24f, 0f, 1f));
+                float slideY = (1f - textReveal) * 10f;
+                GameFonts.Draw(fEye, eyebrow, new(72, 474 + slideY), 15, ochre, false);
+                GameFonts.Draw(fTitle, title, new(68, 498 + slideY), 60, ivory, false);
+                GameFonts.Draw(fSub, subtitle, new(72, 568 + slideY), 23, ochre, false);
 
-                GameFonts.Draw(fEye, eyebrow, new(640 - eyeW * 0.5f, 246), 16, brass, false);
-                GameFonts.Draw(fTitle, title, new(640 - titleW * 0.5f, 276), 64, ivory, false);
-                GameFonts.Draw(fSub, subtitle, new(640 - subW * 0.5f, 358), 26, brass, false);
+                // Diegetic spinning 1998 analog tape-cassette reel indicator in lower-right (zero generic progress bar!)
+                Vector2 reelCenter = new(1214f, 658f);
+                float reelAng = curtainAge * 3.4f;
+                Raylib.DrawCircleV(reelCenter, 19f, new Color(14, 12, 16, Math.Clamp((int)(205 * cardAlpha), 0, 255)));
+                Raylib.DrawRing(reelCenter, 16.5f, 19f, 0, 360, 28, ochre);
+                Raylib.DrawRing(reelCenter, 5.5f, 7.5f, 0, 360, 20, ivory);
+                for (int sp = 0; sp < 3; sp++)
+                {
+                    float ang = reelAng + sp * (MathF.Tau / 3f);
+                    Vector2 dir = Unit(ang);
+                    Raylib.DrawLineEx(reelCenter + dir * 7.5f, reelCenter + dir * 16.5f, 2.6f, ivory);
+                }
 
-                // Minimalist loading progress bar along the lower center
-                float barW = 280f, barX = 640f - barW * 0.5f, barY = 446f;
-                float fill = Smooth(Math.Clamp(t / 0.85f, 0f, 1f));
-                Raylib.DrawRectangleRounded(new(barX, barY, barW, 4f), 0.5f, 4, new Color(46, 40, 36, a));
-                if (fill > 0.01f)
-                    Raylib.DrawRectangleRounded(new(barX, barY, barW * fill, 4f), 0.5f, 4, brass);
-
-                float statW = GameFonts.Measure(fStat, status, 14).X;
-                GameFonts.Draw(fStat, status, new(640 - statW * 0.5f, barY + 14), 14, muted, false);
-
-                float hintW = GameFonts.Measure(fStat, hint, 14).X;
-                GameFonts.Draw(fStat, hint, new(1224 - hintW, 676), 14, muted, false);
+                float hintW = GameFonts.Measure(fHint, hint, 14).X;
+                GameFonts.Draw(fHint, hint, new(reelCenter.X - 34f - hintW, 650), 14, muted, false);
             }
             Raylib.EndMode2D();
             return;
@@ -450,5 +473,6 @@ internal sealed class IntroComic : IDisposable
     {
         Close();
         foreach (var texture in art) if (texture.Id!=0) Raylib.UnloadTexture(texture);
+        if (curtainArt.Id != 0) { Raylib.UnloadTexture(curtainArt); curtainArt = default; }
     }
 }
