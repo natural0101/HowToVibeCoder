@@ -13,6 +13,8 @@ internal static class WorldLabelLayout
         int w=UiViewport.Width, h=UiViewport.Height;
         Reserve(new(w/2-14,h/2-14,28,28));        // reticle and hit confirmation
         Reserve(new(w-248,0,248,84));             // XP and objectives
+        if (StyleComboSystem.IsHudActive)
+            Reserve(new(w - 310, 82, 310, 360));  // right-side Style Combo HUD safe-zone
         Reserve(new(w/2-365,h-165,730,165));      // interaction, speech and inventory
         Reserve(new(0,h-120,116,120));
     }
@@ -46,9 +48,12 @@ internal static class WorldLabelLayout
     {
         int distance=(int)MathF.Round(Vector2.Distance(new(camera.Position.X,camera.Position.Z),new(feet.X,feet.Z)));
         string caption=$"{label}   {distance} м";
-        var font=GameFonts.Get(Typeface.InterfaceBold,17);
-        float width=GameFonts.Measure(font,caption,17).X;
+        var font=GameFonts.Get(Typeface.InterfaceBold,16);
+        float width=GameFonts.Measure(font,caption,16).X;
         var (center,direction)=WaypointProjection(camera,feet+Vector3.UnitY*height,width);
+        // Never collide with active right-side Style Combo HUD!
+        if (StyleComboSystem.IsHudActive && center.X + width * 0.5f > UiViewport.Width - 325 && center.Y > 75 && center.Y < 455)
+            return;
         var shadow=new Color(22,22,25,185);
         void Diamond(Vector2 p,Color color) => Raylib.DrawRectanglePro(new(p.X,p.Y,8.5f,8.5f),new(4.25f),45,color);
         Diamond(center+new Vector2(1,2),shadow);
@@ -60,8 +65,11 @@ internal static class WorldLabelLayout
             Raylib.DrawLineEx(tip-direction*4+flank,tip,1.6f,tint ?? Ivory);
             Raylib.DrawLineEx(tip-direction*4-flank,tip,1.6f,tint ?? Ivory);
         }
-        Program.ShadowText(font,caption,center.X-width/2,center.Y-29,17,tint ?? Ivory);
-        Reserve(new(center.X-width/2-3,center.Y-31,width+6,46));
+        Rectangle pill = new(center.X - width * 0.5f - 8f, center.Y - 33f, width + 16f, 23f);
+        Raylib.DrawRectangleRounded(pill, 0.30f, 6, new Color(14, 11, 16, 178));
+        Raylib.DrawRectangleRoundedLinesEx(pill, 0.30f, 6, 1f, new Color(188, 152, 88, 86));
+        Program.ShadowText(font,caption,center.X-width/2,center.Y-29,16,tint ?? Ivory);
+        Reserve(new(pill.X - 2, pill.Y - 2, pill.Width + 4, 46));
     }
 
     public static void ReserveProjectedBox(Camera3D camera, Vector3 center, Vector3 half)

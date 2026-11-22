@@ -844,13 +844,37 @@ public static partial class Program
         string heading=guiding ? $"ШАГ {(beat<6 ? beat+1 : beat)}/8   {BeatTitles[beat]}" : "ЦЕЛЬ   ПРОРЫВ НА 2-Й ЭТАЖ";
         string detail=guiding ? Floor.Objective(_world.CarriedCoder!=null,_world.TotalCodersSoldToHr) :
             Floor.JobId>=0 ? Loc.Tr(objective) : $"[{(Floor.HasWeapon(WeaponType.SolderingIron)?"×":" ")}] Паяльник ($90)    [{(_world.HasElevatorKey?"×":" ")}] Ключ-карта СБ";
-        ShadowText(_uiFont,heading,28,Floor.WingsUnlocked ? 54 : 22,16,paper);
-        ShadowText(_uiFont,detail,28,Floor.WingsUnlocked ? 77 : 45,17,WorldLabelLayout.Ivory);
+        int topLeftY = Floor.WingsUnlocked ? 54 : 22;
+        float headingW = GameFonts.Measure(_uiFont, heading, 16).X;
+        float detailW = GameFonts.Measure(_uiFont, detail, 17).X;
+        float objBoxW = Math.Min(UiViewport.Width * 0.42f, Math.Max(headingW, detailW) + 22f);
+        Raylib.DrawRectangleRounded(new(18, topLeftY - 5, objBoxW, 48), 0.16f, 6, new Color(14, 11, 16, 138));
+        ShadowText(_uiFont,heading,28,topLeftY,16,paper);
+        ShadowText(_uiFont,detail,28,topLeftY + 23,17,WorldLabelLayout.Ivory);
         string notice=Floor.NoticeTime>0 ? Floor.Notice :
             Floor.Ddos || Floor.FireIncident ? "Сбой B12. Перезапусти стойку" : Floor.Coffee>0 ? $"Эспрессо  {Floor.Coffee:F0} с" : "";
         if(notice.Length>0)
         {
-            ShadowText(_uiFont,notice,28,Floor.WingsUnlocked ? 102 : 70,15,amber);
+            string locNotice = Loc.Tr(notice);
+            float maxNoticeW = Math.Min(428f, UiViewport.Width * 0.335f);
+            var nLines = new List<string>();
+            string nRow = "";
+            foreach (var word in locNotice.Split(' '))
+            {
+                string next = nRow.Length == 0 ? word : nRow + " " + word;
+                if (nRow.Length > 0 && GameFonts.Measure(_uiFont, next, 15).X > maxNoticeW)
+                { nLines.Add(nRow); nRow = word; }
+                else nRow = next;
+            }
+            if (nRow.Length > 0) nLines.Add(nRow);
+            float widest = 0f;
+            foreach (var ln in nLines) widest = Math.Max(widest, GameFonts.Measure(_uiFont, ln, 15).X);
+            int noticeTop = topLeftY + 52;
+            Rectangle nRect = new(18, noticeTop - 6, widest + 22f, nLines.Count * 20f + 12f);
+            Raylib.DrawRectangleRounded(nRect, 0.14f, 6, new Color(14, 11, 16, 184));
+            Raylib.DrawRectangleRoundedLinesEx(nRect, 0.14f, 6, 1f, new Color(188, 152, 88, 92));
+            for (int li = 0; li < nLines.Count; li++)
+                ShadowText(_uiFont, nLines[li], 28, noticeTop + li * 20, 15, amber);
         }
         void Right(Font font,string value,int y,int size,Color ink) =>
             ShadowText(font,value,right-GameFonts.Measure(font,value,size).X,y,size,ink);

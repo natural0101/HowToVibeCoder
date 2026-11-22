@@ -308,14 +308,16 @@ internal static class StyleComboSystem
         _hitstopTimer = 0f;
     }
 
+    internal static bool IsHudActive => (ComboFuse > 0f && (Multiplier > 1.01f || _feed.Count > 0)) || _cashTimer > 0f;
+
     public static void DrawHud(int screenW, int screenH)
     {
         bool showRank = ComboFuse > 0f && (Multiplier > 1.01f || _feed.Count > 0);
         bool showCash = _cashTimer > 0f;
         if (!showRank && !showCash) return;
 
-        float rightEdge = screenW - 34f;
-        float topY = 98f;
+        float rightEdge = screenW - 32f;
+        float topY = 92f;
         Color shadow = new(10, 7, 5, 215);
 
         void Shadowed(Font f, string text, float x, float y, int size, Color col)
@@ -334,24 +336,29 @@ internal static class StyleComboSystem
             Color brass = Raylib.Fade(new Color(234, 194, 114, 255), fade);
             Color ivory = Raylib.Fade(new Color(248, 238, 214, 255), fade);
 
-            // 1) Spring-bouncing Angled Wax-Ink Rank Stamp (ZERO SaaS box — pure stamped emblem!)
+            // Compact smoked-glass Art-Deco Style Card framing stamp, multiplier & inset fuse meter (zero stray protruding bar!)
+            float cardW = 248f;
+            Rectangle card = new(rightEdge - cardW + 10f, topY - 8f, cardW, 92f);
+            Raylib.DrawRectangleRounded(card, 0.12f, 6, Raylib.Fade(new Color(14, 11, 16, 186), fade));
+            Raylib.DrawRectangleRoundedLinesEx(card, 0.12f, 6, 1f, Raylib.Fade(new Color(188, 152, 88, 108), fade));
+
+            // 1) Spring-bouncing Angled Wax-Ink Rank Stamp
             float stampScale = 1.0f + MathF.Pow(_rankPunch, 1.5f) * 0.42f;
             float stampAngle = -5.5f + _rankPunch * 5.2f;
-            float stampCX = rightEdge - 186f;
-            float stampCY = topY + 34f;
+            float stampCX = rightEdge - 190f;
+            float stampCY = topY + 32f;
             Rlgl.PushMatrix();
             Rlgl.Translatef(stampCX, stampCY, 0f);
             Rlgl.Rotatef(stampAngle, 0f, 0f, 1f);
             Rlgl.Scalef(stampScale, stampScale, 1f);
 
-            // Double-framed wet-ink stamp crest
-            Rectangle outer = new(-34, -30, 68, 60);
-            Rectangle inner = new(-29, -25, 58, 50);
-            Raylib.DrawRectangleRec(outer, Raylib.Fade(new Color(20, 14, 12, 185), fade));
-            Raylib.DrawRectangleLinesEx(outer, 2.8f, rankCol);
-            Raylib.DrawRectangleLinesEx(inner, 1.2f, Raylib.Fade(rank.Ink, fade * 0.65f));
+            Rectangle outer = new(-32, -28, 64, 56);
+            Rectangle inner = new(-27, -23, 54, 46);
+            Raylib.DrawRectangleRec(outer, Raylib.Fade(new Color(20, 14, 12, 200), fade));
+            Raylib.DrawRectangleLinesEx(outer, 2.5f, rankCol);
+            Raylib.DrawRectangleLinesEx(inner, 1.1f, Raylib.Fade(rank.Ink, fade * 0.65f));
 
-            int codeSize = rank.Code.Length > 1 ? 36 : 44;
+            int codeSize = rank.Code.Length > 1 ? 34 : 42;
             Font codeFont = GameFonts.Get(Typeface.SerifBold, codeSize);
             float cw = GameFonts.Measure(codeFont, rank.Code, codeSize).X;
             GameFonts.Draw(codeFont, rank.Code, new(-cw * 0.5f, -codeSize * 0.52f), codeSize, rankCol, shadowed: false);
@@ -360,41 +367,39 @@ internal static class StyleComboSystem
             // 2) Live Ticking Multiplier Readout right beside the stamp (×3.25)
             string multStr = $"×{DisplayedMultiplier:0.00}";
             float multScale = 1.0f + _multPunch * 0.24f;
-            Font multFont = GameFonts.Get(Typeface.SerifBold, 42);
-            float mw = GameFonts.Measure(multFont, multStr, 42).X;
+            Font multFont = GameFonts.Get(Typeface.SerifBold, 40);
+            float mw = GameFonts.Measure(multFont, multStr, 40).X;
             float multX = rightEdge - mw * 0.5f;
-            float multY = topY + 26f;
+            float multY = topY + 24f;
             Rlgl.PushMatrix();
             Rlgl.Translatef(multX, multY, 0f);
             Rlgl.Scalef(multScale, multScale, 1f);
-            Shadowed(multFont, multStr, -mw * 0.5f, -22f, 42, brass);
+            Shadowed(multFont, multStr, -mw * 0.5f, -21f, 40, brass);
             Rlgl.PopMatrix();
 
             // Rank title right under multiplier
             string sub = Loc.T(rank.SubtitleRu, rank.SubtitleEn);
             Font subFont = GameFonts.Get(Typeface.InterfaceBold, 13);
             float sw = GameFonts.Measure(subFont, sub, 13).X;
-            Shadowed(subFont, sub, rightEdge - sw, topY + 50f, 13, ivory);
+            Shadowed(subFont, sub, rightEdge - sw, topY + 47f, 13, ivory);
 
-            // 3) Tapered Burning Brass-to-Ember Combo Fuse Bar (clean margin below angled stamp!)
+            // 3) Inset Fuse Progress Meter cleanly aligned inside the card bottom
             float fuseFrac = Math.Clamp(ComboFuse / MaxComboFuse, 0f, 1f);
-            float barW = 220f;
-            float barX = rightEdge - barW;
-            float barY = topY + 82f;
-            Raylib.DrawRectangleRec(new(barX, barY, barW, 5f), Raylib.Fade(new Color(18, 13, 10, 190), fade));
+            float barW = cardW - 24f;
+            float barX = card.X + 12f;
+            float barY = card.Y + card.Height - 12f;
+            Raylib.DrawRectangleRounded(new(barX, barY, barW, 4f), 0.5f, 4, Raylib.Fade(new Color(42, 34, 28, 195), fade));
             Color fuseCol = fuseFrac < 0.28f
                 ? Raylib.ColorLerp(new Color(236, 62, 54, 255), new Color(255, 196, 86, 255), 0.5f + 0.5f * MathF.Sin(ComboFuse * 18f))
                 : rank.Ink;
             float fillW = barW * fuseFrac;
-            Raylib.DrawRectangleRec(new(rightEdge - fillW, barY, fillW, 5f), Raylib.Fade(fuseCol, fade));
-            // Glowing ember tip on the burning fuse
-            if (fillW > 3f)
-                Raylib.DrawCircle((int)(rightEdge - fillW), (int)(barY + 2.5f), 4f, Raylib.Fade(new Color(255, 240, 185, 255), fade));
+            if (fillW > 1f)
+                Raylib.DrawRectangleRounded(new(barX + barW - fillW, barY, fillW, 4f), 0.5f, 4, Raylib.Fade(fuseCol, fade));
 
-            // 4) Cascading Right-Aligned Animated Trick Tags (clean floating typography, ZERO dark rectangles!)
-            float fy = topY + 96f;
-            Font tagFont = GameFonts.Get(Typeface.InterfaceBold, 16);
-            Font bonusFont = GameFonts.Get(Typeface.SerifBold, 17);
+            // 4) Cascading Right-Aligned Animated Trick Tags with crisp smoked-glass pill backing
+            float fy = card.Y + card.Height + 10f;
+            Font tagFont = GameFonts.Get(Typeface.InterfaceBold, 15);
+            Font bonusFont = GameFonts.Get(Typeface.SerifBold, 16);
             for (int i = 0; i < _feed.Count; i++)
             {
                 var item = _feed[i];
@@ -404,19 +409,21 @@ internal static class StyleComboSystem
                 float alpha = fade * exit * easeOut;
                 float slideX = (1f - easeOut) * 64f;
 
-                float bw = GameFonts.Measure(bonusFont, item.MultText, 17).X;
-                float lw = GameFonts.Measure(tagFont, item.Label, 16).X;
+                float bw = GameFonts.Measure(bonusFont, item.MultText, 16).X;
+                float lw = GameFonts.Measure(tagFont, item.Label, 15).X;
                 float bx = rightEdge - bw + slideX;
                 float lx = bx - lw - 10f;
 
-                Shadowed(tagFont, item.Label, lx, fy, 16, Raylib.Fade(item.Accent, alpha));
-                Shadowed(bonusFont, item.MultText, bx, fy - 1f, 17, Raylib.Fade(new Color(252, 224, 146, 255), alpha));
-                fy += 24f;
+                Rectangle tagBg = new(lx - 10f, fy - 3f, lw + bw + 30f, 22f);
+                Raylib.DrawRectangleRounded(tagBg, 0.26f, 6, Raylib.Fade(new Color(14, 11, 16, 172), alpha));
+                Shadowed(tagFont, item.Label, lx, fy, 15, Raylib.Fade(item.Accent, alpha));
+                Shadowed(bonusFont, item.MultText, bx, fy - 1f, 16, Raylib.Fade(new Color(252, 224, 146, 255), alpha));
+                fy += 26f;
             }
-            topY = fy + 8f;
+            topY = fy + 6f;
         }
 
-        // 5) Animated Gilded Cashout Formula Roll-Up ($120 × 2.85 = +$342!)
+        // 5) Animated Gilded Cashout Formula Roll-Up ($120 × 2.85 = +$342!) on smoked-glass plaque
         if (showCash)
         {
             float cAlpha = Math.Clamp(_cashTimer * 2.2f, 0f, 1f);
@@ -434,6 +441,9 @@ internal static class StyleComboSystem
 
             float xTot = rightEdge - wT;
             float xLeft = xTot - wL;
+            Rectangle cashBg = new(xLeft - 12f, topY - 2f, wL + wT + 24f, 32f);
+            Raylib.DrawRectangleRounded(cashBg, 0.22f, 6, Raylib.Fade(new Color(14, 11, 16, 196), cAlpha));
+            Raylib.DrawRectangleRoundedLinesEx(cashBg, 0.22f, 6, 1f, Raylib.Fade(new Color(234, 194, 114, 128), cAlpha));
             Shadowed(fLeft, eqLeft, xLeft, topY + 6f, 17, Raylib.Fade(new Color(232, 214, 182, 255), cAlpha));
 
             Rlgl.PushMatrix();

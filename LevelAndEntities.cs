@@ -5280,7 +5280,14 @@ public sealed partial class SkyscraperFloor1World
             FocusKind.Coffee=>CoffeePos, FocusKind.Desk=>GalleyDesks[focus.Index].DeskPosition,_=>null};
         var waypoint=OnboardingWaypoint(camera.Position);
         if(Systems.Onboarding!=OnboardingStep.CatchFrogs && waypoint is {} goal && focusFeet!=goal.Position)
-            WorldLabelLayout.DrawWaypoint(camera,goal.Position,goal.Height+.055f*MathF.Sin(_worldClock*2),goal.Label,Systems.Onboarding==OnboardingStep.HealAtCoffee ? new Color(149,255,201,255) : null);
+        {
+            Vector3 wpDelta = goal.Position + Vector3.UnitY * goal.Height - camera.Position;
+            float wpDist = wpDelta.Length();
+            bool inspectingOtherCloseProp = focus.Kind != FocusKind.None && wpDist > 8f;
+            bool closeupBlockedByWall = wpDist > 12f && TraceSurface(camera.Position, Vector3.Normalize(camera.Target - camera.Position), 2.0f) < 1.45f;
+            if (!inspectingOtherCloseProp && !closeupBlockedByWall)
+                WorldLabelLayout.DrawWaypoint(camera,goal.Position,goal.Height+.055f*MathF.Sin(_worldClock*2),goal.Label,Systems.Onboarding==OnboardingStep.HealAtCoffee ? new Color(149,255,201,255) : null);
+        }
         if(camera.Position.Z<NorthElevatorPos.Z)
             WorldLabelLayout.ReserveProjectedBox(camera,LiftSignCenter(NorthElevatorPos,-1),LiftSignSize*.5f);
         if(camera.Position.Z>SouthElevatorDoorPos.Z)
@@ -5309,14 +5316,19 @@ public sealed partial class SkyscraperFloor1World
         {
             if (Vector3.Dot(head-camera.Position,look)<.1f) return;
             Vector2 screen=UiViewport.Project(head,camera)-new Vector2(0,4);
-            Font tag=GameFonts.Get(Typeface.InterfaceBold,16);
-            float width=GameFonts.Measure(tag,name,16).X;
-            if (!WorldLabelLayout.Place(screen,width,22,out var r)) return;
-            Program.ShadowText(tag,name,r.X,r.Y,16,mystery ? accent : new Color(247,244,235,255));
+            Font tag=GameFonts.Get(Typeface.InterfaceBold,15);
+            float width=GameFonts.Measure(tag,name,15).X;
+            float pillW = width + 14f;
+            float pillH = health >= 0 ? 27f : 22f;
+            if (!WorldLabelLayout.Place(screen,pillW,pillH,out var r)) return;
+            Rectangle pill = new(r.X, r.Y, pillW, health >= 0 ? 21f : 22f);
+            Raylib.DrawRectangleRounded(pill, 0.28f, 6, new Color(14, 11, 16, 186));
+            Raylib.DrawRectangleRoundedLinesEx(pill, 0.28f, 6, 1f, new Color((int)accent.R, (int)accent.G, (int)accent.B, 96));
+            Program.ShadowText(tag,name,r.X + 7f,r.Y + 3f,15,mystery ? accent : new Color(247,244,235,255));
             if(health<0) return;
             float barWidth = MathF.Min(width,62);
-            Rectangle track=new(r.X+(width-barWidth)/2,r.Y+19,barWidth,3);
-            Raylib.DrawRectangleRec(track,new Color(14,18,26,145));
+            Rectangle track=new(r.X+(pillW-barWidth)/2,r.Y+23,barWidth,3);
+            Raylib.DrawRectangleRec(track,new Color(14,18,26,165));
             track.Width*=Math.Clamp(health,0,1);
             if(track.Width>=1) Raylib.DrawRectangleRec(track,accent);
         }

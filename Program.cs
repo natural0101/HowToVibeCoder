@@ -1259,6 +1259,12 @@ public static partial class Program
             ShadowText(_uiFont, $"Садок: {Floor.PocketFrogs.Count}", 36 + mw + 14, sh - 86, 16, white);
         }
 
+        // Subtle smoked-glass backing behind bottom-left status cluster so numbers & hotkeys never wash out over cuffs/watch
+        string baitLabel = Loc.T("[G] Наживка", "[G] Bait") + " ×" + Floor.BaitStock.Sum();
+        float bottomClusterW = 317f + GameFonts.Measure(_uiFont, baitLabel, 16).X - 20f + 14f;
+        Raylib.DrawRectangleRounded(new(24, sh - 66, bottomClusterW, 40), 0.22f, 6, new Color(14, 11, 16, 148));
+        Raylib.DrawRectangleRoundedLinesEx(new(24, sh - 66, bottomClusterW, 40), 0.22f, 6, 1f, new Color(182, 148, 92, 64));
+
         Color heart = _playerHp > 30 ? white : new Color(254, 152, 159, 255);
         Color shadow = new(14, 12, 11, 185);
         Raylib.DrawCircle(44, sh - 46, 5.5f, shadow);
@@ -1322,21 +1328,74 @@ public static partial class Program
         }
 
         DrawFloorTelemetry();
+        bool bossTapeShownAtTop = _world.BossHudOpacity > 0.5f && _world.ElevatorBoss.Phase == 3
+            && AudioMusicSystem.ActiveVoiceText == _world.CurrentTape;
+        bool richSubtitle = CoachingSubtitle || (!BossIntroCutscene.IsActive(_world) && !bossTapeShownAtTop && AudioMusicSystem.VoiceTimer > 0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO");
+        bool shortSubtitle = !richSubtitle && !bossTapeShownAtTop && AudioMusicSystem.VoiceTimer > 0;
+        int subtitleTopY = sh - 96;
+        if (richSubtitle)
+        {
+            var face = GameFonts.Get(Typeface.InterfaceBold, 17);
+            float limit = Math.Min(sw - 180, 780);
+            var lines = new List<string>();
+            string row = "";
+            string caption = Loc.IsEn ? AudioMusicSystem.ActiveSpeaker + ": " + AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
+            foreach (var word in caption.Split(' '))
+            {
+                string next = row.Length == 0 ? word : row + " " + word;
+                if (row.Length > 0 && GameFonts.Measure(face, next, 17).X > limit)
+                { lines.Add(row); row = word; }
+                else row = next;
+            }
+            if (row.Length > 0) lines.Add(row);
+            float maxW = 0f;
+            foreach (var ln in lines) maxW = Math.Max(maxW, GameFonts.Measure(face, ln, 17).X);
+            float pillW = maxW + 32f;
+            float pillH = lines.Count * 22f + 14f;
+            float pillY = sh - 94f - pillH;
+            subtitleTopY = (int)pillY;
+            Rectangle pill = new(cx - pillW * 0.5f, pillY, pillW, pillH);
+            Raylib.DrawRectangleRounded(pill, 0.22f, 8, new Color(14, 11, 16, 208));
+            Raylib.DrawRectangleRoundedLinesEx(pill, 0.22f, 8, 1f, new Color(188, 152, 88, 92));
+            for (int i = 0; i < lines.Count; i++)
+            {
+                float lw = GameFonts.Measure(face, lines[i], 17).X;
+                ShadowText(face, lines[i], cx - lw * 0.5f, pillY + 7f + i * 22f, 17, white);
+            }
+        }
+        else if (shortSubtitle)
+        {
+            string line = Loc.IsEn ? AudioMusicSystem.ActiveSpeaker + ": " + AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
+            float width = Math.Min(sw - 48, GameFonts.Measure(_uiFont, line, 16).X + 28);
+            Rectangle caption = new(cx - width / 2, sh - 126, width, 30);
+            subtitleTopY = (int)caption.Y;
+            Raylib.DrawRectangleRounded(caption, .30f, 8, new Color(14, 11, 16, 208));
+            Raylib.DrawRectangleRoundedLinesEx(caption, .30f, 8, 1f, new Color(188, 152, 88, 90));
+            MainMenuAndPauseUI.Center(_uiFont, line, caption, 16, white);
+        }
+
         var camera=BuildPlayerCamera();
         string target=CoopEscort(camera,false,apply:false) ?? _world.FocusPrompt(camera,_weapons.CurrentWeapon);
         bool healingLesson=Floor.Onboarding==OnboardingStep.HealAtCoffee;
         if(target.Length>0 && (healingLesson || !(_foregroundBanner && _hudStatusTimer>0)))
         {
             string prompt=target==Loc.CoolerEmpty ? target : "[E] "+target;
-            float width=GameFonts.Measure(_serif,prompt,19).X;
-            GameFonts.Draw(_serif,prompt,new(cx-width/2,sh-178),19,white);
+            float width=GameFonts.Measure(_serif,prompt,18).X;
+            float pillW = width + 28f;
+            float pillH = 32f;
+            float promptY = (richSubtitle || shortSubtitle) ? Math.Min(subtitleTopY - 40f, sh - 168f) : sh - 142f;
+            Rectangle pRect = new(cx - pillW * 0.5f, promptY, pillW, pillH);
+            Raylib.DrawRectangleRounded(pRect, 0.28f, 8, new Color(14, 11, 16, 198));
+            Raylib.DrawRectangleRoundedLinesEx(pRect, 0.28f, 8, 1f, new Color(214, 176, 102, 138));
+            GameFonts.Draw(_serif,prompt,new(cx-width/2,promptY+6f),18,white);
         }
         else if (!healingLesson && _hudStatusTimer>0 && !string.IsNullOrEmpty(_hudStatusBanner) && (_foregroundBanner || !CoachingSubtitle))
         {
             var face = GameFonts.Get(Typeface.InterfaceBold, 20);
             float width=Math.Min(sw-24,GameFonts.Measure(face,_hudStatusBanner,20).X+28);
-            Rectangle plate=new(cx-width/2,cy+22,width,32);
-            Raylib.DrawRectangleRec(plate, new Color(24,22,20,215));
+            Rectangle plate=new(cx-width/2,cy+22,width,34);
+            Raylib.DrawRectangleRounded(plate, 0.20f, 8, new Color(16,13,16,218));
+            Raylib.DrawRectangleRoundedLinesEx(plate, 0.20f, 8, 1f, new Color(196,158,92,105));
             MainMenuAndPauseUI.Center(face,_hudStatusBanner,plate,20,DossierPrint.Ivory);
         }
         for(int i=0;i<4;i++)
@@ -1363,35 +1422,6 @@ public static partial class Program
             Raylib.DrawRectangleGradientV(0,0,sw,height,Edge(_playerHitDir.Y),Color.Blank);
             Raylib.DrawRectangleGradientV(0,sh-height,sw,height,Color.Blank,Edge(-_playerHitDir.Y));
         }
-        bool bossTapeShownAtTop = _world.BossHudOpacity > 0.5f && _world.ElevatorBoss.Phase == 3
-            && AudioMusicSystem.ActiveVoiceText == _world.CurrentTape;
-        if(CoachingSubtitle || (!BossIntroCutscene.IsActive(_world) && !bossTapeShownAtTop && AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker is "Петрович" or "ИИ-Агент v0.1" or "SYSTEM ZERO"))
-        {
-            var face=GameFonts.Get(Typeface.InterfaceBold,18);
-            float limit=Math.Min(sw-100,940);
-            var lines=new List<string>();
-            string row="";
-            string caption=Loc.IsEn ? AudioMusicSystem.ActiveSpeaker+": "+AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
-            foreach(var word in caption.Split(' '))
-            {
-                string next=row.Length==0 ? word : row+" "+word;
-                if(row.Length>0 && GameFonts.Measure(face,next,18).X>limit)
-                { lines.Add(row); row=word; }
-                else row=next;
-            }
-            lines.Add(row);
-            for(int i=0;i<lines.Count;i++)
-                ShadowText(face,lines[i],cx-GameFonts.Measure(face,lines[i],18).X/2,sh-125-(lines.Count-1-i)*23,18,white);
-        }
-        else if (!bossTapeShownAtTop && AudioMusicSystem.VoiceTimer>0)
-        {
-            string line=Loc.IsEn ? AudioMusicSystem.ActiveSpeaker+": "+AudioMusicSystem.ActiveVoiceText : AudioMusicSystem.ActiveVoiceText;
-            float width=Math.Min(sw-24,GameFonts.Measure(_uiFont,line,16).X+22);
-            Rectangle caption=new(cx-width/2,sh-122,width,26);
-            Raylib.DrawRectangleRounded(caption,.35f,8,new Color(14,20,28,212));
-            MainMenuAndPauseUI.Center(_uiFont,line,caption,16,white);
-        }
-
     }
 
     private static bool CoachingSubtitle => AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.SourceSpeaker=="Вероника";
