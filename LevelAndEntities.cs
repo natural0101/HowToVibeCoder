@@ -4261,7 +4261,26 @@ public sealed partial class SkyscraperFloor1World
             _ => BrokenElevator && !inside ? .23f : 0
         };
         if(density<=0) return;
-        int count=BrokenElevator ? 12 : 28;
+        int count=BrokenElevator ? 10 : 20;
+        if (CombatSprites.HasPaintedFx)
+        {
+            CombatSprites.Begin(BlendMode.Alpha);
+            for (int i = 0; i < count; i++)
+            {
+                float age = (_worldClock * (inside ? 0.36f : 0.48f) + i * 0.381966f + (inside ? 0.33f : 0f)) % 1f;
+                float wave = i * 2.4f + age * 2f;
+                float radius = (0.18f + age * 0.44f) * (0.76f + density * 0.42f);
+                float offset = inside ? -0.64f + 0.35f * MathF.Sin(wave) : 0.22f + age * (0.72f + density * 0.64f);
+                float height = inside ? 0.42f + age * 2.25f : 0.16f + age * (0.58f + 0.30f * MathF.Cos(wave));
+                Vector3 pos = face + new Vector3(MathF.Sin(i * 4.1f) * 1.25f + age * MathF.Cos(wave) * 0.36f, height, side * offset);
+                int a = Math.Clamp((int)((68 + 86 * density) * MathF.Sin(MathF.PI * age) * Math.Min(1f, density * 5f)), 0, 255);
+                Color tint = i % 3 == 0 ? new Color(214, 206, 194, a) : new Color(138, 138, 142, a);
+                CombatSprites.SmokeFrame(i, pos, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                    radius * 1.12f, radius * 0.92f, tint, flipX: (i & 1) == 0, rotation: (age - 0.5f) * 0.4f + i * 0.25f);
+            }
+            CombatSprites.End();
+            return;
+        }
         for(int i=0;i<count;i++)
         {
             float age=(_worldClock*(inside ? .40f : .58f)+i*.381966f+(inside ? .33f : 0))%1;
@@ -4325,10 +4344,34 @@ public sealed partial class SkyscraperFloor1World
 
     private static float HitRecoil(float timer, Vector3 center, Vector3 direction, float radius)
     {
-        float t=Math.Clamp(timer/.24f,0,1);
-        if(t>.4f && !VisualEngine3D.CastingShadows)
-            GoldSpark(center-direction*radius, .14f*t);
-        return t*t;
+        float t = Math.Clamp(timer / 0.24f, 0f, 1f);
+        if (t > 0.35f && !VisualEngine3D.CastingShadows)
+        {
+            Vector3 dir = direction.LengthSquared() > 1e-6f ? Vector3.Normalize(direction) : Vector3.UnitZ;
+            Vector3 impact = center - dir * radius;
+            Vector3 up = MathF.Abs(dir.Y) > 0.9f ? Vector3.UnitX : Vector3.UnitY;
+            Vector3 side = Vector3.Normalize(Vector3.Cross(up, dir));
+            Vector3 orthoUp = Vector3.Cross(dir, side);
+
+            // Crisp directional metallic/kinetic hit sparks (zero chunky yellow 4-petal banana star!)
+            if (CombatSprites.HasPaintedFx)
+            {
+                CombatSprites.Begin(BlendMode.Additive);
+                CombatSprites.ExplosionFrame(0, impact, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                    0.075f * t, (1f - t) * 7.5f, new Color(255, 224, 152, Math.Clamp((int)(195 * t), 0, 255)));
+                CombatSprites.End();
+            }
+            VisualEngine3D.Orb(impact, 0.018f * t, new Color(255, 246, 212, 255), Finish.Lamp);
+            for (int k = 0; k < 6; k++)
+            {
+                float a = k * MathF.Tau / 6f + (1f - t) * 3.2f + 0.4f;
+                Vector3 ray = Vector3.Normalize(-dir * 0.68f + side * MathF.Cos(a) * 0.85f + orthoUp * MathF.Sin(a) * 0.85f);
+                float len = (0.075f + 0.055f * (k % 2)) * t;
+                Color col = (k % 2 == 0) ? new Color(255, 238, 176, 255) : new Color(255, 168, 56, 255);
+                VisualEngine3D.Rod(impact, impact + ray * len, 0.0042f, 0.0009f, 4, col, Finish.Lamp);
+            }
+        }
+        return t * t;
     }
 
     private void DrawVibeCoder3D(VibeCoderEntity c)
@@ -4342,7 +4385,7 @@ public sealed partial class SkyscraperFloor1World
             {
                 float a=_worldClock*3.6f+i*MathF.Tau/3;
                 Vector3 center=c.Position+scale*new Vector3(.24f*MathF.Cos(a),1.16f+.035f*MathF.Sin(a*2),.24f*MathF.Sin(a));
-                GoldSpark(center,.046f*scale);
+                GoldSpark(center,.030f*scale);
             }
         }
         Color tint=c.HitFlashTimer>0 ? Color.White : Raylib.ColorLerp(Color.White,c.HoodieColor,c.IsCombatCoder ? .87f : .36f);
@@ -4721,21 +4764,29 @@ public sealed partial class SkyscraperFloor1World
         camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
         Vector3 camUp = Vector3.Normalize(Vector3.Cross(camRight, lookDir));
 
-        // 1. Flat charred scorch decals & warm flickering floor firelight pools on carpet
+        // 1. Silky radially-feathered charred scorch & warm flickering floor firelight pools on carpet (ZERO hard circular discs!)
+        CombatSprites.Begin(BlendMode.Alpha);
+        for (int f = 0; f < fires.Length; f++)
+        {
+            Vector3 p = fires[f].Pos;
+            float s = fires[f].Scale * (0.48f + 0.52f * chaos);
+            CombatSprites.FloorGlow(p + new Vector3(0f, 0.008f, 0f), 1.15f * s,
+                new Color(14, 9, 10, Math.Clamp((int)(155 * chaos), 0, 255)));
+        }
+        CombatSprites.End();
+        CombatSprites.Begin(BlendMode.Additive);
         for (int f = 0; f < fires.Length; f++)
         {
             Vector3 p = fires[f].Pos;
             float phase = f * 1.93f;
             float flicker = 0.82f + 0.18f * MathF.Sin(_worldClock * (9.5f + f * 0.65f) + phase);
             float s = fires[f].Scale * (0.48f + 0.52f * chaos);
-
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.006f, 0f), 0.88f * s, 0.98f * s, 0.005f, 18,
-                new Color(16, 11, 11, Math.Clamp((int)(185 * chaos), 0, 255)));
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.010f, 0f), 0.44f * s, 0.50f * s, 0.006f, 14,
-                new Color(152, 42, 14, Math.Clamp((int)(135 * chaos * flicker), 0, 255)));
-            Raylib.DrawCylinder(p + new Vector3(0f, 0.014f, 0f), (1.78f + 0.22f * flicker) * s, (1.96f + 0.22f * flicker) * s, 0.004f, 20,
-                new Color(255, 112, 24, Math.Clamp((int)(40 * chaos * flicker), 0, 255)));
+            CombatSprites.FloorGlow(p + new Vector3(0f, 0.012f, 0f), (1.85f + 0.22f * flicker) * s,
+                new Color(255, 112, 26, Math.Clamp((int)(88 * chaos * flicker), 0, 255)));
+            CombatSprites.FloorGlow(p + new Vector3(0f, 0.015f, 0f), 0.72f * s,
+                new Color(255, 186, 78, Math.Clamp((int)(118 * chaos * flicker), 0, 255)));
         }
+        CombatSprites.End();
 
         // 2. Hand-painted billowing dark soot smoke clouds rising behind/above each fire (ZERO geometric Oval eggs!)
         if (CombatSprites.HasPaintedFx)
@@ -4750,16 +4801,16 @@ public sealed partial class SkyscraperFloor1World
                 for (int m = 0; m < 3; m++)
                 {
                     float age = (_worldClock * 0.34f + f * 0.21f + m * 0.33f) % 1f;
-                    float curl = 0.12f + age * 0.42f;
+                    float curl = 0.10f + age * 0.34f;
                     float curlAng = age * 4.4f + phase + m * 2.1f;
                     Vector3 puffPos = p + new Vector3(
                         MathF.Cos(curlAng) * curl,
-                        0.92f * s + age * 2.85f,
+                        0.92f * s + age * 2.55f,
                         MathF.Sin(curlAng) * curl);
-                    float puffR = (0.44f + age * 0.82f) * s;
-                    int smokeA = Math.Clamp((int)(168 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
+                    float puffR = (0.34f + age * 0.54f) * s;
+                    int smokeA = Math.Clamp((int)(136 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
                     CombatSprites.SmokeFrame(f + m, puffPos, camRight, camUp, puffR, puffR * 0.92f,
-                        new Color(224, 216, 210, smokeA), flipX: ((f + m) & 1) == 0, rotation: (age - 0.5f) * 0.35f);
+                        new Color(216, 208, 202, smokeA), flipX: ((f + m) & 1) == 0, rotation: (age - 0.5f) * 0.35f);
                 }
 
                 // 3 overlapping hand-painted animated roaring flame tongues per cluster (alpha base pass for vivid deep crimson/orange)
@@ -4845,10 +4896,16 @@ public sealed partial class SkyscraperFloor1World
                 float strength = beaconFade * bStrobe;
                 VisualEngine3D.Orb(beacons[b], b == 0 ? 0.08f : 0.06f,
                     new Color(255, 52, 42, Math.Clamp((int)(220 * strength), 0, 255)), Finish.Lamp);
-                Raylib.DrawCylinder(new Vector3(beacons[b].X, 0.022f, beacons[b].Z - 0.85f),
-                    1.35f, 1.55f, 0.005f, 16,
-                    new Color(220, 24, 30, Math.Clamp((int)(28 * strength), 0, 255)));
             }
+            CombatSprites.Begin(BlendMode.Additive);
+            for (int b = 0; b < beacons.Length; b++)
+            {
+                float bStrobe = b == 0 ? strobe : 0.30f + 0.70f * MathF.Pow(0.5f + 0.5f * MathF.Sin(_worldClock * 7.8f + MathF.PI), 2f);
+                float strength = beaconFade * bStrobe;
+                CombatSprites.FloorGlow(new Vector3(beacons[b].X, 0.018f, beacons[b].Z - 0.85f), 1.95f,
+                    new Color(220, 24, 30, Math.Clamp((int)(46 * strength), 0, 255)));
+            }
+            CombatSprites.End();
         }
     }
 
@@ -4869,20 +4926,38 @@ public sealed partial class SkyscraperFloor1World
         for (int i = 0; i < EnemyProjectiles.Count; i++)
         {
             var pr = EnemyProjectiles[i];
-            if(pr.Coin) {
-                VisualEngine3D.Oval(pr.Position,new(.095f,.095f,.027f),Color.Gold,Finish.Lamp);
+            if (pr.Coin)
+            {
+                VisualEngine3D.Oval(pr.Position, new(.095f, .095f, .027f), Color.Gold, Finish.Lamp);
+                continue;
+            }
+            if (pr.IsNodeModulesCube)
+            {
+                Vector3 dir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
+                if (VisualEngine3D.HasAsset("prop_node_modules_crate"))
+                {
+                    VisualEngine3D.AssetOriented("prop_node_modules_crate", pr.Position,
+                        pr.Rotation.Y + _worldClock * 180f, pr.Rotation.X + 24f, pr.Rotation.Z + _worldClock * 120f, 1.05f);
+                }
+                else
+                {
+                    VisualEngine3D.Box(pr.Position, 0.32f, 0.32f, 0.32f, new Color(34, 38, 46, 255), Finish.Armor);
+                }
+                // Crisp trailing ember-crimson aerodynamic slipstream behind the hurled 40 GB server crate
+                VisualEngine3D.Rod(pr.Position - dir * 0.42f, pr.Position - dir * 0.14f, 0.012f, 0.002f, 5,
+                    new Color(255, 118, 46, 210), Finish.Lamp);
                 continue;
             }
             if (pr.IsGlitch)
             {
                 Vector3 dir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
-                VisualEngine3D.Rod(pr.Position - dir * .16f, pr.Position, .022f, .008f, 8, pr.PrimaryColor, Finish.Lamp);
-                VisualEngine3D.Oval(pr.Position, new Vector3(.036f, .022f, .036f), pr.WireColor, Finish.Lamp);
+                VisualEngine3D.Rod(pr.Position - dir * .16f, pr.Position, .016f, .005f, 6, pr.PrimaryColor, Finish.Lamp);
+                VisualEngine3D.Orb(pr.Position, .024f, pr.WireColor, Finish.Lamp);
                 continue;
             }
-            // Fixed visual envelope: 14 cm diameter, 6 cm thickness. Damage radius is independent.
-            VisualEngine3D.Oval(pr.Position, new Vector3(.07f, .03f, .07f), pr.PrimaryColor);
-
+            // Compact metallic/energy projectile bolt
+            Vector3 pDir = pr.Velocity.LengthSquared() > 1e-6f ? Vector3.Normalize(pr.Velocity) : Vector3.UnitZ;
+            VisualEngine3D.Rod(pr.Position - pDir * .12f, pr.Position + pDir * .04f, .022f, .010f, 6, pr.PrimaryColor, Finish.Lamp);
         }
     }
 
@@ -5504,13 +5579,30 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.Box(board + new Vector3(0f, 0.322f, -0.09f), 0.28f, 0.014f, 0.035f, new Color(255, 226, 168, 255), Finish.Lamp);
         if(!VisualEngine3D.CastingShadows && Systems.RackHeat>0)
         {
+            if (CombatSprites.HasPaintedFx)
+            {
+                CombatSprites.Begin(BlendMode.Alpha);
+                for (int i = 0; i < 10; i++)
+                {
+                    float t = (_worldClock * 0.58f + i / 10f) % 1f;
+                    var puff = RackPos + new Vector3(0.22f * MathF.Sin(i * 9 + t * 4f), 1.85f + t * 2.3f, 0.18f * MathF.Cos(i * 7 + t));
+                    float r = 0.18f + t * 0.34f;
+                    int a = Math.Clamp((int)(142 * MathF.Sin(MathF.PI * t)), 0, 255);
+                    CombatSprites.SmokeFrame(i, puff, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp, r, r,
+                        new Color(142, 138, 134, a), flipX: (i & 1) == 0, rotation: t * 0.5f + i * 0.3f);
+                }
+                CombatSprites.End();
+            }
             for(int i=0;i<14;i++)
             {
                 float t=(_worldClock*.65f+i/14f)%1;
-                var puff=RackPos+new Vector3(.25f*MathF.Sin(i*9+t*4),1.83f+t*2.6f,.19f*MathF.Cos(i*7+t));
-                VisualEngine3D.Oval(puff,new Vector3(.12f+t*.35f),new(87,83,81,(int)(174*(1-t))),Finish.RosinSmoke);
+                if (!CombatSprites.HasPaintedFx)
+                {
+                    var puff=RackPos+new Vector3(.25f*MathF.Sin(i*9+t*4),1.83f+t*2.6f,.19f*MathF.Cos(i*7+t));
+                    VisualEngine3D.Oval(puff,new Vector3(.12f+t*.35f),new(87,83,81,(int)(174*(1-t))),Finish.RosinSmoke);
+                }
                 var spark=RackPos+new Vector3(.36f*MathF.Sin(i),.6f+1.3f*t,.51f);
-                VisualEngine3D.Rod(spark,spark+new Vector3(.04f,.09f,.06f),.012f,.004f,6,Color.Orange,Finish.Lamp);
+                VisualEngine3D.Rod(spark,spark+new Vector3(.04f,.09f,.06f),.008f,.002f,5,Color.Orange,Finish.Lamp);
             }
         }
         if(Systems.Friday>0)

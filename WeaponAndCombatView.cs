@@ -971,26 +971,44 @@ public class WeaponAndCombatView
     {
 
 
-        // 2. Whip Slash 3D Arc Ribbons (for Belt attack)
-        for (int i = 0; i < WhipSlashes.Count; i++)
+        // 2. Whip Slash 3D Arc Ribbons (silky unbroken tapered golden-amber motion sweep, zero flat pink or dashed beads!)
+        if (WhipSlashes.Count > 0)
         {
-            var w = WhipSlashes[i];
-            float ratio = Math.Clamp(w.Life / w.MaxLife, 0f, 1f);
-            Color outerCol = new Color(w.PrimaryColor.R, w.PrimaryColor.G, w.PrimaryColor.B, (byte)(240 * ratio));
-            Color coreCol = new Color(w.CoreColor.R, w.CoreColor.G, w.CoreColor.B, (byte)(255 * ratio));
-
-            const int segments = 14;
-            Vector3 prev = w.Start;
-            for (int seg = 1; seg <= segments; seg++)
+            CombatSprites.Begin(BlendMode.Additive);
+            for (int i = 0; i < WhipSlashes.Count; i++)
             {
-                float t = seg / (float)segments;
-                Vector3 cur = EvalQuadraticBezier(w.Start, w.Control, w.End, t);
-                float radius = (0.042f * MathF.Sin(t * MathF.PI) + 0.008f) * ratio;
+                var w = WhipSlashes[i];
+                float ratio = Math.Clamp(w.Life / w.MaxLife, 0f, 1f);
+                int rOuter = Math.Clamp((int)(w.PrimaryColor.R * 0.42f + 255 * 0.58f), 0, 255);
+                int gOuter = Math.Clamp((int)(w.PrimaryColor.G * 0.32f + 192 * 0.68f), 0, 255);
+                int bOuter = Math.Clamp((int)(w.PrimaryColor.B * 0.22f + 98 * 0.78f), 0, 255);
 
-                Raylib.DrawCylinderEx(prev, cur, radius, radius * 0.85f, 6, outerCol);
-                Raylib.DrawLine3D(prev, cur, coreCol);
-                prev = cur;
+                const int segments = 18;
+                Vector3 prev = w.Start;
+                float prevEnv = 0f;
+                for (int seg = 1; seg <= segments; seg++)
+                {
+                    float t = seg / (float)segments;
+                    Vector3 cur = EvalQuadraticBezier(w.Start, w.Control, w.End, t);
+                    float env = MathF.Sin(t * MathF.PI);
+
+                    float prevOuterW = (0.044f * prevEnv + 0.003f) * ratio;
+                    float curOuterW = (0.044f * env + 0.003f) * ratio;
+                    Color prevOuterCol = new(rOuter, gOuter, bOuter, Math.Clamp((int)(118 * ratio * prevEnv), 0, 255));
+                    Color curOuterCol = new(rOuter, gOuter, bOuter, Math.Clamp((int)(118 * ratio * env), 0, 255));
+                    CombatSprites.RibbonSegment(prev, cur, camera.Position, prevOuterW, curOuterW, prevOuterCol, curOuterCol);
+
+                    float prevCoreW = (0.015f * prevEnv + 0.001f) * ratio;
+                    float curCoreW = (0.015f * env + 0.001f) * ratio;
+                    Color prevCoreCol = new(255, 244, 198, Math.Clamp((int)(185 * ratio * prevEnv), 0, 255));
+                    Color curCoreCol = new(255, 244, 198, Math.Clamp((int)(185 * ratio * env), 0, 255));
+                    CombatSprites.RibbonSegment(prev, cur, camera.Position, prevCoreW, curCoreW, prevCoreCol, curCoreCol);
+
+                    prev = cur;
+                    prevEnv = env;
+                }
             }
+            CombatSprites.End();
         }
 
         // 3. Hot Solder Sparks & Cyan Electric Arcs

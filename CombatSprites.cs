@@ -171,6 +171,12 @@ internal static class CombatSprites
 
     internal static void Puff(Vector3 p,Vector3 right,Vector3 up,float radius,float rotation,Color color)
     {
+        if (HasPaintedFx)
+        {
+            int frame = (int)(MathF.Abs(rotation) * 3.7f) & 3;
+            SmokeFrame(frame, p, right, up, radius, radius, color, flipX: ((int)(rotation * 10f) & 1) == 0, rotation: rotation);
+            return;
+        }
         var (s,c)=MathF.SinCos(rotation);
         Vector3 x=(right*c+up*s)*radius, y=(up*c-right*s)*radius;
         Quad(smoke,0,1,p-x-y,p+x-y,p+x+y,p-x+y,color);
@@ -257,4 +263,42 @@ internal static class CombatSprites
 
     internal static void SmokeFrame(int frame, Vector3 center, Vector3 right, Vector3 up, float halfW, float halfH, Color tint, bool flipX = false, float rotation = 0f)
         => Sheet2x2(fxSmokePuff, frame, center, right, up, halfW, halfH, rotation, tint, flipX);
+
+    /// <summary>Silky radially-feathered horizontal floor decal/glow using the smooth Gaussian bloom (zero hard cylinder rim!).</summary>
+    internal static void FloorGlow(Vector3 center, float radius, Color tint)
+    {
+        if (flash.Id == 0 || tint.A == 0) return;
+        Vector3 a = center + new Vector3(-radius, 0f, -radius);
+        Vector3 b = center + new Vector3(+radius, 0f, -radius);
+        Vector3 c = center + new Vector3(+radius, 0f, +radius);
+        Vector3 d = center + new Vector3(-radius, 0f, +radius);
+        QuadUV(flash, 0.502f, 0.004f, 0.996f, 0.996f, a, b, c, d, tint);
+    }
+
+    /// <summary>Continuous camera-facing tapered ribbon segment (samples Gaussian cross-section across width so segments join seamlessly with zero beads).</summary>
+    internal static void RibbonSegment(Vector3 prev, Vector3 cur, Vector3 eye, float prevHalfW, float curHalfW, Color prevCol, Color curCol)
+    {
+        if (flash.Id == 0) return;
+        Vector3 tangent = cur - prev;
+        Vector3 sidePrev = Vector3.Cross(tangent, eye - prev);
+        Vector3 sideCur = Vector3.Cross(tangent, eye - cur);
+        if (sidePrev.LengthSquared() < 1e-12f || sideCur.LengthSquared() < 1e-12f) return;
+        sidePrev = Vector3.Normalize(sidePrev) * prevHalfW;
+        sideCur = Vector3.Normalize(sideCur) * curHalfW;
+
+        // Sample the radial bloom at its horizontal peak (u = 0.75) across v = 0..1 for a silky feathered width profile
+        const float uMid = 0.75f;
+        Rlgl.SetTexture(flash.Id);
+        Rlgl.Begin((int)DrawMode.Quads);
+        Rlgl.Color4ub(prevCol.R, prevCol.G, prevCol.B, prevCol.A);
+        Rlgl.TexCoord2f(uMid, 0.02f); Rlgl.Vertex3f(prev.X - sidePrev.X, prev.Y - sidePrev.Y, prev.Z - sidePrev.Z);
+        Rlgl.Color4ub(curCol.R, curCol.G, curCol.B, curCol.A);
+        Rlgl.TexCoord2f(uMid, 0.02f); Rlgl.Vertex3f(cur.X - sideCur.X, cur.Y - sideCur.Y, cur.Z - sideCur.Z);
+        Rlgl.Color4ub(curCol.R, curCol.G, curCol.B, curCol.A);
+        Rlgl.TexCoord2f(uMid, 0.98f); Rlgl.Vertex3f(cur.X + sideCur.X, cur.Y + sideCur.Y, cur.Z + sideCur.Z);
+        Rlgl.Color4ub(prevCol.R, prevCol.G, prevCol.B, prevCol.A);
+        Rlgl.TexCoord2f(uMid, 0.98f); Rlgl.Vertex3f(prev.X + sidePrev.X, prev.Y + sidePrev.Y, prev.Z + sidePrev.Z);
+        Rlgl.End();
+        Rlgl.SetTexture(0);
+    }
 }

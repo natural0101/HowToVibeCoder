@@ -731,7 +731,7 @@ internal static unsafe partial class VisualEngine3D
             }
         }
 
-        // Visual throw telegraph: sinister dark-obsidian & deep-crimson (#E81424) glowing node_modules cube gripped in right gauntlet!
+        // Visual throw telegraph: heavy Blender-sculpted 40 GB industrial node_modules server crate gripped in right gauntlet!
         if (!b.IsDefeated && b.State == ElevatorBossState.ThrowingNodeModules)
         {
             float dur = MathF.Max(0.28f, b.ThrowCycleDuration);
@@ -740,23 +740,28 @@ internal static unsafe partial class VisualEngine3D
             {
                 float charge = SmoothStep((u - 0.24f) / 0.56f);
                 Vector3 handWorld = Vector3.Transform(new Vector3(0f, -0.36f, +0.10f), forearmR);
-                float s = (0.17f + 0.09f * charge) * (1f + 0.06f * MathF.Sin(clock * 24f));
-                Vector3 spinAxis = Vector3.Normalize(new Vector3(0.45f, 1.0f, 0.35f));
-                float spinDeg = (clock * 190f + 32f) % 360f;
-                // Dark obsidian metallic cube body + deep-crimson glowing energy core ribs (zero pastel pink!)
-                Color obsidian = new(20, 22, 28, 255);
-                Color crimson  = new(232, 20, 36, 255);
-                Draw(bevel, handWorld, new Vector3(s, s, s), obsidian, Finish.Armor, spinAxis, spinDeg);
-                Draw(box, handWorld, new Vector3(s * 1.06f, s * 0.17f, s * 1.06f), crimson, Finish.Lamp, spinAxis, spinDeg);
-                Draw(box, handWorld, new Vector3(s * 0.17f, s * 1.06f, s * 1.06f), crimson, Finish.Lamp, spinAxis, spinDeg);
-                Draw(box, handWorld, new Vector3(s * 1.06f, s * 1.06f, s * 0.17f), crimson, Finish.Lamp, spinAxis, spinDeg);
-                // 3 tight orbiting crimson energy sparks around the charged cube
+                float crateScale = (0.66f + 0.28f * charge) * (1f + 0.04f * MathF.Sin(clock * 22f));
+                float spinYaw = (clock * 165f + 28f) % 360f;
+                float spinPitch = 22f + 16f * MathF.Sin(clock * 4.5f);
+                float spinRoll = (clock * 110f) % 360f;
+                if (HasAsset("prop_node_modules_crate"))
+                {
+                    AssetOriented("prop_node_modules_crate", handWorld, spinYaw, spinPitch, spinRoll, crateScale);
+                }
+                else
+                {
+                    float s = 0.20f + 0.08f * charge;
+                    Draw(bevel, handWorld, new Vector3(s, s, s), new Color(34, 38, 46, 255), Finish.Armor, Vector3.UnitY, spinYaw);
+                }
+                // 3 crisp tight amber-crimson overload glints orbiting the server crate
+                Color glintCol = new(255, 132, 48, 255);
                 for (int k = 0; k < 3; k++)
                 {
-                    float a = clock * 7.5f + k * MathF.Tau / 3f;
-                    float orbitR = s * 0.82f;
-                    Vector3 spark = handWorld + new Vector3(MathF.Cos(a) * orbitR, MathF.Sin(a * 1.5f) * orbitR * 0.55f, MathF.Sin(a) * orbitR);
-                    Orb(spark, 0.024f, crimson, Finish.Lamp);
+                    float a = clock * 8.0f + k * MathF.Tau / 3f;
+                    float orbitR = 0.21f * crateScale;
+                    Vector3 spark = handWorld + new Vector3(MathF.Cos(a) * orbitR, MathF.Sin(a * 1.5f) * orbitR * 0.45f, MathF.Sin(a) * orbitR);
+                    Vector3 tail = spark + new Vector3(-MathF.Sin(a), 0.15f, MathF.Cos(a)) * 0.045f;
+                    Rod(tail, spark, 0.004f, 0.001f, 5, glintCol, Finish.Lamp);
                 }
             }
         }

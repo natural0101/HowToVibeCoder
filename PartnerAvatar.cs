@@ -151,16 +151,26 @@ internal sealed class PartnerAvatar(int slot=0)
                 yaw*180f/MathF.PI+194f, scale:.74f*height, tilt:-.10f*recoilPhase);
             if (flash > 0f && !VisualEngine3D.CastingShadows)
             {
-                // Crisp jagged orange-gold multi-ray star muzzle flash (zero flat white oval blob!)
+                // Hand-painted compact additive firearm muzzle burst + incandescent tracer filaments (zero cartoon yellow rods!)
                 Vector3 muzzle = P(-.095f, 1.358f + climb, .545f - kick) + Vector3.UnitY * step;
-                Color gold = new(255, 184, 52, 255), hot = new(255, 240, 172, 255);
-                VisualEngine3D.Rod(muzzle, muzzle + f * (.14f + .05f * recoilPhase), .016f, .003f, 6, hot, Finish.Lamp);
-                for (int k = 0; k < 5; k++)
+                if (CombatSprites.HasPaintedFx)
                 {
-                    float a = k * MathF.Tau / 5f + stride * 2.3f;
-                    Vector3 spike = f * 0.45f + r * MathF.Cos(a) * 0.90f + Vector3.UnitY * MathF.Sin(a) * 0.90f;
-                    VisualEngine3D.Rod(muzzle, muzzle + Vector3.Normalize(spike) * (.095f + .045f * (k % 2)),
-                        .012f, .002f, 5, gold, Finish.Lamp);
+                    CombatSprites.Begin(BlendMode.Additive);
+                    float flareR = 0.125f + 0.045f * recoilPhase;
+                    CombatSprites.ExplosionFrame(0, muzzle + f * 0.055f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                        flareR, stride * 6.5f, new Color(255, 224, 152, Math.Clamp((int)(230 * (0.45f + 0.55f * recoilPhase)), 0, 255)));
+                    CombatSprites.FireFrame(((int)(stride * 12f)) & 3, muzzle + f * 0.11f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                        0.065f + 0.025f * recoilPhase, 0.12f + 0.04f * recoilPhase,
+                        new Color(255, 178, 86, Math.Clamp((int)(168 * (0.4f + 0.6f * recoilPhase)), 0, 255)));
+                    CombatSprites.End();
+                }
+                Color hot = new(255, 244, 198, 255);
+                VisualEngine3D.Rod(muzzle, muzzle + f * (.11f + .04f * recoilPhase), .0045f, .0012f, 5, hot, Finish.Lamp);
+                for (int k = 0; k < 2; k++)
+                {
+                    float a = k * MathF.PI + stride * 4.1f + 0.6f;
+                    Vector3 spark = Vector3.Normalize(f * 0.85f + r * MathF.Cos(a) * 0.45f + Vector3.UnitY * MathF.Sin(a) * 0.45f);
+                    VisualEngine3D.Rod(muzzle + f * 0.02f, muzzle + spark * (.095f + .03f * k), .0032f, .0008f, 4, new Color(255, 198, 92, 255), Finish.Lamp);
                 }
             }
         }

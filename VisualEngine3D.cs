@@ -956,8 +956,16 @@ internal static unsafe partial class VisualEngine3D
         return mesh;
     }
 
+    internal static Vector3 ActiveCamPos, ActiveCamRight = Vector3.UnitX, ActiveCamUp = Vector3.UnitY;
+
     public static void World(Camera3D cam, SkyscraperFloor1World world)
     {
+        ActiveCamPos = cam.Position;
+        Vector3 camFwd = cam.Target - cam.Position;
+        camFwd = camFwd.LengthSquared() > 1e-6f ? Vector3.Normalize(camFwd) : -Vector3.UnitZ;
+        Vector3 camRight = Vector3.Cross(camFwd, cam.Up);
+        ActiveCamRight = camRight.LengthSquared() > 1e-6f ? Vector3.Normalize(camRight) : Vector3.UnitX;
+        ActiveCamUp = Vector3.Normalize(Vector3.Cross(ActiveCamRight, camFwd));
         Raylib.SetShaderValue(shader,loadLoc,Math.Clamp((world.Systems.PT+world.Systems.TD)/130f,0,1),ShaderUniformDataType.Float);
         var nearest=world.Systems.Puddles.Where(p=>p.Electric>0).MinBy(p=>Vector3.DistanceSquared(p.Position,cam.Position));
         Raylib.SetShaderValue(shader,puddlePosLoc,(nearest?.Position ?? Vector3.Zero)+Vector3.UnitY*.42f,ShaderUniformDataType.Vec3);
@@ -976,9 +984,32 @@ internal static unsafe partial class VisualEngine3D
 
     internal static void DrawCloud(Vector3 origin,float time,float remaining,float radius,bool steam)
     {
+        if (CombatSprites.HasPaintedFx)
+        {
+            CombatSprites.Begin(BlendMode.Alpha);
+            int count = steam ? 14 : 20;
+            float fade = Math.Clamp(remaining, 0f, 1f);
+            for (int i = 0; i < count; i++)
+            {
+                float t = (time * (steam ? 0.46f : 0.28f) + i * 0.317f) % 1f;
+                float a = i * 2.39996f + t * 0.9f + 0.22f * MathF.Sin(i * 3.1f + 2f * t);
+                float spread = radius * (steam ? 0.16f : 0.46f) * t;
+                var p = origin + new Vector3(
+                    MathF.Cos(a) * spread,
+                    (steam ? 0.95f + 0.95f * t : 0.38f + 0.72f * t) + (steam ? 0.06f : 0.16f) * MathF.Sin(a),
+                    MathF.Sin(a) * spread);
+                float r = steam ? (0.12f + 0.24f * t) : (0.24f + 0.52f * t);
+                int alpha = Math.Clamp((int)((steam ? 58 : 132) * MathF.Sin(MathF.PI * t) * fade), 0, 255);
+                Color tint = steam ? new Color(238, 232, 224, alpha) : new Color(218, 224, 228, alpha);
+                CombatSprites.SmokeFrame(i, p, ActiveCamRight, ActiveCamUp, r, r * (steam ? 1.15f : 0.92f),
+                    tint, flipX: (i & 1) == 0, rotation: (t - 0.5f) * 0.45f + i * 0.2f);
+            }
+            CombatSprites.End();
+            return;
+        }
         Rlgl.DisableDepthMask();
-        int count = steam ? 24 : 42;
-        for(int i=0;i<count;i++)
+        int fbCount = steam ? 24 : 42;
+        for(int i=0;i<fbCount;i++)
         {
             float t=(time*(steam ? .52f : .29f)+i*.317f)%1;
             float a=i*2.39996f+t*.9f+.22f*MathF.Sin(i*3.1f+2*t);
