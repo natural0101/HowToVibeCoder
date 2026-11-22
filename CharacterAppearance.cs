@@ -46,11 +46,11 @@ public sealed class CharacterAppearance
         new("Карие", "Brown", new Color(92, 56, 34, 255)),
         new("Голубые", "Blue", new Color(76, 154, 218, 255)),
         new("Зелёные", "Green", new Color(64, 164, 96, 255)),
-        new("Красные (после деплоя)", "Red (Post-Deploy)", new Color(218, 52, 48, 255)),
+        new("Красные", "Bloodshot Red", new Color(218, 52, 48, 255)),
         new("Авиаторы 90-х", "90s Aviators", new Color(196, 156, 74, 255), "eye_aviators"),
         new("Тёмные «Матрица»", "Matrix Shades", new Color(24, 26, 30, 255), "eye_matrix"),
         new("Очки бухгалтера", "Accountant Glasses", new Color(164, 156, 142, 255), "eye_accountant"),
-        new("Пиксельные (мем)", "Pixel Shades", new Color(32, 32, 36, 255), "eye_dealwithit")
+        new("Пиксельные", "Pixel Shades", new Color(32, 32, 36, 255), "eye_dealwithit")
     ];
 
     public static readonly AppearancePreset[] Hats =

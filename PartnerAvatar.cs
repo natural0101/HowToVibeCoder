@@ -145,35 +145,16 @@ internal sealed class PartnerAvatar(int slot=0)
         Vector3 stretch = new(1f, height, 1f);
         VisualEngine3D.DrawPartnerCharacter(basePos, yaw * 180f / MathF.PI, leanTilt, stretch, Appearance, UseSlotFallback ? SlotBlazerFallback : null);
 
-        // Anchor 3D eyes, eyewear, and meme hats to the exact measured char_partner_90s head frame (+Z forward, +Y up)
+        // Anchor 3D eyewear and hats to the exact sculpted char_partner_90s head frame (+Z forward, +Y up).
+        // Sculpted 3D eyes (sclera/iris/pupil/catchlight) are authored directly in char_partner_90s.glb and tinted via partnerIrisMeshes.
         Matrix4x4 charTransform = Matrix4x4.CreateRotationX(leanTilt)
             * Matrix4x4.CreateScale(stretch)
             * Matrix4x4.CreateRotationY(yaw)
             * Matrix4x4.CreateTranslation(basePos);
 
-        if (!VisualEngine3D.CastingShadows)
-        {
-            // Expressive 3D eyes (sclera + colored iris + pupil + glint) for bare eyes (0..3) and behind clear accountant frames (6)
-            if (!Appearance.HasEyewear || Appearance.EyeIndex == 6)
-            {
-                Color sclera = Appearance.EyeIndex == 3 ? new Color(246, 202, 198, 255) : new Color(242, 238, 228, 255);
-                Color iris = Appearance.EyeIrisColor;
-                Color pupil = new(18, 16, 20, 255);
-                Color glint = new(252, 248, 240, 255);
-                foreach (float side in new[] { -1f, 1f })
-                {
-                    float ex = side * 0.0276f;
-                    VisualEngine3D.Orb(Vector3.Transform(new(ex, 1.564f, 0.0792f), charTransform), 0.0095f, sclera, Finish.Paint);
-                    VisualEngine3D.Orb(Vector3.Transform(new(ex, 1.564f, 0.0836f), charTransform), 0.0066f, iris, Finish.Paint);
-                    VisualEngine3D.Orb(Vector3.Transform(new(ex, 1.564f, 0.0870f), charTransform), 0.0034f, pupil, Finish.Paint);
-                    VisualEngine3D.Orb(Vector3.Transform(new(ex + 0.0020f, 1.5664f, 0.0885f), charTransform), 0.0014f, glint, Finish.Lamp);
-                }
-            }
-        }
-
         if (Appearance.EyewearAsset is string eyeAsset && VisualEngine3D.HasAsset(eyeAsset))
         {
-            Vector3 eyeAnchorWorld = Vector3.Transform(new Vector3(0f, 1.568f, 0.098f), charTransform);
+            Vector3 eyeAnchorWorld = Vector3.Transform(new Vector3(0f, 1.5993f, 0.1036f), charTransform);
             Matrix4x4 eyeTransform = Matrix4x4.CreateRotationX(leanTilt)
                 * Matrix4x4.CreateRotationY(yaw)
                 * Matrix4x4.CreateTranslation(eyeAnchorWorld);
@@ -182,7 +163,7 @@ internal sealed class PartnerAvatar(int slot=0)
 
         if (Appearance.HatAsset is string hatAsset && VisualEngine3D.HasAsset(hatAsset))
         {
-            Vector3 hatAnchorWorld = Vector3.Transform(new Vector3(0f, 1.635f, -0.007f), charTransform);
+            Vector3 hatAnchorWorld = Vector3.Transform(new Vector3(0f, 1.6898f, -0.0094f), charTransform);
             Matrix4x4 hatTransform = Matrix4x4.CreateRotationX(leanTilt)
                 * Matrix4x4.CreateRotationY(yaw)
                 * Matrix4x4.CreateTranslation(hatAnchorWorld);

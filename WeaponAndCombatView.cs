@@ -88,6 +88,41 @@ public struct FloatingCombatText3D
     public bool IsCritical;
 }
 
+public struct ActiveLightningBolt3D
+{
+    public Vector3 Start;
+    public Vector3 End;
+    public float Life;
+    public float MaxLife;
+    public float WidthScale;
+    public Color OuterColor;
+    public Color MidColor;
+    public int Seed;
+    public int Branches;
+}
+
+public struct ImpactShockRing3D
+{
+    public Vector3 Center;
+    public Vector3 Normal;
+    public float StartRadius;
+    public float EndRadius;
+    public float Thickness;
+    public float Life;
+    public float MaxLife;
+    public Color OuterColor;
+    public Color CoreColor;
+}
+
+public struct ImpactFlash3D
+{
+    public Vector3 Position;
+    public float Size;
+    public float Life;
+    public float MaxLife;
+    public Color Color;
+}
+
 public class WeaponAndCombatView
 {
     // Current weapon & unlock state
@@ -140,6 +175,9 @@ public class WeaponAndCombatView
     public readonly List<BrassShell3D> BrassShells = new(128);
     public readonly List<BulletTracer3D> BulletTracers = new(128);
     public readonly List<FloatingCombatText3D> FloatingTexts = new(64);
+    public readonly List<ActiveLightningBolt3D> ActiveLightningBolts = new(32);
+    public readonly List<ImpactShockRing3D> ImpactShockRings = new(64);
+    public readonly List<ImpactFlash3D> ImpactFlashes = new(64);
 
     private int _uziRounds = 32, _shells = 2, _spentHulls;
     private float _reloadTime, _flash;
@@ -503,17 +541,41 @@ public class WeaponAndCombatView
                     Start = arcStart,
                     Control = arcControl,
                     End = arcEnd,
-                    Life = 0.28f,
-                    MaxLife = 0.28f,
+                    Life = 0.30f,
+                    MaxLife = 0.30f,
                     PrimaryColor = slashPrimary,
                     CoreColor = slashCore
                 });
 
-                // Leather slap impact burst
-                if (hitWorldPoint.HasValue) SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 22 : 12,
-                    colorA: new Color(255, 210, 65, 255),
-                    colorB: new Color(220, 60, 40, 255),
-                    speedMin: 2.5f, speedMax: 6.5f, electric: false);
+                // Devastating golden kinetic shockwave ring + flash + spark burst on belt crack!
+                if (hitWorldPoint.HasValue)
+                {
+                    SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 28 : 18,
+                        colorA: new Color(255, 224, 92, 255),
+                        colorB: new Color(255, 138, 42, 255),
+                        speedMin: 3.2f, speedMax: 8.2f, electric: false);
+                    ImpactShockRings.Add(new ImpactShockRing3D
+                    {
+                        Center = impactPoint,
+                        Normal = -forward,
+                        StartRadius = 0.08f,
+                        EndRadius = hitEnemy ? 0.85f : 0.56f,
+                        Thickness = hitEnemy ? 0.055f : 0.038f,
+                        Life = 0.20f,
+                        MaxLife = 0.20f,
+                        OuterColor = new Color(255, 178, 44, 215),
+                        CoreColor = new Color(255, 246, 206, 255)
+                    });
+                    ImpactFlashes.Add(new ImpactFlash3D
+                    {
+                        Position = impactPoint,
+                        Size = hitEnemy ? 0.42f : 0.28f,
+                        Life = 0.11f,
+                        MaxLife = 0.11f,
+                        Color = new Color(255, 214, 96, 245)
+                    });
+                    Puff(impactPoint, -forward * 0.45f + Vector3.UnitY * 0.32f, 0.08f, 0.26f, 0.32f, new Color(225, 216, 198, 128));
+                }
 
                 break;
             }
@@ -523,37 +585,81 @@ public class WeaponAndCombatView
                 SolderThrustPhase = 1.0f;
                 SolderHeatGlow = 1.0f;
 
-                // Thick rosin smoke rings + hot solder & cyan electric sparks at impact
-                for (int i = 0; i < 6; i++)
+                // Thick rising rosin smoke clouds from hot soldering tip & impact
+                for (int i = 0; i < 7; i++)
                 {
+                    Vector3 sPos = i < 4
+                        ? muzzleWorld + forward * (0.18f + i * 0.12f) + RandomVec3(0.05f)
+                        : impactPoint + RandomVec3(0.08f);
                     SmokeParticles.Add(new SmokeParticle3D
                     {
-                        Position = muzzleWorld + forward * (0.25f + i * 0.12f) + RandomVec3(0.05f),
-                        Velocity = forward * (1.2f + i * 0.25f) + new Vector3(0f, 0.85f, 0f) + RandomVec3(0.35f),
-                        Size = 0.08f,
-                        MaxSize = 0.36f + (i * 0.04f),
-                        Life = 0.85f,
-                        MaxLife = 0.85f,
-                        Tint = new Color(215, 225, 235, 210),
-                        IsRing = (i % 2 == 0)
+                        Position = sPos,
+                        Velocity = forward * (0.85f + i * 0.18f) + new Vector3(0f, 0.95f + NextFloat() * 0.4f, 0f) + RandomVec3(0.35f),
+                        Size = 0.07f,
+                        InitialSize = 0.07f,
+                        MaxSize = 0.38f + (i * 0.04f),
+                        Life = 0.88f,
+                        MaxLife = 0.88f,
+                        Tint = new Color(208, 222, 236, 175),
+                        IsRing = (i % 2 == 0),
+                        IsPowder = true
                     });
                 }
 
-                // Hot orange/yellow solder droplets + cyan electric stun arcs
-                if (hitWorldPoint.HasValue) SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 34 : 20,
-                    colorA: new Color(255, 185, 30, 255),
-                    colorB: new Color(255, 93, 14, 255),
-                    speedMin: 3.0f, speedMax: 8.5f, electric: true);
-
-                // Electric arc tracer from soldering tip to target
-                BulletTracers.Add(new BulletTracer3D
+                // Blazing 3D forked electric lightning arc straight from hot copper tip to target / enemy / puddle!
+                ActiveLightningBolts.Add(new ActiveLightningBolt3D
                 {
                     Start = muzzleWorld,
                     End = impactPoint,
-                    Life = 0.16f,
-                    MaxLife = 0.16f,
-                    TracerColor = new Color(90, 240, 255, 255),
-                    Thickness = 0.045f
+                    Life = 0.24f,
+                    MaxLife = 0.24f,
+                    WidthScale = hitEnemy ? 0.95f : 0.82f,
+                    OuterColor = new Color(28, 148, 255, 255),
+                    MidColor = new Color(118, 244, 255, 255),
+                    Seed = _rng.Next(1, 99999),
+                    Branches = 3
+                });
+                if (hitEnemy)
+                {
+                    // Secondary crackling discharge arc wrapping across the shocked target
+                    ActiveLightningBolts.Add(new ActiveLightningBolt3D
+                    {
+                        Start = muzzleWorld + right * 0.04f - up * 0.03f,
+                        End = impactPoint + RandomVec3(0.24f),
+                        Life = 0.20f,
+                        MaxLife = 0.20f,
+                        WidthScale = 0.62f,
+                        OuterColor = new Color(64, 182, 255, 240),
+                        MidColor = new Color(185, 248, 255, 255),
+                        Seed = _rng.Next(1, 99999),
+                        Branches = 2
+                    });
+                }
+
+                // 26–38 golden-cyan sparks + electric shockwave ring + blazing flash at impact
+                SpawnBurstSparks(impactPoint, -forward, count: hitEnemy ? 38 : 26,
+                    colorA: new Color(255, 206, 68, 255),
+                    colorB: new Color(92, 238, 255, 255),
+                    speedMin: 3.4f, speedMax: 9.2f, electric: true);
+                ImpactShockRings.Add(new ImpactShockRing3D
+                {
+                    Center = impactPoint,
+                    Normal = -forward,
+                    StartRadius = 0.06f,
+                    EndRadius = hitEnemy ? 0.72f : 0.52f,
+                    Thickness = 0.042f,
+                    Life = 0.19f,
+                    MaxLife = 0.19f,
+                    OuterColor = new Color(48, 198, 255, 225),
+                    CoreColor = new Color(236, 252, 255, 255)
+                });
+                ImpactFlashes.Add(new ImpactFlash3D
+                {
+                    Position = impactPoint,
+                    Size = hitEnemy ? 0.44f : 0.34f,
+                    Life = 0.14f,
+                    MaxLife = 0.14f,
+                    Color = new Color(135, 242, 255, 255)
                 });
 
                 break;
@@ -562,8 +668,9 @@ public class WeaponAndCombatView
             case WeaponType.MicroUzi:
             {
                 Vector3 targetPos = hitWorldPoint ?? (camera.Position + forward * 26f);
-                AddTracer(muzzleWorld,targetPos,.038f,.0045f,.035f,new(255,236,196,132));
-                SpawnPowder(muzzleWorld,forward,3,false);
+                // Blazing supersonic golden tracer on EVERY UZI bullet
+                AddTracer(muzzleWorld, targetPos, .056f, .0088f, .022f, new(255, 232, 146, 245));
+                SpawnPowder(muzzleWorld, forward, 5, false);
 
                 // Eject spinning 3D brass shell casing to the right-up
                 Vector3 ejectPos = muzzleWorld - forward * 0.16f + right * 0.08f + up * 0.05f;
@@ -581,7 +688,7 @@ public class WeaponAndCombatView
                     IsShotgunShell = false
                 });
 
-                if (hitWorldPoint.HasValue) SpawnImpact(targetPos,-forward,5);
+                if (hitWorldPoint.HasValue) SpawnImpact(targetPos, -forward, hitEnemy ? 20 : 15, hitEnemy);
 
                 break;
             }
@@ -591,20 +698,33 @@ public class WeaponAndCombatView
             {
                 bool isChat = (CurrentWeapon == WeaponType.ChatGun);
                 float range=isChat ? 28 : 12.5f;
+                // Subtle warm muzzle gas pressure ripple right in front of the twin barrels (never obscures sights!)
+                ImpactShockRings.Add(new ImpactShockRing3D
+                {
+                    Center = muzzleWorld + forward * 0.22f,
+                    Normal = forward,
+                    StartRadius = 0.05f,
+                    EndRadius = 0.34f,
+                    Thickness = 0.016f,
+                    Life = 0.095f,
+                    MaxLife = 0.095f,
+                    OuterColor = isChat ? new Color(78, 255, 198, 125) : new Color(255, 174, 62, 125),
+                    CoreColor = new Color(255, 246, 214, 165)
+                });
                 for (int i=0;i<8;i++)
                 {
                     var direction=PelletDirection(forward,i);
                     float length=BallisticWorld?.PelletDistance(camera.Position,direction,range) ?? range;
                     var end=i==0 && hitWorldPoint.HasValue ? impactPoint : camera.Position+direction*length;
-                    if (i%2==1)
-                    {
-                        var tint=isChat ? new Color(151,255,205,102) : new Color(255,231,193,_rng.Next(85,126));
-                        AddTracer(muzzleWorld,end,.045f,.005f+.003f*NextFloat(),.24f+.32f*NextFloat(),tint);
-                    }
+                    // Blazing supersonic spreading tracers on ALL 8 shotgun pellets!
+                    var tint = isChat
+                        ? new Color(138, 255, 212, _rng.Next(210, 250))
+                        : new Color(255, 224, 134, _rng.Next(205, 248));
+                    AddTracer(muzzleWorld, end, .064f + NextFloat() * .014f, .0082f + .0038f * NextFloat(), .08f + .16f * NextFloat(), tint);
                     if (length<range || (i==0 && hitWorldPoint.HasValue))
-                        SpawnImpact(end,-direction,2+_rng.Next(2));
+                        SpawnImpact(end, -direction, i == 0 ? 12 : 4 + _rng.Next(3), hitEnemy && i == 0);
                 }
-                SpawnPowder(muzzleWorld,forward,6,true);
+                SpawnPowder(muzzleWorld, forward, 9, true);
 
                 break;
             }
@@ -627,23 +747,63 @@ public class WeaponAndCombatView
     {
         for (int i=0;i<count;i++)
         {
-            float size=heavy ? .064f : .042f;
-            Puff(tip+forward*(i*.018f),forward*(.35f+i*.18f)+Vector3.UnitY*(.28f+NextFloat()*.36f)+RandomVec3(.15f),
-                 size,.10f+size*2+NextFloat()*.06f,.35f+NextFloat()*.30f,new(204,199,191,heavy ? 111 : 82));
+            float size=heavy ? .078f : .050f;
+            Puff(tip+forward*(i*.024f),forward*(.42f+i*.22f)+Vector3.UnitY*(.32f+NextFloat()*.42f)+RandomVec3(.18f),
+                 size,.14f+size*2.4f+NextFloat()*.08f,.44f+NextFloat()*.34f,new(212,206,198,heavy ? 132 : 98));
         }
     }
 
-    private void SpawnImpact(Vector3 hit,Vector3 outward,int sparks)
+    private void SpawnImpact(Vector3 hit,Vector3 outward,int sparks,bool hitEnemy=false)
     {
-        Puff(hit,outward*.26f+Vector3.UnitY*.19f,.047f,.12f+NextFloat()*.05f,.23f+NextFloat()*.13f,new(213,209,201,119));
-        for (int i=0;i<=sparks;i++)
+        // Expanding dust/smoke puff at impact point
+        Puff(hit + outward * 0.04f, outward * .42f + Vector3.UnitY * .28f, .062f, .19f + NextFloat() * .09f, .30f + NextFloat() * .16f,
+            new(218, 212, 202, hitEnemy ? 148 : 132));
+        // Brief incandescent impact flash (SoftHalo)
+        ImpactFlashes.Add(new ImpactFlash3D
         {
-            bool debris=i==sparks;
-            float life=.075f+NextFloat()*.095f;
-            var velocity=(outward*.50f+RandomVec3(1))*(1.5f+NextFloat()*2.3f);
-            SparkParticles.Add(new() { Position=hit,PrevPosition=hit,Velocity=velocity,Life=life,MaxLife=life,
-                ColorMain=debris ? new(97,87,76,210) : new(255,219,164,240),
-                BallisticWidth=debris ? .007f : .002f+NextFloat()*.002f,IsDebris=debris });
+            Position = hit + outward * 0.03f,
+            Size = hitEnemy ? 0.34f : 0.22f,
+            Life = hitEnemy ? 0.10f : 0.075f,
+            MaxLife = hitEnemy ? 0.10f : 0.075f,
+            Color = hitEnemy ? new Color(255, 224, 128, 250) : new Color(255, 214, 138, 225)
+        });
+        // Directional kinetic shockwave ripple on enemy/boss hits (crisp & sleek, never obscures reticle!)
+        if (hitEnemy)
+        {
+            ImpactShockRings.Add(new ImpactShockRing3D
+            {
+                Center = hit + outward * 0.04f,
+                Normal = outward,
+                StartRadius = 0.04f,
+                EndRadius = 0.34f,
+                Thickness = 0.015f,
+                Life = 0.11f,
+                MaxLife = 0.11f,
+                OuterColor = new Color(255, 186, 68, 138),
+                CoreColor = new Color(255, 248, 214, 178)
+            });
+        }
+        int debrisCount = hitEnemy ? 3 : 2;
+        for (int i = 0; i < sparks + debrisCount; i++)
+        {
+            bool debris = i >= sparks;
+            float life = debris ? (.14f + NextFloat() * .14f) : (.11f + NextFloat() * .15f);
+            var velocity = (outward * .65f + RandomVec3(0.95f)) * (2.4f + NextFloat() * 4.4f) + Vector3.UnitY * (0.4f + NextFloat() * 1.4f);
+            Color sparkCol = debris
+                ? new(92, 82, 72, 215)
+                : (i % 3 == 0 ? new(255, 246, 204, 255) : i % 3 == 1 ? new(255, 198, 78, 255) : new(255, 132, 38, 245));
+            SparkParticles.Add(new()
+            {
+                Position = hit,
+                PrevPosition = hit,
+                Velocity = velocity,
+                Life = life,
+                MaxLife = life,
+                ColorMain = sparkCol,
+                ColorCore = Color.White,
+                BallisticWidth = debris ? .0085f : .0042f + NextFloat() * .0038f,
+                IsDebris = debris
+            });
         }
     }
 
@@ -674,6 +834,11 @@ public class WeaponAndCombatView
     {
         TriggerHitmarker(critical);
         if(damage>0) SpawnFloatingText(center,Vector3.Normalize(Vector3.Cross(camera.Target-camera.Position,Vector3.UnitY)),damage,critical);
+        if (CurrentWeapon is WeaponType.SawedOff or WeaponType.ChatGun)
+        {
+            Vector3 outward = Vector3.Normalize(camera.Position - center);
+            SpawnImpact(center + outward * 0.22f, outward, critical ? 22 : 16, hitEnemy: true);
+        }
     }
 
     private void SpawnFloatingText(Vector3 center, Vector3 right, int damage, bool isCritical)
@@ -923,6 +1088,45 @@ public class WeaponAndCombatView
             ft.Velocity *= (1f - dt * 2.2f);
             FloatingTexts[i] = ft;
         }
+
+        // Update Active 3D Forked Lightning Bolts
+        for (int i = ActiveLightningBolts.Count - 1; i >= 0; i--)
+        {
+            var lb = ActiveLightningBolts[i];
+            lb.Life -= dt;
+            if (lb.Life <= 0f)
+            {
+                ActiveLightningBolts.RemoveAt(i);
+                continue;
+            }
+            ActiveLightningBolts[i] = lb;
+        }
+
+        // Update Expanding 3D Impact Shockwave Rings
+        for (int i = ImpactShockRings.Count - 1; i >= 0; i--)
+        {
+            var sr = ImpactShockRings[i];
+            sr.Life -= dt;
+            if (sr.Life <= 0f)
+            {
+                ImpactShockRings.RemoveAt(i);
+                continue;
+            }
+            ImpactShockRings[i] = sr;
+        }
+
+        // Update Brief Additive Impact Flashes
+        for (int i = ImpactFlashes.Count - 1; i >= 0; i--)
+        {
+            var fl = ImpactFlashes[i];
+            fl.Life -= dt;
+            if (fl.Life <= 0f)
+            {
+                ImpactFlashes.RemoveAt(i);
+                continue;
+            }
+            ImpactFlashes[i] = fl;
+        }
     }
 
     private Matrix4x4 GunToWorld(Camera3D camera)
@@ -974,63 +1178,7 @@ public class WeaponAndCombatView
     /// </summary>
     public void DrawWeaponWorldEffects3D(Camera3D camera)
     {
-
-
-        // 2. Whip Slash 3D Arc Ribbons (silky unbroken tapered golden-amber motion sweep, zero flat pink or dashed beads!)
-        if (WhipSlashes.Count > 0)
-        {
-            CombatSprites.Begin(BlendMode.Additive);
-            for (int i = 0; i < WhipSlashes.Count; i++)
-            {
-                var w = WhipSlashes[i];
-                float ratio = Math.Clamp(w.Life / w.MaxLife, 0f, 1f);
-                int rOuter = Math.Clamp((int)(w.PrimaryColor.R * 0.42f + 255 * 0.58f), 0, 255);
-                int gOuter = Math.Clamp((int)(w.PrimaryColor.G * 0.32f + 192 * 0.68f), 0, 255);
-                int bOuter = Math.Clamp((int)(w.PrimaryColor.B * 0.22f + 98 * 0.78f), 0, 255);
-
-                const int segments = 18;
-                Vector3 prev = w.Start;
-                float prevEnv = 0f;
-                for (int seg = 1; seg <= segments; seg++)
-                {
-                    float t = seg / (float)segments;
-                    Vector3 cur = EvalQuadraticBezier(w.Start, w.Control, w.End, t);
-                    float env = MathF.Sin(t * MathF.PI);
-
-                    float prevOuterW = (0.044f * prevEnv + 0.003f) * ratio;
-                    float curOuterW = (0.044f * env + 0.003f) * ratio;
-                    Color prevOuterCol = new(rOuter, gOuter, bOuter, Math.Clamp((int)(118 * ratio * prevEnv), 0, 255));
-                    Color curOuterCol = new(rOuter, gOuter, bOuter, Math.Clamp((int)(118 * ratio * env), 0, 255));
-                    CombatSprites.RibbonSegment(prev, cur, camera.Position, prevOuterW, curOuterW, prevOuterCol, curOuterCol);
-
-                    float prevCoreW = (0.015f * prevEnv + 0.001f) * ratio;
-                    float curCoreW = (0.015f * env + 0.001f) * ratio;
-                    Color prevCoreCol = new(255, 244, 198, Math.Clamp((int)(185 * ratio * prevEnv), 0, 255));
-                    Color curCoreCol = new(255, 244, 198, Math.Clamp((int)(185 * ratio * env), 0, 255));
-                    CombatSprites.RibbonSegment(prev, cur, camera.Position, prevCoreW, curCoreW, prevCoreCol, curCoreCol);
-
-                    prev = cur;
-                    prevEnv = env;
-                }
-            }
-            CombatSprites.End();
-        }
-
-        // 3. Hot Solder Sparks & Cyan Electric Arcs
-        for (int i = 0; i < SparkParticles.Count; i++)
-        {
-            var s = SparkParticles[i];
-            if (s.BallisticWidth>0) continue;
-            float ratio = Math.Clamp(s.Life / s.MaxLife, 0f, 1f);
-            Color col = new Color(s.ColorMain.R, s.ColorMain.G, s.ColorMain.B, (byte)(255 * ratio));
-
-            if (s.Velocity.LengthSquared() > 0.000001f)
-            {
-                Vector3 tail = s.Position - Vector3.Normalize(s.Velocity) * (.045f+.065f*ratio);
-                Raylib.DrawCylinderEx(tail,s.Position,.003f,.010f*ratio,4,col);
-            }
-        }
-
+        // 1. Ejected 3D Brass & Shotgun Shells (opaque)
         foreach (var casing in BrassShells)
         {
             Vector3 angles=casing.Rotation*(MathF.PI/180);
@@ -1040,38 +1188,23 @@ public class WeaponAndCombatView
 
         Vector3 forward=Vector3.Normalize(camera.Target-camera.Position);
         Vector3 right=Vector3.Normalize(Vector3.Cross(forward,camera.Up)), up=Vector3.Cross(right,forward);
+        float pixelAngle=2*MathF.Tan(camera.FovY*MathF.PI/360)/Math.Max(1,Raylib.GetScreenHeight());
+
+        // 2. Billowing Gunsmoke, Rosin Smoke & Impact Dust Puffs (Alpha pass)
         if (SmokeParticles.Count>0)
         {
             CombatSprites.Begin(BlendMode.Alpha);
             foreach (var p in SmokeParticles)
             {
-                if (!p.IsPowder) continue;
-                float remaining=p.Life/p.MaxLife;
+                float remaining=Math.Clamp(p.Life/p.MaxLife,0f,1f);
                 var tint=p.Tint;
                 tint.A=(byte)(tint.A*Ease(remaining));
-                CombatSprites.Puff(p.Position,right,up,p.Size,p.Rotation+(1-remaining)*.48f,tint);
+                CombatSprites.Puff(p.Position,right,up,p.Size,p.Rotation+(1-remaining)*.55f,tint);
             }
             CombatSprites.End();
         }
-        if (BulletTracers.Count==0 && SparkParticles.Count==0) return;
-        float pixelAngle=2*MathF.Tan(camera.FovY*MathF.PI/360)/Raylib.GetScreenHeight();
-        CombatSprites.Begin(BlendMode.Additive);
-        foreach (var tr in BulletTracers)
-        {
-            float age=1-tr.Life/tr.MaxLife;
-            Vector3 travel=tr.End-tr.Start;
-            float head=float.Lerp(tr.StartFraction,1,age);
-            float tail=Math.Max(0,head-(tr.StartFraction>.20f ? .20f : .26f));
-            Color tint=tr.TracerColor;
-            tint.A=(byte)(tint.A*(1-age*age));
-            CombatSprites.Streak(tr.Start+travel*tail,tr.Start+travel*head,camera.Position,tr.Thickness,pixelAngle,tint);
-        }
-        foreach (var spark in SparkParticles)
-        {
-            if (spark.BallisticWidth==0 || spark.IsDebris) continue;
-            DrawFragment(spark,camera.Position,pixelAngle);
-        }
-        CombatSprites.End();
+
+        // 3. Solid Physical Impact Debris Flecks (Alpha pass)
         if (SparkParticles.Exists(s=>s.IsDebris))
         {
             CombatSprites.Begin(BlendMode.Alpha);
@@ -1079,6 +1212,137 @@ public class WeaponAndCombatView
                 if (spark.IsDebris) DrawFragment(spark,camera.Position,pixelAngle);
             CombatSprites.End();
         }
+
+        bool hasAdditive = WhipSlashes.Count > 0 || BulletTracers.Count > 0 || SparkParticles.Count > 0
+            || ActiveLightningBolts.Count > 0 || ImpactShockRings.Count > 0 || ImpactFlashes.Count > 0;
+        if (!hasAdditive) return;
+
+        // 4. Unified AAA Additive Combat VFX Pass:
+        //    Whip Slash Arcs + Forked 3D Lightning Bolts + Shockwave Rings + Impact Flashes + Supersonic Tracers + Velocity-Elongated Spark Streaks!
+        CombatSprites.Begin(BlendMode.Additive);
+
+        // 4a. Widened & intensified Golden-Amber Leather Belt Whip Slash Arc Ribbons
+        for (int i = 0; i < WhipSlashes.Count; i++)
+        {
+            var w = WhipSlashes[i];
+            float ratio = Math.Clamp(w.Life / w.MaxLife, 0f, 1f);
+            int rOuter = Math.Clamp((int)(w.PrimaryColor.R * 0.28f + 255 * 0.72f), 0, 255);
+            int gOuter = Math.Clamp((int)(w.PrimaryColor.G * 0.20f + 186 * 0.80f), 0, 255);
+            int bOuter = Math.Clamp((int)(w.PrimaryColor.B * 0.16f + 62 * 0.84f), 0, 255);
+
+            const int segments = 20;
+            Vector3 prev = w.Start;
+            float prevEnv = 0f;
+            for (int seg = 1; seg <= segments; seg++)
+            {
+                float t = seg / (float)segments;
+                Vector3 cur = EvalQuadraticBezier(w.Start, w.Control, w.End, t);
+                float env = MathF.Sin(t * MathF.PI);
+
+                float prevOuterW = (0.088f * prevEnv + 0.005f) * (0.45f + 0.55f * ratio);
+                float curOuterW = (0.088f * env + 0.005f) * (0.45f + 0.55f * ratio);
+                Color prevOuterCol = new(rOuter, gOuter, bOuter, Math.Clamp((int)(205 * ratio * prevEnv), 0, 255));
+                Color curOuterCol = new(rOuter, gOuter, bOuter, Math.Clamp((int)(205 * ratio * env), 0, 255));
+                CombatSprites.RibbonSegment(prev, cur, camera.Position, prevOuterW, curOuterW, prevOuterCol, curOuterCol);
+
+                float prevCoreW = (0.032f * prevEnv + 0.002f) * (0.45f + 0.55f * ratio);
+                float curCoreW = (0.032f * env + 0.002f) * (0.45f + 0.55f * ratio);
+                Color prevCoreCol = new(255, 248, 212, Math.Clamp((int)(255 * ratio * prevEnv), 0, 255));
+                Color curCoreCol = new(255, 248, 212, Math.Clamp((int)(255 * ratio * env), 0, 255));
+                CombatSprites.RibbonSegment(prev, cur, camera.Position, prevCoreW, curCoreW, prevCoreCol, curCoreCol);
+
+                prev = cur;
+                prevEnv = env;
+            }
+        }
+
+        // 4b. Soldering Iron & Combat 3D Forked Electric Lightning Bolts
+        for (int i = 0; i < ActiveLightningBolts.Count; i++)
+        {
+            var lb = ActiveLightningBolts[i];
+            float fade = MathF.Pow(Math.Clamp(lb.Life / lb.MaxLife, 0f, 1f), 0.65f);
+            Color outer = new(lb.OuterColor.R, lb.OuterColor.G, lb.OuterColor.B, (byte)Math.Clamp((int)(lb.OuterColor.A * fade), 0, 255));
+            Color mid = new(lb.MidColor.R, lb.MidColor.G, lb.MidColor.B, (byte)Math.Clamp((int)(lb.MidColor.A * fade), 0, 255));
+            CombatSprites.DrawLightningBolt(lb.Start, lb.End, camera.Position, _animClock, lb.Seed,
+                lb.WidthScale * (0.65f + 0.35f * fade), outer, mid, lb.Branches);
+        }
+
+        // 4c. Expanding Kinetic & Electric 3D Shockwave Rings
+        for (int i = 0; i < ImpactShockRings.Count; i++)
+        {
+            var sr = ImpactShockRings[i];
+            float age = 1f - Math.Clamp(sr.Life / sr.MaxLife, 0f, 1f);
+            float easeOut = 1f - MathF.Pow(1f - age, 2.4f);
+            float radius = float.Lerp(sr.StartRadius, sr.EndRadius, easeOut);
+            float fade = 1f - age * age;
+            Color outer = new(sr.OuterColor.R, sr.OuterColor.G, sr.OuterColor.B, (byte)Math.Clamp((int)(sr.OuterColor.A * fade), 0, 255));
+            Color core = new(sr.CoreColor.R, sr.CoreColor.G, sr.CoreColor.B, (byte)Math.Clamp((int)(sr.CoreColor.A * fade), 0, 255));
+            CombatSprites.DrawEnergyRing(sr.Center, radius, sr.Thickness * (1f - age * 0.45f), camera.Position, outer, core, 28, sr.Normal);
+        }
+
+        // 4d. Incandescent Additive Impact Flashes (SoftHalo)
+        for (int i = 0; i < ImpactFlashes.Count; i++)
+        {
+            var fl = ImpactFlashes[i];
+            float fade = Math.Clamp(fl.Life / fl.MaxLife, 0f, 1f);
+            float r = fl.Size * (0.65f + 0.55f * (1f - fade));
+            Color outer = new(fl.Color.R, fl.Color.G, fl.Color.B, (byte)Math.Clamp((int)(fl.Color.A * fade), 0, 255));
+            CombatSprites.SoftHalo(fl.Position, right, up, r, r, outer);
+            CombatSprites.SoftHalo(fl.Position, right, up, r * 0.42f, r * 0.42f, new Color(255, 252, 236, (int)Math.Clamp((int)(255 * fade), 0, 255)));
+        }
+
+        // 4e. Supersonic Bullet Tracers (bright golden jacket + hot core)
+        foreach (var tr in BulletTracers)
+        {
+            float age=1-tr.Life/tr.MaxLife;
+            Vector3 travel=tr.End-tr.Start;
+            float head=float.Lerp(tr.StartFraction,1,age);
+            float tail=Math.Max(0,head-(tr.StartFraction>.20f ? .24f : .34f));
+            Color tint=tr.TracerColor;
+            tint.A=(byte)(tint.A*(1-age*age));
+            Vector3 pTail = tr.Start + travel * tail;
+            Vector3 pHead = tr.Start + travel * head;
+            CombatSprites.Streak(pTail, pHead, camera.Position, tr.Thickness * 1.45f, pixelAngle, tint);
+            CombatSprites.Streak(pTail, pHead, camera.Position, tr.Thickness * 0.52f, pixelAngle,
+                new Color(255, 252, 235, Math.Clamp((int)(tint.A * 1.05f), 0, 255)));
+        }
+
+        // 4f. ALL Spark Particles (solder, belt, ballistic) as crisp velocity-elongated additive Streaks + core flash (ZERO 4-sided cylinders!)
+        for (int i = 0; i < SparkParticles.Count; i++)
+        {
+            var s = SparkParticles[i];
+            if (s.IsDebris) continue;
+            float ratio = Math.Clamp(s.Life / s.MaxLife, 0f, 1f);
+            float speed = s.Velocity.Length();
+            if (speed < 0.001f) continue;
+
+            if (s.BallisticWidth > 0f)
+            {
+                Color col = s.ColorMain;
+                col.A = (byte)Math.Clamp((int)(col.A * ratio), 0, 255);
+                Vector3 tail = s.Position - s.Velocity * 0.018f;
+                CombatSprites.Streak(tail, s.Position, camera.Position, s.BallisticWidth * 1.4f, pixelAngle, col);
+                CombatSprites.Streak(tail, s.Position, camera.Position, s.BallisticWidth * 0.48f, pixelAngle,
+                    new Color(255, 252, 236, (int)Math.Clamp((int)(240 * ratio), 0, 255)));
+            }
+            else
+            {
+                Vector3 dir = s.Velocity / speed;
+                float streakLen = Math.Clamp(speed * 0.026f + 0.045f * ratio, 0.04f, 0.28f);
+                Vector3 tail = s.Position - dir * streakLen;
+                Color mainCol = s.IsElectricArc
+                    ? new Color(96, 238, 255, (int)Math.Clamp((int)(245 * ratio), 0, 255))
+                    : new Color(s.ColorMain.R, s.ColorMain.G, s.ColorMain.B, (byte)Math.Clamp((int)(245 * ratio), 0, 255));
+                float w = (s.IsElectricArc ? 0.011f : 0.0095f) * (0.45f + 0.55f * ratio);
+                CombatSprites.Streak(tail, s.Position, camera.Position, w, pixelAngle, mainCol);
+                CombatSprites.Streak(tail, s.Position, camera.Position, w * 0.42f, pixelAngle,
+                    new Color(255, 252, 240, (int)Math.Clamp((int)(255 * ratio), 0, 255)));
+                if (ratio > 0.65f)
+                    CombatSprites.SoftHalo(s.Position, right, up, w * 2.4f, w * 2.4f, mainCol);
+            }
+        }
+
+        CombatSprites.End();
     }
 
     private static void DrawFragment(SparkParticle3D spark,Vector3 eye,float pixelAngle)
@@ -1115,7 +1379,7 @@ public class WeaponAndCombatView
         var axis=Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ,gun.Pose*GunToView));
         var right=Vector3.Normalize(Vector3.Cross(viewCamera.Target-viewCamera.Position,viewCamera.Up));
         var up=Vector3.Normalize(Vector3.Cross(right,viewCamera.Target-viewCamera.Position));
-        CombatSprites.Muzzle(tip,axis,right,up,CurrentWeapon==WeaponType.MicroUzi ? .31f : .43f,_flashAngle,FlashStrength);
+        CombatSprites.Muzzle(tip,axis,right,up,CurrentWeapon==WeaponType.MicroUzi ? .38f : .56f,_flashAngle,FlashStrength);
     }
 
     /// <summary>

@@ -3355,7 +3355,7 @@ public static partial class Program
             MainMenuAndPauseUI.WardrobeYawOffset = 0.08f;
             CharacterAppearance.Current.SkinIndex = 1;   // Загорелая
             CharacterAppearance.Current.OutfitIndex = 4; // Белый «Сочи-98»
-            CharacterAppearance.Current.EyeIndex = 7;    // Пиксельные (мем)
+            CharacterAppearance.Current.EyeIndex = 7;    // Пиксельные
             CharacterAppearance.Current.HatIndex = 3;    // Корона Бургер-Босса
             CaptureShot("76_character_wardrobe_3d.png");
             PressTestKey(KeyboardKey.Escape);
@@ -3690,6 +3690,48 @@ public static partial class Program
                 Up = Vector3.UnitY,
                 FovY = 58f
             });
+
+            // 60_boss_combat_fire_lightning.png: Roaring volumetric Arena Fire + Luminous Boss Firewall Shield with Forked 3D Lightning!
+            boss.State = ElevatorBossState.ThrowingNodeModules;
+            boss.ShieldHp = EscapedAgentBoss.ShieldCapacity;
+            boss.Position = new Vector3(0.0f, 0.0f, -11.4f);
+            boss.FacingYaw = MathF.PI;
+            boss.LookTarget = new Vector3(0.0f, 1.65f, -19.2f);
+            boss.SnapPose = true;
+            _world.BossArenaChaos = 1.0f;
+            _world.AdvanceLighting(0.08f);
+            CaptureShot("60_boss_combat_fire_lightning.png", sceneCamera: new Camera3D
+            {
+                Position = new Vector3(-1.35f, 1.92f, -19.6f),
+                Target = new Vector3(0.0f, 1.45f, -11.4f),
+                Up = Vector3.UnitY,
+                FovY = 66f
+            });
+            _world.BossArenaChaos = 0f;
+            boss.ShieldHp = 0f;
+
+            // 77_solder_puddle_lightning.png: Live Soldering Iron 3D Forked Lightning + Electrified Water Puddle + Electro-Shocked Enemy!
+            ResetClassicFixture();
+            MainMenuAndPauseUI.IsInMainMenu = false;
+            _weapons.UnlockedSolderingIron = true;
+            _weapons.Equip(WeaponType.SolderingIron);
+            Vector3 puddlePos = new(-1.2f, 0f, 3.2f);
+            Floor.Puddles.Clear();
+            Floor.Puddles.Add(new WaterSpill { Position = puddlePos, Wet = 18f, Electric = 6f });
+            if (_world.ActiveCoders.Count > 0)
+            {
+                var shocked = _world.ActiveCoders[0];
+                shocked.Position = puddlePos + new Vector3(0.45f, 0f, -0.35f);
+                shocked.State = CoderAIState.PanickedFleeing;
+                shocked.StunTimer = 2.5f;
+                shocked.ElectroShockedTimer = 4.0f;
+            }
+            _playerPos = new Vector3(0.85f, 1.72f, 5.65f);
+            LookAtTarget(puddlePos + Vector3.UnitY * 0.65f);
+            for (int f = 0; f < 10; f++) _weapons.UpdateWeapons(1f / 60f, BuildPlayerCamera());
+            _weapons.TriggerWeaponAttack(BuildPlayerCamera(), puddlePos + Vector3.UnitY * 0.35f, hitEnemy: true, damageDealt: 42, isCritical: true);
+            _world.AdvanceLighting(0.06f);
+            CaptureShot("77_solder_puddle_lightning.png");
         }
 
         // 6. 06_lore_chats_window_n.png - Open Corporate Leak & Slack/TG Chats Window [N] (pre-elevator spoiler-free gate!)

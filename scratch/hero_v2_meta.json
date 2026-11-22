@@ -1,0 +1,66 @@
+{
+  "tri_count": 30895,
+  "material_count": 20,
+  "materials": [
+    "skin",
+    "sclera",
+    "iris",
+    "pupil",
+    "catchlight",
+    "hair",
+    "crimson",
+    "gold",
+    "shirt",
+    "lapel",
+    "pocket_silk",
+    "tie",
+    "belt",
+    "watch_dial",
+    "trousers",
+    "shoes",
+    "sole",
+    "GunMetal",
+    "Gold90s",
+    "PolymerGrip"
+  ],
+  "bounds_gltf": {
+    "X": [
+      -0.3475,
+      0.3415
+    ],
+    "Y": [
+      0.0,
+      1.7458
+    ],
+    "Z": [
+      -0.1867,
+      0.1313
+    ]
+  },
+  "max_gold_Y_gltf": 1.4183,
+  "hair_bounds_gltf": {
+    "X": [
+      -0.0971,
+      0.0971
+    ],
+    "Y_max": 1.7458,
+    "Z": [
+      -0.1259,
+      0.1078
+    ]
+  },
+  "hatband_radius": {
+    "rx": 0.0781,
+    "rz": 0.101
+  },
+  "HatAnchor_gltf": [
+    0.0,
+    1.6898,
+    -0.0094
+  ],
+  "EyeAnchor_gltf": [
+    0.0,
+    1.5993,
+    0.1036
+  ]
+}

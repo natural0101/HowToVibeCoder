@@ -169,17 +169,18 @@ internal static class CombatSprites
         Rlgl.SetTexture(0);
     }
 
+    internal static void SoftSmoke(Vector3 p, Vector3 right, Vector3 up, float radius, float rotation, Color color)
+    {
+        if (smoke.Id == 0 || color.A == 0) return;
+        var (s, c) = MathF.SinCos(rotation);
+        Vector3 x = (right * c + up * s) * radius;
+        Vector3 y = (up * c - right * s) * radius;
+        Quad(smoke, 0, 1, p - x - y, p + x - y, p + x + y, p - x + y, color);
+    }
+
     internal static void Puff(Vector3 p,Vector3 right,Vector3 up,float radius,float rotation,Color color)
     {
-        if (HasPaintedFx)
-        {
-            int frame = (int)(MathF.Abs(rotation) * 3.7f) & 3;
-            SmokeFrame(frame, p, right, up, radius, radius, color, flipX: ((int)(rotation * 10f) & 1) == 0, rotation: rotation);
-            return;
-        }
-        var (s,c)=MathF.SinCos(rotation);
-        Vector3 x=(right*c+up*s)*radius, y=(up*c-right*s)*radius;
-        Quad(smoke,0,1,p-x-y,p+x-y,p+x+y,p-x+y,color);
+        SoftSmoke(p, right, up, radius, rotation, color);
     }
 
     internal static void Muzzle(Vector3 tip,Vector3 axis,Vector3 right,Vector3 up,float length,float angle,float strength)
@@ -189,13 +190,18 @@ internal static class CombatSprites
         var radial=Vector3.Normalize(Vector3.Cross(axis,up));
         var normal=Vector3.Cross(axis,radial);
         var (s,c)=MathF.SinCos(angle);
-        Vector3 end=tip+axis*length*(.72f+.28f*strength);
-        var tint=new Color(255,255,255,Alpha(.92f*strength));
+        Vector3 end=tip+axis*length*(.82f+.38f*strength);
+        var tint=new Color(255,252,238,Alpha(Math.Min(1f,1.08f*strength)));
         void Jet(Vector3 span) => Quad(flash,0,.5f,tip-span,end-span,end+span,tip+span,tint);
-        Jet((radial*c+normal*s)*length*.30f);
-        Jet((normal*c-radial*s)*length*.26f);
-        Vector3 x=right*length*.26f, y=up*length*.26f;
-        Quad(flash,.5f,1,tip-x-y,tip+x-y,tip+x+y,tip-x+y,new Color(255,163,75,Alpha(.48f*strength)));
+        Jet((radial*c+normal*s)*length*.36f);
+        Jet((normal*c-radial*s)*length*.32f);
+        // Third diagonal gas blade for richer 3D volumetric star flare
+        var (s2,c2)=MathF.SinCos(angle+MathF.PI*.25f);
+        Jet((radial*c2+normal*s2)*length*.22f);
+        Vector3 x=right*length*.36f, y=up*length*.36f;
+        Quad(flash,.5f,1,tip-x-y,tip+x-y,tip+x+y,tip-x+y,new Color(255,172,72,Alpha(.64f*strength)));
+        Vector3 cx=right*length*.16f, cy=up*length*.16f;
+        Quad(flash,.5f,1,tip-cx-cy,tip+cx-cy,tip+cx+cy,tip-cx+cy,new Color(255,250,224,Alpha(.88f*strength)));
         End();
         Raylib.EndShaderMode();
     }
@@ -309,5 +315,191 @@ internal static class CombatSprites
         Rlgl.TexCoord2f(uMid, 0.98f); Rlgl.Vertex3f(prev.X + sidePrev.X, prev.Y + sidePrev.Y, prev.Z + sidePrev.Z);
         Rlgl.End();
         Rlgl.SetTexture(0);
+    }
+
+    private static uint HashU32(uint h)
+    {
+        h ^= h >> 16;
+        h = unchecked(h * 0x7feb352du);
+        h ^= h >> 15;
+        h = unchecked(h * 0x846ca68bu);
+        return h ^ (h >> 16);
+    }
+
+    private static float Hash01(uint h) => (HashU32(h) & 0x00FFFFFFu) / 16777215f;
+    private static float HashSigned(uint h) => Hash01(h) * 2f - 1f;
+
+    /// <summary>
+    /// AAA multi-pass 3D forked electric lightning bolt. Must be called inside CombatSprites.Begin(BlendMode.Additive) .. End().
+    /// Renders wide electric outer glow + intense mid plasma jacket + razor-white incandescent core + forked sub-branches + endpoint contact flashes.
+    /// </summary>
+    internal static void DrawLightningBolt(
+        Vector3 start,
+        Vector3 end,
+        Vector3 eye,
+        float time,
+        int seed,
+        float widthScale,
+        Color outerGlow,
+        Color midPlasma,
+        int branches = 2)
+    {
+        if (flash.Id == 0 || widthScale <= 0.001f) return;
+        Vector3 delta = end - start;
+        float len = delta.Length();
+        if (len < 0.025f) return;
+
+        Vector3 dir = delta / len;
+        Vector3 refUp = MathF.Abs(dir.Y) < 0.92f ? Vector3.UnitY : Vector3.UnitX;
+        Vector3 uAxis = Vector3.Normalize(Vector3.Cross(dir, refUp));
+        Vector3 vAxis = Vector3.Cross(uAxis, dir);
+
+        // High-frequency 28Hz stepped flicker so electricity snaps & crackles crisply (never slow swimming worms!)
+        uint step = unchecked((uint)(int)MathF.Floor(time * 28f));
+        uint baseHash = unchecked(step * 73856093u ^ (uint)seed * 19349663u ^ 0x9e3779b9u);
+
+        int segs = Math.Clamp((int)(9 + len * 2.1f), 10, 14);
+        Span<Vector3> pts = stackalloc Vector3[16];
+        pts[0] = start;
+        pts[segs] = end;
+
+        float jitterAmp = Math.Clamp(len * 0.135f, 0.042f, 0.42f);
+        float bowU = HashSigned(baseHash ^ 0x1111u) * jitterAmp * 0.52f;
+        float bowV = HashSigned(baseHash ^ 0x2222u) * jitterAmp * 0.52f;
+        float prevKickU = 0f, prevKickV = 0f;
+
+        for (int i = 1; i < segs; i++)
+        {
+            float t = i / (float)segs;
+            float env = MathF.Sin(t * MathF.PI);
+            uint nh = unchecked(baseHash ^ (uint)i * 83492791u);
+            float kickU = HashSigned(nh ^ 0x3a5cu) * jitterAmp * 0.85f;
+            float kickV = HashSigned(nh ^ 0x7c9eu) * jitterAmp * 0.85f;
+            // Slight smoothing blend with previous node keeps sharp jagged knees without extreme zig-zag foldbacks
+            float offU = (bowU + kickU * 0.78f + prevKickU * 0.22f) * env;
+            float offV = (bowV + kickV * 0.78f + prevKickV * 0.22f) * env;
+            prevKickU = kickU;
+            prevKickV = kickV;
+            pts[i] = Vector3.Lerp(start, end, t) + uAxis * offU + vAxis * offV;
+        }
+
+        float intensity = Math.Clamp(midPlasma.A / 255f, 0f, 1f);
+        Color outerCol = new(outerGlow.R, outerGlow.G, outerGlow.B, (byte)Math.Clamp((int)(88f * (outerGlow.A / 255f)), 0, 255));
+        Color midCol = new(midPlasma.R, midPlasma.G, midPlasma.B, (byte)Math.Clamp((int)(205f * intensity), 0, 255));
+        Color coreCol = new(248, 253, 255, (int)Math.Clamp((int)(255f * MathF.Sqrt(intensity)), 0, 255));
+
+        void DrawPolyline(ReadOnlySpan<Vector3> chain, int count, float wScale, bool taper)
+        {
+            float wOuter = 0.095f * wScale;
+            float wMid = 0.036f * wScale;
+            float wCore = 0.012f * wScale;
+            for (int k = 0; k < count - 1; k++)
+            {
+                float f0 = taper ? 1f - (k / (float)(count - 1)) * 0.82f : 1f;
+                float f1 = taper ? 1f - ((k + 1) / (float)(count - 1)) * 0.82f : 1f;
+                float a0 = taper ? 1f - (k / (float)(count - 1)) * 0.85f : 1f;
+                float a1 = taper ? 1f - ((k + 1) / (float)(count - 1)) * 0.85f : 1f;
+
+                Color o0 = new(outerCol.R, outerCol.G, outerCol.B, (byte)(outerCol.A * a0));
+                Color o1 = new(outerCol.R, outerCol.G, outerCol.B, (byte)(outerCol.A * a1));
+                RibbonSegment(chain[k], chain[k + 1], eye, wOuter * f0, wOuter * f1, o0, o1);
+
+                Color m0 = new(midCol.R, midCol.G, midCol.B, (byte)(midCol.A * a0));
+                Color m1 = new(midCol.R, midCol.G, midCol.B, (byte)(midCol.A * a1));
+                RibbonSegment(chain[k], chain[k + 1], eye, wMid * f0, wMid * f1, m0, m1);
+
+                Color c0 = new(coreCol.R, coreCol.G, coreCol.B, (byte)(coreCol.A * a0));
+                Color c1 = new(coreCol.R, coreCol.G, coreCol.B, (byte)(coreCol.A * a1));
+                RibbonSegment(chain[k], chain[k + 1], eye, wCore * f0, wCore * f1, c0, c1);
+            }
+        }
+
+        // Main jagged bolt (3-pass volumetric glow + plasma + incandescent core)
+        DrawPolyline(pts, segs + 1, widthScale, taper: false);
+
+        // Forked sub-branches shooting outward at 30°–55° from interior midpoints with tapered width
+        int branchCount = Math.Clamp(branches, 0, 5);
+        if (branchCount > 0 && segs >= 6)
+        {
+            Span<Vector3> forkPts = stackalloc Vector3[6];
+            for (int b = 0; b < branchCount; b++)
+            {
+                uint bh = unchecked(baseHash ^ (uint)(b + 1) * 0x517cc1b7u);
+                int rootIdx = 2 + (int)(Hash01(bh ^ 0x13u) * (segs - 4));
+                Vector3 root = pts[rootIdx];
+
+                float azim = Hash01(bh ^ 0x29u) * MathF.Tau;
+                float spreadAngle = (30f + Hash01(bh ^ 0x47u) * 25f) * (MathF.PI / 180f); // 30°..55°
+                Vector3 radialOut = uAxis * MathF.Cos(azim) + vAxis * MathF.Sin(azim);
+                Vector3 forkDir = Vector3.Normalize(dir * MathF.Cos(spreadAngle) + radialOut * MathF.Sin(spreadAngle));
+                Vector3 fU = Vector3.Normalize(Vector3.Cross(forkDir, MathF.Abs(forkDir.Y) < 0.92f ? Vector3.UnitY : Vector3.UnitX));
+                Vector3 fV = Vector3.Cross(fU, forkDir);
+
+                float forkLen = len * (0.24f + Hash01(bh ^ 0x61u) * 0.24f);
+                const int fSegs = 5;
+                forkPts[0] = root;
+                float fJit = Math.Clamp(forkLen * 0.16f, 0.025f, 0.22f);
+                for (int fi = 1; fi <= fSegs; fi++)
+                {
+                    float ft = fi / (float)fSegs;
+                    uint fnh = unchecked(bh ^ (uint)fi * 2654435761u);
+                    float ju = HashSigned(fnh ^ 0x55u) * fJit * ft;
+                    float jv = HashSigned(fnh ^ 0xaau) * fJit * ft;
+                    forkPts[fi] = root + forkDir * (forkLen * ft) + fU * ju + fV * jv;
+                }
+                DrawPolyline(forkPts, fSegs + 1, widthScale * 0.56f, taper: true);
+            }
+        }
+
+        // Bright electric contact flashes at start & end
+        void ContactFlash(Vector3 p, float radiusScale)
+        {
+            Vector3 toEye = eye - p;
+            if (toEye.LengthSquared() < 1e-6f) return;
+            Vector3 fwd = Vector3.Normalize(toEye);
+            Vector3 r = Vector3.Normalize(Vector3.Cross(MathF.Abs(fwd.Y) < 0.95f ? Vector3.UnitY : Vector3.UnitX, fwd));
+            Vector3 u = Vector3.Cross(fwd, r);
+            float haloR = 0.22f * widthScale * radiusScale;
+            SoftHalo(p, r, u, haloR, haloR, new Color(midPlasma.R, midPlasma.G, midPlasma.B, (byte)Math.Clamp((int)(165f * intensity), 0, 255)));
+            float coreR = 0.095f * widthScale * radiusScale;
+            SoftHalo(p, r, u, coreR, coreR, coreCol);
+        }
+        ContactFlash(start, 0.92f);
+        ContactFlash(end, 1.12f);
+    }
+
+    /// <summary>
+    /// Luminous additive 3D energy/shockwave ring using smooth camera-facing RibbonSegments (zero 1px aliased DrawCircle3D!).
+    /// Must be called inside CombatSprites.Begin(BlendMode.Additive) .. End().
+    /// </summary>
+    internal static void DrawEnergyRing(
+        Vector3 center,
+        float radius,
+        float thickness,
+        Vector3 eye,
+        Color outerCol,
+        Color coreCol,
+        int segments = 32,
+        Vector3? normal = null)
+    {
+        if (flash.Id == 0 || radius <= 0.01f || thickness <= 0.0005f) return;
+        int segs = Math.Max(12, segments);
+        Vector3 n = normal.HasValue && normal.Value.LengthSquared() > 1e-6f ? Vector3.Normalize(normal.Value) : Vector3.UnitY;
+        Vector3 refVec = MathF.Abs(n.Y) < 0.95f ? Vector3.UnitY : Vector3.UnitX;
+        Vector3 t1 = Vector3.Normalize(Vector3.Cross(n, refVec));
+        Vector3 t2 = Vector3.Cross(n, t1);
+
+        float coreW = thickness * 0.36f;
+        Vector3 prev = center + t1 * radius;
+        for (int i = 1; i <= segs; i++)
+        {
+            float a = i * (MathF.Tau / segs);
+            Vector3 cur = center + (t1 * MathF.Cos(a) + t2 * MathF.Sin(a)) * radius;
+            if (outerCol.A > 0)
+                RibbonSegment(prev, cur, eye, thickness, thickness, outerCol, outerCol);
+            if (coreCol.A > 0)
+                RibbonSegment(prev, cur, eye, coreW, coreW, coreCol, coreCol);
+            prev = cur;
+        }
     }
 }

@@ -518,15 +518,15 @@ internal static unsafe partial class VisualEngine3D
                         float wrap=clamp(dot(n,normalize(portrait))*.85+.15,0.,1.);
                         value+=pigment*falloff*(vec3(.06,.04,.08)+vec3(.48,.36,.28)*wrap);
                         if(wardrobeStage==1 && length(pos.xz-vec2(0.,10.35))<1.35) {
-                            // Warm Moscow-City Tailor Atelier 3-point portrait rig for the 3D Character Wardrobe
-                            vec3 wKey=normalize(vec3(.55,1.95,12.75)-pos);
-                            vec3 wFill=normalize(vec3(-1.35,1.55,11.65)-pos);
-                            vec3 wRim=normalize(vec3(-.25,2.15,8.65)-pos);
-                            float kw=clamp(dot(n,wKey)*.72+.28,0.,1.);
-                            float fw=clamp(dot(n,wFill)*.65+.35,0.,1.);
-                            float rw=pow(1.-abs(dot(n,v)),2.2)*clamp(dot(n,wRim)*.55+.45,0.,1.);
-                            value=pigment*(vec3(.26,.23,.22)+sky*.12+kw*vec3(.88,.76,.62)+fw*vec3(.34,.36,.42));
-                            value+=vec3(.56,.42,.24)*rw;
+                            // Sculpted Moscow-City Tailor Atelier 3-point portrait rig (angled 3/4 key + cool rim; preserves rich folds on BOTH white & black blazers!)
+                            vec3 wKey=normalize(vec3(1.55,2.25,12.10)-pos);
+                            vec3 wFill=normalize(vec3(-1.65,1.45,11.35)-pos);
+                            vec3 wRim=normalize(vec3(-1.25,2.15,8.65)-pos);
+                            float kw=clamp(dot(n,wKey)*.88+.12,0.,1.);
+                            float fw=clamp(dot(n,wFill)*.70+.30,0.,1.);
+                            float rw=pow(1.-abs(dot(n,v)),2.2)*clamp(dot(n,wRim)*.65+.35,0.,1.);
+                            value=pigment*(vec3(.18,.16,.17)+sky*.08+kw*vec3(.68,.60,.50)+fw*vec3(.22,.25,.31));
+                            value+=vec3(.34,.38,.46)*rw;
                         }
                         float weave=sin(uv.x*480.)*cos(uv.y*380.)*(1.-smoothstep(.2,1.,fwidth(uv.x)*480.));
                         value*=1.+.035*weave;
@@ -668,8 +668,8 @@ internal static unsafe partial class VisualEngine3D
             }
             if(firstPerson==0) light+=point(puddleLight,vec3(.08,1.12,1.55)*puddlePower,n,v,gloss);
             if(firstPerson==0 && wardrobeStage==1 && length(pos.xz-vec2(0.,10.35))<1.35) {
-                light+=point(vec3(.55,2.05,12.75),vec3(1.15,.98,.80),n,v,gloss);
-                light+=point(vec3(-1.35,1.65,11.65),vec3(.42,.44,.52),n,v,gloss);
+                light+=point(vec3(1.55,2.25,12.10),vec3(.72,.62,.50),n,v,gloss);
+                light+=point(vec3(-1.25,1.95,8.75),vec3(.34,.38,.46),n,v,gloss);
             }
             light+=point(laptop,vec3(.25,.95,1.25)*power,n,v,gloss);
             light+=point(tarot,vec3(1.45,.88,.44)*(.95+.05*sin(clock*8.)),n,v,gloss);

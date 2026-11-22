@@ -825,8 +825,13 @@ public static partial class Program
         if(Floor.WingsUnlocked && Floor.StyleTime>0)
         {
             Color ink=Raylib.Fade(amber,Math.Min(1,Floor.StyleTime));
-            ShadowText(display,Floor.RankIndex==4 ? "S" : Floor.Rank,x,13,28,ink);
-            ShadowText(small,FormattableString.Invariant($"АВТОРИТЕТ  ×{Floor.Variety:0.0}"),x+40,25,13,ink);
+            string rankGlyph = Floor.RankIndex == 4 ? "S" : Floor.Rank;
+            ShadowText(display, rankGlyph, x - 4, 13, 28, ink);
+            float glyphW = GameFonts.Measure(display, rankGlyph, 28).X;
+            string multLabel = _world.BossInCombat
+                ? FormattableString.Invariant($"×{Floor.Variety:0.0}")
+                : FormattableString.Invariant($"АВТОРИТЕТ  ×{Floor.Variety:0.0}");
+            ShadowText(small, multLabel, x + glyphW + 2, 25, 13, ink);
         }
         string progress=Floor.JobId==0 ? $"Опенспейс {Floor.Seated}/2    ${Floor.Earned} / $450" : Floor.Progress;
         int seconds=(int)MathF.Ceiling(Floor.Remaining);

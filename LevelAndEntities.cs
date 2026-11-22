@@ -5089,17 +5089,31 @@ public sealed partial class SkyscraperFloor1World
     private void DrawPanelSparks(Vector3 panel,int side)
     {
         bool repair=ElevatorBoss.State==ElevatorBossState.Repairing;
-        if(!BrokenElevator && !repair) return;
-        float period=repair ? .38f : 1.85f;
+        if((!BrokenElevator && !repair) || VisualEngine3D.CastingShadows) return;
+        float period=repair ? .38f : 1.75f;
         float cycleTime=_worldClock+(side+1)*.41f;
         float burst=repair ? (RepairSeconds-ElevatorBoss.StateTimer)%period : cycleTime%period;
-        if(burst>.26f || (repair && ElevatorBoss.StateTimer<1.25f)) return;
+        if(burst>.28f || (repair && ElevatorBoss.StateTimer<1.25f)) return;
         int seed=(int)(cycleTime/period)*31+side*7;
         Vector3 origin=panel+new Vector3(0,-.202f,side*.034f);
-        // Tiny localized arc flash right between the two copper wire tips during initial snap.
-        if(burst<.06f)
-            VisualEngine3D.Orb(origin,.0075f*(1f-burst/.06f),new(255,244,208,255),Finish.Lamp);
-        int count=repair ? 14 : 8;
+        Vector3 eye = VisualEngine3D.ActiveCamPos;
+        Vector3 camR = VisualEngine3D.ActiveCamRight;
+        Vector3 camU = VisualEngine3D.ActiveCamUp;
+        float pixelAngle = 0.0018f;
+
+        CombatSprites.Begin(BlendMode.Additive);
+        // Snapping mini 3D forked electric arc between exposed copper panel leads + bright flash
+        if(burst<.12f)
+        {
+            float af = 1f - burst / .12f;
+            CombatSprites.SoftHalo(origin, camR, camU, .14f * af, .14f * af, new Color(142, 234, 255, (int)(215 * af)));
+            CombatSprites.SoftHalo(origin, camR, camU, .055f * af, .055f * af, new Color(255, 250, 232, (int)(255 * af)));
+            Vector3 leadA = origin + new Vector3(-.055f, .022f, 0f);
+            Vector3 leadB = origin + new Vector3(+.062f, -.035f, side * .025f);
+            CombatSprites.DrawLightningBolt(leadA, leadB, eye, _worldClock, seed + 17, 0.34f * af,
+                new Color(42, 168, 255, (int)(220 * af)), new Color(165, 245, 255, (int)(255 * af)), branches: 1);
+        }
+        int count=repair ? 18 : 12;
         for(int i=0;i<count;i++)
         {
             float h1=MathF.Sin(seed*12.9898f+i*78.233f)*43758.5453f; h1-=MathF.Floor(h1);
@@ -5107,16 +5121,19 @@ public sealed partial class SkyscraperFloor1World
             float h3=MathF.Sin(seed*73.156f+i*52.235f)*19191.1919f; h3-=MathF.Floor(h3);
             float lag=h3*.07f;
             float t=burst-lag;
-            if(t<=.006f || t>.22f) continue;
-            float vx=(h1-.5f)*1.35f;
-            float vy=.15f+h2*.75f;
-            float vz=side*(.35f+h3*.85f);
-            Vector3 vel=new(vx,vy-4.8f*t,vz);
-            Vector3 pos=origin+new Vector3((h2-.5f)*.022f,(h1-.5f)*.012f,0)+new Vector3(vx*t,vy*t-2.4f*t*t,vz*t);
-            Vector3 tail=pos-vel*.026f;
-            Color spark=i%3==0 ? new(255,244,205,255) : new(255,186,78,255);
-            VisualEngine3D.Rod(pos,tail,.0022f,.0007f,5,spark,Finish.Lamp);
+            if(t<=.006f || t>.24f) continue;
+            float fade = 1f - t / .24f;
+            float vx=(h1-.5f)*1.65f;
+            float vy=.22f+h2*.95f;
+            float vz=side*(.42f+h3*1.05f);
+            Vector3 vel=new(vx,vy-5.2f*t,vz);
+            Vector3 pos=origin+new Vector3((h2-.5f)*.024f,(h1-.5f)*.014f,0)+new Vector3(vx*t,vy*t-2.6f*t*t,vz*t);
+            Vector3 tail=pos-vel*.034f;
+            Color spark=i%4==0 ? new(125,242,255,(int)(245*fade)) : i%2==0 ? new(255,244,196,(int)(245*fade)) : new(255,172,56,(int)(235*fade));
+            CombatSprites.Streak(tail, pos, eye, .0058f * (0.4f + 0.6f * fade), pixelAngle, spark);
+            CombatSprites.Streak(tail, pos, eye, .0024f * (0.4f + 0.6f * fade), pixelAngle, new Color(255, 252, 240, (int)(255 * fade)));
         }
+        CombatSprites.End();
     }
 
     private static void GoldSpark(Vector3 center,float radius)
@@ -5143,24 +5160,26 @@ public sealed partial class SkyscraperFloor1World
             Vector3 up = MathF.Abs(dir.Y) > 0.9f ? Vector3.UnitX : Vector3.UnitY;
             Vector3 side = Vector3.Normalize(Vector3.Cross(up, dir));
             Vector3 orthoUp = Vector3.Cross(dir, side);
+            Vector3 eye = VisualEngine3D.ActiveCamPos;
 
-            // Crisp directional metallic/kinetic hit sparks (zero chunky yellow 4-petal banana star!)
+            // Crisp additive starburst flash + directional velocity-elongated spark streaks
+            CombatSprites.Begin(BlendMode.Additive);
             if (CombatSprites.HasPaintedFx)
             {
-                CombatSprites.Begin(BlendMode.Additive);
                 CombatSprites.ExplosionFrame(0, impact, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
-                    0.075f * t, (1f - t) * 7.5f, new Color(255, 224, 152, Math.Clamp((int)(195 * t), 0, 255)));
-                CombatSprites.End();
+                    0.16f * t, (1f - t) * 7.5f, new Color(255, 224, 148, Math.Clamp((int)(225 * t), 0, 255)));
             }
-            VisualEngine3D.Orb(impact, 0.018f * t, new Color(255, 246, 212, 255), Finish.Lamp);
-            for (int k = 0; k < 6; k++)
+            CombatSprites.SoftHalo(impact, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                0.22f * t, 0.22f * t, new Color(255, 212, 112, (int)(215 * t)));
+            for (int k = 0; k < 10; k++)
             {
-                float a = k * MathF.Tau / 6f + (1f - t) * 3.2f + 0.4f;
-                Vector3 ray = Vector3.Normalize(-dir * 0.68f + side * MathF.Cos(a) * 0.85f + orthoUp * MathF.Sin(a) * 0.85f);
-                float len = (0.075f + 0.055f * (k % 2)) * t;
-                Color col = (k % 2 == 0) ? new Color(255, 238, 176, 255) : new Color(255, 168, 56, 255);
-                VisualEngine3D.Rod(impact, impact + ray * len, 0.0042f, 0.0009f, 4, col, Finish.Lamp);
+                float a = k * MathF.Tau / 10f + (1f - t) * 3.8f + 0.4f;
+                Vector3 ray = Vector3.Normalize(-dir * 0.62f + side * MathF.Cos(a) * 0.88f + orthoUp * MathF.Sin(a) * 0.88f);
+                float len = (0.14f + 0.11f * (k % 3)) * t;
+                Color col = (k % 2 == 0) ? new Color(255, 242, 182, (int)(245 * t)) : new Color(255, 162, 48, (int)(235 * t));
+                CombatSprites.Streak(impact, impact + ray * len, eye, 0.0095f * t, 0.0018f, col);
             }
+            CombatSprites.End();
         }
         return t * t;
     }
@@ -5192,8 +5211,50 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Rod(At(.21f,.72f,.13f),tip,.035f,.032f,10,Color.DarkGray);
             VisualEngine3D.Orb(tip,.035f,new(125,192,214,255),Finish.Lamp);
         }
-        if(c.Ignition>0 && c.Hp>0)
-            VisualEngine3D.Oval(c.CombatCenter+Vector3.UnitY*.12f,new(.12f,.17f+.04f*MathF.Sin(_worldClock*21),.1f),Color.Orange,Finish.Plasma);
+        if(!VisualEngine3D.CastingShadows && c.Hp>0)
+        {
+            // Blazing additive fire flames when coder is ignited (Rosin Napalm)
+            if(c.Ignition>0)
+            {
+                CombatSprites.Begin(BlendMode.Additive);
+                Vector3 fBase = c.CombatCenter - Vector3.UnitY * 0.12f;
+                if (CombatSprites.HasPaintedFx)
+                {
+                    for (int k = 0; k < 2; k++)
+                    {
+                        int fi = (int)(_worldClock * (13f + k * 2.5f) + c.Id * 3 + k) & 3;
+                        float h = (0.58f + 0.14f * k) * scale;
+                        CombatSprites.FireFrame(fi, fBase + Vector3.UnitY * (0.28f * scale),
+                            VisualEngine3D.ActiveCamRight, Vector3.UnitY, 0.40f * scale, h,
+                            new Color(255, 224, 152, 230), flipX: ((c.Id + k) & 1) == 1);
+                    }
+                }
+                CombatSprites.SoftHalo(fBase + Vector3.UnitY * 0.22f, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                    0.48f * scale, 0.48f * scale, new Color(255, 136, 36, 155));
+                CombatSprites.End();
+            }
+
+            // Crackling miniature 3D forked lightning arcs dancing over electro-shocked / stunned enemies!
+            if (c.ElectroShockedTimer > 0f || (c.StunTimer > 0f && c.State != CoderAIState.Subdued))
+            {
+                Vector3 eye = VisualEngine3D.ActiveCamPos;
+                float amp = c.ElectroShockedTimer > 0f ? 1.0f : 0.78f;
+                CombatSprites.Begin(BlendMode.Additive);
+                for (int arc = 0; arc < 3; arc++)
+                {
+                    float a0 = _worldClock * (4.5f + arc * 1.3f) + c.Id * 2.1f + arc * 2.09f;
+                    float a1 = a0 + 1.85f + 0.5f * MathF.Sin(_worldClock * 11f + arc);
+                    float rad = 0.30f * scale;
+                    Vector3 p0 = c.Position + new Vector3(MathF.Cos(a0) * rad, (0.32f + arc * 0.34f) * scale, MathF.Sin(a0) * rad);
+                    Vector3 p1 = c.Position + new Vector3(MathF.Cos(a1) * rad, (0.78f + ((arc + 1) % 3) * 0.32f) * scale, MathF.Sin(a1) * rad);
+                    CombatSprites.DrawLightningBolt(p0, p1, eye, _worldClock, c.Id * 131 + arc * 29, 0.44f * amp,
+                        new Color(32, 152, 255, (int)(220 * amp)), new Color(138, 246, 255, (int)(255 * amp)), branches: 1);
+                }
+                CombatSprites.SoftHalo(c.CombatCenter, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                    0.55f * scale, 0.55f * scale, new Color(56, 206, 255, (int)(95 * amp)));
+                CombatSprites.End();
+            }
+        }
         if(!VisualEngine3D.CastingShadows && c.Archetype==CoderArchetype.TeamLeadMeeter && c.State==CoderAIState.CombatHostile)
             Raylib.DrawCylinder(c.Position+Vector3.UnitY*.012f,1.15f,1.22f,.005f,20,new Color(88,205,126,34));
         if (c.IsCombatCoder && c.Windup>0)
@@ -5208,8 +5269,15 @@ public sealed partial class SkyscraperFloor1World
             {
                 if (VisualEngine3D.HasAsset("proj_taser_dart"))
                     VisualEngine3D.AssetOriented("proj_taser_dart", hand, yawDeg, -8f, 0f, 1.15f);
-                // Crisp blue stun-prong warning arc telegraph so player reads the incoming taser shot!
-                VisualEngine3D.Rod(hand - forward * 0.04f, hand + forward * (0.14f + 0.08f * lift), 0.010f, 0.004f, 6, new(115, 232, 255, 255), Finish.Plasma);
+                // Crackling 3D forked stun-prong warning arc telegraph so player reads the incoming taser shot!
+                if (!VisualEngine3D.CastingShadows)
+                {
+                    CombatSprites.Begin(BlendMode.Additive);
+                    CombatSprites.DrawLightningBolt(hand - forward * 0.04f, hand + forward * (0.24f + 0.14f * lift),
+                        VisualEngine3D.ActiveCamPos, _worldClock, c.Id * 53 + 9, 0.42f,
+                        new Color(32, 162, 255, 235), new Color(135, 245, 255, 255), branches: 1);
+                    CombatSprites.End();
+                }
             }
             else if (!c.WindingSlap)
             {
@@ -5242,7 +5310,7 @@ public sealed partial class SkyscraperFloor1World
         VisualEngine3D.DrawEscapedAgentBoss(b,b.LookTarget,_worldClock,ElevatorGlassOpacity,shutdown,recoil,
             Raylib.ColorLerp(tint,Color.Gray,shutdown));
         if(recoil>0) VisualEngine3D.SetHitFlash(0);
-        // Crisp directional armor impact sparks tightly on the chest cuirass (no oversized cartoon star floating off elbow!)
+        // Crisp additive armor impact sparks & shock flash tightly on the chest cuirass
         if(hitT>.42f && !VisualEngine3D.CastingShadows)
         {
             Vector3 hitDir=b.HitDirection.LengthSquared()>.01f ? Vector3.Normalize(b.HitDirection) : new Vector3(0,0,1);
@@ -5250,44 +5318,65 @@ public sealed partial class SkyscraperFloor1World
             Vector3 up=Vector3.UnitY;
             Vector3 side=Vector3.Normalize(Vector3.Cross(up, hitDir));
             if(side.LengthSquared()<.01f) side=Vector3.UnitX;
-            VisualEngine3D.Orb(impact, .042f*hitT, new Color(255,244,195,255), Finish.Lamp);
-            for(int s=0; s<5; s++)
+            Vector3 eye = VisualEngine3D.ActiveCamPos;
+            CombatSprites.Begin(BlendMode.Additive);
+            CombatSprites.SoftHalo(impact, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                0.36f * hitT, 0.36f * hitT, new Color(255, 224, 132, (int)(235 * hitT)));
+            for(int s=0; s<10; s++)
             {
-                float a = s * MathF.Tau / 5f + _worldClock * 11f;
-                Vector3 ray = Vector3.Normalize(-hitDir * 0.72f + side * MathF.Cos(a) * 0.85f + up * MathF.Sin(a) * 0.85f);
-                VisualEngine3D.Rod(impact, impact + ray * (.18f + .10f * (s % 2)) * hitT, .009f, .002f, 5,
-                    s % 2 == 0 ? new Color(255, 186, 62, 255) : new Color(255, 232, 145, 255), Finish.Lamp);
+                float a = s * MathF.Tau / 10f + _worldClock * 11f;
+                Vector3 ray = Vector3.Normalize(-hitDir * 0.65f + side * MathF.Cos(a) * 0.88f + up * MathF.Sin(a) * 0.88f);
+                Color col = s % 2 == 0 ? new Color(255, 186, 62, (int)(245 * hitT)) : new Color(255, 244, 188, (int)(255 * hitT));
+                CombatSprites.Streak(impact, impact + ray * (.24f + .16f * (s % 3)) * hitT, eye, .014f * hitT, 0.0018f, col);
             }
+            CombatSprites.End();
         }
         if(BossInCombat && b.ShieldHp>0 && !VisualEngine3D.CastingShadows)
         {
-            // Sleek Art-Deco perimeter energy barrier framing System Zero without obscuring his armor silhouette
-            float pulse = 0.72f + 0.28f * MathF.Sin(_worldClock * 4.5f);
-            Color rimCol = new(118, 208, 232, (int)(128 * pulse));
-            Color softCol = new(118, 208, 232, (int)(74 * pulse));
-            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 0.06f, 1.32f, Vector3.UnitX, 90f, rimCol);
-            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 0.14f, 1.40f, Vector3.UnitX, 90f, softCol);
-            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 1.10f, 1.24f, Vector3.UnitX, 90f, softCol);
-            Raylib.DrawCircle3D(b.Position + Vector3.UnitY * 3.02f, 0.94f, Vector3.UnitX, 90f, rimCol);
-            for (int r = 0; r < 6; r++)
+            // AAA Luminous Volumetric Firewall Energy Barrier: additive DrawEnergyRing hoops + crackling forked 3D lightning arcs + cyan FloorGlow!
+            Vector3 eye = VisualEngine3D.ActiveCamPos;
+            float shieldFrac = Math.Clamp(b.ShieldHp / EscapedAgentBoss.ShieldCapacity, 0.25f, 1f);
+            float pulse = 0.78f + 0.22f * MathF.Sin(_worldClock * 5.2f);
+            float breath = 0.04f * MathF.Sin(_worldClock * 3.8f);
+            Color outerRing = new(28, 168, 255, (int)Math.Clamp((int)(145 * pulse * shieldFrac), 0, 255));
+            Color coreRing  = new(196, 248, 255, (int)Math.Clamp((int)(235 * pulse * shieldFrac), 0, 255));
+            Color softRing  = new(38, 185, 255, (int)Math.Clamp((int)(105 * pulse * shieldFrac), 0, 255));
+
+            CombatSprites.Begin(BlendMode.Additive);
+            // Glowing electric cyan floor pool beneath the Boss barrier
+            CombatSprites.FloorGlow(b.Position + Vector3.UnitY * 0.018f, 2.35f + breath,
+                new Color(24, 152, 255, (int)(95 * pulse * shieldFrac)));
+            CombatSprites.FloorGlow(b.Position + Vector3.UnitY * 0.022f, 1.42f,
+                new Color(128, 242, 255, (int)(125 * pulse * shieldFrac)));
+
+            // 4 luminous volumetric additive perimeter hoops (zero 1px DrawCircle3D!)
+            CombatSprites.DrawEnergyRing(b.Position + Vector3.UnitY * 0.09f, 1.38f + breath, 0.052f, eye, outerRing, coreRing, 36);
+            CombatSprites.DrawEnergyRing(b.Position + Vector3.UnitY * (1.02f + 0.06f * MathF.Sin(_worldClock * 3.1f)), 1.30f, 0.036f, eye, softRing, coreRing, 32);
+            CombatSprites.DrawEnergyRing(b.Position + Vector3.UnitY * (2.04f + 0.06f * MathF.Cos(_worldClock * 2.9f)), 1.18f, 0.034f, eye, softRing, coreRing, 32);
+            CombatSprites.DrawEnergyRing(b.Position + Vector3.UnitY * 3.02f, 0.96f - breath, 0.046f, eye, outerRing, coreRing, 32);
+
+            // 4 surging vertical/diagonal forked lightning arcs coursing around the Firewall barrier!
+            for (int r = 0; r < 4; r++)
             {
-                float a = _worldClock * 0.65f + r * MathF.Tau / 6f;
-                Vector3 dir = new(MathF.Cos(a), 0f, MathF.Sin(a));
-                Raylib.DrawLine3D(b.Position + dir * 1.32f + Vector3.UnitY * 0.06f,
-                                  b.Position + dir * 1.24f + Vector3.UnitY * 1.10f, softCol);
+                float a0 = _worldClock * 0.85f + r * (MathF.Tau / 4f);
+                float a1 = a0 + 0.42f * MathF.Sin(_worldClock * 2.4f + r * 1.7f);
+                Vector3 pBot = b.Position + new Vector3(MathF.Cos(a0) * 1.36f, 0.12f, MathF.Sin(a0) * 1.36f);
+                Vector3 pTop = b.Position + new Vector3(MathF.Cos(a1) * 0.98f, 2.98f, MathF.Sin(a1) * 0.98f);
+                CombatSprites.DrawLightningBolt(pBot, pTop, eye, _worldClock, 900 + r * 47, 0.72f * (0.7f + 0.3f * shieldFrac),
+                    new Color(28, 152, 255, (int)(215 * shieldFrac)),
+                    new Color(128, 244, 255, (int)(245 * shieldFrac)), branches: 2);
             }
+            CombatSprites.End();
         }
     }
 
     private void DrawBossCutsceneDroppedGun3D()
     {
         if (!CutsceneShowDroppedGun) return;
-        // Soft contact shadow + subtle warm firelight highlight pool on burgundy carpet (never a giant flat beige pancake!)
+        // Soft contact shadow + warm firelight highlight pool on burgundy carpet
         Vector3 floorPos = new(CutsceneDroppedGunPos.X, 0.026f, CutsceneDroppedGunPos.Z);
         Raylib.DrawCylinder(floorPos, 0.24f, 0.28f, 0.003f, 18, new Color(14, 7, 9, 125));
         float glint = 0.50f + 0.50f * MathF.Sin(_worldClock * 6.5f);
-        Raylib.DrawCylinder(new Vector3(CutsceneDroppedGunPos.X, 0.028f, CutsceneDroppedGunPos.Z),
-            0.30f, 0.34f, 0.002f, 20, new Color(255, 198, 118, Math.Clamp((int)(20 + 14 * glint), 0, 255)));
 
         if (VisualEngine3D.HasAsset("weapon_shotgun_90s"))
         {
@@ -5295,9 +5384,17 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.AssetOriented("weapon_shotgun_90s", CutsceneDroppedGunPos, CutsceneDroppedGunYaw, -12f, 72f, 1.02f);
         }
 
-        Raylib.DrawCircle3D(new Vector3(CutsceneDroppedGunPos.X, 0.032f, CutsceneDroppedGunPos.Z),
-            0.28f + 0.035f * glint, Vector3.UnitX, 90f,
-            new Color(246, 196, 108, Math.Clamp((int)(36 + 34 * glint), 0, 255)));
+        if (!VisualEngine3D.CastingShadows)
+        {
+            CombatSprites.Begin(BlendMode.Additive);
+            CombatSprites.FloorGlow(new Vector3(CutsceneDroppedGunPos.X, 0.030f, CutsceneDroppedGunPos.Z), 0.52f + 0.08f * glint,
+                new Color(255, 194, 98, (int)(42 + 28 * glint)));
+            CombatSprites.DrawEnergyRing(new Vector3(CutsceneDroppedGunPos.X, 0.034f, CutsceneDroppedGunPos.Z),
+                0.28f + 0.035f * glint, 0.016f, VisualEngine3D.ActiveCamPos,
+                new Color(246, 186, 88, (int)(48 + 42 * glint)),
+                new Color(255, 240, 198, (int)(72 + 52 * glint)), 24);
+            CombatSprites.End();
+        }
     }
 
     private const float CutsceneMissileExplosionDur = 0.82f;
@@ -5822,22 +5919,30 @@ public sealed partial class SkyscraperFloor1World
 
                 if (hasFx)
                 {
-                    // Progress smoothly through all 4 hand-painted explosion stages: 0 (flash) -> 1 (blast) -> 2 (fireball) -> 3 (ember ring)
+                    // Progress smoothly through ALL 4 volumetric black-bg explosion stages: 0 (starburst flash) -> 1 (roaring fireball) -> 2 (combustion cloud) -> 3 (fiery plasma shockwave ring)
                     int stage = Math.Clamp((int)(e * 4f), 0, 3);
-                    float wallScale = i is 1 or 2 ? 1.48f : (i == 0 ? 1.15f : 1.05f);
-                    float blastR = wallScale + grow * (i is 1 or 2 ? 2.15f : 1.55f);
-                    Vector3 center = target + Vector3.UnitY * (i is 1 or 2 ? (0.45f + e * 0.72f) : (0.68f + e * 0.65f));
-                    int alpha = Math.Clamp((int)(250 * fade), 0, 255);
+                    float wallScale = i is 1 or 2 ? 1.68f : (i == 0 ? 1.32f : 1.22f);
+                    float blastR = wallScale + grow * (i is 1 or 2 ? 2.55f : 1.85f);
+                    Vector3 center = target + Vector3.UnitY * (i is 1 or 2 ? (0.48f + e * 0.80f) : (0.72f + e * 0.72f));
+                    int alpha = Math.Clamp((int)(255 * fade), 0, 255);
                     CombatSprites.ExplosionFrame(stage, center, camRight, camUp, blastR, i * 0.8f + e * 0.45f,
-                        new Color(255, 240, 224, alpha), flipX: (i & 1) == 1);
+                        new Color(255, 240, 214, alpha), flipX: (i & 1) == 1);
+                    // Secondary layered fireball offset for rich volumetric depth
+                    CombatSprites.ExplosionFrame(Math.Min(3, stage + 1), center + camRight * ((i % 2 == 0 ? 1 : -1) * 0.35f) + Vector3.UnitY * 0.28f,
+                        camRight, camUp, blastR * 0.78f, -e * 1.9f + i * 1.4f,
+                        new Color(255, 178, 84, Math.Clamp((int)(215 * fade), 0, 255)), flipX: (i & 1) == 0);
 
-                    // Secondary hot inner core bloom during early impact frames
-                    if (e < 0.48f)
+                    // Blinding white-orange core flash + warm ground glow during early impact frames
+                    if (e < 0.52f)
                     {
-                        float cf = 1f - e / 0.48f;
-                        CombatSprites.ExplosionFrame(0, target + Vector3.UnitY * 0.52f, camRight, camUp, blastR * 0.72f, -e * 3f + i,
-                            new Color(255, 248, 220, Math.Clamp((int)(245 * cf), 0, 255)));
+                        float cf = 1f - e / 0.52f;
+                        CombatSprites.ExplosionFrame(0, target + Vector3.UnitY * 0.58f, camRight, camUp, blastR * 0.85f, -e * 3f + i,
+                            new Color(255, 250, 224, Math.Clamp((int)(255 * cf), 0, 255)));
+                        CombatSprites.SoftHalo(target + Vector3.UnitY * 0.65f, camRight, camUp, blastR * 1.05f, blastR * 1.05f,
+                            new Color(255, 198, 92, Math.Clamp((int)(195 * cf), 0, 255)));
                     }
+                    CombatSprites.FloorGlow(new Vector3(target.X, 0.025f, target.Z), blastR * 1.65f,
+                        new Color(255, 128, 34, Math.Clamp((int)(155 * fade), 0, 255)));
                 }
             }
         }
@@ -5848,35 +5953,51 @@ public sealed partial class SkyscraperFloor1World
             float wGrow = 1f - MathF.Pow(1f - MathF.Min(1f, we * 2.5f), 3f);
             float wFade = 1f - Smooth((we - 0.28f) / 0.72f);
             int wStage = Math.Clamp((int)(we * 4f), 0, 3);
-            float wR = 1.65f + wGrow * 2.35f;
-            CombatSprites.ExplosionFrame(wStage, new Vector3(0f, 1.65f + we * 0.55f, BossArenaWallCenter.Z),
-                camRight, camUp, wR, we * 0.6f, new Color(255, 236, 206, Math.Clamp((int)(248 * wFade), 0, 255)));
+            float wR = 1.95f + wGrow * 2.75f;
+            Vector3 wCenter = new(0f, 1.65f + we * 0.60f, BossArenaWallCenter.Z);
+            CombatSprites.ExplosionFrame(wStage, wCenter, camRight, camUp, wR, we * 0.6f,
+                new Color(255, 236, 198, Math.Clamp((int)(255 * wFade), 0, 255)));
+            CombatSprites.DrawEnergyRing(wCenter, 0.65f + wGrow * 4.85f, 0.14f * (1f - we * 0.5f), camera.Position,
+                new Color(255, 138, 42, Math.Clamp((int)(210 * wFade), 0, 255)),
+                new Color(255, 246, 204, Math.Clamp((int)(245 * wFade), 0, 255)), 32, Vector3.UnitZ);
         }
-        if (hasFx) CombatSprites.End();
 
-        // 3. Expanding carpet scorch shockwave ring & sharp flying sparks
+        // 3. Expanding 3D volumetric shockwave rings (horizontal + tilted) & 22 flying additive flaming spark streaks (ZERO DrawCircle3D/DrawLine3D!)
+        float pixelAngle = 2f * MathF.Tan(camera.FovY * MathF.PI / 360f) / Math.Max(1, Raylib.GetScreenHeight());
+        if (!hasFx) CombatSprites.Begin(BlendMode.Additive);
         for (int i = 0; i < 4; i++)
         {
             float localT = CutsceneRocketTime - GetCutsceneMissileStagger(i);
             float expElapsed = localT - GetCutsceneMissileFlightDur(i);
             if (expElapsed < 0f || expElapsed > CutsceneMissileExplosionDur) continue;
             float e = expElapsed / CutsceneMissileExplosionDur;
+            float swEase = 1f - MathF.Pow(1f - e, 2.2f);
+            float fade = 1f - e;
             Vector3 target = GetCutsceneMissileTarget(i);
 
-            float ringR = 0.40f + e * (i is 1 or 2 ? 4.40f : 3.20f);
-            Raylib.DrawCircle3D(new Vector3(target.X, 0.06f, target.Z), ringR, Vector3.UnitX, 90f,
-                new Color(255, 118, 42, Math.Clamp((int)(195 * (1f - e)), 0, 255)));
+            float ringR = 0.45f + swEase * (i is 1 or 2 ? 4.85f : 3.65f);
+            Color swOuter = new(255, 126, 36, Math.Clamp((int)(215 * fade), 0, 255));
+            Color swCore  = new(255, 244, 198, Math.Clamp((int)(245 * fade), 0, 255));
+            CombatSprites.DrawEnergyRing(new Vector3(target.X, 0.14f, target.Z), ringR, 0.115f * (0.4f + 0.6f * fade),
+                camera.Position, swOuter, swCore, 32, Vector3.UnitY);
+            Vector3 tiltNorm = Vector3.Normalize(new Vector3((i % 2 == 0 ? 0.42f : -0.42f), 0.85f, 0.32f));
+            CombatSprites.DrawEnergyRing(target + Vector3.UnitY * 0.65f, ringR * 0.78f, 0.085f * (0.4f + 0.6f * fade),
+                camera.Position, new Color(255, 168, 56, Math.Clamp((int)(185 * fade), 0, 255)), swCore, 28, tiltNorm);
 
-            for (int sp = 0; sp < 10; sp++)
+            for (int sp = 0; sp < 22; sp++)
             {
-                float sa = sp * MathF.Tau / 10f + i * 0.7f;
-                float dist = 0.45f + e * (2.8f + 0.55f * (sp % 3));
-                float sy = MathF.Max(0.05f, 0.36f + e * (2.1f + 0.45f * (sp % 2)) - 2.6f * e * e);
+                float sa = sp * MathF.Tau / 22f + i * 0.7f + (sp % 3) * 0.12f;
+                float dist = 0.40f + e * (3.4f + 0.75f * (sp % 4));
+                float sy = MathF.Max(0.05f, 0.42f + e * (2.6f + 0.55f * (sp % 3)) - 3.1f * e * e);
                 Vector3 spPos = target + new Vector3(MathF.Cos(sa) * dist, sy, MathF.Sin(sa) * dist);
-                Vector3 spTail = target + new Vector3(MathF.Cos(sa) * MathF.Max(0f, dist - 0.28f), MathF.Max(0.05f, sy - 0.12f), MathF.Sin(sa) * MathF.Max(0f, dist - 0.28f));
-                Raylib.DrawLine3D(spTail, spPos, new Color(255, 222, 112, Math.Clamp((int)(235 * (1f - e)), 0, 255)));
+                Vector3 spTail = target + new Vector3(MathF.Cos(sa) * MathF.Max(0f, dist - 0.42f), MathF.Max(0.05f, sy - 0.18f), MathF.Sin(sa) * MathF.Max(0f, dist - 0.42f));
+                Color spCol = (sp % 3 == 0)
+                    ? new Color(255, 246, 198, Math.Clamp((int)(250 * fade), 0, 255))
+                    : new Color(255, 148, 42, Math.Clamp((int)(235 * fade), 0, 255));
+                CombatSprites.Streak(spTail, spPos, camera.Position, 0.022f * (0.35f + 0.65f * fade), pixelAngle, spCol);
             }
         }
+        CombatSprites.End();
     }
 
     private void DrawBossArenaChaos3D(Camera3D camera)
@@ -5887,17 +6008,17 @@ public sealed partial class SkyscraperFloor1World
         // 11 burning fire zones spanning the newly blasted Z=-15.8 wall breach AND the expanded North Wing (Z=-8.5..-24.5)!
         ReadOnlySpan<(Vector3 Pos, float Scale)> fires =
         [
-            (NorthElevatorPos + new Vector3(+1.65f, 0f, -11.00f), 0.86f), // Exact crater hero barrel-rolled out of (Z=-19.50)!
-            (new Vector3(-3.35f, 0f, -15.85f), 1.18f),                     // Blasted left wall stump crater!
-            (new Vector3(+3.35f, 0f, -15.85f), 1.22f),                     // Blasted right wall stump crater!
-            (NorthElevatorPos + new Vector3(+3.60f, 0f, -13.50f), 1.05f), // Missile 3 deep North Wing crater (Z=-22.00)!
-            (new Vector3(-5.50f, 0f, -21.20f), 1.08f),                     // Expanded North-West arena flank flame
-            (new Vector3(+5.65f, 0f, -18.60f), 1.02f),                     // Expanded North-East arena flank flame
-            (NorthElevatorPos + new Vector3(-4.80f, 0f, -3.50f), 1.12f),
-            (NorthElevatorPos + new Vector3(+4.90f, 0f, -3.60f), 1.15f),
-            (new Vector3(-6.65f, 0f, -14.40f), 0.96f),
-            (new Vector3(+6.65f, 0f, -14.40f), 0.98f),
-            (NorthElevatorPos + new Vector3(-6.20f, 0f, -1.00f), 0.90f)
+            (NorthElevatorPos + new Vector3(+1.65f, 0f, -11.00f), 0.92f), // Exact crater hero barrel-rolled out of (Z=-19.50)!
+            (new Vector3(-3.35f, 0f, -15.85f), 1.24f),                     // Blasted left wall stump crater!
+            (new Vector3(+3.35f, 0f, -15.85f), 1.28f),                     // Blasted right wall stump crater!
+            (NorthElevatorPos + new Vector3(+3.60f, 0f, -13.50f), 1.12f), // Missile 3 deep North Wing crater (Z=-22.00)!
+            (new Vector3(-5.50f, 0f, -21.20f), 1.14f),                     // Expanded North-West arena flank flame
+            (new Vector3(+5.65f, 0f, -18.60f), 1.08f),                     // Expanded North-East arena flank flame
+            (NorthElevatorPos + new Vector3(-4.80f, 0f, -3.50f), 1.18f),
+            (NorthElevatorPos + new Vector3(+4.90f, 0f, -3.60f), 1.22f),
+            (new Vector3(-6.65f, 0f, -14.40f), 1.02f),
+            (new Vector3(+6.65f, 0f, -14.40f), 1.04f),
+            (NorthElevatorPos + new Vector3(-6.20f, 0f, -1.00f), 0.96f)
         ];
 
         Vector3 lookDir = camera.Target - camera.Position;
@@ -5911,135 +6032,147 @@ public sealed partial class SkyscraperFloor1World
         Vector3 camRight = Vector3.Cross(lookDir, camera.Up);
         camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
         Vector3 camUp = Vector3.Normalize(Vector3.Cross(camRight, lookDir));
+        float pixelAngle = 2f * MathF.Tan(camera.FovY * MathF.PI / 360f) / Math.Max(1, Raylib.GetScreenHeight());
 
-        // 1. Silky radially-feathered charred scorch & warm flickering floor firelight pools on carpet (ZERO hard circular discs!)
+        // 1. Charred scorch decals + thick dark billowing smoke clouds rising ABOVE each fire (lit warm orange at base!)
         CombatSprites.Begin(BlendMode.Alpha);
         for (int f = 0; f < fires.Length; f++)
         {
             Vector3 p = fires[f].Pos;
-            float s = fires[f].Scale * (0.48f + 0.52f * chaos);
-            CombatSprites.FloorGlow(p + new Vector3(0f, 0.008f, 0f), 1.15f * s,
-                new Color(14, 9, 10, Math.Clamp((int)(155 * chaos), 0, 255)));
+            float s = fires[f].Scale * (0.55f + 0.45f * chaos);
+            CombatSprites.FloorGlow(p + new Vector3(0f, 0.008f, 0f), 1.55f * s,
+                new Color(12, 8, 9, Math.Clamp((int)(178 * chaos), 0, 255)));
         }
-        CombatSprites.End();
-        CombatSprites.Begin(BlendMode.Additive);
-        for (int f = 0; f < fires.Length; f++)
-        {
-            Vector3 p = fires[f].Pos;
-            float phase = f * 1.93f;
-            float flicker = 0.82f + 0.18f * MathF.Sin(_worldClock * (9.5f + f * 0.65f) + phase);
-            float s = fires[f].Scale * (0.48f + 0.52f * chaos);
-            CombatSprites.FloorGlow(p + new Vector3(0f, 0.012f, 0f), (1.85f + 0.22f * flicker) * s,
-                new Color(255, 112, 26, Math.Clamp((int)(88 * chaos * flicker), 0, 255)));
-            CombatSprites.FloorGlow(p + new Vector3(0f, 0.015f, 0f), 0.72f * s,
-                new Color(255, 186, 78, Math.Clamp((int)(118 * chaos * flicker), 0, 255)));
-        }
-        CombatSprites.End();
-
-        // 2. Hand-painted billowing dark soot smoke clouds rising behind/above each fire (ZERO geometric Oval eggs!)
         if (CombatSprites.HasPaintedFx)
         {
-            CombatSprites.Begin(BlendMode.Alpha);
             for (int f = 0; f < fires.Length; f++)
             {
                 Vector3 p = fires[f].Pos;
                 float phase = f * 1.93f;
-                float s = fires[f].Scale * (0.48f + 0.52f * chaos);
+                float s = fires[f].Scale * (0.55f + 0.45f * chaos);
 
-                for (int m = 0; m < 3; m++)
+                for (int m = 0; m < 4; m++)
                 {
-                    float age = (_worldClock * 0.34f + f * 0.21f + m * 0.33f) % 1f;
-                    float curl = 0.10f + age * 0.34f;
-                    float curlAng = age * 4.4f + phase + m * 2.1f;
+                    float age = (_worldClock * 0.36f + f * 0.21f + m * 0.25f) % 1f;
+                    float curl = 0.14f + age * 0.46f;
+                    float curlAng = age * 4.6f + phase + m * 1.8f;
                     Vector3 puffPos = p + new Vector3(
                         MathF.Cos(curlAng) * curl,
-                        0.92f * s + age * 2.55f,
+                        1.25f * s + age * 2.95f,
                         MathF.Sin(curlAng) * curl);
-                    float puffR = (0.34f + age * 0.54f) * s;
-                    int smokeA = Math.Clamp((int)(136 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
-                    CombatSprites.SmokeFrame(f + m, puffPos, camRight, camUp, puffR, puffR * 0.92f,
-                        new Color(216, 208, 202, smokeA), flipX: ((f + m) & 1) == 0, rotation: (age - 0.5f) * 0.35f);
-                }
-
-                // 3 overlapping hand-painted animated roaring flame tongues per cluster (alpha base pass for vivid deep crimson/orange)
-                for (int k = 0; k < 3; k++)
-                {
-                    float kAng = k * MathF.Tau / 3f + phase;
-                    float offR = k == 0 ? 0f : 0.28f * s;
-                    float speed = 9.5f + (k * 1.8f) + (f % 3) * 0.7f;
-                    int frameIdx = (int)(_worldClock * speed + f * 3 + k * 2) & 3;
-                    float hScale = (k == 0 ? 1.18f : 0.84f + 0.14f * (k % 2)) * s;
-                    float wScale = (k == 0 ? 0.88f : 0.66f) * s;
-                    float pulse = 0.92f + 0.10f * MathF.Sin(_worldClock * (11f + k * 2.3f) + phase);
-                    float halfH = 0.82f * hScale * pulse;
-                    float halfW = 0.70f * wScale;
-                    Vector3 fPos = p + new Vector3(MathF.Cos(kAng) * offR, halfH * 0.76f, MathF.Sin(kAng) * offR);
-                    CombatSprites.FireFrame(frameIdx, fPos, fireRight, fireUp, halfW, halfH,
-                        new Color(255, 244, 232, Math.Clamp((int)(238 * chaos), 0, 255)), flipX: ((f + k) & 1) == 1);
+                    float puffR = (0.48f + age * 0.78f) * s;
+                    int smokeA = Math.Clamp((int)(168 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
+                    // Lower smoke billows are warmly under-lit by roaring firelight; upper smoke turns dark charcoal soot
+                    float heat = MathF.Max(0f, 1f - age * 2.1f);
+                    Color smokeCol = new(
+                        (byte)(34 + heat * 136),
+                        (byte)(28 + heat * 62),
+                        (byte)(28 + heat * 18),
+                        (byte)Math.Clamp((int)(smokeA * 0.82f), 0, 255));
+                    CombatSprites.SoftSmoke(puffPos, camRight, camUp, puffR * 1.18f, (age - 0.5f) * 1.4f + phase, smokeCol);
                 }
             }
             // Wispy dark smoke curling from the fractured overhead header beam (Y=3.45..4.10, Z=-15.8)
             if (BossArenaWallDestroyed)
             {
-                for (int w = 0; w < 5; w++)
+                for (int w = 0; w < 6; w++)
                 {
-                    float age = (_worldClock * 0.28f + w * 0.23f) % 1f;
-                    float wx = -2.6f + w * 1.3f + MathF.Sin(_worldClock * 1.4f + w * 2.1f) * 0.18f;
-                    Vector3 wPos = new(wx, 3.45f + age * 0.85f, BossArenaWallCenter.Z - 0.12f - age * 0.35f);
-                    float wR = 0.36f + age * 0.42f;
-                    int wA = Math.Clamp((int)(96 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
-                    CombatSprites.SmokeFrame(w + 1, wPos, camRight, camUp, wR, wR * 0.85f,
-                        new Color(188, 182, 178, wA), flipX: (w & 1) == 0, rotation: age * 0.4f);
+                    float age = (_worldClock * 0.30f + w * 0.19f) % 1f;
+                    float wx = -2.8f + w * 1.15f + MathF.Sin(_worldClock * 1.5f + w * 2.1f) * 0.22f;
+                    Vector3 wPos = new(wx, 3.45f + age * 0.95f, BossArenaWallCenter.Z - 0.12f - age * 0.38f);
+                    float wR = 0.52f + age * 0.62f;
+                    int wA = Math.Clamp((int)(108 * chaos * MathF.Sin(MathF.PI * age)), 0, 255);
+                    CombatSprites.SoftSmoke(wPos, camRight, camUp, wR, age * 1.2f + w, new Color(48, 42, 40, wA));
                 }
             }
-            CombatSprites.End();
+        }
+        CombatSprites.End();
 
-            // 3. Soft additive golden-orange flame glow core pass so fires truly illuminate & pop in the dark lobby!
-            CombatSprites.Begin(BlendMode.Additive);
-            for (int f = 0; f < fires.Length; f++)
+        // 2. PURE ADDITIVE BLAZING VOLUMETRIC FIRE PASS:
+        //    Intense flickering warm orange-gold FloorGlow pools (2.6..3.8x) + 5 overlapping 1.6x roaring flame tongues + white-gold base heart + 108 streaking embers!
+        CombatSprites.Begin(BlendMode.Additive);
+        for (int f = 0; f < fires.Length; f++)
+        {
+            Vector3 p = fires[f].Pos;
+            float phase = f * 1.93f;
+            float flicker = 0.80f + 0.20f * MathF.Sin(_worldClock * (10.5f + f * 0.72f) + phase)
+                          + 0.08f * MathF.Sin(_worldClock * 23.4f + phase * 1.7f);
+            float s = fires[f].Scale * (0.55f + 0.45f * chaos);
+
+            // Wide intense fiery orange-gold floor light pools so the marble/carpet visibly blazes with roaring firelight!
+            CombatSprites.FloorGlow(p + new Vector3(0f, 0.014f, 0f), (3.15f + 0.55f * flicker) * s,
+                new Color(255, 118, 28, Math.Clamp((int)(128 * chaos * flicker), 0, 255)));
+            CombatSprites.FloorGlow(p + new Vector3(0f, 0.018f, 0f), (1.35f + 0.28f * flicker) * s,
+                new Color(255, 210, 95, Math.Clamp((int)(168 * chaos * flicker), 0, 255)));
+
+            // Blazing white-gold base heart SoftHalo at the center of each fire cluster
+            CombatSprites.SoftHalo(p + new Vector3(0f, 0.58f * s, 0f), camRight, camUp,
+                1.08f * s * flicker, 0.92f * s * flicker,
+                new Color(255, 152, 44, Math.Clamp((int)(135 * chaos * flicker), 0, 255)));
+            CombatSprites.SoftHalo(p + new Vector3(0f, 0.42f * s, 0f), camRight, camUp,
+                0.56f * s * flicker, 0.48f * s * flicker,
+                new Color(255, 236, 168, Math.Clamp((int)(185 * chaos * flicker), 0, 255)));
+
+            if (CombatSprites.HasPaintedFx)
             {
-                Vector3 p = fires[f].Pos;
-                float phase = f * 1.93f;
-                float s = fires[f].Scale * (0.48f + 0.52f * chaos);
-                int frameIdx = (int)(_worldClock * 12.2f + f * 5) & 3;
-                float pulse = 0.88f + 0.14f * MathF.Sin(_worldClock * 13.5f + phase);
-                float halfH = 0.76f * s * pulse;
-                float halfW = 0.66f * s;
-                Vector3 fPos = p + new Vector3(0f, halfH * 0.74f, 0f);
-                CombatSprites.FireFrame(frameIdx, fPos, fireRight, fireUp, halfW, halfH,
-                    new Color(255, 198, 128, Math.Clamp((int)(145 * chaos), 0, 255)), flipX: (f & 1) == 0);
+                // 5 overlapping pure-additive roaring volumetric flame tongues (1.6x bigger & denser, cycling ALL 4 black-bg frames!)
+                for (int k = 0; k < 5; k++)
+                {
+                    float kAng = k * (MathF.Tau / 5f) + phase;
+                    float offR = k == 0 ? 0f : (0.30f + 0.16f * (k % 2)) * s;
+                    float speed = 10.5f + k * 1.9f + (f % 3) * 0.85f;
+                    int frameIdx = (int)(_worldClock * speed + f * 3 + k * 2) & 3;
+                    float hScale = (k == 0 ? 1.88f : k <= 2 ? 1.48f : 1.18f) * s;
+                    float wScale = (k == 0 ? 1.38f : k <= 2 ? 1.12f : 0.92f) * s;
+                    float pulse = 0.88f + 0.14f * MathF.Sin(_worldClock * (12.5f + k * 2.7f) + phase);
+                    float halfH = 0.86f * hScale * pulse;
+                    float halfW = 0.74f * wScale;
+                    Vector3 fPos = p + new Vector3(MathF.Cos(kAng) * offR, halfH * 0.74f, MathF.Sin(kAng) * offR);
+                    Color fCol = k == 0
+                        ? new Color(255, 246, 224, Math.Clamp((int)(242 * chaos), 0, 255))
+                        : k <= 2
+                            ? new Color(255, 208, 128, Math.Clamp((int)(218 * chaos), 0, 255))
+                            : new Color(255, 148, 68, Math.Clamp((int)(192 * chaos), 0, 255));
+                    CombatSprites.FireFrame(frameIdx, fPos, fireRight, fireUp, halfW, halfH, fCol, flipX: ((f + k) & 1) == 1);
+                }
             }
-            CombatSprites.End();
         }
 
-        // 4. 56 Drifting Glowing Embers & Ash Sparks floating upward across the ENTIRE expanded Boss Arena (Z = -8.5 .. -24.5)
-        for (int i = 0; i < 56; i++)
+        // 3. 108 Luminous Additive Streaking Embers swirling upward through the entire burning atrium!
+        for (int i = 0; i < 108; i++)
         {
             float h1 = MathF.Sin(i * 12.9898f + 1.37f) * 43758.5453f; h1 -= MathF.Floor(h1);
             float h2 = MathF.Sin(i * 78.233f + 4.19f) * 24634.6345f; h2 -= MathF.Floor(h2);
             float h3 = MathF.Sin(i * 39.346f + 7.53f) * 19191.1919f; h3 -= MathF.Floor(h3);
 
-            float speed = 0.17f + h3 * 0.19f;
+            float speed = 0.24f + h3 * 0.26f;
             float cycle = (_worldClock * speed + h1 * 1.7f + h2) % 1f;
-            float y = 0.2f + cycle * 4.0f;
-            float x = -9f + h1 * 18f + MathF.Sin(_worldClock * (1.8f + h3) + i * 1.9f) * 0.55f;
-            float z = -24.5f + h2 * 16.0f + MathF.Cos(_worldClock * (1.5f + h1) + i * 2.3f) * 0.45f;
+            float y = 0.18f + cycle * 4.45f;
+            float swirlPhase = _worldClock * (2.1f + h3 * 1.4f) + i * 1.9f;
+            float x = -9.2f + h1 * 18.4f + MathF.Sin(swirlPhase) * 0.68f;
+            float z = -24.8f + h2 * 16.5f + MathF.Cos(swirlPhase * 0.85f + i * 0.7f) * 0.58f;
             Vector3 ep = new(x, y, z);
 
-            float lifeFade = MathF.Sin(cycle * MathF.PI);
-            float twinkle = 0.65f + 0.35f * MathF.Sin(_worldClock * 11f + i * 3.1f);
-            float size = (0.018f + 0.014f * (i % 3)) * (0.7f + 0.3f * lifeFade);
+            // Compute instantaneous upward-swirling velocity for streaking ember tail
+            Vector3 vel = new(
+                MathF.Cos(swirlPhase) * (1.2f + h3),
+                1.45f + h3 * 1.35f,
+                -MathF.Sin(swirlPhase * 0.85f + i * 0.7f) * (1.0f + h1));
+            Vector3 tail = ep - vel * (0.045f + 0.035f * (i % 3));
 
-            Color col = (i % 4) switch
+            float lifeFade = MathF.Sin(cycle * MathF.PI);
+            float twinkle = 0.62f + 0.38f * MathF.Sin(_worldClock * 14f + i * 3.1f);
+            float width = (0.011f + 0.008f * (i % 3)) * (0.65f + 0.35f * lifeFade);
+
+            Color col = (i % 3) switch
             {
-                0 => new Color(255, 224, 118, Math.Clamp((int)(235 * chaos * lifeFade * twinkle), 0, 255)),
-                1 => new Color(255, 118, 28, Math.Clamp((int)(225 * chaos * lifeFade * twinkle), 0, 255)),
-                2 => new Color(255, 64, 22, Math.Clamp((int)(210 * chaos * lifeFade * twinkle), 0, 255)),
-                _ => new Color(62, 54, 52, Math.Clamp((int)(168 * chaos * lifeFade), 0, 255))
+                0 => new Color(255, 242, 168, Math.Clamp((int)(250 * chaos * lifeFade * twinkle), 0, 255)),
+                1 => new Color(255, 146, 38, Math.Clamp((int)(242 * chaos * lifeFade * twinkle), 0, 255)),
+                _ => new Color(255, 82, 22, Math.Clamp((int)(228 * chaos * lifeFade * twinkle), 0, 255))
             };
-            Raylib.DrawTriangle3D(ep + Vector3.UnitY * size * 1.35f, ep - fireRight * size, ep + fireRight * size, col);
-            Raylib.DrawTriangle3D(ep - Vector3.UnitY * size * 1.35f, ep + fireRight * size, ep - fireRight * size, col);
+            CombatSprites.Streak(tail, ep, camera.Position, width, pixelAngle, col);
         }
+        CombatSprites.End();
 
         // 5. Emergency Overhead Crimson Beacon pulsing near the elevator arch while BossArenaChaos > 0.2f
         if (chaos > 0.2f)
@@ -6216,57 +6349,64 @@ public sealed partial class SkyscraperFloor1World
                     {
                         VisualEngine3D.Rod(pr.Position - dir * 0.14f, pr.Position + dir * 0.12f, 0.022f, 0.008f, 6, new(232, 194, 44, 255), Finish.Armor);
                     }
-                    // Crackling blue taser wire arc trailing back toward guard origin (up to 3.4m)
+                    // Crackling 3D forked taser lightning wire trailing back toward guard origin (up to 3.4m)
                     Vector3 wireTailStart = pr.Position - dir * 0.14f;
                     Vector3 wireEnd = pr.Origin != Vector3.Zero
                         ? (Vector3.Distance(wireTailStart, pr.Origin) <= 3.4f ? pr.Origin : wireTailStart - dir * 3.4f)
                         : wireTailStart - dir * 2.6f;
-                    Color arcCol = pr.Deflected ? new Color(255, 224, 96, 255) : new Color(112, 232, 255, 255);
-                    Vector3 prev = wireTailStart;
-                    for (int seg = 1; seg <= 6; seg++)
-                    {
-                        float f = seg / 6f;
-                        float jig = MathF.Sin(_worldClock * 95f + seg * 3.7f + i * 2.1f) * 0.055f * MathF.Sin(f * MathF.PI);
-                        float jigY = MathF.Cos(_worldClock * 84f + seg * 4.3f + i) * 0.045f * MathF.Sin(f * MathF.PI);
-                        Vector3 pt = Vector3.Lerp(wireTailStart, wireEnd, f) + side * jig + up * jigY;
-                        VisualEngine3D.Rod(prev, pt, 0.0065f, 0.0045f, 4, arcCol, Finish.Plasma);
-                        prev = pt;
-                    }
-                    // Brief bright guard taser muzzle flash on launch (first 0.12s)
+                    CombatSprites.Begin(BlendMode.Additive);
+                    Color outerArc = pr.Deflected ? new Color(255, 168, 36, 235) : new Color(28, 148, 255, 235);
+                    Color midArc = pr.Deflected ? new Color(255, 232, 118, 255) : new Color(118, 244, 255, 255);
+                    CombatSprites.DrawLightningBolt(wireTailStart, wireEnd, VisualEngine3D.ActiveCamPos, _worldClock, 700 + i * 31, 0.56f, outerArc, midArc, branches: 1);
                     float age = pr.MaxLife - pr.Life;
                     if (age < 0.12f && pr.Origin != Vector3.Zero)
                     {
                         float mf = 1f - age / 0.12f;
-                        VisualEngine3D.Orb(pr.Origin, 0.055f * mf, new(165, 244, 255, 255), Finish.Plasma);
+                        CombatSprites.SoftHalo(pr.Origin, VisualEngine3D.ActiveCamRight, VisualEngine3D.ActiveCamUp,
+                            0.24f * mf, 0.24f * mf, new Color(145, 244, 255, (int)(240 * mf)));
                     }
+                    CombatSprites.End();
                     break;
                 }
             }
 
-            // Crisp golden parry aura ring on deflected projectiles so player instantly sees their counter-rocket!
+            // Crisp golden parry aura trail on deflected projectiles so player instantly sees their counter-rocket!
             if (pr.Deflected)
             {
-                VisualEngine3D.Rod(pr.Position - dir * 0.42f, pr.Position - dir * 0.08f, 0.016f, 0.003f, 5, Color.Gold, Finish.Lamp);
+                CombatSprites.Begin(BlendMode.Additive);
+                CombatSprites.Streak(pr.Position - dir * 0.55f, pr.Position - dir * 0.06f, VisualEngine3D.ActiveCamPos, 0.032f, 0.0018f, new Color(255, 212, 84, 245));
+                CombatSprites.End();
             }
         }
     }
 
     private void DrawCombatDebris3D()
     {
+        bool anyGlowing = false;
         for (int i = 0; i < _combatDebris.Count; i++)
         {
             var d = _combatDebris[i];
+            if (d.Glowing) { anyGlowing = true; continue; }
             float fade = Math.Clamp(d.Life / MathF.Max(0.05f, d.MaxLife * 0.35f), 0f, 1f);
             Vector3 sz = d.Size * (0.45f + 0.55f * fade);
-            if (d.Glowing)
+            VisualEngine3D.OrientedBox(d.Position, sz, d.Yaw, d.Tint);
+        }
+        if (anyGlowing)
+        {
+            Vector3 eye = VisualEngine3D.ActiveCamPos;
+            CombatSprites.Begin(BlendMode.Additive);
+            for (int i = 0; i < _combatDebris.Count; i++)
             {
+                var d = _combatDebris[i];
+                if (!d.Glowing) continue;
+                float fade = Math.Clamp(d.Life / MathF.Max(0.05f, d.MaxLife * 0.45f), 0f, 1f);
                 Color c = new(d.Tint.R, d.Tint.G, d.Tint.B, Math.Clamp((int)(d.Tint.A * fade), 0, 255));
-                VisualEngine3D.Rod(d.Position - d.Velocity * 0.025f, d.Position, sz.X * 0.35f, sz.X * 0.12f, 4, c, d.Surface);
+                float w = Math.Clamp(d.Size.X * 0.42f, 0.008f, 0.028f) * (0.45f + 0.55f * fade);
+                CombatSprites.Streak(d.Position - d.Velocity * 0.036f, d.Position, eye, w, 0.0018f, c);
+                CombatSprites.Streak(d.Position - d.Velocity * 0.024f, d.Position, eye, w * 0.42f, 0.0018f,
+                    new Color(255, 252, 236, (int)Math.Clamp((int)(250 * fade), 0, 255)));
             }
-            else
-            {
-                VisualEngine3D.OrientedBox(d.Position, sz, d.Yaw, d.Tint);
-            }
+            CombatSprites.End();
         }
     }
 
@@ -6277,102 +6417,158 @@ public sealed partial class SkyscraperFloor1World
         Vector3 camRight = Vector3.Cross(lookDir, camera.Up);
         camRight = camRight.LengthSquared() > 1e-5f ? Vector3.Normalize(camRight) : Vector3.UnitX;
         Vector3 camUp = Vector3.Normalize(Vector3.Cross(camRight, lookDir));
+        float pixelAngle = 2f * MathF.Tan(camera.FovY * MathF.PI / 360f) / Math.Max(1, Raylib.GetScreenHeight());
         bool hasFx = CombatSprites.HasPaintedFx;
 
-        // 1. Pre-detonation 1.45s reactor overload sparks & 3 staggered internal explosions across torso/shoulders!
+        // 1. Pre-detonation 1.45s reactor overload forked lightning arcs & 3 staggered internal explosions across torso/shoulders!
         if (ElevatorBoss.IsActive && ElevatorBoss.State == ElevatorBossState.Dying)
         {
             float elapsed = Math.Clamp(MeltdownSeconds - ElevatorBoss.StateTimer, 0f, MeltdownSeconds);
             Vector3 bp = ElevatorBoss.Position;
             if (elapsed < 1.48f)
             {
-                // Violent crimson reactor core flare pulsing through chest
-                float corePulse = 0.65f + 0.35f * MathF.Sin(elapsed * 58f);
-                VisualEngine3D.Orb(ElevatorBoss.ChestCore, (0.14f + 0.18f * (elapsed / 1.45f)) * corePulse,
-                    new(255, 62, 28, 255), Finish.Lamp);
-                // Erratic high-voltage overload arcs leaping off shoulders & head
+                float ramp = elapsed / 1.45f;
+                float corePulse = 0.70f + 0.30f * MathF.Sin(elapsed * 58f);
+                CombatSprites.Begin(BlendMode.Additive);
+                // Blinding crimson-gold reactor core flare pulsing through chest
+                CombatSprites.SoftHalo(ElevatorBoss.ChestCore, camRight, camUp, (0.55f + 0.85f * ramp) * corePulse, (0.55f + 0.85f * ramp) * corePulse,
+                    new Color(255, 82, 28, 225));
+                CombatSprites.SoftHalo(ElevatorBoss.ChestCore, camRight, camUp, (0.24f + 0.38f * ramp) * corePulse, (0.24f + 0.38f * ramp) * corePulse,
+                    new Color(255, 246, 204, 255));
+
+                // Erratic high-voltage forked overload lightning arcs leaping off shoulders & head!
                 for (int a = 0; a < 5; a++)
                 {
-                    float ang = _worldClock * 17f + a * 1.25f;
-                    Vector3 p0 = bp + new Vector3(MathF.Cos(ang) * 0.32f, 1.35f + (a % 3) * 0.42f, MathF.Sin(ang) * 0.32f);
-                    Vector3 p1 = p0 + new Vector3(MathF.Cos(ang * 1.7f) * 0.55f, 0.25f * MathF.Sin(ang * 2.3f), MathF.Sin(ang * 1.7f) * 0.55f);
-                    VisualEngine3D.Rod(p0, p1, 0.014f, 0.004f, 5,
-                        a % 2 == 0 ? new(255, 224, 130, 255) : new(255, 76, 36, 255), Finish.Lamp);
+                    float ang = _worldClock * 6.5f + a * 1.25f;
+                    Vector3 p0 = bp + new Vector3(MathF.Cos(ang) * 0.36f, 1.25f + (a % 3) * 0.48f, MathF.Sin(ang) * 0.36f);
+                    Vector3 p1 = p0 + new Vector3(MathF.Cos(ang * 1.7f) * (0.95f + 0.45f * ramp), 0.45f * MathF.Sin(ang * 2.3f), MathF.Sin(ang * 1.7f) * (0.95f + 0.45f * ramp));
+                    Color oCol = a % 2 == 0 ? new Color(255, 118, 24, 245) : new Color(42, 178, 255, 245);
+                    Color mCol = a % 2 == 0 ? new Color(255, 228, 128, 255) : new Color(148, 246, 255, 255);
+                    CombatSprites.DrawLightningBolt(p0, p1, camera.Position, _worldClock, 1400 + a * 41, 0.72f + 0.25f * ramp, oCol, mCol, branches: 2);
                 }
 
-                // 3 staggered internal blasts at 0.25s, 0.75s, 1.25s
+                // 3 staggered internal blasts at 0.25s, 0.75s, 1.25s with expanding shockwave rings
                 ReadOnlySpan<(float T0, Vector3 Offset, float Scale)> blasts =
                 [
-                    (0.25f, new(-0.52f, 2.02f, +0.18f), 1.05f),
-                    (0.75f, new(+0.52f, 2.12f, -0.14f), 1.22f),
-                    (1.25f, new( 0.00f, 1.85f, +0.26f), 1.50f)
+                    (0.25f, new(-0.52f, 2.02f, +0.18f), 1.15f),
+                    (0.75f, new(+0.52f, 2.12f, -0.14f), 1.35f),
+                    (1.25f, new( 0.00f, 1.85f, +0.26f), 1.68f)
                 ];
-                if (hasFx) CombatSprites.Begin(BlendMode.Additive);
                 for (int i = 0; i < blasts.Length; i++)
                 {
                     float local = elapsed - blasts[i].T0;
-                    if (local < 0f || local > 0.55f) continue;
-                    float e = local / 0.55f;
-                    float r = (0.45f + e * 1.15f) * blasts[i].Scale;
-                    int alpha = Math.Clamp((int)(245 * (1f - e)), 0, 255);
-                    Vector3 cPos = bp + blasts[i].Offset + Vector3.UnitY * (e * 0.35f);
+                    if (local < 0f || local > 0.58f) continue;
+                    float e = local / 0.58f;
+                    float fade = 1f - e;
+                    float r = (0.58f + e * 1.45f) * blasts[i].Scale;
+                    int alpha = Math.Clamp((int)(255 * fade), 0, 255);
+                    Vector3 cPos = bp + blasts[i].Offset + Vector3.UnitY * (e * 0.42f);
                     if (hasFx)
                         CombatSprites.ExplosionFrame(Math.Clamp((int)(e * 4f), 0, 3), cPos, camRight, camUp, r, e * 3.5f + i,
-                            new Color(255, 198, 118, alpha));
-                    else
-                        VisualEngine3D.Orb(cPos, r * 0.55f, new(255, 142, 46, alpha), Finish.Lamp);
+                            new Color(255, 214, 132, alpha));
+                    CombatSprites.DrawEnergyRing(cPos, 0.25f + e * 2.1f * blasts[i].Scale, 0.065f * fade, camera.Position,
+                        new Color(255, 138, 38, (int)(210 * fade)), new Color(255, 246, 206, (int)(245 * fade)), 28,
+                        Vector3.Normalize(new Vector3(i - 1, 1.2f, 0.4f)));
                 }
-                if (hasFx) CombatSprites.End();
+                CombatSprites.End();
             }
         }
 
-        // 2. MASSIVE FINAL DETONATION (1.45s -> +2.8s): multi-layer painted fireball, blinding shockwave ring & smoke column!
+        // 2. MASSIVE FINAL DETONATION (1.45s -> +2.8s): multi-layer roaring additive fireballs, expanding 3D shockwave rings, mushroom smoke & flying flaming debris!
         if (_bossMeltdownBurstAge >= 0f && _bossMeltdownBurstAge < 2.8f)
         {
             float t = _bossMeltdownBurstAge;
-            Vector3 center = BossWreckagePos + Vector3.UnitY * 1.25f;
+            Vector3 center = BossWreckagePos + Vector3.UnitY * 1.35f;
 
-            // Blinding expanding shockwave ring sweeping across the marble floor
-            if (t < 0.75f)
-            {
-                float swProg = t / 0.75f;
-                float ringR = 0.65f + (1f - MathF.Pow(1f - swProg, 2.4f)) * 6.8f;
-                int ringA = Math.Clamp((int)(235 * (1f - swProg)), 0, 255);
-                Raylib.DrawCircle3D(BossWreckagePos + Vector3.UnitY * 0.25f, ringR, Vector3.UnitX, 90f, new Color(255, 226, 152, ringA));
-                Raylib.DrawCircle3D(BossWreckagePos + Vector3.UnitY * 0.62f, ringR * 0.86f, Vector3.UnitX, 90f, new Color(255, 132, 46, (int)(ringA * 0.85f)));
-            }
-
-            // Rising dark blast smoke plume
+            // Rising billowing dark mushroom blast smoke plume (Alpha pass first)
             if (hasFx)
             {
                 CombatSprites.Begin(BlendMode.Alpha);
-                for (int sm = 0; sm < 6; sm++)
+                for (int sm = 0; sm < 10; sm++)
                 {
-                    float ang = sm * MathF.Tau / 6f + t * 0.6f;
-                    float spread = 0.45f + MathF.Min(1f, t * 1.4f) * 1.65f;
-                    Vector3 sp = BossWreckagePos + new Vector3(MathF.Cos(ang) * spread, 0.85f + t * (1.45f + (sm % 3) * 0.35f), MathF.Sin(ang) * spread);
-                    float sr = 1.15f + t * 1.25f;
-                    int sa = Math.Clamp((int)(225 * (1f - t / 2.8f)), 0, 255);
-                    CombatSprites.SmokeFrame(sm, sp, camRight, camUp, sr, sr * 0.92f, new Color(56, 50, 48, sa),
-                        flipX: (sm & 1) == 0, rotation: sm * 0.5f + t * 0.4f);
+                    float ang = sm * MathF.Tau / 10f + t * 0.55f;
+                    float spread = (sm < 6 ? 0.55f : 0.20f) + MathF.Min(1f, t * 1.35f) * (sm < 6 ? 2.15f : 0.95f);
+                    float rise = sm < 6 ? (0.85f + t * (1.55f + (sm % 3) * 0.35f)) : (1.65f + t * (2.45f + (sm % 2) * 0.45f));
+                    Vector3 sp = BossWreckagePos + new Vector3(MathF.Cos(ang) * spread, rise, MathF.Sin(ang) * spread);
+                    float sr = (sm < 6 ? 1.35f : 1.75f) + t * 1.45f;
+                    int sa = Math.Clamp((int)(235 * (1f - t / 2.8f)), 0, 255);
+                    CombatSprites.SoftSmoke(sp, camRight, camUp, sr * 1.15f, sm * 0.7f + t * 0.8f, new Color(36, 32, 30, sa));
                 }
                 CombatSprites.End();
+            }
 
-                // Multi-layer painted fireball core + outer inferno petals!
-                if (t < 1.55f)
+            // Blinding expanding 3D shockwave rings (horizontal + 2 tilted blast waves) + roaring multi-layer fireballs + 36 flaming debris streaks!
+            CombatSprites.Begin(BlendMode.Additive);
+            if (t < 0.95f)
+            {
+                float swProg = t / 0.95f;
+                float swEase = 1f - MathF.Pow(1f - swProg, 2.5f);
+                float ringR = 0.65f + swEase * 8.2f;
+                float ringFade = 1f - swProg;
+                Color swCore = new(255, 250, 224, (int)Math.Clamp((int)(255 * ringFade), 0, 255));
+                CombatSprites.DrawEnergyRing(BossWreckagePos + Vector3.UnitY * 0.24f, ringR, 0.22f * (0.35f + 0.65f * ringFade),
+                    camera.Position, new Color(255, 136, 36, (int)(225 * ringFade)), swCore, 40, Vector3.UnitY);
+                CombatSprites.DrawEnergyRing(BossWreckagePos + Vector3.UnitY * 0.95f, ringR * 0.84f, 0.16f * (0.35f + 0.65f * ringFade),
+                    camera.Position, new Color(255, 194, 72, (int)(205 * ringFade)), swCore, 36, Vector3.Normalize(new Vector3(0.42f, 0.86f, 0.28f)));
+                CombatSprites.DrawEnergyRing(BossWreckagePos + Vector3.UnitY * 1.15f, ringR * 0.72f, 0.13f * (0.35f + 0.65f * ringFade),
+                    camera.Position, new Color(255, 92, 28, (int)(185 * ringFade)), swCore, 32, Vector3.Normalize(new Vector3(-0.48f, 0.80f, -0.35f)));
+            }
+
+            // Blazing floor detonation light pool
+            if (t < 1.85f)
+            {
+                float gf = 1f - t / 1.85f;
+                CombatSprites.FloorGlow(BossWreckagePos + Vector3.UnitY * 0.025f, 4.5f + t * 2.4f,
+                    new Color(255, 128, 32, (int)(185 * gf)));
+                CombatSprites.FloorGlow(BossWreckagePos + Vector3.UnitY * 0.030f, 2.4f + t * 0.8f,
+                    new Color(255, 236, 152, (int)(220 * gf * gf)));
+            }
+
+            // Multi-layer roaring volumetric additive fireballs + blinding white-orange core flash!
+            if (t < 1.75f)
+            {
+                float e = t / 1.75f;
+                float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.6f), 3f);
+                float fade = 1f - Smooth((e - 0.25f) / 0.75f);
+                int stage = Math.Clamp((int)(e * 4f), 0, 3);
+                if (hasFx)
                 {
-                    float e = t / 1.55f;
-                    float grow = 1f - MathF.Pow(1f - MathF.Min(1f, e * 2.6f), 3f);
-                    float fade = 1f - Smooth((e - 0.28f) / 0.72f);
-                    int stage = Math.Clamp((int)(e * 4f), 0, 3);
-                    CombatSprites.Begin(BlendMode.Additive);
-                    CombatSprites.ExplosionFrame(stage, center + Vector3.UnitY * (e * 1.1f), camRight, camUp,
-                        1.45f + grow * 2.55f, e * 2.4f, new Color(255, 182, 86, Math.Clamp((int)(255 * fade), 0, 255)));
-                    CombatSprites.ExplosionFrame(Math.Max(0, stage - 1), center + Vector3.UnitY * (0.4f + e * 0.6f), camRight, camUp,
-                        0.95f + grow * 1.75f, -e * 3.1f, new Color(255, 242, 188, Math.Clamp((int)(245 * fade * fade), 0, 255)));
-                    CombatSprites.End();
+                    CombatSprites.ExplosionFrame(stage, center + Vector3.UnitY * (e * 1.35f), camRight, camUp,
+                        1.85f + grow * 3.15f, e * 2.2f, new Color(255, 206, 118, Math.Clamp((int)(255 * fade), 0, 255)));
+                    CombatSprites.ExplosionFrame(Math.Max(0, stage - 1), center + Vector3.UnitY * (0.45f + e * 0.75f), camRight, camUp,
+                        1.25f + grow * 2.25f, -e * 3.1f, new Color(255, 246, 198, Math.Clamp((int)(250 * fade * fade), 0, 255)), flipX: true);
+                    CombatSprites.ExplosionFrame(3, center + Vector3.UnitY * (0.25f + e * 0.45f), camRight, camUp,
+                        1.40f + grow * 3.45f, e * 1.4f, new Color(255, 138, 42, Math.Clamp((int)(210 * fade), 0, 255)));
+                }
+                if (e < 0.45f)
+                {
+                    float flashF = 1f - e / 0.45f;
+                    CombatSprites.SoftHalo(center, camRight, camUp, 3.8f * (0.6f + 0.6f * e), 3.8f * (0.6f + 0.6f * e),
+                        new Color(255, 238, 178, (int)(245 * flashF)));
                 }
             }
+
+            // 36 flying flaming debris & ember streaks blasting outward in a volcanic arc!
+            if (t < 1.65f)
+            {
+                float df = 1f - t / 1.65f;
+                for (int d = 0; d < 36; d++)
+                {
+                    float h1 = MathF.Sin(d * 19.31f + 2.7f) * 43758.5453f; h1 -= MathF.Floor(h1);
+                    float h2 = MathF.Sin(d * 53.17f + 6.1f) * 24634.6345f; h2 -= MathF.Floor(h2);
+                    float az = d * (MathF.Tau / 36f) + h1 * 0.4f;
+                    float spd = 3.2f + h2 * 5.8f;
+                    float vy0 = 2.8f + h1 * 4.6f;
+                    Vector3 vel = new(MathF.Cos(az) * spd, vy0 - 7.8f * t, MathF.Sin(az) * spd);
+                    Vector3 pos = BossWreckagePos + new Vector3(MathF.Cos(az) * spd * t, MathF.Max(0.06f, 0.95f + vy0 * t - 3.9f * t * t), MathF.Sin(az) * spd * t);
+                    Vector3 tail = pos - vel * 0.075f;
+                    Color dCol = (d % 3 == 0)
+                        ? new Color(255, 246, 188, (int)(250 * df))
+                        : new Color(255, 136, 34, (int)(235 * df));
+                    CombatSprites.Streak(tail, pos, camera.Position, 0.028f * (0.35f + 0.65f * df), pixelAngle, dCol);
+                }
+            }
+            CombatSprites.End();
         }
 
         // 3. SMOKING COLLAPSED CHARRED BOSS TORSO WRECKAGE on the marble floor (persists after detonation!)
@@ -7126,43 +7322,65 @@ public sealed partial class SkyscraperFloor1World
     private void DrawSpill(WaterSpill spill)
     {
         Vector3 center=spill.Position+Vector3.UnitY*.019f;
-        VisualEngine3D.Water(center,Math.Clamp(spill.Electric*3,0,1));
+        float power = Math.Clamp(spill.Electric * 3f, 0f, 1f);
+        VisualEngine3D.Water(center, power);
         if(spill.Electric<=0) return;
-        int frame=(int)(_worldClock*22);
-        int channel=0;
-        void Arc(Vector3 end)
+
+        Vector3 eye = VisualEngine3D.ActiveCamPos;
+        float pulse = 0.78f + 0.22f * MathF.Sin(_worldClock * 18.5f + spill.Position.X);
+        float pixelAngle = 0.0018f;
+        int channel = 0;
+
+        CombatSprites.Begin(BlendMode.Additive);
+
+        // Pulsing high-voltage cyan electric glow pools radiating across the electrified water puddle
+        CombatSprites.FloorGlow(center + Vector3.UnitY * 0.010f, 2.25f + 0.28f * pulse,
+            new Color(22, 138, 255, (int)(118 * power * pulse)));
+        CombatSprites.FloorGlow(center + Vector3.UnitY * 0.015f, 1.25f + 0.16f * pulse,
+            new Color(128, 246, 255, (int)(155 * power * pulse)));
+
+        void Arc(Vector3 end, float widthScale, int branches)
         {
-            float angle=channel*2.4f+.22f*MathF.Sin(frame+channel);
-            Vector3 start=center+new Vector3(MathF.Cos(angle),0,MathF.Sin(angle))*(1.15f+.14f*channel);
-            Vector3 axis=Vector3.Normalize(end-start);
-            Vector3 side=Vector3.Cross(axis,Vector3.UnitY);
-            Vector3 previous=start;
-            for(int j=1;j<=12;j++)
+            float angle = channel * 2.15f + 0.35f * MathF.Sin(_worldClock * 6.5f + channel * 1.7f);
+            Vector3 start = center + new Vector3(MathF.Cos(angle), 0.04f, MathF.Sin(angle)) * (0.95f + 0.16f * (channel % 3));
+            CombatSprites.DrawLightningBolt(start, end, eye, _worldClock, 2100 + channel * 97 + (int)(spill.Position.X * 13),
+                widthScale * (0.75f + 0.25f * power),
+                new Color(26, 148, 255, (int)(225 * power)),
+                new Color(128, 246, 255, (int)(255 * power)),
+                branches: branches);
+
+            // Flying additive cyan-white spark streaks shooting off the water & arc contact point
+            for (int i = 0; i < 6; i++)
             {
-                float t=j/12f, shape=MathF.Sin(t*MathF.PI);
-                uint seed=unchecked((uint)(frame*73856093 ^ channel*19349663 ^ j*83492791));
-                seed^=seed>>16; seed*=0x7feb352d; seed^=seed>>15;
-                float across=((seed&1023)/511.5f-1)*.145f;
-                float lift=.15f+((seed>>10&1023)/1023f-.5f)*.17f;
-                Vector3 p=Vector3.Lerp(start,end,t)+shape*(side*across+Vector3.UnitY*lift);
-                VisualEngine3D.Rod(previous,p,.009f,.006f,5,new(178,244,255,255),Finish.Plasma);
-                previous=p;
-            }
-            for(int i=0;i<4;i++)
-            {
-                float t=(_worldClock*1.7f+i*.27f+channel*.43f)%1;
-                Vector3 velocity=new(MathF.Cos(i*2.7f+angle)*.44f,1.4f+.1f*i,MathF.Sin(i*2.7f+angle)*.44f);
-                Vector3 spark=end+velocity*t-Vector3.UnitY*1.55f*t*t;
-                VisualEngine3D.Oval(spark,new Vector3(.012f,.031f,.012f)*(1-t),Color.White,Finish.Plasma);
+                float t = (_worldClock * 1.9f + i * .19f + channel * .37f) % 1f;
+                float fade = 1f - t;
+                Vector3 vel = new(MathF.Cos(i * 2.3f + angle) * 0.85f, 1.85f + 0.25f * i - 3.6f * t, MathF.Sin(i * 2.3f + angle) * 0.85f);
+                Vector3 spark = end + new Vector3(MathF.Cos(i * 2.3f + angle) * 0.85f * t, (1.85f + 0.25f * i) * t - 1.8f * t * t, MathF.Sin(i * 2.3f + angle) * 0.85f * t);
+                Vector3 tail = spark - vel * 0.042f;
+                Color spCol = (i % 2 == 0)
+                    ? new Color(138, 246, 255, (int)(245 * fade * power))
+                    : new Color(255, 252, 240, (int)(255 * fade * power));
+                CombatSprites.Streak(tail, spark, eye, 0.011f * fade, pixelAngle, spCol);
             }
             channel++;
         }
-        Arc(center+new Vector3(.23f,.74f,.11f));
-        foreach(var c in ActiveCoders)
-            if(channel<4 && c.Hp>0 && c.StunTimer>0 && Vector3.DistanceSquared(center,c.Position)<10.5f)
-                Arc(c.CombatCenter);
-        while(channel<3)
-            Arc(center+new Vector3(MathF.Cos(channel*2.7f)*.72f,.06f,MathF.Sin(channel*2.7f)*.72f));
+
+        // Tall crackling surface-to-air plasma discharge at puddle heart
+        Arc(center + new Vector3(.22f * MathF.Sin(_worldClock * 7f), .88f, .22f * MathF.Cos(_worldClock * 6f)), 0.82f, 2);
+
+        // Snap blazing lightning bolts straight onto every shocked/stunned enemy standing near the electrified water!
+        foreach (var c in ActiveCoders)
+            if (channel < 5 && c.Hp > 0 && (c.StunTimer > 0 || c.ElectroShockedTimer > 0) && Vector3.DistanceSquared(center, c.Position) < 12.2f)
+                Arc(c.CombatCenter, 0.92f, 3);
+
+        // Ensure at least 4 surface-skimming crackling arcs dancing across the puddle perimeter
+        while (channel < 4)
+        {
+            float a2 = channel * 2.25f + _worldClock * 1.4f;
+            Arc(center + new Vector3(MathF.Cos(a2) * 0.88f, 0.14f + 0.18f * (channel % 2), MathF.Sin(a2) * 0.88f), 0.72f, 2);
+        }
+
+        CombatSprites.End();
     }
 }
 
@@ -7391,8 +7609,12 @@ public sealed partial class SkyscraperFloor1World
             float stretch=frog.Rest>0 ? 1-.17f*Math.Clamp(1-frog.Rest/.15f,0,1) : 1+.19f*MathF.Sin(2*MathF.PI*frog.Phase);
             DrawFrog(frog.Feet,frog.Yaw,frog.Species.HoodieColor,stretch);
             if(frog.SpeciesId!="frog_hotfix" || VisualEngine3D.CastingShadows) continue;
-            var floor=frog.Feet; floor.Y=.024f;
-            Raylib.DrawCircle3D(floor,.31f+.02f*MathF.Sin(_worldClock*4),Vector3.UnitX,90,Color.Gold);
+            var floor=frog.Feet; floor.Y=.028f;
+            CombatSprites.Begin(BlendMode.Additive);
+            CombatSprites.FloorGlow(floor, .48f, new Color(255, 198, 56, 72));
+            CombatSprites.DrawEnergyRing(floor, .31f + .02f * MathF.Sin(_worldClock * 4), .018f, VisualEngine3D.ActiveCamPos,
+                new Color(255, 196, 48, 165), new Color(255, 248, 205, 235), 24);
+            CombatSprites.End();
             for(int i=0;i<4;i++)
             {
                 float a=_worldClock+i*MathF.Tau/4;
