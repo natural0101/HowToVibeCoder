@@ -3769,6 +3769,34 @@ public sealed partial class SkyscraperFloor1World
                 VisualEngine3D.Box(sconce + new Vector3(0f, sy, -0.02f), 0.24f, 0.04f, 0.08f, brass, Finish.Bronze);
         }
 
+        // Art-Deco Deep Wine-Burgundy Velvet Drapery & Stepped Brushed-Brass Sanctuary Alcove behind Veronika (classy muted luxury matching ARCANA sign!)
+        {
+            Color velvetDeep = new(24, 7, 14, 255), velvetFold = new(38, 11, 22, 255);
+            // Recessed espresso-plum velvet backing
+            VisualEngine3D.Box(new Vector3(0f, 1.66f, 15.31f), 2.58f, 1.56f, 0.04f, new Color(18, 5, 11, 255), Finish.Fabric);
+            // 17 sculpted vertical deep-wine velvet curtain pleats framing her portrait
+            for (int p = -8; p <= 8; p++)
+            {
+                float px = p * 0.148f;
+                bool peak = (p & 1) == 0;
+                VisualEngine3D.Box(new Vector3(px, 1.66f, peak ? 15.27f : 15.29f),
+                    0.125f, 1.50f, peak ? 0.055f : 0.032f, peak ? velvetFold : velvetDeep, Finish.Fabric);
+            }
+            // Refined stepped brushed-brass Art-Deco sanctuary pilasters & cornice (zero aliased thin diagonal sticks!)
+            VisualEngine3D.Box(new Vector3(0f, 2.45f, 15.24f), 2.66f, 0.055f, 0.09f, brass, Finish.Bronze);
+            VisualEngine3D.Box(new Vector3(0f, 2.41f, 15.23f), 2.44f, 0.018f, 0.045f, new Color(255, 196, 116, 255), Finish.Lamp);
+            VisualEngine3D.Box(new Vector3(0f, 0.90f, 15.24f), 2.66f, 0.055f, 0.09f, brass, Finish.Bronze);
+            foreach (int side in new[] { -1, 1 })
+            {
+                VisualEngine3D.Box(new Vector3(side * 1.30f, 1.67f, 15.24f), 0.065f, 1.56f, 0.09f, brass, Finish.Bronze);
+                VisualEngine3D.Box(new Vector3(side * 0.92f, 1.67f, 15.245f), 0.026f, 1.48f, 0.045f, darkBronze, Finish.Bronze);
+                VisualEngine3D.Box(new Vector3(side * 0.56f, 1.98f, 15.245f), 0.020f, 0.88f, 0.040f, darkBronze, Finish.Bronze);
+            }
+            // Stepped Art-Deco brass crown arch inset framing Veronika's silhouette
+            VisualEngine3D.Box(new Vector3(0f, 2.34f, 15.24f), 1.84f, 0.028f, 0.055f, brass, Finish.Bronze);
+            VisualEngine3D.Box(new Vector3(0f, 2.26f, 15.24f), 1.14f, 0.024f, 0.055f, brass, Finish.Bronze);
+        }
+
         Vector3 origin=b+new Vector3(0,.025f,0);
         bool veronikaHidden = BossRevealed && !ElevatorBoss.IsDefeated;
         bool arms=VisualEngine3D.HasAsset("char_hr_veronika_arm_l") && VisualEngine3D.HasAsset("char_hr_veronika_arm_r");
@@ -3796,14 +3824,50 @@ public sealed partial class SkyscraperFloor1World
                         VisualEngine3D.AssetOriented(model,armPivot,180,-pump+3.5f*gesture*MathF.Sin(t*1.9f+phase),
                             MathF.Sign(x)*pump*.75f+2.5f*gesture*MathF.Sin(t*1.45f+phase));
                     }
-                    Arm("char_hr_veronika_arm_l",.138f,0);
-                    Arm("char_hr_veronika_arm_r",-.138f,2.1f);
+                    Arm("char_hr_veronika_arm_l",.134f,0);
+                    Arm("char_hr_veronika_arm_r",-.134f,2.1f);
                 }
                 else
                 {
                     Vector3 hands=new(.028f*MathF.Sin(t*1.6f),1.310f+breath+.018f*MathF.Sin(t*3.2f)+(reading ? .025f : 0),
                         -.320f+.016f*MathF.Cos(t*1.6f));
                     VisualEngine3D.AssetOriented("char_hr_veronika_hands",origin+hands,180,0,reading ? 4*MathF.Sin(t*2) : 0);
+                }
+            }
+            // Delicate flickering golden candle halos + subtle mystical amethyst-gold crystal ball aura (zero noisy bonfire sparks!)
+            if (!VisualEngine3D.CastingShadows && CombatSprites.HasPaintedFx)
+            {
+                ReadOnlySpan<Vector3> candleWicks =
+                [
+                    origin + new Vector3(+0.56f, 1.232f, -0.31f),
+                    origin + new Vector3(+0.64f, 1.182f, -0.44f),
+                    origin + new Vector3(-0.56f, 1.222f, -0.31f),
+                    origin + new Vector3(-0.64f, 1.172f, -0.44f),
+                ];
+                Vector3 cRight = VisualEngine3D.ActiveCamRight;
+                Vector3 cUp = VisualEngine3D.ActiveCamUp;
+                CombatSprites.Begin(BlendMode.Additive);
+                for (int ci = 0; ci < candleWicks.Length; ci++)
+                {
+                    float flick = 0.90f + 0.12f * MathF.Sin(_worldClock * (11.5f + ci * 2.1f) + ci * 1.7f);
+                    // Pure silky Gaussian candlelight bloom (zero noisy bonfire sparks!)
+                    CombatSprites.SoftHalo(candleWicks[ci] + Vector3.UnitY * 0.008f, cRight, cUp,
+                        0.068f * flick, 0.078f * flick, new Color(255, 178, 68, 95));
+                    CombatSprites.SoftHalo(candleWicks[ci] + Vector3.UnitY * 0.006f, cRight, cUp,
+                        0.024f * flick, 0.036f * flick, new Color(255, 240, 188, 145));
+                }
+                // Soft mystical violet-gold aura halo around the layered glass crystal ball
+                Vector3 orbPos = origin + new Vector3(0f, 1.115f, -0.357f);
+                float orbPulse = 0.88f + 0.12f * MathF.Sin(_worldClock * 2.6f);
+                CombatSprites.SoftHalo(orbPos, cRight, cUp, 0.21f * orbPulse, 0.21f * orbPulse,
+                    new Color(168, 86, 246, 68));
+                CombatSprites.End();
+                for (int m = 0; m < 6; m++)
+                {
+                    float a = _worldClock * 1.15f + m * MathF.Tau / 6f;
+                    float rad = 0.145f + 0.020f * MathF.Sin(_worldClock * 2.3f + m);
+                    Vector3 mote = orbPos + new Vector3(MathF.Cos(a) * rad, 0.015f + 0.052f * MathF.Sin(a * 1.7f + m), MathF.Sin(a) * rad);
+                    VisualEngine3D.Orb(mote, 0.0038f, m % 2 == 0 ? new Color(255, 214, 118, 220) : new Color(214, 148, 255, 210), Finish.Lamp);
                 }
             }
         }

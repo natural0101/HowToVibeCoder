@@ -10,26 +10,27 @@ internal static unsafe partial class VisualEngine3D
     // Only these exact exports require repair. Later revisions use their own materials.
     private enum Swatch : uint
     {
-        skin=0xEBC7B2,
-        lip=0x9E2640,
-        ivory=0xFFFDFC,
-        iris=0xFFFFFF,
+        skin=0xF2C2A2,
+        lip=0x98203A,
+        ivory=0xFAF7F4,
+        wax=0xEDE0C6,
+        iris=0x9E44FF,
         onyx=0x08050A,
         catchlight=0xFFFFFF,
-        eyeshadow=0xB86E78,
-        hair=0x2C1A17,
-        hairlight=0x422822,
-        gold=0xF0C458,
-        teal=0x24C89A,
-        silk=0x4A1431,
+        eyeshadow=0xB46272,
+        hair=0x261412,
+        hairlight=0x522E22,
+        gold=0xD4A242,
+        teal=0x20C494,
+        silk=0x4E1432,
         plum=0x380E25,
         trouser=0x1C1520,
         coal=0x141018,
         sole=0x0A080C,
-        nail=0x5A0E24,
-        orb=0xD49EFF,
-        flame=0xFFF0AA,
-        card=0xFFFFFF
+        nail=0x5E0E26,
+        orb=0xC888FF,
+        flame=0xFFE898,
+        card=0xEFE0B8
     }
 
     private static readonly Dictionary<string,(string Hash,(Swatch Color,int Count)[] Runs)> boothPalette=new()
@@ -65,10 +66,10 @@ internal static unsafe partial class VisualEngine3D
             (Swatch.skin,224), (Swatch.nail,122)]),
         ["prop_veronika_tarot_table"]=("F8F9EF5A586000689C64E8B39469297FE745F8B8B7EBCBB80E1D20F1D7CFCC77",[
             (Swatch.plum,1152), (Swatch.silk,1090), (Swatch.gold,2056), (Swatch.orb,1490),
-            (Swatch.iris,610), (Swatch.flame,362), (Swatch.gold,112), (Swatch.ivory,112),
-            (Swatch.flame,262), (Swatch.gold,112), (Swatch.ivory,112), (Swatch.flame,262),
-            (Swatch.gold,112), (Swatch.ivory,112), (Swatch.flame,262), (Swatch.gold,112),
-            (Swatch.ivory,112), (Swatch.flame,262), (Swatch.card,224)]),
+            (Swatch.iris,610), (Swatch.flame,362), (Swatch.gold,112), (Swatch.wax,112),
+            (Swatch.flame,262), (Swatch.gold,112), (Swatch.wax,112), (Swatch.flame,262),
+            (Swatch.gold,112), (Swatch.wax,112), (Swatch.flame,262), (Swatch.gold,112),
+            (Swatch.wax,112), (Swatch.flame,262), (Swatch.card,224)]),
     };
     private static readonly HashSet<string> paintedBoothMeshes=new();
     private static int boothColorLoc;

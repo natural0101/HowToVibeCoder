@@ -275,6 +275,15 @@ internal static class CombatSprites
         QuadUV(flash, 0.502f, 0.004f, 0.996f, 0.996f, a, b, c, d, tint);
     }
 
+    /// <summary>Silky camera-facing radial Gaussian light bloom (ideal for delicate candle halos & mystical crystal aura with zero spark noise).</summary>
+    internal static void SoftHalo(Vector3 center, Vector3 right, Vector3 up, float halfW, float halfH, Color tint)
+    {
+        if (flash.Id == 0 || tint.A == 0) return;
+        Vector3 x = right * halfW;
+        Vector3 y = up * halfH;
+        QuadUV(flash, 0.502f, 0.004f, 0.996f, 0.996f, center - x - y, center + x - y, center + x + y, center - x + y, tint);
+    }
+
     /// <summary>Continuous camera-facing tapered ribbon segment (samples Gaussian cross-section across width so segments join seamlessly with zero beads).</summary>
     internal static void RibbonSegment(Vector3 prev, Vector3 cur, Vector3 eye, float prevHalfW, float curHalfW, Color prevCol, Color curCol)
     {

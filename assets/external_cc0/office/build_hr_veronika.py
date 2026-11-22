@@ -937,21 +937,22 @@ def build_veronika_slender_body(ga):
     # 3) Slender Tailored Deep Wine-Plum Velvet Wrap Blazer (`SlenderVelvetWrapBlazer`, 64 segs x 28 height rings)
     n_b = 64
     b_table = [
+        (0.800, 0.160, 0.118, 0.110, 0.032),
         (0.865, 0.154, 0.114, 0.106, 0.032),
         (0.930, 0.140, 0.104, 0.096, 0.034),
         (1.000, 0.120, 0.095, 0.086, 0.036),
         (1.060, 0.108, 0.093, 0.084, 0.038),
         (1.135, 0.118, 0.106, 0.088, 0.042),
         (1.215, 0.132, 0.118, 0.090, 0.042),
-        (1.275, 0.144, 0.100, 0.084, 0.034),
-        (1.310, 0.148, 0.082, 0.076, 0.032),
-        (1.352, 0.118, 0.068, 0.064, 0.034),
+        (1.275, 0.148, 0.100, 0.084, 0.034),
+        (1.312, 0.156, 0.084, 0.078, 0.032),
+        (1.348, 0.132, 0.072, 0.068, 0.034),
         (1.392, 0.060, 0.054, 0.054, 0.040),
     ]
     b_rings = []
     for k in range(28):
         t = k / 27.0
-        h = 0.865 + (1.392 - 0.865) * t
+        h = 0.800 + (1.392 - 0.800) * t
         rx, rzf, rzb, cz = b_table[-1][1:]
         for row0, row1 in zip(b_table, b_table[1:]):
             if row0[0] <= h <= row1[0]:
@@ -1114,24 +1115,24 @@ def build_veronika_unified_arm(ga, side):
     """
     created = []
 
-    # 1) Smooth Tapered Shoulder Cap tucked inside the sloped blazer shoulder at ARM_L_PIVOT_LOCAL (NO protruding ball bump!)
+    # 1) Smooth Tapered Shoulder Cap tucked flush inside the sloped blazer shoulder at ARM_L_PIVOT_LOCAL (NO protruding step!)
     created.append(
         smooth_oval(
             ga,
             f"ArmShoulderPivotCap_{side}",
-            (0.134, 1.298, 0.032),
-            (0.026, 0.028, 0.026),
+            (0.130, 1.304, 0.032),
+            (0.038, 0.035, 0.036),
             "silk",
             segs=28,
             rings=18,
         )
     )
 
-    # 2) Continuous Velvet Arm Sleeve with Sleek Tailored Bell Cuff (35% slimmer cuff flare, zero megaphone cone!)
+    # 2) Continuous Velvet Arm Sleeve with Sleek Tailored Bell Cuff (smoothly anchored into shoulder socket)
     sleeve_ctrl = [
-        (0.126, 1.312, 0.032),
-        (0.146, 1.288, 0.038),
-        (0.178, 1.202, 0.086),
+        (0.116, 1.314, 0.032),
+        (0.146, 1.292, 0.038),
+        (0.178, 1.204, 0.086),
         (0.198, 1.122, 0.150),
         (0.178, 1.156, 0.216),
         (0.146, 1.204, 0.268),
@@ -1151,7 +1152,8 @@ def build_veronika_unified_arm(ga, side):
         right_v = tang.cross(up_ref).normalized()
         up_v = right_v.cross(tang).normalized()
 
-        base_r = 0.031 - 0.004 * math.sin(t * math.pi * 0.8)
+        shoulder_blend = max(0.0, 1.0 - t / 0.24)
+        base_r = 0.031 + 0.011 * (shoulder_blend ** 1.5) - 0.004 * math.sin(t * math.pi * 0.8)
         bell_t = max(0.0, (t - 0.70) / 0.30)
         # Sleek 35% slimmer bell cuff flare (`rx = 0.037`, `ry = 0.043`)
         rx = base_r + 0.010 * (bell_t ** 1.6)

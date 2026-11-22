@@ -374,24 +374,136 @@ internal static unsafe partial class VisualEngine3D
                 }
                 color=glass; return;
             }
+            if(boothColor==1 && finish==17) {
+                vec3 orbCenter=vec3(0.,1.140,14.123);
+                float orbDist=length(pos-orbCenter);
+                if(orbDist<.116 && pos.y>1.028) {
+                    // Layered Glass Nebula Crystal Ball: deep cosmic indigo interior, swirling amethyst-gold FBM mist, pinpoint stars & crisp candlelight Fresnel glass!
+                    vec3 nv=normalize(pos-orbCenter);
+                    float ndotv=max(0.,dot(nv,v));
+                    float fres=pow(1.-ndotv,2.9);
+                    vec3 rd=refract(-v,nv,.68);
+                    vec3 p1=nv*2.4+rd*1.35+vec3(clock*.18,-clock*.12,clock*.09);
+                    vec3 p2=nv*4.2-rd*1.85+vec3(-clock*.24,clock*.16,clock*.14);
+                    float n1=fbm(p1.xy+vec2(fbm(p1.zy*1.3),fbm(p1.xz*1.1)));
+                    float n2=fbm(p2.xz*1.2+vec2(n1*1.8,-clock*.22));
+                    float swirl=smoothstep(.28,.84,n1*.62+n2*.52);
+                    float goldWisp=smoothstep(.64,.90,n2)*smoothstep(.28,.76,n1);
+                    float coreGlow=exp(-pow(1.-ndotv,1.5)*3.4)*(.78+.22*sin(clock*2.4));
+                    // Deep jewel-like cosmic indigo interior gradient
+                    vec3 interior=mix(vec3(.025,.008,.075),vec3(.22,.048,.48),swirl);
+                    interior=mix(interior,vec3(.68,.18,.84),smoothstep(.54,.88,n1*n2*1.65)*.82);
+                    interior+=vec3(.96,.66,.22)*goldWisp*.88;
+                    interior+=vec3(.50,.22,.82)*coreGlow*.58;
+                    // Crisp pinpoint glowing tarot stars (circular radial falloff inside each cell — ZERO square pixels!)
+                    vec2 starUv=(nv.xy+rd.xy*.42)*15.+vec2(clock*.10,0.);
+                    vec2 starId=floor(starUv);
+                    vec2 starOffset=vec2(hash(starId+3.1)-.5,hash(starId+11.7)-.5)*.45;
+                    vec2 starLocal=fract(starUv)-.5-starOffset;
+                    float starMask=step(.84,hash(starId));
+                    float starDot=exp(-dot(starLocal,starLocal)*75.)*starMask*(.55+.45*sin(clock*4.8+hash(starId+7.)*18.));
+                    interior+=vec3(1.18,.96,.72)*starDot*1.85*(1.-fres*.6);
+                    // Crisp glossy glass reflections from twin candles + overhead studio softbox
+                    vec3 cL=normalize(vec3(.56,1.28,14.12)-pos);
+                    vec3 cR=normalize(vec3(-.56,1.28,14.12)-pos);
+                    vec3 topKey=normalize(vec3(-.35,.88,-.55));
+                    float specL=pow(max(0.,dot(nv,normalize(cL+v))),46.);
+                    float specR=pow(max(0.,dot(nv,normalize(cR+v))),46.);
+                    float specTop=pow(max(0.,dot(nv,normalize(topKey+v))),72.);
+                    vec3 glass=interior*(.84+.30*ndotv);
+                    glass+=vec3(1.0,.78,.44)*(specL+specR)*.82+vec3(.98,.94,1.)*specTop*1.18;
+                    glass+=mix(vec3(.62,.34,.96),vec3(1.0,.78,.48),max(0.,abs(nv.x)))*fres*.88;
+                    color=vec4(glass,1.); return;
+                }
+                // Luminous golden-white beeswax candle flame teardrops (above y=1.13 on left/right candles)
+                if(pos.y>1.13 && abs(pos.x)>.48 && base.r>base.b*1.25 && base.g>.45) {
+                    float core=pow(max(0.,dot(n,v)),1.4);
+                    vec3 flameCol=mix(vec3(1.05,.52,.08),vec3(1.18,1.02,.72),core);
+                    color=vec4(flameCol,1.); return;
+                }
+                // Burnished antique brass crystal plinth & candlestick bases ONLY (y=0.96..1.06, never candle flames!)
+                if(pos.y>.96 && pos.y<1.06 && base.r>base.b*1.7 && base.g>base.b*1.2 && base.r>.35 && length(pos.xz-vec2(0.,14.12))<.78) {
+                    vec3 bKey=normalize(vec3(.35,.75,-.55));
+                    float spec=pow(max(0.,dot(n,normalize(bKey+v))),34.);
+                    float fres=pow(1.-max(0.,dot(n,v)),2.6);
+                    vec3 antique=vec3(.48,.33,.13)*(.42+.58*max(0.,dot(n,bKey)))+vec3(1.0,.80,.42)*spec*.85+vec3(.34,.22,.08)*fres;
+                    color=vec4(antique,1.); return;
+                }
+                // Warm creamy beeswax candles with translucent amber subsurface glow under each wick
+                if(pos.y>1.00 && abs(pos.x)>.48 && base.r>.65 && base.g>.60 && base.b>.50) {
+                    float tipGlow=smoothstep(1.09,1.23,pos.y);
+                    vec3 wax=vec3(.88,.80,.66)*(.54+.46*max(0.,dot(n,normalize(vec3(0.,.55,-.82)))))+vec3(.68,.36,.08)*tipGlow;
+                    color=vec4(wax,1.); return;
+                }
+            }
             if(finish==21) {
                 // Imported MPFB swatches are linear glTF factors. Convert once
                 // for the display framebuffer and keep the planes readable.
-                vec3 pigment=pow(base,vec3(1./2.2));
+                vec3 pigment=pow(max(base,vec3(0.)),vec3(1./2.2));
                 vec3 key=normalize(vec3(-.44,.80,-.38));
                 float sun=max(0.,dot(n,key));
                 float sky=.5+.5*n.y;
                 float bounce=.5+.5*dot(n,normalize(vec3(.75,.16,.5)));
-                if(firstPerson==0) pigment=mix(base,pigment,.40);
+                if(firstPerson==0 && boothColor==0) pigment=mix(base,pigment,.40);
                 vec3 value=pigment*(vec3(.23,.27,.35)+sky*.12+bounce*.10+max(0.,dot(n,sunDir))*sunlight(n)*vec3(1.48,1.02,.64));
                 if(firstPerson==0) {
-                    vec3 portrait=vec3(-.65,1.92,11.95)-pos;
-                    float falloff=1.-smoothstep(.45,2.45,length(portrait));
-                    float wrap=clamp(dot(n,normalize(portrait))*.85+.15,0.,1.);
-                    value+=pigment*falloff*(vec3(.06,.04,.08)+vec3(.48,.36,.28)*wrap);
-                    float weave=sin(uv.x*480.)*cos(uv.y*380.)*(1.-smoothstep(.2,1.,fwidth(uv.x)*480.));
-                    value*=1.+.035*weave;
-                    value+=vec3(.09,.14,.18)*pow(1.-abs(dot(n,v)),3.);
+                    if(boothColor==1) {
+                        // Dedicated 3-point Tarot Sanctuary Portrait Rig centered on Veronika's booth (Z=14.48)
+                        float flicker=.94+.06*sin(clock*13.5+pos.x*4.)+.04*sin(clock*21.3);
+                        vec3 keyL=vec3(.58,1.46,13.92)-pos;
+                        vec3 keyR=vec3(-.58,1.46,13.92)-pos;
+                        vec3 orbL=vec3(0.,1.15,14.12)-pos;
+                        vec3 rimL=vec3(0.,2.20,14.98)-pos;
+                        float attL=1.-smoothstep(.25,2.20,length(keyL));
+                        float attR=1.-smoothstep(.25,2.20,length(keyR));
+                        float attO=1.-smoothstep(.15,1.45,length(orbL));
+                        vec3 dL=normalize(keyL), dR=normalize(keyR), dO=normalize(orbL), dRim=normalize(rimL);
+                        float wrapL=clamp(dot(n,dL)*.68+.32,0.,1.);
+                        float wrapR=clamp(dot(n,dR)*.68+.32,0.,1.);
+                        float wrapO=clamp(dot(n,dO)*.72+.28,0.,1.);
+                        // Warm sanctuary ambient + dual golden candlelight keys + subtle amethyst crystal-ball underglow
+                        value=pigment*(vec3(.24,.19,.20)+sky*.10);
+                        value+=pigment*(attL*wrapL+attR*wrapR)*vec3(.62,.43,.27)*flicker;
+                        value+=pigment*attO*wrapO*vec3(.30,.15,.46);
+                        float luma=dot(pigment,vec3(.299,.587,.114));
+                        float rimFres=pow(1.-abs(dot(n,v)),2.4);
+                        bool isSkin=pigment.r>pigment.b*1.12 && pigment.r>.42 && pigment.g>.28;
+                        bool isHair=luma<.20 && pigment.r>=pigment.b*.95 && pigment.g<pigment.r*.85;
+                        bool isGold=pigment.r>.52 && pigment.g>.38 && pigment.b<.28;
+                        bool isVelvet=luma<.24 && pigment.r>pigment.g*1.35;
+                        if(isSkin) {
+                            // Healthy warm peach subsurface wrap + soft cheekbone satin highlight
+                            float sss=pow(1.-abs(dot(n,v)),1.6)*(.45+.55*max(wrapL,wrapR));
+                            value+=vec3(.17,.058,.038)*sss;
+                            vec3 hKey=normalize(normalize(vec3(.25,1.62,13.65)-pos)+v);
+                            value+=vec3(.14,.10,.075)*pow(max(0.,dot(n,hKey)),22.);
+                        } else if(isHair) {
+                            // Glossy dark espresso wavy hair sheen + warm golden sanctuary rim separation
+                            vec3 hTop=normalize(normalize(vec3(.18,2.05,13.85)-pos)+v);
+                            vec3 hRim=normalize(dRim+v);
+                            float glossBand=pow(max(0.,1.-abs(dot(n,hTop)-.72)*3.1),5.);
+                            float specHair=pow(max(0.,dot(n,hTop)),28.);
+                            value+=vec3(.26,.14,.09)*(glossBand*.55+specHair*.75);
+                            value+=vec3(.44,.26,.15)*rimFres*(.45+.55*max(0.,dot(n,dRim)));
+                        } else if(isGold) {
+                            // Antique burnished gold metallic glint on diadem, lariat & bangles
+                            vec3 hGold=normalize(dL+v);
+                            value=value*.82+vec3(1.10,.82,.38)*pow(max(0.,dot(n,hGold)),32.)*.95+vec3(.36,.24,.10)*rimFres;
+                        } else if(isVelvet) {
+                            // Deep moody wine-plum luxury velvet blazer with subtle satin rim sheen
+                            value=value*.56+vec3(.24,.05,.13)*rimFres*(.50+.50*max(wrapL,wrapR));
+                        } else {
+                            value+=vec3(.16,.11,.14)*rimFres*.65;
+                        }
+                    } else {
+                        vec3 portrait=vec3(-.65,1.92,13.75)-pos;
+                        float falloff=1.-smoothstep(.45,2.45,length(portrait));
+                        float wrap=clamp(dot(n,normalize(portrait))*.85+.15,0.,1.);
+                        value+=pigment*falloff*(vec3(.06,.04,.08)+vec3(.48,.36,.28)*wrap);
+                        float weave=sin(uv.x*480.)*cos(uv.y*380.)*(1.-smoothstep(.2,1.,fwidth(uv.x)*480.));
+                        value*=1.+.035*weave;
+                        value+=vec3(.09,.14,.18)*pow(1.-abs(dot(n,v)),3.);
+                    }
                     value+=point(puddleLight,vec3(.06,.55,.76)*puddlePower,n,v,28.)*(pigment*.66+.038);
                 }
                 if(firstPerson==1) {
@@ -901,7 +1013,10 @@ internal static unsafe partial class VisualEngine3D
 
     private static void DrawPaintedModel(Model model,string name,Vector3 pos,float yaw,Vector3 scale,Color tint)
     {
-        bool painted=paintedBoothMeshes.Contains(name);
+        bool painted=paintedBoothMeshes.Contains(name)
+            || name is "char_hr_veronika" or "char_hr_veronika_body" or "char_hr_veronika_head"
+                    or "char_hr_veronika_head_blink" or "char_hr_veronika_arm_l" or "char_hr_veronika_arm_r"
+                    or "char_hr_veronika_hands" or "prop_veronika_tarot_table";
         if(painted) Raylib.SetShaderValue(shader,boothColorLoc,1,ShaderUniformDataType.Int);
         Raylib.DrawModelEx(model,pos,Vector3.UnitY,yaw,scale,tint);
         if(painted) Raylib.SetShaderValue(shader,boothColorLoc,0,ShaderUniformDataType.Int);
