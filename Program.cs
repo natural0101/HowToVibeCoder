@@ -3286,6 +3286,15 @@ public static partial class Program
             _world.AdvanceLighting(.9f);
             CaptureShot("25_veronika_animated_closeup.png",sceneCamera:Shot(booth+new Vector3(.32f,1.70f,-1.61f),
                 booth+new Vector3(-.06f,1.38f,-.06f),36));
+            // 78_veronika_lipsync_live.png: Tight live in-engine close-up of Veronika mid-syllable (PCM-driven Open viseme!)
+            AudioMusicSystem.TriggerVoiceLine("Вероника", FloorSystems.CoachText(OnboardingStep.TalkToVeronika), (int)SpeakerVoiceType.VeronikaTarot, "vo_veronika_intro");
+            for (int f = 0; f < 180 && AudioMusicSystem.VeronikaViseme != AudioMusicSystem.MouthViseme.Open; f++)
+                AudioMusicSystem.AdvanceVeronikaLipSync(1f / 60f);
+            if (AudioMusicSystem.VeronikaViseme != AudioMusicSystem.MouthViseme.Open)
+                throw new InvalidDataException("Expected PCM-driven Open viseme on vo_veronika_intro");
+            _world.PoseVeronika(booth + new Vector3(0.08f, 1.56f, -0.92f), 0.5f);
+            CaptureShot("78_veronika_lipsync_live.png", sceneCamera: Shot(booth + new Vector3(0.10f, 1.56f, -0.84f),
+                booth + new Vector3(0.0f, 1.48f, -0.04f), 28));
             OpenFloorPanel(FloorPanel.Upgrades);
             _playerCash=240;
             Floor.BuyWeapon(0,_=>true);

@@ -1177,7 +1177,9 @@ internal static unsafe partial class VisualEngine3D
     {
         bool painted=paintedBoothMeshes.Contains(name)
             || name is "char_hr_veronika" or "char_hr_veronika_body" or "char_hr_veronika_head"
-                    or "char_hr_veronika_head_blink" or "char_hr_veronika_arm_l" or "char_hr_veronika_arm_r"
+                    or "char_hr_veronika_head_blink" or "char_hr_veronika_head_talk_slight"
+                    or "char_hr_veronika_head_talk_open" or "char_hr_veronika_head_talk_round"
+                    or "char_hr_veronika_arm_l" or "char_hr_veronika_arm_r"
                     or "char_hr_veronika_hands" or "prop_veronika_tarot_table";
         if(painted) Raylib.SetShaderValue(shader,boothColorLoc,1,ShaderUniformDataType.Int);
         Raylib.DrawModelEx(model,pos,Vector3.UnitY,yaw,scale,tint);

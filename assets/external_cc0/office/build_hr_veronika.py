@@ -56,6 +56,8 @@ VERONIKA_MAT_ORDER = [
     "coal",
     "sole",
     "ink",
+    "mouth_cavity",
+    "teeth",
 ]
 
 # Tuned specifically for Raylib's new Tarot booth lighting:
@@ -82,6 +84,8 @@ VERONIKA_PALETTE_HEX = {
     "coal":       "141018",  # Sleek dark ankle boots
     "sole":       "0A080C",  # Boot heel/sole
     "ink":        "220816",  # Deep wine-black inner cuff lining
+    "mouth_cavity": "140916",  # Deep matte plum-shadow inner mouth cavity (B>R avoids shader isHair specular)
+    "teeth":      "EFE8E4",  # Clean soft natural ivory upper teeth (no emissive glow)
 }
 
 PBR_SPECS = {
@@ -108,6 +112,8 @@ PBR_SPECS = {
     "coal":       (0.08, 0.30, None),
     "sole":       (0.04, 0.45, None),
     "ink":        (0.00, 0.80, None),
+    "mouth_cavity": (0.00, 0.90, None),
+    "teeth":      (0.00, 0.22, None),
 }
 
 
@@ -494,10 +500,12 @@ def smooth_box(ga, name, p, size, key, bevel=0.002, segments=2, rot_z=0.0, rot_x
     return assign_veronika_mat(ga, obj, name, key)
 
 
-def build_stylized_head_mesh(ga):
+def build_stylized_head_mesh(ga, mouth_viseme="closed"):
     """
     Resculpt & Laplacian-relax the MPFB head mesh into the heart-shaped stylized beauty face
     from `veronika_target_concept_1795129376528.jpg`.
+    When `mouth_viseme` is "slight", "open", or "round", applies a smooth natural jaw/chin drop
+    and strictly-contained inner mouth recess behind the lips so skin never pokes through open vowels.
     """
     raw_faces = ga.BODY
     faces = []
@@ -587,6 +595,44 @@ def build_stylized_head_mesh(ga):
                     new_pts[idx] = p.lerp(avg, 0.42)
         pts = new_pts
 
+    # Smooth natural jaw/chin drop & strictly bounded inner mouth recess for talking visemes
+    if mouth_viseme != "closed":
+        vis_cfg = {
+            "slight": (0.0018, 0.0005, 1.4802, 0.0145, 0.0048, 0.0095, 0.0000, 0.0000),
+            "open":   (0.0045, 0.0015, 1.4774, 0.0155, 0.0088, 0.0135, 0.0000, 0.0000),
+            "round":  (0.0028, 0.0008, 1.4792, 0.0098, 0.0066, 0.0115, 0.0024, 0.0020),
+        }[mouth_viseme]
+        jaw_drop, chin_back, cav_cy, cav_rx, cav_ry, cav_depth, pucker_narrow, pucker_fwd = vis_cfg
+        for p in pts:
+            # 1) Smooth mandible/chin rotation downward (neck base y <= 1.425 stays 100% locked!)
+            if 1.425 < p.y < 1.486 and p.z > 0.075:
+                if p.y < 1.454:
+                    wy = (p.y - 1.425) / (1.454 - 1.425)
+                else:
+                    wy = max(0.0, (1.486 - p.y) / (1.486 - 1.454))
+                wy = wy * wy * (3.0 - 2.0 * wy)
+                wx = math.exp(-((p.x / 0.040) ** 2))
+                wz = max(0.0, min(1.0, (p.z - 0.075) / 0.055))
+                w_jaw = wy * wx * wz
+                p.y -= jaw_drop * w_jaw
+                p.z -= chin_back * w_jaw
+
+            # 2) Subtle lip-corner gather & forward cushion for rounded O/OO vowels
+            if pucker_narrow > 0.0 and 1.466 < p.y < 1.494 and p.z > 0.132:
+                w_corner = math.exp(-(((abs(p.x) - 0.0155) / 0.0085) ** 2) - (((p.y - 1.480) / 0.011) ** 2))
+                p.x -= math.copysign(pucker_narrow * w_corner, p.x)
+                w_puck = math.exp(-((p.x / 0.0135) ** 2) - (((p.y - 1.480) / 0.011) ** 2))
+                p.z += pucker_fwd * w_puck
+
+            # 3) Strictly contained inner mouth recess behind the lip opening (zero cheek bleed!)
+            if p.z > 0.134 and abs(p.x) < cav_rx * 1.35 and abs(p.y - cav_cy) < cav_ry * 1.45:
+                dx = p.x / cav_rx
+                dy = (p.y - cav_cy) / cav_ry
+                r2 = dx * dx + dy * dy
+                if r2 < 1.55:
+                    w_cav = math.exp(-r2 * 2.0)
+                    p.z -= cav_depth * w_cav
+
     obj = v_mesh(ga, "VeronikaStylizedHead", pts, reindexed_faces, "skin")
 
     bpy.ops.object.select_all(action="DESELECT")
@@ -598,10 +644,54 @@ def build_stylized_head_mesh(ga):
     return fix_outward_normals(obj)
 
 
-def build_veronika_head_accessories(ga, blink=False):
+def add_curved_mouth_cavity(ga, name, rx, ry, cy, z_front, z_curve, thickness=0.0028, key="mouth_cavity"):
+    """Build a watertight curved 3D inner mouth backdrop strictly enclosed by the lip contour."""
+    n_u = 28
+    n_v = 10
+    rings = []
+    for kv in range(n_v):
+        tv = kv / (n_v - 1)
+        # Taper cleanly from back wall -> front inner rim -> closed center so normals are 100% outward
+        ang = tv * math.pi
+        rad_s = max(0.06, math.sin(ang))
+        z_off = -thickness * 0.5 + thickness * math.cos(ang) * 0.5
+        ring = []
+        for ku in range(n_u):
+            a = ku * math.tau / n_u
+            ca, sa = math.cos(a), math.sin(a)
+            x = rx * rad_s * ca
+            y = cy + ry * rad_s * sa
+            z = z_front - z_curve * (x * x) + z_off
+            ring.append((x, y, z))
+        rings.append(ring)
+    return add_loft_grid(ga, name, rings, key, closed_u=True, cap_ends=True)
+
+
+def add_curved_upper_teeth(ga, name, half_w, cy, z_front, z_curve, half_h=0.0020, thickness=0.0014):
+    """Build a clean, feminine, softly curved ivory upper teeth arch recessed neatly behind the upper lip."""
+    n_pts = 9
+    pts = []
+    widths = []
+    thicknesses = []
+    normals = []
+    for i in range(n_pts):
+        u = (i / (n_pts - 1)) * 2.0 - 1.0  # -1..+1
+        x = half_w * u
+        # Gentle dental smile arc: center incisors slightly lower/fuller, tapering gracefully at sides
+        y = cy + 0.0007 * (u * u)
+        z = z_front - z_curve * (x * x)
+        pts.append((x, y, z))
+        taper = max(0.38, 1.0 - 0.52 * (u * u))
+        widths.append(half_h * taper)
+        thicknesses.append(thickness * taper)
+        normals.append((u * 0.25, -0.05, 1.0))
+    return add_ribbon_loft(ga, name, pts, widths=widths, thicknesses=thicknesses, normals=normals, key="teeth", subsurf_level=1)
+
+
+def build_veronika_head_accessories(ga, blink=False, mouth_viseme="closed"):
     """
     Build the exact head features from `veronika_target_concept_1795129376528.jpg`:
-      - Smooth 3D sculpted Cupid's-bow smiling berry-crimson lips
+      - Smooth 3D sculpted Cupid's-bow smiling berry-crimson lips (or talking viseme: slight / open / round)
       - 1.55x HUGE wide-open luminous violet-amethyst almond eyes
       - Bold sculpted jet-black winged cat-eye eyeliner + full curled upper lashes + lower-seated dark-espresso arched brows
       - WATER-TIGHT SOLIDIFIED (`9mm` thick) dark-espresso wavy hair crown with sweeping curtain bangs framing the forehead
@@ -609,41 +699,141 @@ def build_veronika_head_accessories(ga, blink=False):
     """
     smooth_oval(ga, "NeckPivotSocketBall", (0.0, 1.412, 0.038), (0.024, 0.018, 0.024), "skin", segs=24, rings=16)
 
-    # 1) RAZOR-SMOOTH 3D SCULPTED CUPID'S-BOW SMILING BERRY-ROSE LIPS (`lip`)
-    upper_lip_pts = [
-        (-0.0196, 1.4832, 0.1495),
-        (-0.0128, 1.4838, 0.1560),
-        (-0.0054, 1.4858, 0.1598),
-        ( 0.0000, 1.4846, 0.1604),
-        ( 0.0054, 1.4858, 0.1598),
-        ( 0.0128, 1.4838, 0.1560),
-        ( 0.0196, 1.4832, 0.1495),
-    ]
+    # 1) RAZOR-SMOOTH 3D SCULPTED CUPID'S-BOW BERRY-ROSE LIPS (`lip`) + OPTIONAL TALKING VISEME CAVITY & TEETH
+    if mouth_viseme == "closed":
+        upper_lip_pts = [
+            (-0.0196, 1.4832, 0.1495),
+            (-0.0128, 1.4838, 0.1560),
+            (-0.0054, 1.4858, 0.1598),
+            ( 0.0000, 1.4846, 0.1604),
+            ( 0.0054, 1.4858, 0.1598),
+            ( 0.0128, 1.4838, 0.1560),
+            ( 0.0196, 1.4832, 0.1495),
+        ]
+        upper_w = [0.0012, 0.0028, 0.0040, 0.0036, 0.0040, 0.0028, 0.0012]
+        upper_t = [0.0012, 0.0026, 0.0036, 0.0034, 0.0036, 0.0026, 0.0012]
+        lower_lip_pts = [
+            (-0.0190, 1.4828, 0.1492),
+            (-0.0120, 1.4792, 0.1558),
+            (-0.0052, 1.4774, 0.1596),
+            ( 0.0000, 1.4770, 0.1604),
+            ( 0.0052, 1.4774, 0.1596),
+            ( 0.0120, 1.4792, 0.1558),
+            ( 0.0190, 1.4828, 0.1492),
+        ]
+        lower_w = [0.0011, 0.0032, 0.0046, 0.0050, 0.0046, 0.0032, 0.0011]
+        lower_t = [0.0011, 0.0028, 0.0040, 0.0042, 0.0040, 0.0028, 0.0011]
+    elif mouth_viseme == "slight":
+        # Slightly parted lips (~4.5-5mm opening) for consonants / narrow vowels (И/Е/I/E)
+        upper_lip_pts = [
+            (-0.0202, 1.4824, 0.1494),
+            (-0.0130, 1.4845, 0.1560),
+            (-0.0055, 1.4868, 0.1598),
+            ( 0.0000, 1.4858, 0.1605),
+            ( 0.0055, 1.4868, 0.1598),
+            ( 0.0130, 1.4845, 0.1560),
+            ( 0.0202, 1.4824, 0.1494),
+        ]
+        upper_w = [0.0012, 0.0026, 0.0036, 0.0033, 0.0036, 0.0026, 0.0012]
+        upper_t = [0.0012, 0.0025, 0.0035, 0.0033, 0.0035, 0.0025, 0.0012]
+        lower_lip_pts = [
+            (-0.0196, 1.4820, 0.1492),
+            (-0.0124, 1.4768, 0.1556),
+            (-0.0054, 1.4742, 0.1592),
+            ( 0.0000, 1.4736, 0.1598),
+            ( 0.0054, 1.4742, 0.1592),
+            ( 0.0124, 1.4768, 0.1556),
+            ( 0.0196, 1.4820, 0.1492),
+        ]
+        lower_w = [0.0011, 0.0029, 0.0040, 0.0044, 0.0040, 0.0029, 0.0011]
+        lower_t = [0.0011, 0.0026, 0.0036, 0.0038, 0.0036, 0.0026, 0.0011]
+        add_curved_mouth_cavity(
+            ga, "MouthInnerCavitySlight",
+            rx=0.0158, ry=0.0046, cy=1.4800, z_front=0.1544, z_curve=20.0, thickness=0.0032,
+        )
+        add_curved_upper_teeth(
+            ga, "UpperTeethSlight",
+            half_w=0.0112, cy=1.4818, z_front=0.1566, z_curve=24.0, half_h=0.0017, thickness=0.0013,
+        )
+    elif mouth_viseme == "open":
+        # Expressive open vowel mouth (~11-13mm opening) with natural jaw drop (А/Я/Э/AH/AY)
+        upper_lip_pts = [
+            (-0.0194, 1.4806, 0.1494),
+            (-0.0125, 1.4852, 0.1560),
+            (-0.0054, 1.4882, 0.1600),
+            ( 0.0000, 1.4872, 0.1606),
+            ( 0.0054, 1.4882, 0.1600),
+            ( 0.0125, 1.4852, 0.1560),
+            ( 0.0194, 1.4806, 0.1494),
+        ]
+        upper_w = [0.0013, 0.0025, 0.0035, 0.0032, 0.0035, 0.0025, 0.0013]
+        upper_t = [0.0012, 0.0024, 0.0034, 0.0032, 0.0034, 0.0024, 0.0012]
+        lower_lip_pts = [
+            (-0.0188, 1.4802, 0.1492),
+            (-0.0120, 1.4724, 0.1548),
+            (-0.0055, 1.4682, 0.1580),
+            ( 0.0000, 1.4672, 0.1586),
+            ( 0.0055, 1.4682, 0.1580),
+            ( 0.0120, 1.4724, 0.1548),
+            ( 0.0188, 1.4802, 0.1492),
+        ]
+        lower_w = [0.0012, 0.0028, 0.0040, 0.0043, 0.0040, 0.0028, 0.0012]
+        lower_t = [0.0012, 0.0026, 0.0036, 0.0038, 0.0036, 0.0026, 0.0012]
+        add_curved_mouth_cavity(
+            ga, "MouthInnerCavityOpen",
+            rx=0.0162, ry=0.0084, cy=1.4776, z_front=0.1536, z_curve=22.0, thickness=0.0042,
+        )
+        add_curved_upper_teeth(
+            ga, "UpperTeethOpen",
+            half_w=0.0118, cy=1.4828, z_front=0.1558, z_curve=26.0, half_h=0.0021, thickness=0.0013,
+        )
+    elif mouth_viseme == "round":
+        # Rounded oval pursed lips (~8mm height, narrower width) for rounded vowels (О/У/O/OO)
+        upper_lip_pts = [
+            (-0.0130, 1.4795, 0.1552),
+            (-0.0102, 1.4848, 0.1592),
+            (-0.0048, 1.4879, 0.1620),
+            ( 0.0000, 1.4874, 0.1627),
+            ( 0.0048, 1.4879, 0.1620),
+            ( 0.0102, 1.4848, 0.1592),
+            ( 0.0130, 1.4795, 0.1552),
+        ]
+        upper_w = [0.0019, 0.0031, 0.0039, 0.0038, 0.0039, 0.0031, 0.0019]
+        upper_t = [0.0019, 0.0029, 0.0037, 0.0037, 0.0037, 0.0029, 0.0019]
+        lower_lip_pts = [
+            (-0.0128, 1.4794, 0.1550),
+            (-0.0100, 1.4742, 0.1588),
+            (-0.0047, 1.4716, 0.1614),
+            ( 0.0000, 1.4710, 0.1620),
+            ( 0.0047, 1.4716, 0.1614),
+            ( 0.0100, 1.4742, 0.1588),
+            ( 0.0128, 1.4794, 0.1550),
+        ]
+        lower_w = [0.0019, 0.0033, 0.0043, 0.0045, 0.0043, 0.0033, 0.0019]
+        lower_t = [0.0019, 0.0031, 0.0039, 0.0041, 0.0039, 0.0031, 0.0019]
+        add_curved_mouth_cavity(
+            ga, "MouthInnerCavityRound",
+            rx=0.0102, ry=0.0062, cy=1.4794, z_front=0.1558, z_curve=26.0, thickness=0.0038,
+        )
+    else:
+        raise ValueError(f"Unknown mouth_viseme: {mouth_viseme}")
+
     add_ribbon_loft(
         ga,
         "SculptedUpperSmilingLip",
         upper_lip_pts,
-        widths=[0.0012, 0.0028, 0.0040, 0.0036, 0.0040, 0.0028, 0.0012],
-        thicknesses=[0.0012, 0.0026, 0.0036, 0.0034, 0.0036, 0.0026, 0.0012],
+        widths=upper_w,
+        thicknesses=upper_t,
         normals=[(0.0, 0.20, 1.0)] * 7,
         key="lip",
         subsurf_level=1,
     )
-    lower_lip_pts = [
-        (-0.0190, 1.4828, 0.1492),
-        (-0.0120, 1.4792, 0.1558),
-        (-0.0052, 1.4774, 0.1596),
-        ( 0.0000, 1.4770, 0.1604),
-        ( 0.0052, 1.4774, 0.1596),
-        ( 0.0120, 1.4792, 0.1558),
-        ( 0.0190, 1.4828, 0.1492),
-    ]
     add_ribbon_loft(
         ga,
         "SculptedLowerSmilingLip",
         lower_lip_pts,
-        widths=[0.0011, 0.0032, 0.0046, 0.0050, 0.0046, 0.0032, 0.0011],
-        thicknesses=[0.0011, 0.0028, 0.0040, 0.0042, 0.0040, 0.0028, 0.0011],
+        widths=lower_w,
+        thicknesses=lower_t,
         normals=[(0.0, -0.20, 1.0)] * 7,
         key="lip",
         subsurf_level=1,
@@ -1686,6 +1876,109 @@ def render_veronika_v3_proof():
             print("Warning saving proof to", target_path, ":", exc)
 
 
+def render_veronika_lipsync_qc():
+    """
+    Render a crisp 4-panel macro close-up QC proof (`scratch/veronika_lipsync_qc.png`) showing
+    Closed / Slight / Open / Round heads side-by-side (top row: straight front macro, bottom row: 24 deg 3/4 view)
+    with `use_backface_culling = True` so Blender Eevee matches Raylib OpenGL (`GL_CULL_FACE`) 1-to-1.
+    """
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    sc = bpy.context.scene
+    sc.render.engine = "BLENDER_EEVEE"
+    sc.render.resolution_x = 1920
+    sc.render.resolution_y = 1080
+    sc.render.film_transparent = False
+    world = bpy.data.worlds.new("VeronikaLipsyncQCWorld")
+    sc.world = world
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs[0].default_value = (0.14, 0.11, 0.16, 1.0)
+        bg.inputs[1].default_value = 1.0
+
+    panels = [
+        ("char_hr_veronika_head.glb",            -1.08),
+        ("char_hr_veronika_head_talk_slight.glb", -0.36),
+        ("char_hr_veronika_head_talk_open.glb",   +0.36),
+        ("char_hr_veronika_head_talk_round.glb",  +1.08),
+    ]
+    for glb_fn, x_pos in panels:
+        # Top row: crisp front macro close-up
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=str(OUT_MODELS / glb_fn))
+        objs = [o for o in set(bpy.data.objects) - before if o.type == "MESH"]
+        for o in objs:
+            o.scale = (2.85, 2.85, 2.85)
+            o.location = V((x_pos, -0.25, 0.96))
+            o.rotation_mode = "XYZ"
+            o.rotation_euler = (0.0, 0.0, 0.0)
+
+        # Bottom row: 24-degree 3/4 angle close-up to verify zero cheek bleed & clean lip depth
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=str(OUT_MODELS / glb_fn))
+        objs_34 = [o for o in set(bpy.data.objects) - before if o.type == "MESH"]
+        for o in objs_34:
+            o.scale = (2.85, 2.85, 2.85)
+            o.location = V((x_pos, -0.25, 0.16))
+            o.rotation_mode = "XYZ"
+            o.rotation_euler = (0.0, 0.0, math.radians(-24.0))
+
+    for m in bpy.data.materials:
+        m.use_backface_culling = True
+
+    for name, loc, energy, col in [
+        ("Key",  (2.2, -3.5, 2.2), 3.3, (1.0, 0.95, 0.90)),
+        ("Fill", (-2.4, -2.8, 1.5), 2.1, (0.88, 0.86, 1.0)),
+        ("Rim",  (1.5, 2.8, 2.1),   1.9, (1.0, 0.78, 0.62)),
+    ]:
+        ld = bpy.data.lights.new(name, type="SUN")
+        ld.energy = energy
+        ld.color = col
+        lo = bpy.data.objects.new(name, ld)
+        sc.collection.objects.link(lo)
+        lo.location = loc
+        d = V((0.0, 0.0, 0.90)) - V(loc)
+        lo.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+
+    cd = bpy.data.cameras.new("LipsyncQCCam")
+    cd.type = "ORTHO"
+    cd.ortho_scale = 2.98
+    co = bpy.data.objects.new("LipsyncQCCam", cd)
+    sc.collection.objects.link(co)
+    sc.camera = co
+    co.location = (0.0, -3.2, 0.92)
+    d = V((0.0, 0.0, 0.92)) - co.location
+    co.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+
+    qc_path = ROOT_DIR / "scratch" / "veronika_lipsync_qc.png"
+    qc_path.parent.mkdir(parents=True, exist_ok=True)
+    sc.render.filepath = str(qc_path)
+    bpy.ops.render.render(write_still=True)
+    print("Saved Veronika lip-sync 4-panel QC proof:", qc_path)
+
+
+def export_veronika_lipsync_heads(ga):
+    """Export the 3 synchronized talking viseme head GLBs with identical HEAD_PIVOT_LOCAL."""
+    for viseme, export_name in [
+        ("slight", "char_hr_veronika_head_talk_slight"),
+        ("open",   "char_hr_veronika_head_talk_open"),
+        ("round",  "char_hr_veronika_head_talk_round"),
+    ]:
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        ga.MATS.clear()
+        atlas = build_veronika_beauty_atlas()
+        for k in VERONIKA_MAT_ORDER:
+            make_veronika_mat(ga, k, atlas)
+        build_stylized_head_mesh(ga, mouth_viseme=viseme)
+        build_veronika_head_accessories(ga, blink=False, mouth_viseme=viseme)
+        finalize_veronika_piece(
+            ga,
+            [o for o in bpy.context.scene.objects if o.type == "MESH"],
+            export_name,
+            pivot_shift=HEAD_PIVOT_LOCAL,
+        )
+    render_veronika_lipsync_qc()
+
+
 def export_all_veronika_models(ga):
     # 1. char_hr_veronika_head.glb (Open Eyes, origin at HEAD_PIVOT_LOCAL)
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -1693,8 +1986,8 @@ def export_all_veronika_models(ga):
     atlas = build_veronika_beauty_atlas()
     for k in VERONIKA_MAT_ORDER:
         make_veronika_mat(ga, k, atlas)
-    build_stylized_head_mesh(ga)
-    build_veronika_head_accessories(ga, blink=False)
+    build_stylized_head_mesh(ga, mouth_viseme="closed")
+    build_veronika_head_accessories(ga, blink=False, mouth_viseme="closed")
     finalize_veronika_piece(
         ga,
         [o for o in bpy.context.scene.objects if o.type == "MESH"],
@@ -1708,14 +2001,17 @@ def export_all_veronika_models(ga):
     atlas = build_veronika_beauty_atlas()
     for k in VERONIKA_MAT_ORDER:
         make_veronika_mat(ga, k, atlas)
-    build_stylized_head_mesh(ga)
-    build_veronika_head_accessories(ga, blink=True)
+    build_stylized_head_mesh(ga, mouth_viseme="closed")
+    build_veronika_head_accessories(ga, blink=True, mouth_viseme="closed")
     finalize_veronika_piece(
         ga,
         [o for o in bpy.context.scene.objects if o.type == "MESH"],
         "char_hr_veronika_head_blink",
         pivot_shift=HEAD_PIVOT_LOCAL,
     )
+
+    # 2b. 3 Talking Lip-Sync Viseme Heads (Slight / Open / Round, identical HEAD_PIVOT_LOCAL)
+    export_veronika_lipsync_heads(ga)
 
     # 3. char_hr_veronika_body.glb (Slender torso + wrap blazer + V-neck lariat + back wave cascade + trousers/boots, NO arms, origin [0,0,0])
     bpy.ops.wm.read_factory_settings(use_empty=True)

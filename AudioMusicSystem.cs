@@ -79,6 +79,33 @@ namespace HowToVibeCoder
         public static float VoiceTimer { get; set; } = 0f;
         public static int ActiveSpeakerType { get; set; } = 0;
 
+        // Language-agnostic PCM audio-driven 3D lip-sync state for HR Veronika (RU, EN, and any future locale WAVs)
+        public enum MouthViseme { Closed = 0, Slight = 1, Open = 2, Round = 3 }
+
+        public readonly struct VoiceFrame(float energy, float brightness)
+        {
+            public readonly float Energy = energy;
+            public readonly float Brightness = brightness;
+        }
+
+        public sealed class VoiceEnvelope(VoiceFrame[] frames, float durationSec, float frameRateHz = 30f)
+        {
+            public readonly VoiceFrame[] Frames = frames;
+            public readonly float DurationSec = durationSec;
+            public readonly float FrameRateHz = frameRateHz;
+        }
+
+        public static MouthViseme VeronikaViseme { get; private set; } = MouthViseme.Closed;
+        public static float VeronikaSpeechEnergy { get; private set; }
+        public static bool IsVeronikaSpeaking { get; private set; }
+
+        private static readonly Dictionary<string, Dictionary<string, VoiceEnvelope>> _voiceEnvelopesByLocale = new(StringComparer.OrdinalIgnoreCase);
+        private static VoiceEnvelope _activeVeronikaEnvelope;
+        private static float _veronikaVoiceElapsed;
+        private static float _veronikaVoiceDuration;
+        private static float _veronikaHoldTimer;
+        private static bool _veronikaUsingFallbackOsc;
+
         private static readonly Random _rng = new Random(1993);
 
         // Rich Russian Voice Line Arrays
@@ -171,6 +198,7 @@ namespace HowToVibeCoder
                 EnsureComicWavs();
                 if(_silent) EnsureSlotWavs();
                 LoadEnglishManifest();
+                LoadVoiceEnvelopes();
                 if (!Raylib.IsAudioDeviceReady()) Raylib.InitAudioDevice();
                 if (!Raylib.IsAudioDeviceReady()) return;
                 ApplyMasterVolume();
@@ -477,6 +505,7 @@ namespace HowToVibeCoder
             bool speaking = VoiceTimer > 0 || comic;
             VoiceTimer = Math.Max(0, VoiceTimer - dt);
             if (speaking && VoiceTimer == 0) ActiveSpeaker = ActiveVoiceText = "";
+            UpdateVeronikaLipSync(dt);
             _scene = isMainMenu ? Score.Menu : isBossActive ? Score.Boss : Score.Office;
             if (!AudioReady) return;
             _previewRemaining = Math.Max(0, _previewRemaining - dt);
@@ -696,6 +725,382 @@ namespace HowToVibeCoder
             LoadBank(Path.Combine(SoundsDir,"vo","en"),_voiceClipsEn);
         }
 
+        private static void LoadVoiceEnvelopes()
+        {
+            _voiceEnvelopesByLocale.Clear();
+            string voRoot = Path.Combine(SoundsDir, "vo");
+            if (!Directory.Exists(voRoot)) return;
+            LoadEnvelopeDir("ru", voRoot);
+            foreach (string subDir in Directory.EnumerateDirectories(voRoot))
+            {
+                string localeKey = Path.GetFileName(subDir);
+                if (!string.IsNullOrWhiteSpace(localeKey))
+                    LoadEnvelopeDir(localeKey, subDir);
+            }
+        }
+
+        private static void LoadEnvelopeDir(string localeKey, string dir)
+        {
+            if (!Directory.Exists(dir)) return;
+            if (!_voiceEnvelopesByLocale.TryGetValue(localeKey, out var map))
+            {
+                map = new Dictionary<string, VoiceEnvelope>(StringComparer.OrdinalIgnoreCase);
+                _voiceEnvelopesByLocale[localeKey] = map;
+            }
+            foreach (string path in Directory.EnumerateFiles(dir, "vo_veronika_*.wav"))
+            {
+                var env = AnalyzeVoiceEnvelope(path);
+                if (env != null && env.Frames.Length > 0)
+                    map[Path.GetFileNameWithoutExtension(path)] = env;
+            }
+        }
+
+        /// <summary>
+        /// Language-agnostic 16-bit PCM WAV analyzer: strips sub-200Hz rumble via 4th-order Butterworth HPF (280 Hz),
+        /// slices into 30 Hz frames, and computes adaptive noise-gated Energy (0..1) and voiced-normalized Brightness (0..1).
+        /// Works identically on Russian, English, or any future language WAV with zero text heuristics.
+        /// </summary>
+        public static VoiceEnvelope AnalyzeVoiceEnvelope(string wavPath)
+        {
+            if (string.IsNullOrEmpty(wavPath) || !File.Exists(wavPath)) return null;
+            using var fs = File.OpenRead(wavPath);
+            using var br = new BinaryReader(fs);
+            if (fs.Length < 44) return null;
+            if (new string(br.ReadChars(4)) != "RIFF") return null;
+            br.ReadInt32(); // file size
+            if (new string(br.ReadChars(4)) != "WAVE") return null;
+
+            short audioFormat = 0, channels = 0, bitsPerSample = 0;
+            int sampleRate = 0;
+            byte[] pcmBytes = null;
+
+            while (fs.Position + 8 <= fs.Length)
+            {
+                string chunkId = new string(br.ReadChars(4));
+                int chunkSize = br.ReadInt32();
+                if (chunkSize < 0 || fs.Position + chunkSize > fs.Length) break;
+                long nextPos = fs.Position + chunkSize + (chunkSize & 1);
+                if (chunkId == "fmt " && chunkSize >= 16)
+                {
+                    audioFormat = br.ReadInt16();
+                    channels = br.ReadInt16();
+                    sampleRate = br.ReadInt32();
+                    br.ReadInt32(); // byte rate
+                    br.ReadInt16(); // block align
+                    bitsPerSample = br.ReadInt16();
+                }
+                else if (chunkId == "data")
+                {
+                    pcmBytes = br.ReadBytes(chunkSize);
+                }
+                fs.Position = Math.Min(fs.Length, nextPos);
+            }
+
+            if (pcmBytes == null || audioFormat != 1 || bitsPerSample != 16 || channels < 1 || sampleRate < 4000)
+                return null;
+
+            int bytesPerFrame = channels * 2;
+            int totalFrames = pcmBytes.Length / bytesPerFrame;
+            if (totalFrames < 2) return null;
+
+            float durationSec = totalFrames / (float)sampleRate;
+            float[] mono = new float[totalFrames];
+            const float invScale = 1f / 32768f;
+            for (int i = 0; i < totalFrames; i++)
+            {
+                int sum = 0;
+                int baseOff = i * bytesPerFrame;
+                for (int c = 0; c < channels; c++)
+                {
+                    int off = baseOff + c * 2;
+                    sum += (short)(pcmBytes[off] | (pcmBytes[off + 1] << 8));
+                }
+                mono[i] = (sum / (float)channels) * invScale;
+            }
+
+            // 4th-order Butterworth high-pass at 280 Hz (2 cascaded biquads) removes low hum/rumble while keeping all speech formants.
+            ApplyHighPassBiquad(mono, sampleRate, 280f);
+            ApplyHighPassBiquad(mono, sampleRate, 280f);
+
+            const float frameRateHz = 30f;
+            int win = Math.Max(2, (int)MathF.Round(sampleRate / frameRateHz));
+            int numFrames = Math.Max(1, (totalFrames + win - 1) / win);
+            float[] rms = new float[numFrames];
+            float[] rawBright = new float[numFrames];
+            float zcrRateScale = sampleRate / 24000f;
+
+            for (int f = 0; f < numFrames; f++)
+            {
+                int start = f * win;
+                int end = Math.Min(totalFrames, start + win);
+                int count = end - start;
+                if (count < 2) continue;
+
+                double sqSum = 0;
+                double diffSqSum = 0;
+                int zc = 0;
+                float prev = mono[start];
+                sqSum += prev * prev;
+                for (int k = start + 1; k < end; k++)
+                {
+                    float cur = mono[k];
+                    sqSum += cur * cur;
+                    float d = cur - prev;
+                    diffSqSum += d * d;
+                    if ((prev < 0f && cur >= 0f) || (prev >= 0f && cur < 0f)) zc++;
+                    prev = cur;
+                }
+                float r = MathF.Sqrt((float)(sqSum / count));
+                rms[f] = r;
+                float zcr = (zc / (float)(count - 1)) * zcrRateScale;
+                float diffRatio = MathF.Sqrt((float)(diffSqSum / (count - 1))) / (r + 1e-6f);
+                rawBright[f] = 0.55f * zcr + 0.45f * diffRatio;
+            }
+
+            float p15 = Percentile(rms, 0.15f);
+            float p90 = Percentile(rms, 0.90f);
+            float noiseFloor = MathF.Max(0.002f, MathF.Min(p15 * 1.10f, p90 * 0.24f));
+            float energySpan = MathF.Max(0.008f, p90 - noiseFloor);
+
+            float[] energies = new float[numFrames];
+            var voicedBright = new List<float>(numFrames);
+            for (int f = 0; f < numFrames; f++)
+            {
+                float lin = Math.Clamp((rms[f] - noiseFloor) / energySpan, 0f, 1f);
+                float e = lin > 0f ? MathF.Pow(lin, 0.72f) : 0f;
+                energies[f] = e;
+                if (e > 0.14f) voicedBright.Add(rawBright[f]);
+            }
+
+            float bLow = 0.05f, bHigh = 0.40f;
+            if (voicedBright.Count >= 4)
+            {
+                float[] vbArr = voicedBright.ToArray();
+                bLow = Percentile(vbArr, 0.18f);
+                bHigh = Percentile(vbArr, 0.84f);
+            }
+            float bSpan = MathF.Max(0.025f, bHigh - bLow);
+
+            var frames = new VoiceFrame[numFrames];
+            for (int f = 0; f < numFrames; f++)
+            {
+                float b = Math.Clamp((rawBright[f] - bLow) / bSpan, 0f, 1f);
+                frames[f] = new VoiceFrame(energies[f], b);
+            }
+            return new VoiceEnvelope(frames, durationSec, frameRateHz);
+        }
+
+        private static void ApplyHighPassBiquad(float[] samples, int sampleRate, float cutoffHz)
+        {
+            double w0 = Math.Tau * cutoffHz / sampleRate;
+            double cosW0 = Math.Cos(w0), sinW0 = Math.Sin(w0);
+            double alpha = sinW0 / Math.Sqrt(2.0);
+            double b0 = (1.0 + cosW0) * 0.5;
+            double b1 = -(1.0 + cosW0);
+            double b2 = (1.0 + cosW0) * 0.5;
+            double a0 = 1.0 + alpha;
+            double a1 = -2.0 * cosW0;
+            double a2 = 1.0 - alpha;
+            b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
+
+            double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double x0 = samples[i];
+                double y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+                x2 = x1; x1 = x0; y2 = y1; y1 = y0;
+                samples[i] = (float)y0;
+            }
+        }
+
+        private static float Percentile(float[] values, float p)
+        {
+            if (values == null || values.Length == 0) return 0f;
+            float[] copy = (float[])values.Clone();
+            Array.Sort(copy);
+            float idx = Math.Clamp(p, 0f, 1f) * (copy.Length - 1);
+            int lo = (int)MathF.Floor(idx);
+            int hi = Math.Min(copy.Length - 1, lo + 1);
+            float frac = idx - lo;
+            return copy[lo] * (1f - frac) + copy[hi] * frac;
+        }
+
+        private static VoiceEnvelope ResolveVeronikaEnvelope(string clipId)
+        {
+            if (string.IsNullOrEmpty(clipId)) return null;
+            string localeKey = Loc.IsEn ? "en" : "ru";
+            if (_voiceEnvelopesByLocale.TryGetValue(localeKey, out var localeBank) &&
+                localeBank.TryGetValue(clipId, out var env))
+                return env;
+            if (_voiceEnvelopesByLocale.TryGetValue("ru", out var defaultBank) &&
+                defaultBank.TryGetValue(clipId, out var fallbackEnv))
+                return fallbackEnv;
+            return null;
+        }
+
+        private static void StartVeronikaLipSync(string clipId)
+        {
+            _veronikaVoiceElapsed = 0f;
+            _veronikaHoldTimer = 0f;
+            _activeVeronikaEnvelope = ResolveVeronikaEnvelope(clipId);
+            if (_activeVeronikaEnvelope != null)
+            {
+                _veronikaVoiceDuration = _activeVeronikaEnvelope.DurationSec;
+                _veronikaUsingFallbackOsc = false;
+            }
+            else
+            {
+                _veronikaVoiceDuration = MathF.Max(0.40f, VoiceTimer - 0.30f);
+                _veronikaUsingFallbackOsc = true;
+            }
+            IsVeronikaSpeaking = true;
+            UpdateVeronikaLipSync(0f);
+        }
+
+        private static void ResetVeronikaLipSync()
+        {
+            _activeVeronikaEnvelope = null;
+            _veronikaVoiceElapsed = 0f;
+            _veronikaVoiceDuration = 0f;
+            _veronikaHoldTimer = 0f;
+            _veronikaUsingFallbackOsc = false;
+            IsVeronikaSpeaking = false;
+            VeronikaSpeechEnergy = 0f;
+            VeronikaViseme = MouthViseme.Closed;
+        }
+
+        internal static void AdvanceVeronikaLipSync(float dt) => UpdateVeronikaLipSync(dt);
+
+        private static void UpdateVeronikaLipSync(float dt)
+        {
+            bool active = VoiceTimer > 0f && ActiveSpeakerType == (int)SpeakerVoiceType.VeronikaTarot
+                && _veronikaVoiceElapsed <= _veronikaVoiceDuration + 0.04f;
+            if (active && !_silent && AudioReady && !_veronikaUsingFallbackOsc &&
+                _activeVeronikaEnvelope != null && _activeVoSound is { } snd &&
+                _veronikaVoiceElapsed > 0.16f && !Raylib.IsSoundPlaying(snd))
+            {
+                active = false;
+            }
+
+            if (!active)
+            {
+                IsVeronikaSpeaking = false;
+                VeronikaSpeechEnergy *= MathF.Exp(-MathF.Max(dt, 0f) * 18f);
+                if (VeronikaSpeechEnergy < 0.01f) VeronikaSpeechEnergy = 0f;
+                VeronikaViseme = MouthViseme.Closed;
+                _veronikaHoldTimer = 0f;
+                return;
+            }
+
+            IsVeronikaSpeaking = true;
+            _veronikaVoiceElapsed += MathF.Max(dt, 0f);
+
+            float rawEnergy = 0f, rawBright = 0.5f;
+            if (_activeVeronikaEnvelope != null)
+            {
+                var env = _activeVeronikaEnvelope;
+                if (_veronikaVoiceElapsed < env.DurationSec && env.Frames.Length > 0)
+                {
+                    float fPos = _veronikaVoiceElapsed * env.FrameRateHz;
+                    int i0 = Math.Clamp((int)fPos, 0, env.Frames.Length - 1);
+                    int i1 = Math.Min(env.Frames.Length - 1, i0 + 1);
+                    float frac = Math.Clamp(fPos - i0, 0f, 1f);
+                    rawEnergy = env.Frames[i0].Energy * (1f - frac) + env.Frames[i1].Energy * frac;
+                    rawBright = env.Frames[i0].Brightness * (1f - frac) + env.Frames[i1].Brightness * frac;
+                }
+            }
+            else if (_veronikaUsingFallbackOsc && _veronikaVoiceElapsed < _veronikaVoiceDuration)
+            {
+                // Procedural synth cadence oscillator fallback when studio WAV is unavailable
+                float t = _veronikaVoiceElapsed;
+                float syll = MathF.Max(0f, MathF.Sin(t * 17.5f) * 0.55f + 0.45f) *
+                             (0.65f + 0.35f * MathF.Sin(t * 5.2f + 0.7f));
+                float pauseGate = MathF.Sin(t * 2.7f) > -0.78f ? 1f : 0f;
+                rawEnergy = Math.Clamp(syll * pauseGate, 0f, 1f);
+                rawBright = 0.5f + 0.42f * MathF.Sin(t * 9.3f + 1.1f);
+            }
+
+            // Fast attack / smooth release amplitude tracker for speech-synced head & Tarot hand emphasis
+            float rate = rawEnergy > VeronikaSpeechEnergy ? 24f : 14f;
+            VeronikaSpeechEnergy += (rawEnergy - VeronikaSpeechEnergy) * (1f - MathF.Exp(-MathF.Max(dt, 1f / 120f) * rate));
+
+            // Hysteresis-filtered classification into Closed / Slight / Open / Round at ~18-22 Hz max switch rate
+            bool wasClosed = VeronikaViseme == MouthViseme.Closed;
+            float openGate = wasClosed ? 0.15f : 0.10f;
+            MouthViseme desired;
+            if (rawEnergy < openGate)
+            {
+                desired = MouthViseme.Closed;
+            }
+            else if (rawEnergy >= 0.28f && rawBright < (VeronikaViseme == MouthViseme.Round ? 0.32f : 0.27f))
+            {
+                desired = MouthViseme.Round;
+            }
+            else if (rawEnergy >= (VeronikaViseme == MouthViseme.Open ? 0.39f : 0.44f) && rawBright <= 0.76f)
+            {
+                desired = MouthViseme.Open;
+            }
+            else
+            {
+                desired = MouthViseme.Slight;
+            }
+
+            _veronikaHoldTimer += MathF.Max(dt, 0f);
+            float minHold = (wasClosed && desired != MouthViseme.Closed) ? 0.026f : 0.046f;
+            if (desired != VeronikaViseme && (_veronikaHoldTimer >= minHold || dt == 0f))
+            {
+                VeronikaViseme = desired;
+                _veronikaHoldTimer = 0f;
+            }
+        }
+
+        internal static void CheckVeronikaLipSync()
+        {
+            if (_voiceEnvelopesByLocale.Count < 2) LoadVoiceEnvelopes();
+            string ruIntro = Path.Combine(SoundsDir, "vo", "vo_veronika_intro.wav");
+            string enIntro = Path.Combine(SoundsDir, "vo", "en", "vo_veronika_intro.wav");
+
+            (int[] Counts, string Seq, float Dur) Simulate(string label, string wavPath, GameLang lang)
+            {
+                var env = AnalyzeVoiceEnvelope(wavPath) ?? throw new InvalidDataException("Failed to analyze WAV: " + wavPath);
+                Loc.Set(lang, false);
+                TriggerVoiceLine("Вероника", FloorSystems.CoachText(OnboardingStep.TalkToVeronika), (int)SpeakerVoiceType.VeronikaTarot, "vo_veronika_intro");
+                int[] counts = new int[4];
+                var seq = new System.Text.StringBuilder();
+                const float step = 1f / 60f;
+                int totalSteps = (int)MathF.Ceiling((env.DurationSec + 0.12f) / step);
+                for (int i = 0; i < totalSteps; i++)
+                {
+                    UpdateVeronikaLipSync(step);
+                    int v = (int)VeronikaViseme;
+                    counts[v]++;
+                    if (i % 2 == 0) seq.Append("CSOR"[v]);
+                }
+                if (counts[0] == 0 || counts[1] == 0 || counts[2] == 0 || counts[3] == 0)
+                    throw new InvalidDataException($"Veronika lip-sync missing viseme for {label}: C={counts[0]} S={counts[1]} O={counts[2]} R={counts[3]}");
+                if (VeronikaViseme != MouthViseme.Closed)
+                    throw new InvalidDataException($"Veronika lip-sync did not close after {label}");
+                return (counts, seq.ToString(), env.DurationSec);
+            }
+
+            try
+            {
+                var ru = Simulate("RU vo_veronika_intro", ruIntro, GameLang.Ru);
+                var en = Simulate("EN vo_veronika_intro", enIntro, GameLang.En);
+                if (ru.Seq == en.Seq || MathF.Abs(ru.Dur - en.Dur) < 0.1f)
+                    throw new InvalidDataException("RU and EN lip-sync envelopes must reflect distinct language waveforms");
+                Console.WriteLine($"[AUTOTEST] PASS Veronika lip-sync RU ({ru.Dur:0.00}s): C={ru.Counts[0]} S={ru.Counts[1]} O={ru.Counts[2]} R={ru.Counts[3]} | {ru.Seq[..Math.Min(56, ru.Seq.Length)]}");
+                Console.WriteLine($"[AUTOTEST] PASS Veronika lip-sync EN ({en.Dur:0.00}s): C={en.Counts[0]} S={en.Counts[1]} O={en.Counts[2]} R={en.Counts[3]} | {en.Seq[..Math.Min(56, en.Seq.Length)]}");
+            }
+            finally
+            {
+                VoiceTimer = 0f;
+                ActiveVoiceText = ActiveSpeaker = "";
+                ResetVeronikaLipSync();
+                Loc.Set(GameLang.Ru, false);
+            }
+        }
+
         private static void LoadBank(string dir,Dictionary<string,(Sound Sound,float Duration)> bank)
         {
             if (!Directory.Exists(dir)) return;
@@ -827,8 +1232,9 @@ namespace HowToVibeCoder
                         throw new InvalidDataException("Live Russian voice switch: "+id);
                 }
             }
-            finally { VoiceTimer=0; ActiveVoiceText=ActiveSpeaker=""; Loc.Set(GameLang.Ru,false); }
+            finally { VoiceTimer=0; ActiveVoiceText=ActiveSpeaker=""; ResetVeronikaLipSync(); Loc.Set(GameLang.Ru,false); }
             Console.WriteLine("[AUTOTEST] PASS studio voices: 47/47 RU and 47/47 EN decoded and matched manifest durations");
+            CheckVeronikaLipSync();
         }
 
         internal static void Speak(string speaker,string text,SpeakerVoiceType voice,string clipId=null) =>
@@ -847,6 +1253,10 @@ namespace HowToVibeCoder
                 ActiveSpeaker=_enSpeaker[ActiveClipId];
                 VoiceTimer=Math.Max(2.8f,_enVoDuration[ActiveClipId]+.35f);
             }
+            if (speakerType == (int)SpeakerVoiceType.VeronikaTarot)
+                StartVeronikaLipSync(ActiveClipId);
+            else
+                ResetVeronikaLipSync();
             if (_silent || !AudioReady) return;
             if (_activeVoSound is {} previous) Raylib.StopSound(previous);
             float vol=Math.Clamp(VoiceVolume,0,1);
@@ -895,6 +1305,8 @@ namespace HowToVibeCoder
                 _enVoText.Clear();
                 _enVoDuration.Clear();
                 _enSpeaker.Clear();
+                _voiceEnvelopesByLocale.Clear();
+                ResetVeronikaLipSync();
                 VoiceTimer=0;
                 foreach (var kv in new HashSet<Sound>(_soundsByName.Values))
                 {

@@ -124,8 +124,8 @@ internal sealed class PartnerAvatar(int slot=0)
         }
     }
 
-    private static readonly Vector3 HatAnchor = new(0.0000f, 1.6900f, -0.0120f);
-    private static readonly Vector3 EyeAnchor = new(0.0000f, 1.5860f, +0.1030f);
+    private static readonly Vector3 HatAnchor = new(0.0000f, 1.6750f, -0.0108f);
+    private static readonly Vector3 EyeAnchor = new(0.0000f, 1.5960f, +0.0938f);
     private static readonly Vector3 RightShoulderPivot = new(-0.1940f, 1.3520f, -0.0520f);
     private static readonly Vector3 RightHandGripOffset = new(-0.0640f, -0.5500f, +0.0840f);
 

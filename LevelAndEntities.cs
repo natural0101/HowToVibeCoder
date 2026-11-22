@@ -4293,7 +4293,8 @@ public sealed partial class SkyscraperFloor1World
     }
 
     private static readonly string[] VeronikaModules=["prop_veronika_tarot_table","char_hr_veronika_body",
-        "char_hr_veronika_head","char_hr_veronika_head_blink"];
+        "char_hr_veronika_head","char_hr_veronika_head_blink",
+        "char_hr_veronika_head_talk_slight","char_hr_veronika_head_talk_open","char_hr_veronika_head_talk_round"];
     private float _veronikaHeadYaw,_veronikaHeadPitch,_rackOpen,_blinkUntil,_nextBlink=3.8f;
     private int _blinkIndex;
     private bool _doubleBlink;
@@ -4488,20 +4489,36 @@ public sealed partial class SkyscraperFloor1World
             VisualEngine3D.Asset(VeronikaModules[0],origin,180);
             if (!veronikaHidden)
             {
-                bool talking=AudioMusicSystem.VoiceTimer>0 && AudioMusicSystem.ActiveSpeakerType==(int)SpeakerVoiceType.VeronikaTarot;
+                bool talking=AudioMusicSystem.IsVeronikaSpeaking;
+                float speechEnergy=AudioMusicSystem.VeronikaSpeechEnergy;
+                var viseme=AudioMusicSystem.VeronikaViseme;
                 float t=_worldClock, breath=MathF.Sin(t*1.9f)*.008f;
                 VisualEngine3D.Asset(VeronikaModules[1],origin+Vector3.UnitY*breath,180);
                 bool blink=t<_blinkUntil;
                 Vector3 pivot=origin+new Vector3(0,1.415f+breath,-.045f);
                 if(_slotBlend>.015f) DrawSlotHead(pivot,t);
-                if(_slotBlend<.985f) VisualEngine3D.AssetOriented(VeronikaModules[blink ? 3 : 2],origin+new Vector3(0,1.415f+breath,-.045f),
-                    180+_veronikaHeadYaw,_veronikaHeadPitch+(talking ? 3.5f*MathF.Sin(t*8.5f) : 0),talking ? 3*MathF.Sin(t*3.2f) : 0,1-_slotBlend);
+                if(_slotBlend<.985f)
+                {
+                    string headModel=(blink && viseme==AudioMusicSystem.MouthViseme.Closed)
+                        ? "char_hr_veronika_head_blink"
+                        : viseme switch
+                        {
+                            AudioMusicSystem.MouthViseme.Open => "char_hr_veronika_head_talk_open",
+                            AudioMusicSystem.MouthViseme.Round => "char_hr_veronika_head_talk_round",
+                            AudioMusicSystem.MouthViseme.Slight => "char_hr_veronika_head_talk_slight",
+                            _ => "char_hr_veronika_head"
+                        };
+                    float speechPitch=talking ? (3.5f*speechEnergy*MathF.Sin(t*7.2f)-1.1f*speechEnergy) : 0f;
+                    float speechRoll=talking ? (3.2f*(0.35f+0.65f*speechEnergy)*MathF.Sin(t*3.1f)) : 0f;
+                    VisualEngine3D.AssetOriented(headModel,pivot,
+                        180+_veronikaHeadYaw,_veronikaHeadPitch+speechPitch,speechRoll,1-_slotBlend);
+                }
                 bool reading=talking || TarotVerdictTimer>0;
                 if(arms)
                 {
                     void Arm(string model,float x,float phase)
                     {
-                        float gesture=reading ? 1f : .4f;
+                        float gesture=reading ? (0.75f+0.55f*speechEnergy) : .4f;
                         Vector3 armPivot=origin+new Vector3(-x,1.298f+breath,-.032f);
                         float pump=Slot.Active && Slot.Reveal ? 22+17*MathF.Sin(Slot.RevealTime*MathF.Tau*130/60+phase) : 0;
                         VisualEngine3D.AssetOriented(model,armPivot,180,-pump+3.5f*gesture*MathF.Sin(t*1.9f+phase),

@@ -1,0 +1,23 @@
+{
+  "RightShoulderPivot": [
+    -0.194,
+    1.352,
+    -0.052
+  ],
+  "RightHandGripOffset": [
+    -0.064,
+    -0.55,
+    0.084
+  ],
+  "HatAnchor": [
+    0.0,
+    1.675,
+    -0.0108
+  ],
+  "EyeAnchor": [
+    0.0,
+    1.596,
+    0.0938
+  ],
+  "AimPitchDeg": -76.0
+}
